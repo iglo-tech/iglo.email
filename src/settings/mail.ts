@@ -58,7 +58,7 @@ export function parseAddress(input: string): string | undefined {
           : charset === "us-ascii"
             ? Array.from(bytes, (byte) => String.fromCharCode(byte < 128 ? byte : 0xff_fd)).join("")
             : new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes),
-      error: !["utf8", "iso-8859-1", "us-ascii"].includes(charset),
+      error: !["utf-8", "iso-8859-1", "us-ascii"].includes(charset),
     };
   };
   const quoted = (allowEmpty = false) => {

@@ -50,6 +50,19 @@ export default defineConfig({
     { files: ["src/messaging/notify.ts"], rules: { "no-console": "off" } },
     // B134c: test/ still prints from its measure, runner and reference scripts.
     { files: testFiles, rules: { "no-console": "off" } },
+    // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
+    // "utf-8" as written (the rule would spell it "utf8" and refuse every UTF-8 declaration and charset), so
+    // the fix would change behaviour. The lead decides at review.
+    {
+      files: [
+        "src/lists/input.ts",
+        "src/settings/mail.ts",
+        "src/settings/xml.ts",
+        "src/subscribers/input.ts",
+        "src/templates/input.ts",
+      ],
+      rules: { "unicorn/text-encoding-identifier-case": "off" },
+    },
     // The preset's TypeScript override re-enables this rule under its alias, so the root `off` below needs
     // this override after it. B134b: src and B134c: test still have unawaited promises.
     {

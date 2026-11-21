@@ -361,7 +361,7 @@ function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
     throw error;
   });
   parser.on("xmldecl", (d) => {
-    if (d.version !== "1.0" || (d.encoding && d.encoding.toLowerCase() !== "utf8")) {
+    if (d.version !== "1.0" || (d.encoding && d.encoding.toLowerCase() !== "utf-8")) {
       throw new Error("declaration");
     }
   });

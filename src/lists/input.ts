@@ -136,7 +136,7 @@ function xmlInput(body: Buffer): ListInput {
   parser.on("xmldecl", (declaration) => {
     if (
       declaration.version !== "1.0" ||
-      (declaration.encoding && declaration.encoding.toLowerCase() !== "utf8")
+      (declaration.encoding && declaration.encoding.toLowerCase() !== "utf-8")
     ) {
       throw new Error("unsupported XML declaration");
     }

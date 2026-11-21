@@ -14,7 +14,7 @@ function xmlRoot(body: Buffer): Node {
     throw error;
   });
   parser.on("xmldecl", (decl) => {
-    if (decl.version !== "1.0" || (decl.encoding && decl.encoding.toLowerCase() !== "utf8")) {
+    if (decl.version !== "1.0" || (decl.encoding && decl.encoding.toLowerCase() !== "utf-8")) {
       throw new Error("encoding");
     }
   });

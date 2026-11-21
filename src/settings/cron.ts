@@ -31,7 +31,7 @@ function durationString(value: bigint): string {
 }
 
 function parseIntError(value: string): string {
-  const quote = JSON.stringify(value).replaceAll("﻿", String.raw`\ufeff`);
+  const quote = JSON.stringify(value).replaceAll("\ufeff", String.raw`\ufeff`);
   const parsed = /^[+-]?\d+$/.test(value) ? BigInt(value) : null;
   const inRange =
     parsed !== null &&
