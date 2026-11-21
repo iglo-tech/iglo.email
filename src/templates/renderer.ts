@@ -26,7 +26,7 @@ const filterArguments: Readonly<Record<string, number>> = {
   track_link: 0,
   number: 0,
 };
-const byteLength = (value: string) => Buffer.byteLength(value, "utf8");
+const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
 
 export class TemplateSourceError extends Error {
   constructor(readonly field: "body" | "subject" | "slot") {

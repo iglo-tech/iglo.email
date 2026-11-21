@@ -16,7 +16,7 @@ const OUTPUT_LIMIT = 1024 * 1024;
  */
 export const MARKDOWN_SOURCE_LIMIT = 128 * 1024;
 
-const bytes = (value: string) => Buffer.byteLength(value, "utf8");
+const bytes = (value: string) => Buffer.byteLength(value, "utf-8");
 
 // Bytes an HTML escape can add, per special character: `&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&#x27;` for an
 // apostrophe (Bun writes it in attributes, and the bound charges it everywhere, to be safe).

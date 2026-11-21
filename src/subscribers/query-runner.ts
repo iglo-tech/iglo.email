@@ -286,7 +286,7 @@ export function createQueryRunner(options: RunnerOptions) {
     const pid = child.pid;
     const watchdog = setInterval(() => {
       try {
-        const found = /^VmRSS:\s*(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+        const found = /^VmRSS:\s*(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, "utf-8"));
         if (found && Number(found[1]) * 1024 > limit) {
           overMemory = true;
           child.kill("SIGKILL");

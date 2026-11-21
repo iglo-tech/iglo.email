@@ -6,7 +6,7 @@ export async function generateTemplateReference() {
   const docPath = join(root, "docs/design/06-templates.md");
   const targetPath = join(root, "src/mcp/reference.ts");
 
-  const content = await readFile(docPath, "utf8");
+  const content = await readFile(docPath, "utf-8");
 
   // Extract the section for agents (variables, tags, filters, examples)
   const startMarker = "### Template reference for agents";
@@ -24,7 +24,7 @@ export async function generateTemplateReference() {
 
   const tsSource = `// Generated from docs/design/06-templates.md by scripts/generate-template-reference.ts. Do not hand-edit.\nexport const TEMPLATE_REFERENCE = ${JSON.stringify(fullReference)};\n`;
 
-  await writeFile(targetPath, tsSource, "utf8");
+  await writeFile(targetPath, tsSource, "utf-8");
 
   // Format the generated file so bun run format:check is clean
   const oxfmt = Bun.which("oxfmt") || join(root, "node_modules/.bin/oxfmt");

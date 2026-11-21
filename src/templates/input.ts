@@ -190,7 +190,7 @@ export async function templateInput(context: RequestContext): Promise<TemplatePa
     }
     if (type === "application/json") {
       const out: TemplatePatch = {};
-      for (const [key, value] of jsonMembers(body.toString("utf8"))) {
+      for (const [key, value] of jsonMembers(body.toString("utf-8"))) {
         set(out, key.toLowerCase().replaceAll("ſ", "s"), value);
       }
       return out;
@@ -199,7 +199,7 @@ export async function templateInput(context: RequestContext): Promise<TemplatePa
       return xmlInput(body);
     }
     if (type === "application/x-www-form-urlencoded") {
-      const form = body.toString("utf8");
+      const form = body.toString("utf-8");
       if (/%(?![0-9a-fA-F]{2})/.test(form) || form.includes(";")) {
         throw new Error("Invalid form");
       }

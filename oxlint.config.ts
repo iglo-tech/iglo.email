@@ -115,20 +115,8 @@ export default defineConfig({
         "typescript/no-misused-spread": "off",
         "typescript/no-unnecessary-type-assertion": "off",
         "@nkzw/no-instanceof": "off",
+        "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
       },
-    },
-    // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
-    // "utf-8" as written (the rule would spell it "utf8" and refuse every UTF-8 declaration and charset), so
-    // the fix would change behaviour. The lead decides at review.
-    {
-      files: [
-        "src/lists/input.ts",
-        "src/settings/mail.ts",
-        "src/settings/xml.ts",
-        "src/subscribers/input.ts",
-        "src/templates/input.ts",
-      ],
-      rules: { "unicorn/text-encoding-identifier-case": "off" },
     },
     // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
     // test/ still has unawaited promises; src/ and scripts/ are fixed (B134b).
@@ -140,6 +128,8 @@ export default defineConfig({
   rules: {
     ...cloudflare.rules,
     "no-undef": "error",
+    // Labels are spelled as the standards write them ("utf-8"), which is what the XML declaration and charset checks accept.
+    "unicorn/text-encoding-identifier-case": ["error", { withDash: true }],
 
     // The admin and public pages render HTML strings through the in-house JSX runtime (AGENTS.md: no
     // client framework). `class`, Alpine's `x-*`, `@*` and `:*` attributes and other HTML attributes are

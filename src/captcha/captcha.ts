@@ -97,7 +97,7 @@ function decodeBase64(text: string): string | undefined {
   if (compact.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) {
     return undefined;
   }
-  return Buffer.from(compact, "base64").toString("utf8");
+  return Buffer.from(compact, "base64").toString("utf-8");
 }
 
 /** The challenge and solution of a payload, or undefined for any shape altcha-lib would not sign. */
@@ -183,7 +183,7 @@ async function boundedText(response: Response, limit: number): Promise<string | 
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks).toString("utf-8");
 }
 
 export async function createCaptcha(deps: CaptchaDeps): Promise<Captcha> {

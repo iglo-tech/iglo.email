@@ -206,7 +206,7 @@ export async function listInput(context: RequestContext): Promise<ListInput> {
     if (!body.length) {
       value = empty();
     } else if (type === "application/json") {
-      value = jsonInput(body.toString("utf8"));
+      value = jsonInput(body.toString("utf-8"));
     } else if (type === "application/xml" || type === "text/xml") {
       value = xmlInput(body);
     } else {

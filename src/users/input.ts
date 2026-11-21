@@ -31,5 +31,5 @@ export async function readBodyBytes(request: Request): Promise<Buffer> {
 }
 
 export async function readBody(request: Request): Promise<string> {
-  return (await readBodyBytes(request)).toString("utf8");
+  return (await readBodyBytes(request)).toString("utf-8");
 }

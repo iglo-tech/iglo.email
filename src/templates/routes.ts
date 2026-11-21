@@ -215,7 +215,7 @@ export function registerTemplateRoutes(
       if (media === "application/x-www-form-urlencoded") {
         const parsed = new URLSearchParams();
         // Request.FormValue ignores ParseForm errors and keeps the valid pairs.
-        for (const pair of bytes.toString("utf8").split("&")) {
+        for (const pair of bytes.toString("utf-8").split("&")) {
           if (/%(?![0-9a-fA-F]{2})/.test(pair) || pair.includes(";")) {
             continue;
           }

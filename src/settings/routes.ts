@@ -40,7 +40,7 @@ export function registerSettingsRoutes(
         } else if (media === "application/xml" || media === "text/xml") {
           body = xmlSettings(bytes, shapes);
         } else if (media === "application/x-www-form-urlencoded") {
-          const form = bytes.toString("utf8");
+          const form = bytes.toString("utf-8");
           if (/%(?![0-9a-fA-F]{2})/.test(form) || form.includes(";")) {
             throw new Error("form");
           }

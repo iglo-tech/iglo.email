@@ -66,7 +66,7 @@ function parseAuthorization(header: string): { user: string; token: string } {
         "code=400, message=invalid Base64 value in Basic Authorization header",
       );
     }
-    pair = Buffer.from(encoded, "base64").toString("utf8");
+    pair = Buffer.from(encoded, "base64").toString("utf-8");
   } else {
     throw new HttpError(403, "code=400, message=unknown Authorization scheme");
   }

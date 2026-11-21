@@ -468,7 +468,7 @@ export async function subscriberInput(
       return {};
     }
     if (type === "application/json") {
-      return jsonInput(body.toString("utf8"), allowed, operation);
+      return jsonInput(body.toString("utf-8"), allowed, operation);
     }
     if (type === "application/xml" || type === "text/xml") {
       return xmlInput(body, allowed);
@@ -477,7 +477,7 @@ export async function subscriberInput(
       const out: SubscriberInput = {};
       const values: Array<[string, string]> = [];
       if (type === "application/x-www-form-urlencoded") {
-        const encoded = body.toString("utf8"),
+        const encoded = body.toString("utf-8"),
           query = context.url.search.slice(1);
         for (const part of [encoded, query]) {
           if (/%(?![a-fA-F0-9]{2})/.test(part) || part.includes(";")) {

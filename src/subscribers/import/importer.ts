@@ -145,7 +145,7 @@ export function createImporter(deps: {
       columns = new Map();
       width = record.count;
       for (let i = 0; i < width; i++) {
-        const name = trimSpace(record.field(i).toString("utf8")).replaceAll(/[^\0-\u007f]/g, "");
+        const name = trimSpace(record.field(i).toString("utf-8")).replaceAll(/[^\0-\u007f]/g, "");
         if (knownHeaders.has(name)) {
           columns.set(name, i);
         } else {

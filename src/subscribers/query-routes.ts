@@ -112,7 +112,7 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
   }
   let document: unknown;
   try {
-    document = JSON.parse(body.toString("utf8"), (_key, value, context?: { source?: string }) => {
+    document = JSON.parse(body.toString("utf-8"), (_key, value, context?: { source?: string }) => {
       if (typeof value !== "number") {
         return value;
       }

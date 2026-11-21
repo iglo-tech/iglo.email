@@ -513,7 +513,7 @@ export function registerSubscriberRoutes(
         new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", "email"));
       let value: unknown;
       try {
-        value = JSON.parse((await readBodyBytes(c.request)).toString("utf8"));
+        value = JSON.parse((await readBodyBytes(c.request)).toString("utf-8"));
       } catch {
         throw invalid();
       }

@@ -19,7 +19,7 @@ export function parseTemplateData(input: unknown): { [key: string]: TemplateData
   if (typeof input !== "string") {
     throw new Error("Invalid template data");
   }
-  if (Buffer.byteLength(input, "utf8") > MAX_BYTES) {
+  if (Buffer.byteLength(input, "utf-8") > MAX_BYTES) {
     throw new Error("Template data limit exceeded");
   }
   let parsed: unknown;
@@ -37,7 +37,7 @@ export function parseTemplateData(input: unknown): { [key: string]: TemplateData
       return value;
     }
     if (typeof value === "string") {
-      if (Buffer.byteLength(value, "utf8") > MAX_STRING) {
+      if (Buffer.byteLength(value, "utf-8") > MAX_STRING) {
         throw new Error("Template data limit exceeded");
       }
       return value;
@@ -65,7 +65,7 @@ export function parseTemplateData(input: unknown): { [key: string]: TemplateData
       if (denied.has(key)) {
         throw new Error("Invalid template data");
       }
-      if (Buffer.byteLength(key, "utf8") > MAX_STRING) {
+      if (Buffer.byteLength(key, "utf-8") > MAX_STRING) {
         throw new Error("Template data limit exceeded");
       }
       result[key] = copy((value as Record<string, unknown>)[key], depth + 1);

@@ -15,7 +15,7 @@ export function safeLogo(value: string): string {
   if (!value) {
     return "";
   }
-  if (Buffer.byteLength(value, "utf8") > 64 * 1024) {
+  if (Buffer.byteLength(value, "utf-8") > 64 * 1024) {
     throw new Error("Template data limit exceeded");
   }
   try {

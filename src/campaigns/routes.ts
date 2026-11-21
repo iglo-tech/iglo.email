@@ -193,7 +193,7 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
   }
   let form: URLSearchParams | FormData | null = null;
   if (media === "application/x-www-form-urlencoded") {
-    form = new URLSearchParams(Buffer.from(bytes).toString("utf8"));
+    form = new URLSearchParams(Buffer.from(bytes).toString("utf-8"));
   } else if (media === "multipart/form-data" && bytes.length) {
     try {
       form = await new Request("http://form.invalid", {

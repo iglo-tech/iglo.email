@@ -74,7 +74,7 @@ export async function readCampaignBody(request: Request): Promise<Record<string,
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(Buffer.concat(chunks, size).toString("utf8"));
+    parsed = JSON.parse(Buffer.concat(chunks, size).toString("utf-8"));
   } catch {
     throw new HttpError(400);
   }

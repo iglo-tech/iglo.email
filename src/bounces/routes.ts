@@ -314,7 +314,7 @@ export function registerBounceRoutes(
     if (!settings().enabled) {
       throw unavailable(c);
     }
-    const raw = (await readBodyBytes(c.request)).toString("utf8");
+    const raw = (await readBodyBytes(c.request)).toString("utf-8");
     let body: unknown;
     try {
       body = JSON.parse(raw);
@@ -352,7 +352,7 @@ export function registerBounceRoutes(
         reader.releaseLock();
       }
     }
-    return Buffer.concat(chunks).toString("utf8");
+    return Buffer.concat(chunks).toString("utf-8");
   };
   /**
    * B108 (D114): one attention line for a test send's bounce or complaint. The fixed text is what

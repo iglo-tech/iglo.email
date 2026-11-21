@@ -16,7 +16,7 @@ const mib = 1024 * 1024;
 
 function procFile(path: string): string {
   try {
-    return readFileSync(path, "utf8");
+    return readFileSync(path, "utf-8");
   } catch {
     return "";
   }

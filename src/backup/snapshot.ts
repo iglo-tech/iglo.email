@@ -167,7 +167,7 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
     if (!statSync(join(target, MANIFEST), { throwIfNoEntry: false })) {
       throw new Error(`No ${MANIFEST} in ${target}: not a backup`);
     }
-    const { uploads: directory } = JSON.parse(readFileSync(join(target, MANIFEST), "utf8")) as {
+    const { uploads: directory } = JSON.parse(readFileSync(join(target, MANIFEST), "utf-8")) as {
       uploads: string;
     };
     // What a restored server will serve: a relative setting says where, whatever the manifest says.

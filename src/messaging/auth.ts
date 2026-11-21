@@ -43,7 +43,7 @@ export function requiredAuth(method: string, plainTransportAllowed: boolean) {
                 ) {
                   throw new Error("Invalid authentication challenge");
                 }
-                const prompt = Buffer.from(encoded, "base64").toString("utf8");
+                const prompt = Buffer.from(encoded, "base64").toString("utf-8");
                 const credential =
                   prompt === "Username:" ? user : prompt === "Password:" ? pass : undefined;
                 if (credential === undefined) {

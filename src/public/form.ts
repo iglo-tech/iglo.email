@@ -43,7 +43,7 @@ export async function readFields(request: Request): Promise<Fields> {
     return { get: () => undefined, list: () => [] };
   }
   if (media === "application/x-www-form-urlencoded") {
-    const form = new URLSearchParams(bytes.toString("utf8"));
+    const form = new URLSearchParams(bytes.toString("utf-8"));
     return { get: (name) => form.get(name) ?? undefined, list: (name) => form.getAll(name) };
   }
   if (media === "multipart/form-data") {
@@ -61,7 +61,7 @@ export async function readFields(request: Request): Promise<Fields> {
     };
   }
   if (media === "application/json") {
-    const value = JSON.parse(bytes.toString("utf8")) as unknown;
+    const value = JSON.parse(bytes.toString("utf-8")) as unknown;
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error("body");
     }

@@ -83,7 +83,7 @@ for (let index = 0; index < packages.length; index++) {
   }
   seen.add(name);
   const directory = join(root, "node_modules", name);
-  const info = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
+  const info = JSON.parse(await readFile(join(directory, "package.json"), "utf-8")) as {
     version: string;
     dependencies?: Record<string, string>;
   };
