@@ -46,8 +46,6 @@ export default defineConfig({
       files: ["src/app.ts", "src/main.ts", "src/**/cli.ts", "scripts/**/*.ts"],
       rules: { "no-console": "off" },
     },
-    // B134b: src/messaging/notify.ts falls back to console when no logger is injected; inject the logger instead.
-    { files: ["src/messaging/notify.ts"], rules: { "no-console": "off" } },
     // Exception, for the lead to decide at review: these files test `instanceof` for their own error classes and
     // for the values it is the only exact check for (Promise, Response, Uint8Array, liquidjs Output and Drop). A
     // brand or duck-type check would also accept thenables and objects from other realms, which changes behaviour.

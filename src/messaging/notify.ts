@@ -56,18 +56,14 @@ export function createAdminNotifier(deps: {
   sends: Pick<Sends, "enqueueRequest">;
   renderer: TemplateRenderer;
   settings: () => AdminNotifierSettings;
-  logger?: ErrorLogger;
+  logger: ErrorLogger;
 }): AdminNotifier {
   const logError = (error: unknown) => {
-    (deps.logger ?? console).error(error);
+    deps.logger.error(error);
   };
   // A misconfigured address needs a person, not a stack: one plain line, and a fixed buffer text.
   const logAttention = (message: string, safe: SafeMessage) => {
-    if (deps.logger) {
-      deps.logger.attention(message, safe);
-    } else {
-      console.error(message);
-    }
+    deps.logger.attention(message, safe);
   };
   /** Each unusable sender is reported once per notifier, not on every notification. */
   const reportedFrom = new Set<string>();
