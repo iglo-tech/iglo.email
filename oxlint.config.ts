@@ -60,6 +60,7 @@ export default defineConfig({
         "unicorn/numeric-separators-style": "off",
         "unicorn/prefer-number-properties": "off",
         "typescript/consistent-type-imports": "off",
+        "no-useless-assignment": "off",
       },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
@@ -99,7 +100,6 @@ export default defineConfig({
     eqeqeq: "off", // B134b
     "no-empty": "off", // B134b
     "no-promise-executor-return": "off", // B134b
-    "no-useless-assignment": "off", // B134b
     "preserve-caught-error": "off", // B134b
     "typescript/no-explicit-any": "off", // B134b
     "typescript/no-floating-promises": "off", // B134b

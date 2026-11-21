@@ -273,7 +273,7 @@ export async function createAuthentication(
   }
   function identity(request: Request): Identity {
     const authorization = (request.headers.get("authorization") ?? "").trim();
-    let user: UserRow | null = null;
+    let user: UserRow | null;
     let transport: "header" | "session";
     let sessionId: string | undefined;
     let csrf: string | undefined;
