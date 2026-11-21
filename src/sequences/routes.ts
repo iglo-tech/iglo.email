@@ -15,6 +15,7 @@ import type { TestSends } from "@/messaging/test-sends";
 import type { Roles } from "@/roles/roles";
 import {
   createMessageBudget,
+  type MessageBudget,
   RenderCapacityError,
   TemplateSourceError,
   type TemplateRenderer,
@@ -420,6 +421,7 @@ export function registerSequenceRoutes(
     step: { subject: string | null; kind: string },
     template: { body: string; subject: string },
     data: string,
+    budget?: MessageBudget,
   ) => {
     const i18n = c.app.i18n;
     try {
@@ -427,6 +429,8 @@ export function registerSequenceRoutes(
       return renderStep(
         deps.renderer.compile(stepCompileInput(template.body, subject, step.kind === "marketing")),
         data,
+        undefined,
+        budget,
       );
     } catch (error) {
       if (error instanceof RenderCapacityError)
@@ -495,9 +499,11 @@ export function registerSequenceRoutes(
         for (const email of reachable) {
           const prepared = previewFor(c, value, step, sequence, email);
           const data = stepDataText(prepared.data);
-          const rendered = renderStepFor(c, step, template, data);
+          // One budget for the message's render and its generated text part (D118).
+          const budget = createMessageBudget();
+          const rendered = renderStepFor(c, step, template, data, budget);
           // The generated text part of an HTML step (B120, D118); none when it has no text.
-          const text = await plainText(rendered.body, createMessageBudget());
+          const text = await plainText(rendered.body, budget);
           messages.push({
             from: settings.fromEmail,
             to: [email],

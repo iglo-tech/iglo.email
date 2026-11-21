@@ -810,7 +810,7 @@ export const differences: Difference[] = [
   {
     area: "Generated text alternative (D118, B120)",
     summary:
-      "An HTML message with no explicit alt body is sent as multipart/alternative, with a text/plain part generated from the HTML: hidden and invisible content is dropped and links read as text (URL). An explicit altbody is sent unchanged. Upstream sends the HTML part alone.",
+      "An HTML message with no explicit alt body is sent as multipart/alternative, with a text/plain part generated from the HTML: hidden and invisible content is dropped and links read `text <URL>`, with `<URL>` alone when the text is the URL. An explicit altbody is sent unchanged. Upstream sends the HTML part alone.",
     applies: [],
   },
   {

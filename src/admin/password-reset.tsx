@@ -82,16 +82,21 @@ export function createPasswordReset(deps: ResetDeps) {
     const t = context.app.i18n;
     const current = settings();
     const query = new URLSearchParams({ token: reset.token, email });
-    const html = renderer.renderSync({
-      body: systemTemplates.forgotPassword,
-      mode: "html",
-      data: JSON.stringify({
-        reset_url: `${current.rootUrl}/admin/reset?${query}`,
-        logo_url: safeLogo(current.logoUrl),
-      }),
-    }).body;
+    // One budget for the render and the generated text part (D118).
+    const budget = createMessageBudget();
+    const html = renderer.renderSync(
+      {
+        body: systemTemplates.forgotPassword,
+        mode: "html",
+        data: JSON.stringify({
+          reset_url: `${current.rootUrl}/admin/reset?${query}`,
+          logo_url: safeLogo(current.logoUrl),
+        }),
+      },
+      budget,
+    ).body;
     // The generated text part (B120, D118); none when the mail has no text.
-    const text = await plainText(html, createMessageBudget());
+    const text = await plainText(html, budget);
     void send({
       from: current.fromEmail,
       to: [reset.user.email],

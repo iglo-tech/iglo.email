@@ -309,6 +309,8 @@ export function createScheduler(options: SchedulerOptions) {
     const subject = row.subject || template.subject;
     let prepared: ReturnType<Sends["prepareSequence"]>;
     try {
+      // One budget for the message's render and its generated text part (D118).
+      const budget = createMessageBudget();
       const rendered = renderStep(
         compile(
           `${template.id}\n${template.updated_at}\n${marketing}\n${subject}`,
@@ -316,9 +318,10 @@ export function createScheduler(options: SchedulerOptions) {
         ),
         data,
         links.tracking,
+        budget,
       );
       // The generated text part of an HTML step (B120, D118); none when it has no text.
-      const text = await plainText(rendered.body, createMessageBudget());
+      const text = await plainText(rendered.body, budget);
       const message: Message = {
         from: settings.fromEmail,
         to: [subscriber.email],

@@ -8,7 +8,11 @@ import type { Sends } from "@/messaging/sends";
 import { safeLogo } from "@/messaging/test";
 import { parseAddress } from "@/settings/mail";
 import { systemTemplates } from "@/templates/builtins";
-import { createMessageBudget, type TemplateRenderer } from "@/templates/renderer";
+import {
+  createMessageBudget,
+  type MessageBudget,
+  type TemplateRenderer,
+} from "@/templates/renderer";
 import { plainText } from "@/messaging/plain";
 
 export interface AdminNotifierSettings {
@@ -66,7 +70,7 @@ export function createAdminNotifier(deps: {
   /** Each unusable sender is reported once per notifier, not on every notification. */
   const reportedFrom = new Set<string>();
 
-  const enqueue = async (subject: string, html: string) => {
+  const enqueue = async (subject: string, html: string, budget: MessageBudget) => {
     const current = deps.settings();
     const rawEmails = [
       ...new Set(
@@ -105,7 +109,7 @@ export function createAdminNotifier(deps: {
     }
 
     // The generated text part of a notification (B120, D118); none when it has no text.
-    const text = await plainText(html, createMessageBudget());
+    const text = await plainText(html, budget);
     deps.sends.enqueueRequest({
       sends: validEmails.map((to) => ({
         subscriberUuid: null,
@@ -145,13 +149,18 @@ export function createAdminNotifier(deps: {
           reason,
         };
 
-        const html = deps.renderer.renderSync({
-          body: systemTemplates.campaignStatus,
-          mode: "html",
-          data: JSON.stringify(data),
-        }).body;
+        // One budget for the render and the generated text part (D118).
+        const budget = createMessageBudget();
+        const html = deps.renderer.renderSync(
+          {
+            body: systemTemplates.campaignStatus,
+            mode: "html",
+            data: JSON.stringify(data),
+          },
+          budget,
+        ).body;
 
-        await enqueue(subject, html);
+        await enqueue(subject, html, budget);
       } catch (error) {
         logError(error);
       }
@@ -173,13 +182,18 @@ export function createAdminNotifier(deps: {
           total: importData.total,
         };
 
-        const html = deps.renderer.renderSync({
-          body: systemTemplates.importStatus,
-          mode: "html",
-          data: JSON.stringify(data),
-        }).body;
+        // One budget for the render and the generated text part (D118).
+        const budget = createMessageBudget();
+        const html = deps.renderer.renderSync(
+          {
+            body: systemTemplates.importStatus,
+            mode: "html",
+            data: JSON.stringify(data),
+          },
+          budget,
+        ).body;
 
-        await enqueue(subject, html);
+        await enqueue(subject, html, budget);
       } catch (error) {
         logError(error);
       }

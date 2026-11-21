@@ -444,8 +444,9 @@ pages each step follows are listed under [References](#references); they were ch
    `PUT /api/settings/messaging.max_send_rate`) is the account-wide cap in messages per second across
    all connections. Set it slightly below the maximum sending rate your SES account has. The cap is
    enforced when a send is granted and handed to SMTP. SES counts a send when it receives it, and the
-   receipt includes the connection's latency, so a receipt can land a little earlier or later than its
-   grant. A cap equal to SES's maximum leaves no margin for that. The code default is `14`
+   receipt includes the connection's latency. A receipt is always after its own grant; what varies is
+   each send's latency, so two receipts can be closer together than their grants. A cap equal to SES's
+   maximum leaves no margin for that. The code default is `14`
    (`src/settings/defaults.ts`). In the sandbox AWS allows one message per second, so set `1` there.
    `0` turns the cap off. Every email (campaign, transactional and sequence) waits on this shared
    limit, and outbox sends (transactional and sequence) go ahead of background campaign broadcasts.

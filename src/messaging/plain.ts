@@ -1,29 +1,14 @@
 // B120 (D118): the generated text/plain alternative of an HTML message, one converter for every
 // path. No upstream counterpart: listmonk sends HTML only, a difference recorded in 07-api-and-ui.md.
 //
-// Bun's HTMLRewriter streams the document once, so its handlers collect the visible text in document
-// order. Its own output is discarded. Every later pass is a linear scan of the collected text.
+// Bun's HTMLRewriter streams the document once. Its element handlers keep a stack of open elements,
+// so a hidden element ends where a browser ends it, including an end tag the parser implies (a `td`
+// closed by the next cell). Its document handler collects the text in order. Every later pass is a
+// linear scan of the collected text, and a link is one entry on the stack, so nested links are linear.
 import type { MessageBudget } from "@/templates/renderer";
 
 /** Elements whose content is never shown: the document head, styles, scripts and the title. */
 const SKIPPED = new Set(["head", "script", "style", "title"]);
-/** Elements without an end tag: nothing to close, so no end handler is registered for them. */
-const VOID = new Set([
-  "area",
-  "base",
-  "br",
-  "col",
-  "embed",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "param",
-  "source",
-  "track",
-  "wbr",
-]);
 /** Block elements: a line break before and after. A list item gets a bullet instead. */
 const BLOCK = new Set([
   "address",
@@ -55,6 +40,56 @@ const BLOCK = new Set([
   "tr",
   "ul",
 ]);
+/** Start tags that end an open `p` (HTML's "close a p element" list, the block-level ones). */
+const CLOSES_P = new Set([
+  "address",
+  "article",
+  "aside",
+  "blockquote",
+  "center",
+  "details",
+  "dialog",
+  "dir",
+  "div",
+  "dl",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hgroup",
+  "hr",
+  "main",
+  "menu",
+  "nav",
+  "ol",
+  "p",
+  "pre",
+  "section",
+  "summary",
+  "table",
+  "ul",
+]);
+/** Scope boundaries for a `p`: a `p` above the nearest of these is in button scope. */
+const P_SCOPE = [
+  "applet",
+  "button",
+  "caption",
+  "html",
+  "marquee",
+  "object",
+  "table",
+  "td",
+  "template",
+  "th",
+];
 /** Characters that have no visible form. They are removed, wherever they are. */
 const INVISIBLE = /[͏​-‍­﻿]/g;
 
@@ -133,10 +168,11 @@ function decodeReferences(text: string): string {
 /**
  * A hidden element is one whose inline style hides it: `display:none`, `visibility:hidden` (or
  * `collapse`), `mso-hide:all`, or `max-height:0` with `overflow:hidden`. The last declaration of a
- * property wins, and `!important` is ignored. Classes from a `<style>` block are not evaluated.
+ * property wins, and `!important` is ignored. Classes from a `<style>` block are not evaluated. The
+ * style is passed decoded, since the rewriter returns attribute values as written.
  */
-function hiddenByStyle(style: string | null): boolean {
-  if (style === null || !style.includes(":")) return false;
+function hiddenByStyle(style: string): boolean {
+  if (!style.includes(":")) return false;
   const declared = new Map<string, string>();
   for (const declaration of style.split(";")) {
     const colon = declaration.indexOf(":");
@@ -166,62 +202,181 @@ function hiddenByStyle(style: string | null): boolean {
 const clean = (text: string) => text.replace(INVISIBLE, "").replace(/\s+/g, " ");
 
 /**
+ * A URL in the text part is written between angle brackets, so the characters that could end it
+ * early, and whitespace and control characters, are percent-encoded (RFC 3986 Appendix C).
+ */
+const escapeUrl = (href: string) =>
+  // oxlint-disable-next-line no-control-regex
+  href.replace(/[\s<>"\u0000-\u001f\u007f]/gu, (character) => encodeURIComponent(character));
+
+interface Link {
+  /** The href, decoded once: the URL a reader follows. */
+  href: string;
+  /** Where the link's text starts in the output parts. */
+  at: number;
+}
+
+interface Entry {
+  name: string;
+  /** Position on the stack: the stack only grows and shrinks at its top, so this stays true. */
+  index: number;
+  /** A hidden element of its own: its content and its text are never kept. */
+  own: boolean;
+  popped: boolean;
+  link: Link | undefined;
+}
+
+/**
  * Converts an HTML message to its text/plain alternative and charges the output to `budget`. The
- * output is never longer than the input: markup is replaced by shorter text, and hidden or invisible
- * content is dropped. A link is written as its text and its URL in angle brackets, `text <URL>`, and
- * the URL alone when the text is the URL or empty. The rendered href is used as it stands, tracked
- * or not.
+ * output is never longer than the input, and a conversion fault or an over-long result sends the
+ * message without a text part, as before D118. A link is written as its text and its URL in angle
+ * brackets, `text <URL>`, the URL alone when the text is the URL or empty. A link whose text is only a
+ * symbol is decoration and writes nothing; consecutive links with the same href write the URL once.
  */
 export async function plainText(html: string, budget: MessageBudget): Promise<string> {
+  try {
+    return await convert(html, budget);
+  } catch {
+    // A fault in the conversion never fails a send. The message goes without a text part.
+    return "";
+  }
+}
+
+async function convert(html: string, budget: MessageBudget): Promise<string> {
   const parts: string[] = [];
-  // Depth of hidden or skipped content. Its text is read, but never kept.
-  let skip = 0;
+  const stack: Entry[] = [];
+  const open = new Map<string, Entry[]>();
+  // Depth of hidden elements on the stack. Their content, and the markup that marks it, is not kept.
+  let hidden = 0;
   // The current text node, joined across chunks so no character reference is split.
   let raw = "";
-  // RFC 3986 Appendix C delimits a URL in plain text with angle brackets, and a link parser does not
-  // take a closing bracket as part of the URL the way it takes `)`. When the text is the URL, the
-  // URL alone is written.
-  const link = (at: number, href: string) => {
-    const text = parts.slice(at).join("").replace(/\s+/g, " ").trim();
-    parts.length = at;
-    parts.push(text === "" || text === href ? ` <${href}>` : ` ${text} <${href}>`);
+  // The last link that wrote a URL, and where its output ends.
+  let lastLink: { href: string; end: number } | null = null;
+
+  const latest = (name: string) => open.get(name)?.at(-1);
+  const indexOf = (name: string) => latest(name)?.index ?? -1;
+  const newest = (...names: string[]) => {
+    let best: Entry | undefined;
+    for (const name of names) {
+      const entry = latest(name);
+      if (entry && (!best || entry.index > best.index)) best = entry;
+    }
+    return best;
   };
-  const rewriter = new HTMLRewriter().on("*", {
-    element(el) {
-      if (skip > 0) return;
-      const name = el.tagName.toLowerCase();
-      const isVoid = VOID.has(name);
-      if (SKIPPED.has(name) || hiddenByStyle(el.getAttribute("style"))) {
-        if (!isVoid) {
-          skip++;
-          el.onEndTag(() => {
-            skip--;
-          });
+  const boundary = (...names: string[]) => Math.max(-1, ...names.map(indexOf));
+
+  const finishLink = (link: Link) => {
+    const text = parts.slice(link.at).join("").replace(/\s+/g, " ").trim();
+    parts.length = link.at;
+    // A symbol with no letter or digit (an arrow, a chevron) is decoration: it has no URL of its own.
+    if (text !== "" && !/[\p{L}\p{N}]/u.test(text)) return;
+    const gap = parts.slice(lastLink?.end ?? parts.length).join("");
+    // Consecutive links with the same href, with nothing but spaces between, write the URL once.
+    if (
+      lastLink !== null &&
+      lastLink.href === link.href &&
+      gap.trim() === "" &&
+      !gap.includes("\n")
+    ) {
+      if (text !== "") parts.push(` ${text}`);
+      lastLink = { href: link.href, end: parts.length };
+      return;
+    }
+    const url = `<${escapeUrl(link.href)}>`;
+    parts.push(text === "" || text === link.href ? ` ${url}` : ` ${text} ${url}`);
+    lastLink = { href: link.href, end: parts.length };
+  };
+
+  // Pops the entry at the top of the stack, which is also the newest entry of its name.
+  const finish = (entry: Entry) => {
+    entry.popped = true;
+    open.get(entry.name)!.pop();
+    if (entry.own) hidden--;
+    if (entry.own || hidden > 0) return;
+    if (entry.link) finishLink(entry.link);
+    if (BLOCK.has(entry.name)) parts.push("\n");
+  };
+  // Closes an entry and everything above it, as an end tag or an implied end does.
+  const close = (entry: Entry) => {
+    while (!entry.popped) finish(stack.pop()!);
+  };
+
+  // The HTML rules by which a start tag implies the end of an open element, for the elements the
+  // hidden-content rule and the link rule depend on.
+  const impliedEnds = (name: string) => {
+    if (name === "td" || name === "th") {
+      const cell = newest("td", "th");
+      if (cell && cell.index > indexOf("table")) close(cell);
+    } else if (name === "tr") {
+      const row = latest("tr");
+      if (row && row.index > indexOf("table")) close(row);
+    } else if (name === "thead" || name === "tbody" || name === "tfoot") {
+      const section = newest("thead", "tbody", "tfoot");
+      if (section && section.index > indexOf("table")) close(section);
+    } else if (name === "li") {
+      const item = latest("li");
+      if (item && item.index > boundary("ul", "ol")) close(item);
+    } else if (name === "dt" || name === "dd") {
+      const item = newest("dt", "dd");
+      if (item && item.index > indexOf("dl")) close(item);
+    } else if (name === "option") {
+      const item = latest("option");
+      if (item && item.index > boundary("select", "datalist", "optgroup")) close(item);
+    } else if (name === "a") {
+      const link = latest("a");
+      if (link) close(link);
+    }
+    if (CLOSES_P.has(name)) {
+      const paragraph = latest("p");
+      if (paragraph && paragraph.index > boundary(...P_SCOPE)) close(paragraph);
+    }
+  };
+
+  const rewriter = new HTMLRewriter()
+    .on("*", {
+      element(el) {
+        const name = el.tagName.toLowerCase();
+        impliedEnds(name);
+        // A void or self-closing element has no content, so it hides nothing and has no end tag.
+        const content = el.canHaveContent;
+        const style = el.getAttribute("style");
+        const own =
+          content &&
+          (SKIPPED.has(name) || (style !== null && hiddenByStyle(decodeReferences(style))));
+        if (own) hidden++;
+        const shown = hidden === 0;
+        if (shown) {
+          if (name === "li") parts.push("\n- ");
+          else if (name === "td" || name === "th") parts.push(" ");
+          else if (BLOCK.has(name) || name === "br" || name === "hr") parts.push("\n");
         }
-        return;
-      }
-      if (name === "a") {
-        const href = (el.getAttribute("href") ?? "").trim();
-        if (!href || href.startsWith("#") || /^javascript:/i.test(href)) return;
-        const at = parts.length;
-        el.onEndTag(() => link(at, href));
-        return;
-      }
-      if (name === "li") parts.push("\n- ");
-      else if (name === "td" || name === "th") parts.push(" ");
-      else if (BLOCK.has(name) || name === "br" || name === "hr") parts.push("\n");
-      if (!isVoid && BLOCK.has(name))
-        el.onEndTag(() => {
-          parts.push("\n");
-        });
-    },
-    text(chunk) {
-      raw += chunk.text;
-      if (!chunk.lastInTextNode) return;
-      if (skip === 0) parts.push(clean(decodeReferences(raw)));
-      raw = "";
-    },
-  });
+        let link: Link | undefined;
+        if (name === "a" && content && shown) {
+          const href = decodeReferences(el.getAttribute("href") ?? "").trim();
+          if (href && !href.startsWith("#") && !/^javascript:/i.test(href))
+            link = { href, at: parts.length };
+        }
+        if (!content) return;
+        const entry: Entry = { name, index: stack.length, own, popped: false, link };
+        stack.push(entry);
+        let list = open.get(name);
+        if (!list) open.set(name, (list = []));
+        list.push(entry);
+        el.onEndTag(() => close(entry));
+      },
+    })
+    .onDocument({
+      text(chunk) {
+        raw += chunk.text;
+        if (!chunk.lastInTextNode) return;
+        if (hidden === 0) parts.push(clean(decodeReferences(raw)));
+        raw = "";
+      },
+      end() {
+        // A document that ends with elements open closes them, so their links and markers count.
+        while (stack.length > 0) close(stack[stack.length - 1]!);
+      },
+    });
   await rewriter.transform(new Response(html)).text();
   const text = parts
     .join("")
@@ -229,6 +384,9 @@ export async function plainText(html: string, budget: MessageBudget): Promise<st
     .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+  // A backstop: the output is never longer than the input. Markup is always longer than the text
+  // that replaces it, so this only matters for a URL escaped longer than the markup around it.
+  if (Buffer.byteLength(text) > Buffer.byteLength(html)) return "";
   budget.charge(Buffer.byteLength(text));
   return text;
 }

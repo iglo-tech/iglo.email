@@ -142,12 +142,17 @@ export function createSMTPTest(
       let html: string;
       let text: string;
       try {
-        html = renderer.renderSync({
-          body: systemTemplates.smtpTest,
-          mode: "html",
-          data: JSON.stringify({ logo_url: safeLogo(current["app.logo_url"]) }),
-        }).body;
-        text = await plainText(html, createMessageBudget());
+        // One budget for the render and the generated text part (D118).
+        const budget = createMessageBudget();
+        html = renderer.renderSync(
+          {
+            body: systemTemplates.smtpTest,
+            mode: "html",
+            data: JSON.stringify({ logo_url: safeLogo(current["app.logo_url"]) }),
+          },
+          budget,
+        ).body;
+        text = await plainText(html, budget);
       } catch {
         throw new HttpError(500, "SMTP test failed.");
       }

@@ -2,7 +2,7 @@
 // preview and test-send routes, so a preview renders exactly what a send renders
 // (docs/design/05-sequences.md#template-data, #preview-and-test-send, D105). No upstream source.
 import { numberID } from "@/sequences/enrollments";
-import type { RenderTracking, TemplateRenderer } from "@/templates/renderer";
+import type { MessageBudget, RenderTracking, TemplateRenderer } from "@/templates/renderer";
 
 /** The subject of a test send, so a recipient cannot mistake it for a real one (D105). */
 export const TEST_SUBJECT = "[Test] ";
@@ -72,8 +72,9 @@ export function renderStep(
   compiled: CompiledStep,
   data: string,
   tracking?: RenderTracking,
+  budget?: MessageBudget,
 ): { subject: string; body: string } {
-  const rendered = compiled.renderSync(data, tracking);
+  const rendered = compiled.renderSync(data, tracking, budget);
   if (/[\r\n\0]/.test(rendered.subject)) throw new Error("Invalid subject");
   return rendered;
 }
