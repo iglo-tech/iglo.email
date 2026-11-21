@@ -1484,6 +1484,7 @@ Brief B126, from the first adopter's scenario and visual audit of main 08ac50f (
   - *Changing `globals.messages.invalidUUID` everywhere:* the JSON API answers with it, and its text is listmonk's contract (AGENTS: listmonk API results). Only page output uses the new key.
   - *The site URL over the subscription page for the logo:* the operator's own site is what a person expects when they click a logo on a mail or a page.
 - **Known edges:**
+  - After a partial unsubscribe, a send's or a campaign's link says its own lists are already unsubscribed, even while the person is on another list. Blocking all mail is then on the manage page that the link offers, not on the link's own page; `test/e2e/specs/forms.e2e.js` follows that path.
   - Only `en.json` is updated. The other locales keep their old wording for the changed keys until their translators update them.
   - The wipe's confirmation page is a response to the POST, so a reload repeats the POST and shows the page again. It deletes nothing.
 - **Cost:** no change to a send, a schedule or storage, so no measurement. The already-unsubscribed check reads one subscriber's memberships on a page view.
