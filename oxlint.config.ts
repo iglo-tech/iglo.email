@@ -52,7 +52,13 @@ export default defineConfig({
     // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
     {
       files: ["test/**"],
-      rules: { "no-console": "off", "prefer-const": "off", curly: "off", "typescript/array-type": "off" },
+      rules: {
+        "no-console": "off",
+        "prefer-const": "off",
+        curly: "off",
+        "typescript/array-type": "off",
+        "unicorn/numeric-separators-style": "off",
+      },
     },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
     // "utf-8" as written (the rule would spell it "utf8" and refuse every UTF-8 declaration and charset), so
@@ -120,7 +126,6 @@ export default defineConfig({
     "quality/no-unsafe-dictionary-type": "off", // B134b
     "unicorn/consistent-function-scoping": "off", // B134b
     "unicorn/no-hex-escape": "off", // B134b
-    "unicorn/numeric-separators-style": "off", // B134b
     "unicorn/prefer-at": "off", // B134b
     "unicorn/prefer-number-properties": "off", // B134b
     "unicorn/prefer-set-has": "off", // B134b

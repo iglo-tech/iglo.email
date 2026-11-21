@@ -106,7 +106,7 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
         throw invalid(`strconv.Atoi: parsing ${quoted}: invalid syntax`);
       }
       const id = BigInt(value);
-      if (id < -9223372036854775808n || id > 9223372036854775807n) {
+      if (id < -9_223_372_036_854_775_808n || id > 9_223_372_036_854_775_807n) {
         throw invalid(`strconv.Atoi: parsing ${quoted}: value out of range`);
       }
       if (id < 1n) {

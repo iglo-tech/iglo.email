@@ -183,7 +183,7 @@ export function registerSequenceRoutes(
       perPage: Number(positive("per_page", 100n) ?? 20n),
     };
   };
-  const maxID = 9223372036854775807n;
+  const maxID = 9_223_372_036_854_775_807n;
   /** Enrollments name their subscriber by ID; anything of the person follows the owner's rule. */
   const readable = (c: RequestContext, rows: Array<EnrollmentRow>) =>
     readableSubscribers(roles, subscribers, identity(c), [

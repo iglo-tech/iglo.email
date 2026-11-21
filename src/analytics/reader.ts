@@ -50,7 +50,7 @@ export async function runAnalyticsChild(): Promise<void> {
   };
   const emit = (text: string) => {
     out += text;
-    if (out.length >= 65536) {
+    if (out.length >= 65_536) {
       flush();
     }
   };
