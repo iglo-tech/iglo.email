@@ -42,12 +42,22 @@ Latency in milliseconds, 6,000 requests per run, every one answered `200`, none 
   not reached on that path.
 - With a grant, the branch is about 0.05 ms lower at p50 than `origin/main`, and about 1 ms lower at
   p99. One run cannot separate that from noise, so the reading is only that the suppression read adds
-  no measurable cost to a grant.
+  no measurable cost to a grant, on an empty suppressions table (see the caveat below).
 - No request was shed, and each run stored the same 6,020 rows: the 6,000 events and the measure
   script's setup rows.
 
 ## Not measured
 
+- **The sequence-start path.** An event starts a sequence with a marketing step only through the
+  trigger, and the check runs there only when such a sequence matches the event. The `events`
+  scenario starts no sequence, so the check is never reached in these runs. Measuring it needs a
+  scenario with a running marketing sequence and its scheduler, which the measure script does not
+  set up. It is one check per matching sequence on that event, read on the write connection in
+  the same transaction, so it is bounded by the number of marketing sequences the event triggers.
+- **A populated suppressions table.** The table is empty in every run here: the benchmark makes no
+  self-wipes. Each check is therefore a miss on an empty index. A table with suppressions is an
+  index hit or miss on a larger B-tree, which these numbers do not show. The numbers are the cost of
+  the read path on an empty table only.
 - The public signup and the import are not in this measurement. Each adds one suppression lookup per
   row that asks for a list, inside its own write transaction. The import's budget check (D61) counts a
   suppressed row's list changes as if they would happen, so it can refuse a batch a little early;
