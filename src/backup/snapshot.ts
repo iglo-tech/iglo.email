@@ -198,6 +198,7 @@ export async function runFlushChild(): Promise<void> {
   let running = true;
   void (async () => {
     for await (const _ of Bun.stdin.stream()) {
+      // Reading stdin to its end is the whole job: the stream ends when the parent closes it.
     }
     running = false;
   })();
@@ -297,7 +298,7 @@ function followed(path: string): Stats | undefined {
       });
     }
     if (code === "ELOOP") {
-      throw new Error(`${path} is a symlink loop`);
+      throw new Error(`${path} is a symlink loop`, { cause: error });
     }
     throw error;
   }

@@ -668,7 +668,9 @@ async function callEndpoint(
         if (parsed.message) {
           errorMessage = parsed.message;
         }
-      } catch {}
+      } catch {
+        // Text that is not JSON keeps the status text as its message.
+      }
     }
     return {
       status: response.status,

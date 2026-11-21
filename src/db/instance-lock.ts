@@ -85,13 +85,13 @@ export function holdDataDirectory(
         code === "SQLITE_CORRUPT" ||
         (code === "SQLITE_ERROR" && message === "unsupported file format");
       if (emptied || !damaged) {
-        throw new Error(`Cannot lock ${path}: ${message}`);
+        throw new Error(`Cannot lock ${path}: ${message}`, { cause: error });
       }
       emptied = true;
       try {
         truncateSync(path);
       } catch (error_) {
-        throw new Error(`Cannot lock ${path}: ${(error_ as Error).message}`);
+        throw new Error(`Cannot lock ${path}: ${(error_ as Error).message}`, { cause: error_ });
       }
     }
   }
