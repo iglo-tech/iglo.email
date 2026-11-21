@@ -18,7 +18,7 @@ const fieldsOf: Record<(typeof kinds)[number], ReadonlyArray<string>> = {
   sql: ["sql"],
 };
 const ops = new Set(["eq", "ne", "gt", "gte", "lt", "lte", "in", "exists"]);
-const subscriberStatuses = ["enabled", "disabled", "blocklisted"];
+const subscriberStatuses = new Set(["enabled", "disabled", "blocklisted"]);
 const listStatuses = ["unconfirmed", "confirmed", "unsubscribed"];
 // Control characters are refused on purpose: the range is the check.
 // oxlint-disable-next-line no-control-regex
@@ -200,7 +200,7 @@ export function validate(
       if (v === undefined) {
         return undefined;
       }
-      if (status && (typeof v !== "string" || !subscriberStatuses.includes(v))) {
+      if (status && (typeof v !== "string" || !subscriberStatuses.has(v))) {
         return void fail(f, "unknown subscriber status");
       }
       return v;

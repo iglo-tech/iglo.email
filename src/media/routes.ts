@@ -24,7 +24,7 @@ const MAX_UPLOADS = 8;
 const CACHE_CONTROL = "public, max-age=3600";
 
 const vectorExtensions = new Set(["svg"]);
-const imageExtensions = ["gif", "png", "jpg", "jpeg"];
+const imageExtensions = new Set(["gif", "png", "jpg", "jpeg"]);
 /** Types a browser shows without running anything from them, or under the CSP below. */
 const inlineTypes =
   /^(image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)|(audio|video)\/.+|text\/plain)$/;
@@ -206,7 +206,7 @@ export function registerMediaRoutes(
         throw new HttpError(413, "The file is too large.");
       }
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const size = imageExtensions.includes(ext) ? imageSize(bytes) : null;
+      const size = imageExtensions.has(ext) ? imageSize(bytes) : null;
       if (!files.current(root)) {
         throw changed();
       }
@@ -220,7 +220,7 @@ export function registerMediaRoutes(
           project(
             store.insert({
               filename: stored,
-              thumb: imageExtensions.includes(ext) || vectorExtensions.has(ext) ? stored : "",
+              thumb: imageExtensions.has(ext) || vectorExtensions.has(ext) ? stored : "",
               contentType: file.type,
               provider: "filesystem",
               meta: size ?? {},

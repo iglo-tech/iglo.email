@@ -90,7 +90,7 @@ const stringFields = new Set([
   "subscription_status",
   "subscriber_status",
 ]);
-const listFields = ["list_ids", "target_list_ids"];
+const listFields = new Set(["list_ids", "target_list_ids"]);
 
 /** listmonk subQueryReq bound from a JSON body; other bodies bind no fields. */
 async function queryInput(c: RequestContext): Promise<QueryInput> {
@@ -140,7 +140,7 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
         throw new HttpError(400);
       }
       record[key] = value.toWellFormed();
-    } else if (listFields.includes(key)) {
+    } else if (listFields.has(key)) {
       if (value === null) {
         record[key] = [];
         continue;
