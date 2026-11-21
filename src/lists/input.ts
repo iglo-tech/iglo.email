@@ -226,7 +226,7 @@ export async function listInput(context: RequestContext): Promise<ListInput> {
     ["optin", value.optin, ["single", "double"]],
     ["status", value.status, ["active", "archived"]],
   ] as const) {
-    if (field && !(allowed as readonly string[]).includes(field)) {
+    if (field && !(allowed as ReadonlyArray<string>).includes(field)) {
       throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
     }
   }

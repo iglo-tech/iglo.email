@@ -51,7 +51,7 @@ export function createSubscriberQuery(options: {
   const writes = prepareNamedQueries(db, [{ name: "subscribers/query", sql: querySql }]);
   const reads = prepareNamedQueries(readonly, [{ name: "subscribers/export", sql: exportSql }]);
   const column = (connection: Database, sql: string, args: Array<Arg>) =>
-    (connection.query(sql).values(...args) as Array<unknown>[]).map((row) => row[0] as bigint);
+    (connection.query(sql).values(...args) as Array<Array<unknown>>).map((row) => row[0] as bigint);
   return {
     /** Admit one large selection; returns its idempotent release, or undefined when full. */
     admitLarge(): (() => void) | undefined {

@@ -176,7 +176,7 @@ function aggregatesInput(value: unknown, field: string): string | null {
   if (!isObject(value)) {
     return fail(field, range);
   }
-  const names: string[] = [];
+  const names: Array<string> = [];
   for (const name in value) {
     if (!Object.hasOwn(value, name)) {
       continue;
@@ -195,7 +195,7 @@ function aggregatesInput(value: unknown, field: string): string | null {
   if (!names.length) {
     return fail(field, range);
   }
-  const entries: [string, Aggregate][] = [];
+  const entries: Array<[string, Aggregate]> = [];
   for (const name of names) {
     const at = `${field}.${name}`;
     const spec = value[name];

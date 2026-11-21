@@ -394,8 +394,8 @@ export function createQueryRunner(options: RunnerOptions) {
     /** Where staged IDs live; built-in filters stage their large pages here too. */
     stageDir,
     /** Collect each statement's values; for statements known to return few rows. */
-    async all(statements: Array<Statement>): Promise<Array<bigint>[]> {
-      const results: Array<bigint>[] = statements.map(() => []);
+    async all(statements: Array<Statement>): Promise<Array<Array<bigint>>> {
+      const results: Array<Array<bigint>> = statements.map(() => []);
       for await (const [index, values] of run(statements)) {
         results[index]!.push(...values);
       }

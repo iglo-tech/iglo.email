@@ -36,7 +36,7 @@ function validate(context: RequestContext, type: string, optin: string, status: 
     ["optin", optin, ["single", "double"]],
     ["status", status, ["active", "archived"]],
   ] as const) {
-    if (value && !(allowed as readonly string[]).includes(value)) {
+    if (value && !(allowed as ReadonlyArray<string>).includes(value)) {
       throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
     }
   }

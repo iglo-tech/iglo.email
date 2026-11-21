@@ -27,7 +27,7 @@ export interface Operation {
    */
   permissions?: Array<string>;
   /** Needed on top of `permissions`: any one of each group. */
-  alsoPermissions?: Array<string>[];
+  alsoPermissions?: Array<Array<string>>;
   query?: Array<Parameter>;
   /** A JSON schema, or a named media type with its schema. */
   body?: Schema;

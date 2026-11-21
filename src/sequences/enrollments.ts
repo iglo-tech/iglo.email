@@ -211,7 +211,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       old.statement.finalize();
     }
     const args = filter.params.map((p) => (typeof p === "function" ? p(event) : p));
-    const value = (filter.statement.values(...args) as Array<unknown>[])[0]?.[0];
+    const value = (filter.statement.values(...args) as Array<Array<unknown>>)[0]?.[0];
     return value === 1n || value === 1;
   }
 

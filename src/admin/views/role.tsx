@@ -26,7 +26,7 @@ const groupOf: Record<string, string> = {
   suppressions: "subscribers",
   roles: "users",
 };
-function permissionGroups(): Array<{ group: string; permissions: string[] }> {
+function permissionGroups(): Array<{ group: string; permissions: Array<string> }> {
   const groups = new Map<string, Array<string>>();
   for (const permission of validPermissions) {
     const prefix = permission.split(":", 1)[0]!;

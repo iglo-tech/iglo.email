@@ -50,7 +50,10 @@ export default defineConfig({
     { files: ["src/messaging/notify.ts"], rules: { "no-console": "off" } },
     // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
     // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
-    { files: ["test/**"], rules: { "no-console": "off", "prefer-const": "off", curly: "off" } },
+    {
+      files: ["test/**"],
+      rules: { "no-console": "off", "prefer-const": "off", curly: "off", "typescript/array-type": "off" },
+    },
     // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
     // "utf-8" as written (the rule would spell it "utf8" and refuse every UTF-8 declaration and charset), so
     // the fix would change behaviour. The lead decides at review.
@@ -91,7 +94,6 @@ export default defineConfig({
     "no-useless-assignment": "off", // B134b
     "preserve-caught-error": "off", // B134b
     "object-shorthand": "off", // B134b
-    "typescript/array-type": "off", // B134b
     "typescript/consistent-type-imports": "off", // B134b
     "typescript/no-explicit-any": "off", // B134b
     "typescript/no-floating-promises": "off", // B134b

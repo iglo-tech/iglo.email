@@ -35,7 +35,7 @@ export async function runAnalyticsChild(): Promise<void> {
   const request = JSON.parse(await Bun.stdin.text()) as {
     path: string;
     method: Method;
-    args: unknown[];
+    args: Array<unknown>;
   };
   if (!methods.includes(request.method)) {
     throw new Error("Unknown analytics read");
@@ -58,7 +58,7 @@ export async function runAnalyticsChild(): Promise<void> {
   try {
     const store = createAnalyticsStore(db);
     db.run("BEGIN");
-    const read = store[request.method] as (...args: unknown[]) => unknown;
+    const read = store[request.method] as (...args: Array<unknown>) => unknown;
     const result = read.apply(store, request.args);
     if (streamed.has(request.method)) {
       emit(`{"data":[`);

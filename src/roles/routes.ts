@@ -72,7 +72,7 @@ async function input(context: RequestContext, kind: "user" | "list") {
   if (!Array.isArray(items)) {
     throw new HttpError(400);
   }
-  const children: Array<{ id: bigint; permissions: string[] }> = [];
+  const children: Array<{ id: bigint; permissions: Array<string> }> = [];
   for (const item of items) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw new HttpError(400);

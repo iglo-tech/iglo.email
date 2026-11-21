@@ -30,8 +30,8 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const bytes = (value: string) => Buffer.byteLength(value);
 
 /** Own enumerable keys of `value`, or undefined beyond `max`; never lists a wider object. */
-function boundedKeys(value: object, max: number): string[] | undefined {
-  const keys: string[] = [];
+function boundedKeys(value: object, max: number): Array<string> | undefined {
+  const keys: Array<string> = [];
   for (const key in value) {
     if (!Object.hasOwn(value, key)) {
       continue;
@@ -53,7 +53,7 @@ export function validate(
   condition: unknown,
   options: { canUseSql: boolean; field?: string },
 ): ValidationResult {
-  const errors: FieldError[] = [];
+  const errors: Array<FieldError> = [];
   let nodes = 0,
     sqls = 0;
   const fail = (field: string, message: string) => {
@@ -123,7 +123,7 @@ export function validate(
       if (nodes + items.length > limits.nodes) {
         return void fail(`${field}.${kind}`, "too many conditions");
       }
-      const out: Condition[] = [];
+      const out: Array<Condition> = [];
       for (const [i, item] of items.entries()) {
         const child = walk(item, `${field}.${kind}.${i}`, depth + 1);
         if (child) {
@@ -175,7 +175,7 @@ export function validate(
           valid = false;
         }
       }
-      return valid ? { list, status: [...(status as string[])] } : undefined;
+      return valid ? { list, status: [...(status as Array<string>)] } : undefined;
     }
     if (kind === "attr") {
       return attr(value, field);

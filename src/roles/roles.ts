@@ -196,7 +196,7 @@ export function createRoles(db: Database, lists: ListReferences) {
       id: bigint | null,
       name: string,
       granted: Array<string>,
-      children: Array<{ id: bigint; permissions: string[] }>,
+      children: Array<{ id: bigint; permissions: Array<string> }>,
       now: string,
     ) {
       return writeTransaction(db, () => {
@@ -252,7 +252,7 @@ export function createRoles(db: Database, lists: ListReferences) {
         role.id === 1n ||
         role.permissions.includes(permission === "list:get" ? "lists:get_all" : "lists:manage_all")
       ) {
-        return { all: true, ids: [] as bigint[] };
+        return { all: true, ids: [] as Array<bigint> };
       }
       const entries = listRoleId === null ? null : this.listRole(listRoleId);
       return {

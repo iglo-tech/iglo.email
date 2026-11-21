@@ -98,8 +98,8 @@ export function registerSequenceRoutes(
     settings: () => {
       fromEmail: string;
       marketing: MarketingSettings;
-      domainAllowlist: string[];
-      domainBlocklist: string[];
+      domainAllowlist: Array<string>;
+      domainBlocklist: Array<string>;
     };
     roles: Roles;
     auth: Authentication;
@@ -185,7 +185,7 @@ export function registerSequenceRoutes(
   };
   const maxID = 9223372036854775807n;
   /** Enrollments name their subscriber by ID; anything of the person follows the owner's rule. */
-  const readable = (c: RequestContext, rows: EnrollmentRow[]) =>
+  const readable = (c: RequestContext, rows: Array<EnrollmentRow>) =>
     readableSubscribers(roles, subscribers, identity(c), [
       ...new Set(rows.map((row) => row.subscriber_id)),
     ]);
@@ -199,7 +199,7 @@ export function registerSequenceRoutes(
     "/api/sequences",
     (c) => {
       const status = params(c).one("status");
-      if (status !== undefined && !(sequenceStatuses as readonly string[]).includes(status)) {
+      if (status !== undefined && !(sequenceStatuses as ReadonlyArray<string>).includes(status)) {
         throw invalid(c, "status");
       }
       return ok(
@@ -254,7 +254,10 @@ export function registerSequenceRoutes(
     async (c) => {
       const value = await body(c, SMALL_BODY_BYTES);
       const status = value.status;
-      if (typeof status !== "string" || !(sequenceStatuses as readonly string[]).includes(status)) {
+      if (
+        typeof status !== "string" ||
+        !(sequenceStatuses as ReadonlyArray<string>).includes(status)
+      ) {
         throw invalid(c, "status");
       }
       const id = BigInt(getID(c));
@@ -356,7 +359,7 @@ export function registerSequenceRoutes(
     hasID,
   );
   /** The body of a preview or test: optional IDs and a sample, and `emails` for a test. */
-  const previewBody = async (c: RequestContext, extra: readonly string[] = []) => {
+  const previewBody = async (c: RequestContext, extra: ReadonlyArray<string> = []) => {
     const bytes = await readBounded(c.request, PREVIEW_BODY_BYTES);
     const value = bytes.length === 0 ? {} : parseJson(c.request, bytes);
     if (!isObject(value)) {
@@ -559,7 +562,7 @@ export function registerSequenceRoutes(
       let queued = false;
       try {
         const settings = deps.settings();
-        const messages: Message[] = [];
+        const messages: Array<Message> = [];
         for (const email of reachable) {
           const prepared = previewFor(c, value, step, sequence, email);
           const data = stepDataText(prepared.data);
@@ -630,7 +633,7 @@ export function registerSequenceRoutes(
     hasID,
   );
   /** The test recipients: 1 to 5 distinct addresses, validated as a subscriber's are. */
-  function testAddresses(c: RequestContext, value: unknown): string[] {
+  function testAddresses(c: RequestContext, value: unknown): Array<string> {
     if (!Array.isArray(value) || value.length < 1 || value.length > MAX_TEST_EMAILS) {
       throw invalid(c, "emails");
     }

@@ -33,7 +33,7 @@ const SANDBOX = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-i
 
 export interface MediaSettings {
   provider: string;
-  extensions: string[];
+  extensions: Array<string>;
   rootUrl: string;
 }
 
@@ -85,7 +85,7 @@ async function readUpload(request: Request): Promise<Uint8Array> {
   if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) {
     throw tooLarge();
   }
-  const chunks: Uint8Array[] = [];
+  const chunks: Array<Uint8Array> = [];
   let size = 0;
   const reader = request.body?.getReader();
   if (reader) {
