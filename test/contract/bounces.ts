@@ -218,7 +218,8 @@ export async function runBouncesContract(target: {
       const response = await sns(body, type);
       return (
         response.status === 400 &&
-        JSON.stringify(listmonkEnvelope(response.body)) === '{"message":"Invalid data"}'
+        JSON.stringify(listmonkEnvelope(response.body, target.mode)) ===
+          '{"message":"Invalid data"}'
       );
     };
     check(await refusedSns(sesBody), "ses-no-type");

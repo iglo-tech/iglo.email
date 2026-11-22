@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { ERROR_CODES } from "@/server/error-codes";
 import { cases as corpus } from "@/test/contract/cases";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type {
@@ -7,6 +8,7 @@ import type {
   Credentials,
   Difference,
   ExpectedBody,
+  Mode,
   VolatileField,
 } from "@/test/contract/types";
 import { rawRequest } from "@/test/server/raw-request";
@@ -678,10 +680,26 @@ async function comparePublic404(
   }
 }
 
+/**
+ * The bytes of an error without its stable `code` (B131, D129), which is the one member listmonk's
+ * bytes lack. An owned error must carry a known code, or the check fails; the reference carries none.
+ */
+function withoutCode(actual: string, mode: Mode): string {
+  if (mode === "reference") {
+    return actual;
+  }
+  const match = /,"code":"([a-z_]+)"(?=[,}])/.exec(actual);
+  if (!match || !ERROR_CODES.some((known) => known === match[1])) {
+    throw new Error("FAIL error-code: an owned error carries no known code");
+  }
+  return actual.replace(match[0], "");
+}
+
 async function compareBody(
   actual: string,
   expected: ExpectedBody,
   bindings: Map<string, Binding>,
+  reply: { readonly status: number; readonly mode: Mode },
 ): Promise<void> {
   if (expected.kind === "public-404") {
     return comparePublic404(actual, expected);
@@ -693,11 +711,12 @@ async function compareBody(
     return;
   }
   if (expected.kind === "wire") {
-    // An owned error's stable `code` is the additive member listmonk's bytes lack (D129). It is
-    // removed from the bytes only when the expected body names no `code`; every other byte stays.
-    const comparable = expected.value.includes('"code"')
-      ? actual
-      : actual.replace(/,"code":"[a-z_]+"(?=[,}])/, "");
+    // Only an error body may lose its `code`, and only when the expected body names none; every
+    // other byte stays, including the trailing newline and the escaping.
+    const comparable =
+      expected.value.includes('"code"') || reply.status < 400
+        ? actual
+        : withoutCode(actual, reply.mode);
     if (comparable !== expected.value) {
       throw new Error(`body ${JSON.stringify(actual)}; expected ${JSON.stringify(expected.value)}`);
     }
@@ -741,12 +760,14 @@ async function compareBody(
     throw new Error("Invalid JSON response");
   }
   const normalized = normalize(value, expected.volatile, bindings, numericTokens);
-  // An expected body that names no `code` compares listmonk's envelope (see envelope.ts, D129).
+  // An expected body that names no `code` compares listmonk's envelope (see envelope.ts, D129). Only
+  // an error body has one to drop.
   const expectsCode =
     typeof expected.value === "object" &&
     expected.value !== null &&
     Object.hasOwn(expected.value, "code");
-  const comparable = expectsCode ? normalized : listmonkEnvelope(normalized);
+  const comparable =
+    expectsCode || reply.status < 400 ? normalized : listmonkEnvelope(normalized, reply.mode);
   if (!isDeepStrictEqual(comparable, expected.value)) {
     throw new Error(
       `JSON body ${JSON.stringify(normalized)}; expected ${JSON.stringify(expected.value)}`,
@@ -822,7 +843,10 @@ export async function runContract(
         }
       }
       const caseBindings = new Map(bindings);
-      await compareBody(actual.body, endpoint.expect.body, caseBindings);
+      await compareBody(actual.body, endpoint.expect.body, caseBindings, {
+        status: actual.status,
+        mode: target.mode,
+      });
       bindings.clear();
       for (const [name, binding] of caseBindings) {
         bindings.set(name, binding);

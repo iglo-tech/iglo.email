@@ -113,7 +113,7 @@ export async function runDKIMSettings(target: {
     invalid[0].dkim.private_key = "invalid";
     const bad = await request("/api/settings/smtp", "PUT", invalid);
     assert.equal(bad.status, 400);
-    assert.deepEqual(listmonkEnvelope(await bad.json()), {
+    assert.deepEqual(listmonkEnvelope(await bad.json(), "normal"), {
       message: "Invalid DKIM configuration.",
     });
     assert.deepEqual((await read()).smtp[0].dkim, saved.smtp[0].dkim);
@@ -189,7 +189,7 @@ export async function runDKIMSettings(target: {
           kind === "key" ? snapshot.smtp : snapshot,
         );
         assert.equal(response.status, 400);
-        assert.deepEqual(listmonkEnvelope(await response.json()), {
+        assert.deepEqual(listmonkEnvelope(await response.json(), "normal"), {
           message: "Invalid DKIM configuration.",
         });
         assert.deepEqual(await read(), baseline);
@@ -205,7 +205,7 @@ export async function runDKIMSettings(target: {
         kind === "key" ? snapshot.smtp : snapshot,
       );
       assert.equal(response.status, 400);
-      assert.deepEqual(listmonkEnvelope(await response.json()), {
+      assert.deepEqual(listmonkEnvelope(await response.json(), "normal"), {
         message: "Invalid DKIM configuration.",
       });
       assert.deepEqual(await read(), baseline);
@@ -214,7 +214,7 @@ export async function runDKIMSettings(target: {
     full.smtp[0].dkim.key_selector = "invalid selector";
     const invalidFull = await request("/api/settings", "PUT", full);
     assert.equal(invalidFull.status, 400);
-    assert.deepEqual(listmonkEnvelope(await invalidFull.json()), {
+    assert.deepEqual(listmonkEnvelope(await invalidFull.json(), "normal"), {
       message: "Invalid DKIM configuration.",
     });
     const afterInvalid = await read();

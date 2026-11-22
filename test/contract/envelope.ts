@@ -1,17 +1,21 @@
-// The listmonk error envelope, as the shared contracts compare it. Every API error also carries a
-// stable `code` (B131, D129), which listmonk's envelope does not have: the contracts check that
-// additive field where it matters (test/events, test/server), and compare the rest here. The
-// reference answers no `code`, so the same comparison holds for both targets.
+// The listmonk error envelope, as the shared contracts compare it. An owned API error also carries
+// a stable `code` (B131, D129), which listmonk's envelope does not have. Call this on error bodies
+// only. In normal mode the body must carry one of the known codes, so an owned error that loses its
+// code fails; the code is then dropped, and the rest is compared with listmonk's words. The reference
+// answers no `code`, so its body is returned as it is.
 import { ERROR_CODES } from "@/server/error-codes";
+import type { Mode } from "@/test/contract/types";
 
-/** The body without its stable error `code`, when the body is an error envelope that carries one. */
-export function listmonkEnvelope(body: unknown): unknown {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+export function listmonkEnvelope(body: unknown, mode: Mode): unknown {
+  if (mode === "reference") {
     return body;
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new Error("FAIL error-envelope: an owned error is not a JSON object");
   }
   const { code, ...rest } = body as { code?: unknown };
   if (typeof code !== "string" || !ERROR_CODES.some((known) => known === code)) {
-    return body;
+    throw new Error("FAIL error-code: an owned error carries no known code");
   }
   return rest;
 }

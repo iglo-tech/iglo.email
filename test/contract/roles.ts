@@ -1,6 +1,6 @@
 // Reference: listmonk cmd/roles.go and cmd/users.go at 6fcd95f.
 import { createHmac, randomUUID } from "node:crypto";
-import { listmonkEnvelope } from "@/test/contract/envelope";
+import type { ErrorCode } from "@/server/error-codes";
 import type { AuthTarget } from "@/test/contract/auth";
 
 function responseCookie(response: Response, name: string): string {
@@ -177,13 +177,18 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(invalid.status === 400, "role-invalid-permission");
     const reference = target.mode === "reference";
+    // The exact bytes of an error, with its trailing newline. An owned error carries its stable code
+    // (B131, D129); the reference answers none, so its bytes are listmonk's.
+    const errorBytes = (message: string, code: ErrorCode) =>
+      `${JSON.stringify(reference ? { message } : { message, code })}\n`;
     check(
-      JSON.stringify(listmonkEnvelope(JSON.parse(await invalid.text()))) ===
-        JSON.stringify({
-          message: reference
+      (await invalid.text()) ===
+        errorBytes(
+          reference
             ? "Invalid fields: permission: unknown:permission"
             : "Invalid fields: permission",
-        }),
+          "invalid_fields",
+        ),
       "D31-invalid-user-permission-message",
     );
     // User-role replacement requires an explicit array; list children retain
@@ -271,12 +276,13 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       invalidList.status === 400 &&
-        JSON.stringify(listmonkEnvelope(JSON.parse(await invalidList.text()))) ===
-          JSON.stringify({
-            message: reference
+        (await invalidList.text()) ===
+          errorBytes(
+            reference
               ? "Invalid fields: list permission: unknown:permission"
               : "Invalid fields: list permission",
-          }),
+            "invalid_fields",
+          ),
       "D31-invalid-list-permission-message",
     );
     const duplicate = await request("/api/roles/users", "POST", {
@@ -288,8 +294,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       : "Error creating Role";
     check(
       duplicate.status === 500 &&
-        JSON.stringify(listmonkEnvelope(JSON.parse(await duplicate.text()))) ===
-          JSON.stringify({ message: duplicateMessage }),
+        (await duplicate.text()) === errorBytes(duplicateMessage, "internal_error"),
       "D31-duplicate-role-message",
     );
     const childDetail =
@@ -300,12 +305,13 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       badChildCreate.status === 500 &&
-        JSON.stringify(listmonkEnvelope(JSON.parse(await badChildCreate.text()))) ===
-          JSON.stringify({
-            message: reference
+        (await badChildCreate.text()) ===
+          errorBytes(
+            reference
               ? `Error creating Role: code=500, message=Error creating Role: ${childDetail}`
               : "Error creating Role",
-          }),
+            "internal_error",
+          ),
       "D31-invalid-child-create-message",
     );
     const after = await request(`/api/roles/lists?query=bad-child-${suffix}`);
@@ -390,12 +396,13 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       missing.status === 500 &&
-        JSON.stringify(listmonkEnvelope(JSON.parse(await missing.text()))) ===
-          JSON.stringify({
-            message: reference
+        (await missing.text()) ===
+          errorBytes(
+            reference
               ? "Error updating User role: sql: no rows in result set"
               : "Error updating User role",
-          }),
+            "internal_error",
+          ),
       "D31-missing-role",
     );
     const primordial = await request("/api/roles/users/1", "PUT", {
@@ -409,12 +416,13 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       invalidChild.status === 500 &&
-        JSON.stringify(listmonkEnvelope(JSON.parse(await invalidChild.text()))) ===
-          JSON.stringify({
-            message: reference
+        (await invalidChild.text()) ===
+          errorBytes(
+            reference
               ? `Error creating List role: code=500, message=Error creating Role: ${childDetail}`
               : "Error creating List role",
-          }),
+            "internal_error",
+          ),
       "D31-invalid-child-update-message",
     );
     const currentLists = await request("/api/roles/lists");
