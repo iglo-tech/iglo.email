@@ -236,7 +236,6 @@ export default defineConfig({
         "typescript/require-array-sort-compare": "off",
         "typescript/await-thenable": "off",
         "unicorn/prefer-string-replace-all": "off",
-        "typescript/use-unknown-in-catch-callback-variable": "off",
         "no-empty": "off",
         "no-promise-executor-return": "off",
         "quality/no-chained-type-assertions": "off",

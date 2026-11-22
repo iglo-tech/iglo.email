@@ -541,7 +541,7 @@ test("an older executable refuses a backup ahead of it", async () => {
   expect(verified.stdout).toContain(`Schema version: ${version + 1}`);
   expect(verified.stderr).toContain("ahead of this executable");
   restoreInto(output, dataDir);
-  const refused = await startServer(executable, dataDir).catch((error: Error) => error);
+  const refused = await startServer(executable, dataDir).catch((error: unknown) => error);
   expect(String(refused)).toContain(`Database version ${version + 1} is ahead of this executable`);
 });
 
