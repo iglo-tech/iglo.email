@@ -2,6 +2,8 @@
 // push parser over bytes, so a file is read in chunks and a field's encoding is checked later.
 // Copyright 2011 The Go Authors. See assets/licenses/go-1.27.2-BSD.txt for the complete license.
 
+import { must } from "@/invariant";
+
 const QUOTE = 34,
   LF = 10,
   CR = 13;
@@ -37,7 +39,9 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
     get count() {
       return ends.length;
     },
-    field: (index) => buffer.subarray(index ? ends[index - 1]! : 0, ends[index]),
+    // ends[index - 1] is the previous field's end. Past the last field the unchecked read gave
+    // undefined, which subarray takes as 0, so that case is kept as it was.
+    field: (index) => buffer.subarray(index ? (ends[index - 1] ?? 0) : 0, ends[index]),
   };
   const fail = (message: string) => new CsvError(`parse error on line ${newlines + 1}: ${message}`);
   const overBudget = () => fail(`record over ${MAX_RECORD_BYTES} bytes`);
@@ -117,7 +121,7 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
   return {
     push(chunk: Uint8Array) {
       for (let i = 0; i < chunk.length; i++) {
-        const byte = chunk[i]!;
+        const byte = must(chunk[i], "byte");
         // A CR is part of the text unless a LF follows it.
         if (carriage) {
           carriage = false;
@@ -132,7 +136,7 @@ export function createCsvReader(delimiter: number, onRecord: (record: CsvRecord)
         }
       }
       if (chunk.length) {
-        last = chunk.at(-1)!;
+        last = must(chunk.at(-1), "chunk end");
       }
     },
     end() {

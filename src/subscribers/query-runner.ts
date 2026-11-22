@@ -15,6 +15,7 @@ import {
   stagePrefix,
   STAGE_CHUNK,
 } from "@/subscribers/id-stage";
+import { must } from "@/invariant";
 import type { IdList } from "@/subscribers/id-stage";
 import { prepareChecked, prepareCondition, QueryError } from "@/subscribers/query-filter";
 import type { Arg, ConditionArg } from "@/subscribers/query-filter";
@@ -327,7 +328,7 @@ export function createQueryRunner(options: RunnerOptions) {
         }
         pending += decoder.decode(chunk.value, { stream: true });
         const lines = pending.split("\n");
-        pending = lines.pop()!;
+        pending = must(lines.pop(), "split line");
         for (const line of lines) {
           if (line[0] === "R") {
             index = Number(line.slice(1));
@@ -336,7 +337,8 @@ export function createQueryRunner(options: RunnerOptions) {
             ready.push([index, 0, 0]);
           } else if (line[0] === "B") {
             const total = Number(line.slice(1));
-            ready.push([index, reported.get(index)!, total]);
+            // The child reports a file ("R") before any count for it ("B").
+            ready.push([index, must(reported.get(index), "reported count"), total]);
             reported.set(index, total);
           } else if (line === "OK") {
             finished = true;
@@ -364,7 +366,10 @@ export function createQueryRunner(options: RunnerOptions) {
         }
         const item = ready.shift();
         if (item) {
-          yield [item[0], decode ? readIds(files.get(item[0])!, item[1], item[2]) : []];
+          yield [
+            item[0],
+            decode ? readIds(must(files.get(item[0]), "staged file"), item[1], item[2]) : [],
+          ];
         } else if (finished) {
           return;
         } else {
@@ -399,7 +404,7 @@ export function createQueryRunner(options: RunnerOptions) {
     async all(statements: Array<Statement>): Promise<Array<Array<bigint>>> {
       const results: Array<Array<bigint>> = statements.map(() => []);
       for await (const [index, values] of run(statements)) {
-        results[index]!.push(...values);
+        must(results[index], "statement result").push(...values);
       }
       return results;
     },
@@ -414,7 +419,7 @@ export function createQueryRunner(options: RunnerOptions) {
         for await (const _ of spawn(wire, files, undefined, false)) {
           void _;
         }
-        return statements.map((_, index) => fileIds(files.get(index)!));
+        return statements.map((_, index) => fileIds(must(files.get(index), "statement file")));
       } catch (error) {
         for (const fd of files.values()) {
           closeSync(fd);

@@ -4,6 +4,7 @@
 import { open } from "node:fs/promises";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
+import { must } from "@/invariant";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import type { ImportOptions, Importer, UploadSlot } from "@/subscribers/import/importer";
@@ -120,7 +121,7 @@ export function registerImportRoutes(
       );
     }
     const { mode } = params;
-    const identity = c.identity!;
+    const identity = must(c.identity, "identity");
     const scope = roles.listScope(identity.role, identity.user.list_role_id, "list:manage");
     const listIds = scope.all
       ? params.listIds

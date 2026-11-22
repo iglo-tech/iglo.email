@@ -2,6 +2,7 @@
 // query-subscribers-for-export, query-subscribers-template), models/queries.go ApplyOrphanFilter,
 // internal/core/subscribers.go validateQueryTables and cmd/subscribers.go formatSQLExp at 6fcd95f.
 import type { Database, SQLQueryBindings, Statement } from "bun:sqlite";
+import { must } from "@/invariant";
 import { simpleLower } from "@/subscribers/unicode-lower";
 
 /** A SQL argument; integers are int64 identities. */
@@ -42,7 +43,7 @@ export function formatSQLExp(q: string): string {
 export function checkFragment(sql: string): string | undefined {
   let depth = 0;
   for (let i = 0; i < sql.length; i++) {
-    const ch = sql[i]!;
+    const ch = sql.charAt(i);
     const next = sql[i + 1];
     if (ch === "'" || ch === '"' || ch === "`" || ch === "[") {
       const end = ch === "[" ? "]" : ch;
@@ -423,7 +424,7 @@ export function prepareCondition(
   let stmt: Statement;
   try {
     stmt = db.prepare<unknown, Array<SQLQueryBindings>>(
-      parts.map((part, i) => (i ? fragments[i - 1]! : "") + part).join(""),
+      parts.map((part, i) => (i ? must(fragments[i - 1], "fragment slot") : "") + part).join(""),
     );
   } catch (error) {
     throw new QueryError(error instanceof Error ? error.message : "invalid query");

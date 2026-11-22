@@ -5,6 +5,7 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
+import { must } from "@/invariant";
 import { memoryIds, stageRows } from "@/subscribers/id-stage";
 import type { IdList } from "@/subscribers/id-stage";
 import type { ExportRow } from "@/subscribers/export";
@@ -79,14 +80,18 @@ export function createSubscriberQuery(options: {
         page = pageSQL(filter, orderBy, order, offset, limit);
       const large = limit <= 0 || limit > MEMORY_PAGE;
       if (filter.fragment) {
-        const [total, ids] = await runner.stage([count, page]);
-        const value = Number(total!.slice(0, 1)[0] ?? 0n);
-        total!.close();
+        // The runner returns one list per statement, in order.
+        const [totalList, idList] = await runner.stage([count, page]);
+        const counted = must(totalList, "staged count");
+        const value = Number(counted.slice(0, 1)[0] ?? 0n);
+        counted.close();
+        const ids = must(idList, "staged page");
         if (large) {
-          return { total: value, ids: ids! };
+          return { total: value, ids };
         }
-        const held = memoryIds(ids!.slice(0, ids!.length));
-        ids!.close();
+        const idCount = ids.length;
+        const held = memoryIds(ids.slice(0, idCount));
+        ids.close();
         return { total: value, ids: held };
       }
       readonly.run("BEGIN");
@@ -108,7 +113,7 @@ export function createSubscriberQuery(options: {
           runner.stageDir,
           (function* () {
             for (const row of rows) {
-              yield Object.values(row)[0]!;
+              yield must(Object.values(row)[0], "row id");
             }
           })(),
         );
@@ -123,7 +128,7 @@ export function createSubscriberQuery(options: {
      */
     async stageIds(filter: SubscriberFilter): Promise<IdList> {
       const [ids] = await runner.stage([idsSQL(filter)]);
-      return ids!;
+      return must(ids, "staged ids");
     },
     /**
      * Matching IDs in ascending batches. With a fragment the first item is yielded once the
@@ -162,7 +167,7 @@ export function createSubscriberQuery(options: {
           return;
         }
         yield batch;
-        after = batch.at(-1)!;
+        after = must(batch.at(-1), "batch end");
       }
     },
     exportRows: (ids: Array<bigint>) =>
@@ -193,7 +198,7 @@ export function createSubscriberQuery(options: {
           return;
         }
         act(ids);
-        after = ids.at(-1)!;
+        after = must(ids.at(-1), "batch end");
       }
     },
     /** In the action's transaction, before its first write. */
