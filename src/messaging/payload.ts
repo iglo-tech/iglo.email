@@ -15,9 +15,10 @@ const mediaType = (value: unknown): value is string =>
   /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:\s*;\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+\s*=\s*(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|"[^"\r\n\0]*"))*$/.test(
     value,
   );
-const invalid = (): never => {
+// A declared `never` function (not a const arrow) so that control flow narrows after each guard.
+function invalid(): never {
   throw new Error("Invalid prepared message");
-};
+}
 
 export function encodePayload(message: Message, subscriberUuid: string | null): string {
   return prepare(message, subscriberUuid, true);
@@ -170,7 +171,7 @@ export function decodePayload(payload: string): DecodedPayload {
       ) {
         invalid();
       }
-      const result = Buffer.from(v as string, "base64");
+      const result = Buffer.from(v, "base64");
       if (result.length > max || result.toString("base64") !== v) {
         invalid();
       }

@@ -256,7 +256,15 @@ export default defineConfig({
         "quality/no-conditional-empty-object-spread": "off", // B134c: test/ still has the rule's findings.
         "quality/no-unsafe-dictionary-type": "off", // B134c: test/ still has the rule's findings.
         "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
+        "typescript/no-unsafe-call": "off", // B134c: test/ still calls values typed any.
       },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
+    // (its values are typed per key, and a per-key schema is a separate design, D132), and the journal payload is
+    // parsed JSON that check() validates field by field before the message is returned.
+    {
+      files: ["src/messaging/payload.ts", "src/public/settings.ts", "src/settings/validate.ts"],
+      rules: { "typescript/no-unsafe-call": "off" },
     },
     // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
     // test/ still has unawaited promises; src/ and scripts/ are fixed (B134b).
@@ -285,7 +293,6 @@ export default defineConfig({
     "typescript/no-non-null-assertion": "off", // B134d
     "typescript/no-unsafe-argument": "off", // B134e
     "typescript/no-unsafe-assignment": "off", // B134e
-    "typescript/no-unsafe-call": "off", // B134e
     "typescript/no-unsafe-member-access": "off", // B134e
     "typescript/no-unsafe-return": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
