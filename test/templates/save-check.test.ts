@@ -24,10 +24,10 @@ async function saveTx(f: TxFixture, body: string) {
 test("a template whose text cannot render is refused at save, with its cause", async () => {
   const f = await open();
   const cases: Array<[string, string]> = [
-    ["{{ 'x' | upcase: 'y' }}", "a filter has the wrong number of arguments"],
-    ["{{ data.x | slice: 1, 2, 3 }}", "a filter has the wrong number of arguments"],
-    ["{{ 'x' | date: '%q' }}", "a date format has the unsupported directive %q"],
-    ["{{ data.when | date: '%q' }}", "a date format has the unsupported directive %q"],
+    ["{{ 'x' | upcase: 'y' }}", "upcase: takes no arguments, got 1"],
+    ["{{ data.x | slice: 1, 2, 3 }}", "slice: takes at most 2 arguments, got 3"],
+    ["{{ 'x' | date: '%q' }}", "date: the format has the unsupported directive %q"],
+    ["{{ data.when | date: '%q' }}", "date: the format has the unsupported directive %q"],
     ["{% for i in (1..2000) %}x{% endfor %}", "a range or loop is out of bounds"],
   ];
   for (const [body, cause] of cases) {
@@ -42,7 +42,7 @@ test("a literal failure in the template's own text is refused at save, whatever 
   const f = await open();
   // Each expression reads no data, so the template's text alone makes it fail (D134).
   const literal: Array<[string, string]> = [
-    ['{{ "abc" | truncate: "x" }}', "needs a whole-number argument, got text"],
+    ['{{ "abc" | truncate: "x" }}', 'truncate: the first argument must be a whole number, got "x"'],
     ['{{ "2026-02-30" | date: "%Y-%m-%d" }}', "needs a valid date"],
     [`{{ "${"a,".repeat(1100)}" | split: "," }}`, "split would make 1101 parts"],
   ];
@@ -53,8 +53,88 @@ test("a literal failure in the template's own text is refused at save, whatever 
     expect(refused.body.message, label).toContain("it fails to render: ");
     expect(refused.body.message, label).toContain(cause);
   }
-  // The same expression with a value from data is a value failure, so it saves.
-  const saved = await saveTx(f, '{{ data.s | truncate: "x" }}');
+});
+
+test("a literal argument its filter cannot read is refused at save, naming the filter and the argument", async () => {
+  const f = await open();
+  // The argument is the template's own text, so the data does not matter (D134).
+  const wrong = await saveTx(f, '{{ data.s | truncate: "x" }}');
+  expect(wrong.status).toBe(400);
+  expect(wrong.body.message).toContain(
+    'it fails to render: truncate: the first argument must be a whole number, got "x"',
+  );
+  // Each literal is judged by its filter's own reader: a whole number, digits from 0 to 15, a number.
+  const cases: Array<[string, string]> = [
+    [
+      "{{ data.s | truncatewords: 2.5 }}",
+      "truncatewords: the first argument must be a whole number, got 2.5",
+    ],
+    ["{{ data.s | slice }}", "slice: missing its first argument, which must be a whole number"],
+    [
+      "{{ data.n | round: 16 }}",
+      "round: the first argument must be whole digits from 0 to 15, got 16",
+    ],
+    ['{{ data.n | plus: "abc" }}', 'plus: the first argument must be a number, got "abc"'],
+    ["{{ data.n | times }}", "times: missing its first argument, which must be a number"],
+    ["{{ data.n | divided_by: 0 }}", "divided_by: the first argument cannot be zero"],
+    ['{{ data.s | date: "%q" }}', "date: the format has the unsupported directive %q"],
+    ["{{ data.s | truncate: 5, 'x', 'y' }}", "truncate: takes at most 2 arguments, got 3"],
+    ["{{ data.s | t: 'a' }}", "t: takes its arguments in pairs, got 1"],
+  ];
+  for (const [body, cause] of cases) {
+    const refused = await saveTx(f, body);
+    expect(refused.status, body).toBe(400);
+    expect(refused.body.message, body).toContain(`it fails to render: ${cause}`);
+  }
+  // A literal the template never reaches is still its text: refused too.
+  const unreached = await saveTx(f, '{% if false %}{{ data.s | truncate: "x" }}{% endif %}');
+  expect(unreached.status).toBe(400);
+  expect(unreached.body.message).toContain("truncate: the first argument must be a whole number");
+});
+
+test("the literal arguments a filter reads save: whole numbers as text, digits up to 15, a numeric text, a date format", async () => {
+  const f = await open();
+  const valid = [
+    '{{ data.s | truncate: 10, "…" }}',
+    '{{ data.s | truncate: "12" }}',
+    "{{ data.s | truncatewords: 3 }}",
+    "{{ data.s | slice: -2 }}",
+    "{{ data.s | slice: 1, 4 }}",
+    "{{ data.n | round: 15 }}",
+    '{{ data.n | plus: "2.5" }}',
+    "{{ data.n | divided_by: 4 }}",
+    '{{ data.s | date: "%Y-%m" }}',
+    '{{ data.s | date: "" }}',
+    "{{ data.s | t: 'key', 'name' }}",
+  ];
+  for (const body of valid) {
+    const saved = await saveTx(f, body);
+    expect(saved.status, body).toBe(200);
+  }
+});
+
+test("an argument from data saves, and a wrong value for it fails the send, naming the expression", async () => {
+  const f = await open();
+  const saved = await saveTx(f, "<p>{{ data.s | truncate: data.n }}</p>");
+  expect(saved.status).toBe(200);
+  const id = await f.template("<p>{{ data.s | truncate: data.n }}</p>");
+  const email = `t-${crypto.randomUUID().slice(0, 12)}@example.test`;
+  const sent = await f.tx({
+    subscriber_emails: [email],
+    template_id: id,
+    data: { s: "hello world", n: "x" },
+  });
+  expect(sent.status).toBe(400);
+  expect(sent.body.message).toContain(
+    "data.s | truncate: data.n: needs a whole-number argument, got text",
+  );
+  expect(sent.body.message).not.toContain("invalid template");
+});
+
+test("a variable is not a literal, so a wrong value through one saves and fails the send", async () => {
+  const f = await open();
+  // Only the text the author wrote is judged at save; a value that reaches a filter through a variable is data.
+  const saved = await saveTx(f, '{% assign n = "x" %}<p>{{ data.s | truncate: n }}</p>');
   expect(saved.status).toBe(200);
 });
 
@@ -121,7 +201,7 @@ test("an update is checked the same way, and a template that saves keeps its id"
     body: "<p>{{ 'x' | upcase: 'y' }}</p>",
   });
   expect(refused.status).toBe(400);
-  expect(refused.body.message).toContain("it fails to render: a filter has the wrong number");
+  expect(refused.body.message).toContain("it fails to render: upcase: takes no arguments, got 1");
   const kept = await f.json(`/api/templates/${id}`, "GET");
   expect(kept.body.data.body).toBe("<p>{{ data.order_id }}</p>");
 });
@@ -135,7 +215,7 @@ test("a campaign layout is checked for its own text, with its content slot", asy
     body: "<main>{{ content | raw }}</main>{{ 'x' | upcase: 'y' }}",
   });
   expect(refused.status).toBe(400);
-  expect(refused.body.message).toContain("it fails to render: a filter has the wrong number");
+  expect(refused.body.message).toContain("it fails to render: upcase: takes no arguments, got 1");
 });
 
 test("a value the sample lacks is not refused at save: a message without it renders the date empty", async () => {

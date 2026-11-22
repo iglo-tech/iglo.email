@@ -116,7 +116,7 @@ test("the filter takes no argument: a save and a preview refuse one (D134)", asy
     body: "[{{ data.n | number: 2 }}]",
   });
   expect(saved.status).toBe(400);
-  expect(saved.body.message).toContain("a filter has the wrong number of arguments");
+  expect(saved.body.message).toContain("number: takes no arguments, got 1");
   const preview = await f.request("/api/templates/preview", {
     method: "POST",
     headers: {

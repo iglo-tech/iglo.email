@@ -108,7 +108,7 @@ test("a lone percent sign, or an unknown directive, is refused at save and names
     });
     expect(saved.status, format).toBe(400);
     expect(saved.body.message, format).toContain(
-      "it fails to render: a date format has the unsupported directive",
+      "it fails to render: date: the format has the unsupported directive",
     );
   }
   const named = await f.json("/api/templates", "POST", {

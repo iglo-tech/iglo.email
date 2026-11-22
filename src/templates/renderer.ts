@@ -1,7 +1,16 @@
 // Liquid rendering context and composition adapted from listmonk models/campaigns.go,
 // models/messages.go and internal/manager/message.go at 6fcd95f.
-import { Context, Drop, Liquid, Output, defaultOperators, toValueSync } from "liquidjs";
-import type { Emitter, LiquidOptions, Template } from "liquidjs";
+import {
+  Context,
+  Drop,
+  Liquid,
+  Output,
+  TypeGuards,
+  Value,
+  defaultOperators,
+  toValueSync,
+} from "liquidjs";
+import type { Emitter, Filter, LiquidOptions, Template } from "liquidjs";
 import { must } from "@/invariant";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
@@ -19,6 +28,7 @@ import {
   json,
   kindOf,
   last,
+  numberOf,
   prepend,
   replace,
   replaceFirst,
@@ -32,6 +42,7 @@ import {
   truncatewords,
   urlEncode,
   ValueError,
+  wholeNumber,
 } from "@/templates/filters";
 import type { FilterBudget } from "@/templates/filters";
 
@@ -425,6 +436,169 @@ function directive(key: string, date: Date): string {
 function formatDate(format: string, date: Date): string {
   return format.replaceAll(/%(-d|.)/g, (_, key: string) => directive(key, date));
 }
+/** One positional argument of a filter, and what its literal value must be (D134). */
+interface ArgumentRule {
+  readonly kind: "whole" | "digits" | "number" | "format";
+  /** A missing argument is a fault too: the filter reads it before anything else, so it fails every value. */
+  readonly required?: boolean;
+}
+/**
+ * The literal rules of the filters' arguments (D134), each the rule its filter applies at send: the
+ * same readers (`wholeNumber`, `numberOf`, the date format check) decide a literal here. An argument with
+ * no rule is text, which any literal is. An optional argument has a default the filter uses when it is
+ * missing. `plus`, `minus`, `times`, `divided_by` and `slice` read a required argument before any value.
+ */
+const argumentRules = new Map<string, ReadonlyArray<ArgumentRule>>([
+  ["truncate", [{ kind: "whole" }]],
+  ["truncatewords", [{ kind: "whole" }]],
+  ["slice", [{ kind: "whole", required: true }, { kind: "whole" }]],
+  ["round", [{ kind: "digits" }]],
+  ["plus", [{ kind: "number", required: true }]],
+  ["minus", [{ kind: "number", required: true }]],
+  ["times", [{ kind: "number", required: true }]],
+  ["divided_by", [{ kind: "number", required: true }]],
+  ["date", [{ kind: "format" }]],
+]);
+const ORDINALS = ["first", "second"];
+/** The longest literal shown in a save reason. The author's text is shown; data never is. */
+const SHOWN = 40;
+
+function expectedOf(rule: ArgumentRule): string {
+  switch (rule.kind) {
+    case "whole":
+      return "a whole number";
+    case "digits":
+      return "whole digits from 0 to 15";
+    case "number":
+      return "a number";
+    case "format":
+      return "a date format";
+  }
+}
+
+/**
+ * A literal argument's value and text, or undefined when the argument is not written as a literal (a
+ * variable, a range, a property, or a keyword argument), which depends on data and is left to the send.
+ */
+function literalOf(argument: Filter["args"][number]): { value: unknown; text: string } | undefined {
+  if (Array.isArray(argument)) {
+    return undefined;
+  }
+  if (
+    TypeGuards.isNumberToken(argument) ||
+    TypeGuards.isQuotedToken(argument) ||
+    TypeGuards.isLiteralToken(argument)
+  ) {
+    return { value: argument.content, text: argument.getText() };
+  }
+  return undefined;
+}
+
+/** The fault in one argument of a filter, or undefined. A literal is judged by the filter's own reader. */
+function argumentFault(
+  name: string,
+  index: number,
+  rule: ArgumentRule,
+  argument: Filter["args"][number] | undefined,
+): string | undefined {
+  const where = ORDINALS[index] ?? "";
+  if (argument === undefined) {
+    return rule.required
+      ? `${name}: missing its ${where} argument, which must be ${expectedOf(rule)}`
+      : undefined;
+  }
+  const literal = literalOf(argument);
+  if (literal === undefined) {
+    return undefined;
+  }
+  const { value, text } = literal;
+  const shown = text.length > SHOWN ? `${text.slice(0, SHOWN)}...` : text;
+  const wrong = `${name}: the ${where} argument must be ${expectedOf(rule)}, got ${shown}`;
+  switch (rule.kind) {
+    case "whole":
+      return wholeNumber(value) === undefined ? wrong : undefined;
+    case "digits": {
+      const digits = wholeNumber(value);
+      return digits === undefined || digits < 0 || digits > 15 ? wrong : undefined;
+    }
+    case "number": {
+      const number = numberOf(value);
+      if (number === undefined) {
+        return wrong;
+      }
+      return name === "divided_by" && number === 0
+        ? `${name}: the ${where} argument cannot be zero`
+        : undefined;
+    }
+    case "format": {
+      // A date format is text, or the number a literal writes; a nil or true literal is not a format.
+      if (typeof value !== "string" && typeof value !== "number") {
+        return undefined;
+      }
+      const format = String(value);
+      if (byteLength(format) > 256) {
+        return `${name}: the format is longer than 256 bytes`;
+      }
+      const unsupported = unsupportedDirective(format);
+      return unsupported === undefined
+        ? undefined
+        : `${name}: the format has the unsupported directive ${unsupported}; the supported directives are ${SUPPORTED_DIRECTIVES}`;
+    }
+  }
+}
+
+/** The fault in a filter's arguments (D134), or undefined: too many, an odd number for `t`, or a literal one that cannot be read. */
+function filterFault(filter: Filter): string | undefined {
+  const { name, args } = filter;
+  const maximum = filterArguments.get(name);
+  if (maximum === undefined) {
+    return undefined;
+  }
+  if (args.length > maximum) {
+    const allowed =
+      maximum === 0
+        ? "no arguments"
+        : `at most ${maximum} ${maximum === 1 ? "argument" : "arguments"}`;
+    return `${name}: takes ${allowed}, got ${args.length}`;
+  }
+  if (name === "t" && args.length % 2 !== 0) {
+    return `${name}: takes its arguments in pairs, got ${args.length}`;
+  }
+  for (const [index, rule] of (argumentRules.get(name) ?? []).entries()) {
+    const fault = argumentFault(name, index, rule, args[index]);
+    if (fault !== undefined) {
+      return fault;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The first fault in a template's literal filter arguments (D134), or undefined. Every output, assign,
+ * echo and tag body is checked, including the branches a sample never reaches, because the text alone
+ * decides it. An argument that reads data or a variable is not a literal, and the send judges it. The walk
+ * is iterative, so a deeply nested template cannot exhaust the stack, and it visits each template once.
+ */
+function literalFault(templates: ReadonlyArray<Template>): string | undefined {
+  const pending = [...templates].reverse();
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    for (const argument of next.arguments?.() ?? []) {
+      if (argument instanceof Value) {
+        for (const filter of argument.filters) {
+          const fault = filterFault(filter);
+          if (fault !== undefined) {
+            return fault;
+          }
+        }
+      }
+    }
+    // Children in source order: the first one is popped next.
+    const children = next.children ? toValueSync(next.children(false, true)) : [];
+    pending.push(...children.reverse());
+  }
+  return undefined;
+}
+
 function hasContent(templates: Array<Template>): boolean {
   for (const tpl of templates) {
     if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText())) {
@@ -1062,6 +1236,21 @@ export function createRenderer(clock: Clock, translation: Translation) {
   }
 
   /**
+   * The first literal fault in any part of a message's text (D134), or undefined. Each part's whole text is
+   * read, so a branch the sample never reaches is checked too.
+   */
+  function literalFaultOf(request: Omit<RenderRequest, "data">): string | undefined {
+    const html = request.mode !== "plain";
+    return (
+      literalFault(parse(request.body, html)) ??
+      (request.subject === undefined
+        ? undefined
+        : literalFault(parse(request.subject, false, SUBJECT_LIMIT))) ??
+      (request.layout === undefined ? undefined : literalFault(parse(request.layout, html)))
+    );
+  }
+
+  /**
    * The save-time render (D134): the parts render once, as a send renders them, against `data`.
    * It refuses a failure the template's own text causes (`refused`). A failure of a value
    * `data` does not carry is not refused: the sample cannot tell a missing value from a present one,
@@ -1073,6 +1262,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
     }
     active++;
     try {
+      // A literal argument its filter cannot read fails every message, whatever data it carries, so the
+      // text alone refuses it, with the filter and the argument (D134).
+      const fault = literalFaultOf(request);
+      if (fault !== undefined) {
+        return { outcome: "refused", reason: fault };
+      }
       runMessage({ ...request, data }, parseTemplateData(data));
       return { outcome: "ok" };
     } catch (error) {

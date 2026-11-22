@@ -313,15 +313,27 @@ export function replaceFirst(
   return input.slice(0, at) + withText + input.slice(at + find.length);
 }
 
-/** An integer argument. A nil or non-integer argument often comes from data, so it is a value failure. */
-function integer(value: unknown): number {
+/**
+ * A whole number a filter reads: a safe integer, or a text of up to 15 digits that holds one (data often
+ * carries numbers as text). Undefined for anything else. The save check (D134) reads literals with it too.
+ */
+export function wholeNumber(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isSafeInteger(value)) {
     return value;
   }
   if (typeof value === "string" && /^-?\d{1,15}$/.test(value)) {
     return Number(value);
   }
-  throw new ValueError(`needs a whole-number argument, got ${kindOf(value)}`);
+  return undefined;
+}
+
+/** An integer argument. A nil or non-integer argument often comes from data, so it is a value failure. */
+function integer(value: unknown): number {
+  const whole = wholeNumber(value);
+  if (whole === undefined) {
+    throw new ValueError(`needs a whole-number argument, got ${kindOf(value)}`);
+  }
+  return whole;
 }
 
 /**
@@ -574,8 +586,11 @@ export function sizeOf(value: unknown, b: FilterBudget): number {
   return 0;
 }
 
-/** A number a filter reads: a finite number, or a text that holds one (data often carries numbers as text). */
-function numberOf(value: unknown): number | undefined {
+/**
+ * A number a filter reads: a finite number, or a text that holds one (data often carries numbers as text).
+ * The save check (D134) reads literals with it too.
+ */
+export function numberOf(value: unknown): number | undefined {
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : undefined;
   }

@@ -70,7 +70,7 @@ test("a division by zero from data fails the send, naming it; a literal one is r
     body: "<p>{{ 10 | divided_by: 0 }}</p>",
   });
   expect(saved.status).toBe(400);
-  expect(saved.body.message).toContain("divided_by cannot divide by zero");
+  expect(saved.body.message).toContain("divided_by: the first argument cannot be zero");
 });
 
 test("round keeps the digits asked for, rounding halves away from zero", async () => {
