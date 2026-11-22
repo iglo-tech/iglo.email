@@ -1,9 +1,44 @@
-// B130 (D128): what the brand values add to a transactional template's data. The transactional route
-// builds the brand members once per request and concatenates them into each recipient's data text, so
-// the cost is one `brandMembers` call per request and a longer string per recipient. "before" is the same
-// data text without the brand members, as the route built it on main. Run: bun test/perf/b130-brand-data.ts
-import { brandMembers } from "@/public/brand";
-import type { BrandSite } from "@/public/brand";
+// B130 (D128): what the brand values add to a transactional render, through the real renderer. Each
+// render is what the tx route does per recipient: build the data text, then `renderSync` the compiled
+// sample template with one message budget. The sample is the checkout's own file, so base (main) and head
+// run the same script on their own trees. Modes:
+//   none            the data a transactional send carried before B130 (no brand members)
+//   once            the brand members built once per request and appended to each recipient (tx route)
+//   each            the brand members built for every render (the scheduler's step data, step-data.ts)
+// Run: bun test/perf/b130-brand-data.ts <checkout root> none|once|each
+// The comparison interleaves the runs (base none, head once, head each) in one container; see
+// docs/perf/B130-public-defaults.md.
+
+import type { createRealClock } from "@/clock";
+import type { createTranslation } from "@/i18n/i18n";
+import type { BrandSite, brandMembers as brandMembersOf } from "@/public/brand";
+import type { createMessageBudget, createRenderer } from "@/templates/renderer";
+import { asBody } from "@/test/read-body";
+
+const [root, mode] = Bun.argv.slice(2);
+if (!root || (mode !== "none" && mode !== "once" && mode !== "each")) {
+  throw new Error("usage: bun test/perf/b130-brand-data.ts <checkout root> none|once|each");
+}
+
+// The checkout's modules are loaded by path, so each tree runs its own code. Their types are the head's,
+// which the base checkout shares for these calls.
+const renderer = asBody<{
+  createRenderer: typeof createRenderer;
+  createMessageBudget: typeof createMessageBudget;
+}>(await import(`${root}/src/templates/renderer.ts`));
+const clock = asBody<{ createRealClock: typeof createRealClock }>(
+  await import(`${root}/src/clock.ts`),
+);
+const i18n = asBody<{ createTranslation: typeof createTranslation }>(
+  await import(`${root}/src/i18n/i18n.ts`),
+);
+const body = await Bun.file(`${root}/src/templates/builtins/sample-tx.tpl.txt`).text();
+const engine = renderer.createRenderer(clock.createRealClock(), i18n.createTranslation());
+const compiled = engine.compile({
+  body,
+  subject: "Your order {{ data.order_id }}",
+  mode: "html",
+});
 
 const site: BrandSite = {
   logoUrl: "https://example.test/logo.png",
@@ -13,51 +48,55 @@ const site: BrandSite = {
   font: "Lora",
   header: "logo_and_name",
 };
-const subscriber = JSON.stringify({
-  id: 1,
-  uuid: "00000000-0000-4000-8000-000000000001",
-  email: "a@example.test",
-  name: "Ada",
-  attribs: {},
-});
-const payload = JSON.stringify({ order_id: "A-1", shipping_date: "Monday" });
-const manage = `,"manage_url":"https://example.test/m/00000000-0000-4000-8000-000000000002/unsubscribe/00000000-0000-4000-8000-000000000001?manage=true"`;
-const iterations = 200_000;
+// Base (main) has no brand members, so only the brand modes import the helper.
+const brand =
+  mode === "none"
+    ? null
+    : asBody<{ brandMembers: typeof brandMembersOf }>(await import(`${root}/src/public/brand.ts`));
+const brandMembers = (): string => brand!.brandMembers(site);
+const once = mode === "once" ? `,${brandMembers()}` : "";
 
-function median(samples: Array<number>) {
-  const sorted = [...samples].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)]!;
+const payload = JSON.stringify({ order_id: "A-1", shipping_date: "Monday" });
+const links =
+  `,"unsubscribe_url":"https://example.test/m/00000000-0000-4000-8000-000000000002/unsubscribe/00000000-0000-4000-8000-000000000001"` +
+  `,"manage_url":"https://example.test/m/00000000-0000-4000-8000-000000000002/unsubscribe/00000000-0000-4000-8000-000000000001?manage=true"`;
+
+/** The data text of one recipient, as the tx route builds it. */
+function dataFor(i: number): string {
+  const subscriber = JSON.stringify({
+    id: i,
+    uuid: "00000000-0000-4000-8000-000000000001",
+    email: `person${i}@example.test`,
+    name: `Person ${i}`,
+    attribs: {},
+  });
+  const each = mode === "each" ? `,${brandMembers()}` : "";
+  return `{"subscriber":${subscriber},"data":${payload}${links}${each}${once}}`;
 }
 
-/** The lengths are summed and printed, so the optimiser cannot drop the work being timed. */
+const perSample = 2000;
+const samples = 7;
 let sink = 0;
 
-/** Milliseconds for `fn` run `iterations` times, five times over, as the median of the five. */
-function time(label: string, fn: (i: number) => unknown) {
-  const runs: Array<number> = [];
-  for (let run = 0; run < 5; run += 1) {
-    const start = performance.now();
-    for (let i = 0; i < iterations; i += 1) {
-      sink += String(fn(i)).length;
-    }
-    runs.push(performance.now() - start);
-  }
-  const ms = median(runs);
-  console.log(
-    `${label}: ${ms.toFixed(1)} ms for ${iterations} (${((ms * 1000) / iterations).toFixed(3)} us each)`,
-  );
-  return ms;
+function renderOne(i: number): number {
+  return compiled.renderSync(dataFor(i), undefined, renderer.createMessageBudget()).body.length;
 }
 
-const brand = brandMembers(site);
-console.log(`brand members: ${brand.length} characters`);
-time(
-  "before: data text per recipient",
-  () => `{"subscriber":${subscriber},"data":${payload}${manage}}`,
+// Warm-up: the first renders compile the template's parts and JIT the path.
+for (let i = 0; i < 500; i += 1) {
+  sink += renderOne(i);
+}
+const runs: Array<number> = [];
+for (let s = 0; s < samples; s += 1) {
+  const start = performance.now();
+  for (let i = 0; i < perSample; i += 1) {
+    sink += renderOne(i);
+  }
+  runs.push(performance.now() - start);
+}
+runs.sort((a, b) => a - b);
+const median = runs[Math.floor(runs.length / 2)]!;
+console.log(
+  `${mode} ${root}: ${((median * 1000) / perSample).toFixed(1)} us per render ` +
+    `(median of ${samples} x ${perSample}); data text ${dataFor(1).length} bytes; checksum ${sink}`,
 );
-time(
-  "after: data text per recipient",
-  () => `{"subscriber":${subscriber},"data":${payload}${manage},${brand}}`,
-);
-time("after: brand members per request", () => brandMembers(site));
-console.log(`checksum ${sink}`);
