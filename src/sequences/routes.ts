@@ -5,6 +5,7 @@
 // interleave with them.
 import { refuseWhileHeld } from "@/settings/hold";
 import { writeTransaction } from "@/db/transaction";
+import { must } from "@/invariant";
 import { parseJson, readBounded } from "@/events/input";
 import type { Aggregate } from "@/events/aggregate";
 import type { EventStore } from "@/events/store";
@@ -591,7 +592,7 @@ export function registerSequenceRoutes(
         writeTransaction(c.app.db, () =>
           testSends.record(
             messages.map((message) => ({
-              messageId: message.messageId!,
+              messageId: must(message.messageId, "Message-ID"),
               kind: "sequence_step",
               campaign_id: null,
               sequence_id: Number(sequence.id),

@@ -1,6 +1,8 @@
 // Lowercase case ranges adapted from Go 1.27.2 src/unicode/tables.go and
 // src/unicode/letter.go. Copyright 2009 The Go Authors. See
 // assets/licenses/go-1.27.2-BSD.txt for the complete license.
+import { must } from "@/invariant";
+
 const ranges: ReadonlyArray<readonly [number, number, number | null]> = [
   [0x00_41, 0x00_5a, 32],
   [0x00_c0, 0x00_d6, 32],
@@ -198,13 +200,13 @@ const ranges: ReadonlyArray<readonly [number, number, number | null]> = [
 export function simpleLower(input: string): string {
   let result = "";
   for (const char of input) {
-    const code = char.codePointAt(0)!;
+    const code = must(char.codePointAt(0), "code point");
     let low = 0,
       high = ranges.length,
       mapped = code;
     while (low < high) {
       const middle = (low + high) >>> 1;
-      const [start, end, delta] = ranges[middle]!;
+      const [start, end, delta] = must(ranges[middle], "lower-case range");
       if (code < start) {
         high = middle;
       } else if (code > end) {

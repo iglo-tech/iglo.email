@@ -21,6 +21,7 @@
 // hold (D67), and an upload path that resolves to the copied files if the live one went through an
 // alias, which a backup does not keep.
 import { Database } from "bun:sqlite";
+import { must } from "@/invariant";
 import {
   chmodSync,
   closeSync,
@@ -84,7 +85,7 @@ function errorCode(error: unknown): string | undefined {
 }
 
 function single<T>(db: Database, pragma: string): T {
-  return (db.query(`PRAGMA ${pragma}`).get() as Record<string, T>)[pragma]!;
+  return must((db.query(`PRAGMA ${pragma}`).get() as Record<string, T>)[pragma], "pragma value");
 }
 
 /** The directory's files as uploads keep them: visible regular names, and no symlink (D64). */
@@ -202,7 +203,7 @@ export function inspectBackup(path: string, clock: Clock, supportedVersion: numb
 
 /** Child entry: sync a file until stdin closes. Failing only makes the final sync larger. */
 export async function runFlushChild(): Promise<void> {
-  const file = await open(process.argv[3]!, "r");
+  const file = await open(must(process.argv[3], "flush path"), "r");
   let running = true;
   void (async () => {
     for await (const _ of Bun.stdin.stream()) {

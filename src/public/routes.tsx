@@ -15,6 +15,7 @@ import { parseBool, readFields } from "@/public/form";
 import type { Fields } from "@/public/form";
 import { PublicShell } from "@/public/layout";
 import type { SubscriberMail } from "@/public/mail";
+import { must } from "@/invariant";
 import { publicMessage, publicNotFound } from "@/public/message";
 import type { PublicSettings } from "@/public/settings";
 import { assetVersion } from "@/server/asset-manifest";
@@ -135,7 +136,7 @@ export function registerPublicRoutes(
     }
     let name = trimSpace(rawName);
     if (!name) {
-      name = address.split("@")[0]!;
+      name = must(address.split("@")[0], "address local part");
     } else if (Buffer.byteLength(name) > stdInputMaxLen || name.includes("\0")) {
       throw new HttpError(400, t.T("globals.messages.invalidName"));
     }

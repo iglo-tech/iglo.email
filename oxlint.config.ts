@@ -473,9 +473,6 @@ export default defineConfig({
     "react/rules-of-hooks": "off", // no hooks in the in-house runtime
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
-    // B134f: non-null assertions remain in src/ (386 findings). The rule returns to the preset when they are replaced.
-    "typescript/no-non-null-assertion": "off", // B134f
-
     // B134c: findings remain only in test/.
     "typescript/no-require-imports": "off", // B134c
     "typescript/no-import-type-side-effects": "off", // B134c

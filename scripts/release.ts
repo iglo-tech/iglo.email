@@ -1,5 +1,6 @@
 // Release steps for .github/workflows/release.yml, run against a built executable.
 import { createHash } from "node:crypto";
+import { must } from "@/invariant";
 import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -80,7 +81,7 @@ async function login(origin: string, username: string, password: string): Promis
     redirect: "manual",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
-      cookie: cookie.split(";", 1)[0]!,
+      cookie: must(cookie.split(";", 1)[0], "session cookie"),
     },
     body: new URLSearchParams({ username, password, nonce, next: "/admin" }),
   });
@@ -89,7 +90,7 @@ async function login(origin: string, username: string, password: string): Promis
   if (!session) {
     throw new Error("Login did not set a session");
   }
-  return session.split(";", 1)[0]!;
+  return must(session.split(";", 1)[0], "session cookie");
 }
 
 // The server checks follow test/bootstrap/cli.test.ts, on a copy in an empty directory with no Bun

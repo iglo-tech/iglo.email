@@ -1,5 +1,6 @@
 // Bounded memory for synchronous transactional sends that carry attachments (B6, D74); native.
 import type { Clock } from "@/clock";
+import { must } from "@/invariant";
 
 /** A reservation of bytes; `release` is idempotent. */
 export interface Reservation {
@@ -77,8 +78,8 @@ export function createByteGate(options: {
     };
   }
   function drain() {
-    while (waiting.length && fits(waiting[0]!.cost)) {
-      const next = waiting.shift()!;
+    while (waiting.length && fits(must(waiting[0], "waiting request").cost)) {
+      const next = must(waiting.shift(), "waiting request");
       next.wake(open(next.cost));
     }
   }

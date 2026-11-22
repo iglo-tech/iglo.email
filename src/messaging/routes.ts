@@ -18,10 +18,16 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
         if (!values.length) {
           return undefined;
         }
-        if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0]!) || values[0]!.length > 19) {
+        const single = values[0];
+        if (
+          values.length !== 1 ||
+          single === undefined ||
+          !/^[1-9]\d*$/.test(single) ||
+          single.length > 19
+        ) {
           throw new HttpError(400);
         }
-        const value = BigInt(values[0]!);
+        const value = BigInt(single);
         if (value > limit) {
           throw new HttpError(400);
         }
@@ -32,7 +38,8 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
         if (!values.length) {
           return undefined;
         }
-        if (values.length !== 1 || !allowed.includes(values[0]!)) {
+        const single = values[0];
+        if (values.length !== 1 || single === undefined || !allowed.includes(single)) {
           throw new HttpError(400);
         }
         return values[0];

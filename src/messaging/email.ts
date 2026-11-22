@@ -642,13 +642,16 @@ export function createEmailer(options: {
         retired.add(pool);
       }
 
-      operation = {
+      // The queued operation's methods reach it by its own name, and the pool it runs on by a constant:
+      // both are assigned once above, before any method can run.
+      const queuedPool = pool;
+      const queued: Operation = {
         started: false,
         cancel() {
           // A queued operation that never started has not touched SMTP. Once close() has begun,
           // it is handed back as not-started, so its row stays queued instead of failing (B92).
           complete(
-            operation!.started
+            queued.started
               ? { messageId, status: "ambiguous", stage: "unknown", accepted: [], rejected: [] }
               : closed
                 ? notStartedOutcome()
@@ -656,12 +659,12 @@ export function createEmailer(options: {
           );
         },
         start() {
-          operation!.started = true;
-          pool!.active++;
+          queued.started = true;
+          queuedPool.active++;
           // The executor turns a synchronous throw from the transport into a rejection, so
           // nothing after the hand-off to a pool can throw out of `push`.
           void new Promise<{ accepted: Array<unknown>; rejected: Array<unknown> }>((resolve) => {
-            resolve(pool!.transport.sendMail(data));
+            resolve(queuedPool.transport.sendMail(data));
           })
             .then((info) =>
               complete({
@@ -736,7 +739,9 @@ export function createEmailer(options: {
                   stage: "recipients",
                   accepted: [],
                   rejected,
-                  ...(e.rejectedErrors.some((r) => r.responseCode! < 500)
+                  ...(e.rejectedErrors.some(
+                    (r) => r.responseCode !== undefined && r.responseCode < 500,
+                  )
                     ? { retry: "transient" as const }
                     : {}),
                 });
@@ -752,6 +757,7 @@ export function createEmailer(options: {
             });
         },
       };
+      operation = queued;
       pool.operations.add(operation);
       pump(pool);
     })();

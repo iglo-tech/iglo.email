@@ -3,6 +3,7 @@
 // covers the public API and the ALTCHA widget, which a pasted form loads as a module script in
 // CORS mode (docs/design/07-api-and-ui.md).
 import type { RequestContext, Middleware } from "@/server/context";
+import { must } from "@/invariant";
 import { errorResponse, HttpError } from "@/server/response";
 
 const scope = "/api/public/";
@@ -17,7 +18,7 @@ function trustedOrigins(urls: Array<string>): Array<string> {
       return [url];
     }
     const parts = /^(https?):\/\/(?:[^/?#@]*@)?([^/?#]+)/i.exec(url);
-    return parts ? [`${parts[1]!.toLowerCase()}://${parts[2]}`] : [];
+    return parts ? [`${must(parts[1], "URL scheme").toLowerCase()}://${parts[2]}`] : [];
   });
   return [...new Set(origins)];
 }

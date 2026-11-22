@@ -2,6 +2,7 @@
 // 03-data-model.md#events); no upstream source. The events module owns `events` SQL;
 // subscriber rows are read and written through the subscriber owner.
 import type { Database } from "bun:sqlite";
+import { must } from "@/invariant";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 import { createEventAggregates } from "@/events/aggregate";
@@ -313,7 +314,7 @@ export function createEventStore(
       return;
     }
     entries.forEach((entry, i) => {
-      const outcome = outcomes[i]!;
+      const outcome = must(outcomes[i], "outcome");
       if ("result" in outcome) {
         entry.resolve(outcome.result);
       } else {

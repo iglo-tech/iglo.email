@@ -1,4 +1,6 @@
 // A synchronous server-side JSX renderer; components and trusted markup stay opaque.
+import { must } from "@/invariant";
+
 declare const elementBrand: unique symbol;
 export interface Element {
   readonly [elementBrand]: true;
@@ -95,9 +97,8 @@ const tagName = /^[A-Za-z][A-Za-z0-9:-]*$/;
 const attributeName = /^(?:[A-Za-z_][A-Za-z0-9_.:-]*|[@:][A-Za-z_][A-Za-z0-9_.:-]*)$/;
 
 function escape(value: string): string {
-  return value.replaceAll(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  return value.replaceAll(/[&<>"']/g, (c) =>
+    must({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c], "escape"),
   );
 }
 

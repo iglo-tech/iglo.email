@@ -79,7 +79,8 @@ const paging = (c: RequestContext) => {
     if (!values.length) {
       return fallback;
     }
-    const number = /^[1-9]\d{0,6}$/.test(values[0]!) ? Number(values[0]) : 0;
+    const first = values[0];
+    const number = first !== undefined && /^[1-9]\d{0,6}$/.test(first) ? Number(first) : 0;
     if (values.length > 1 || number < 1 || number > max) {
       throw invalid(c, name);
     }

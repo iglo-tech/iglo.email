@@ -1,5 +1,6 @@
 // Ordered settings JSON and UTF-8 decoding follow Go encoding/json and unicode/utf8 at Go 1.27.2.
 // The Go BSD notice is embedded from assets/licenses/go-1.27.2-BSD.txt.
+import { must } from "@/invariant";
 export class Members {
   constructor(readonly entries: Array<[string, unknown]>) {}
 }
@@ -7,7 +8,7 @@ export class Members {
 export function decodeJsonBytes(bytes: Uint8Array): string {
   const out: Array<string> = [];
   for (let index = 0; index < bytes.length;) {
-    const first = bytes[index]!;
+    const first = must(bytes[index], "UTF-8 byte");
     if (first < 128) {
       out.push(String.fromCharCode(first));
       index++;
@@ -17,7 +18,7 @@ export function decodeJsonBytes(bytes: Uint8Array): string {
     let valid = width > 0 && index + width <= bytes.length;
     let rune = first & (width === 2 ? 31 : width === 3 ? 15 : 7);
     for (let offset = 1; valid && offset < width; offset++) {
-      const next = bytes[index + offset]!;
+      const next = must(bytes[index + offset], "UTF-8 continuation byte");
       valid = (next & 0xc0) === 0x80;
       rune = (rune << 6) | (next & 63);
     }
@@ -77,7 +78,7 @@ export function orderedJson(text: string): unknown {
     const start = pos++;
     let escaped = false;
     while (pos < text.length) {
-      const c = text[pos++]!;
+      const c = text.charAt(pos++);
       if (escaped) {
         escaped = false;
       } else if (c === "\\") {
@@ -129,7 +130,7 @@ export function orderedJson(text: string): unknown {
       return (JSON.parse(token()) as string).toWellFormed();
     }
     const start = pos;
-    while (pos < text.length && !/[\s,\]}]/.test(text[pos]!)) {
+    while (pos < text.length && !/[\s,\]}]/.test(text.charAt(pos))) {
       pos++;
     }
     return parseStoredJson(text.slice(start, pos));

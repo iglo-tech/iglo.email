@@ -1,5 +1,6 @@
 // Account-wide send-rate limiter for SES (D92).
 import type { Clock } from "@/clock";
+import { must } from "@/invariant";
 
 export type SendPriority = "outbox" | "campaign";
 
@@ -68,8 +69,10 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
         const now = clock.now().getTime();
 
         if (currentRate <= 0) {
-          const waiter =
-            outboxWaiters.length > 0 ? outboxWaiters.shift()! : campaignWaiters.shift()!;
+          const waiter = must(
+            outboxWaiters.length > 0 ? outboxWaiters.shift() : campaignWaiters.shift(),
+            "rate waiter",
+          );
           waiter.cleanup?.();
           waiter.resolve();
           continue;
@@ -81,8 +84,10 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
         }
 
         if (nextAvailableAt <= now) {
-          const waiter =
-            outboxWaiters.length > 0 ? outboxWaiters.shift()! : campaignWaiters.shift()!;
+          const waiter = must(
+            outboxWaiters.length > 0 ? outboxWaiters.shift() : campaignWaiters.shift(),
+            "rate waiter",
+          );
           waiter.cleanup?.();
           lastGrantAt = now;
           nextAvailableAt += interval;
@@ -181,12 +186,12 @@ export function createSendRateLimiter(options: SendRateLimiterOptions): SendRate
 
     const err = new Error("Rate limiter stopped");
     while (outboxWaiters.length > 0) {
-      const waiter = outboxWaiters.shift()!;
+      const waiter = must(outboxWaiters.shift(), "rate waiter");
       waiter.cleanup?.();
       waiter.reject(err);
     }
     while (campaignWaiters.length > 0) {
-      const waiter = campaignWaiters.shift()!;
+      const waiter = must(campaignWaiters.shift(), "rate waiter");
       waiter.cleanup?.();
       waiter.reject(err);
     }

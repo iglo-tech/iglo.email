@@ -3,6 +3,8 @@
 // data (Unicode-3.0). See assets/licenses/
 // go-1.27.2-BSD.txt and unicode-17.0.0-3.0.txt. Word handling follows
 // listmonk internal/subimporter/importer.go at 6fcd95f and x/text v0.42.0.
+import { must } from "@/invariant";
+
 const ranges: ReadonlyArray<readonly [number, number, number | null]> = [
   [0x00_61, 0x00_7a, -32],
   [0x00_b5, 0x00_b5, 743],
@@ -262,7 +264,7 @@ const full = new Map<number, string>([
 ]);
 
 function titleRune(value: string): string {
-  const code = value.codePointAt(0)!;
+  const code = must(value.codePointAt(0), "code point");
   const expanded = full.get(code);
   if (expanded !== undefined) {
     return expanded;
@@ -271,7 +273,7 @@ function titleRune(value: string): string {
     hi = ranges.length;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    const [start, end, delta] = ranges[mid]!;
+    const [start, end, delta] = must(ranges[mid], "title range");
     if (code < start) {
       hi = mid;
     } else if (code > end) {
@@ -488,9 +490,9 @@ function contains(ranges: ReadonlyArray<number>, code: number): boolean {
     hi = ranges.length / 2;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    if (code < ranges[mid * 2]!) {
+    if (code < must(ranges[mid * 2], "title range bound")) {
       hi = mid;
-    } else if (code > ranges[mid * 2 + 1]!) {
+    } else if (code > must(ranges[mid * 2 + 1], "title range bound")) {
       lo = mid + 1;
     } else {
       return true;
@@ -507,7 +509,7 @@ export function titleWords(value: string): string {
     previousMid = false,
     result = "";
   for (const char of value) {
-    const code = char.codePointAt(0)!;
+    const code = must(char.codePointAt(0), "code point");
     const mid = contains(mids, code);
     if (previousMid && mid) {
       inWord = false;

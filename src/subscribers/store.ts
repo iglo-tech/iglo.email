@@ -4,6 +4,7 @@ import type { Clock } from "@/clock";
 import { trimSpace } from "@/lists/store";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
+import { must } from "@/invariant";
 import type { ListReferences } from "@/lists/references";
 import type { SubscriberInput } from "@/subscribers/input";
 import { HttpError } from "@/server/response";
@@ -45,8 +46,7 @@ export interface EventSubscriber {
 export const EVENT_ATTRIBS_BYTES = 64 * 1024;
 // The create default from routes.ts validate: title-cased words of the local part.
 export const nameFromEmail = (email: string) =>
-  email
-    .split("@")[0]!
+  must(email.split("@")[0], "email local part")
     .replaceAll(".", " ")
     .split(/[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/)
     .filter(Boolean)
@@ -118,7 +118,7 @@ function maintenanceBatch(page: Array<MaintenanceRow>, limit: number) {
     .filter((row) => row.hit)
     .slice(0, limit)
     .map((row) => row.id);
-  return { ids, last: ids.length === limit ? ids.at(-1)! : last.id };
+  return { ids, last: ids.length === limit ? must(ids.at(-1), "batch end") : last.id };
 }
 /** A bulk action that can queue webhooks. */
 export type BulkAction = "delete" | "blocklist" | "unsubscribe";
@@ -318,7 +318,9 @@ export function createSubscriberStore(
       >;
       return new Map(rows.map((row) => [row.id, row.email]));
     },
-    transaction(fn: () => Response): Response {
+    transaction<F extends () => object>(
+      fn: F & (Extract<ReturnType<F>, PromiseLike<unknown>> extends never ? unknown : never),
+    ): ReturnType<F> {
       return writeTransaction(db, fn);
     },
     create(input: SubscriberInput & { email: string; name: string }, scope: Scope) {
@@ -358,7 +360,7 @@ export function createSubscriberStore(
           now,
         );
         consentChanged(row.id, status === "blocklisted", []);
-        return get(row.id)!;
+        return must(get(row.id), "subscriber row");
       } catch (error) {
         return conflict(error);
       }
@@ -420,7 +422,7 @@ export function createSubscriberStore(
         status === "blocklisted" && row.status !== "blocklisted",
         subscribed.filter((list) => remaining.get(list) === "unsubscribed"),
       );
-      return get(row.id)!;
+      return must(get(row.id), "subscriber row");
     },
     /**
      * `wipe` is the subscriber's own request (D61): it also leaves a suppression of marketing
@@ -531,7 +533,7 @@ export function createSubscriberStore(
               now,
               now,
             ) as { id: bigint };
-          return get(created.id)!;
+          return must(get(created.id), "subscriber row");
         } catch (error) {
           return conflict(error);
         }
@@ -580,7 +582,7 @@ export function createSubscriberStore(
       } catch (error) {
         return conflict(error);
       }
-      return get(row.id)!;
+      return must(get(row.id), "subscriber row");
     },
     byUuid: (uuid: string) => q.get("subscriber-by-uuid").get(uuid) as Row | null,
     /**
@@ -600,7 +602,7 @@ export function createSubscriberStore(
           .get(crypto.randomUUID(), input.email, input.name, "enabled", "{}", null, now, now) as {
           id: bigint;
         };
-        row = get(created.id)!;
+        row = must(get(created.id), "subscriber row");
       }
       // B124 (D125): a suppressed address joins double opt-in lists only. Its opt-in mail is the
       // person's own confirmation, and confirming clears the suppression (`confirmOptin`).

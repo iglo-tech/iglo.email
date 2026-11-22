@@ -3,6 +3,7 @@
 // so the record arrives with the page through the escaped bootstrap, as upstream's `_role` does.
 // The role you hold is read-only here: this screen does not raise your own permissions.
 import { Icon } from "@/admin/layout/icon";
+import { must } from "@/invariant";
 import type { AdminRequest, AdminView } from "@/admin/page";
 import { Breadcrumbs, EmptyState } from "@/admin/views/parts";
 import { roleKeys } from "@/admin/views/roles";
@@ -29,7 +30,7 @@ const groupOf = new Map([
 function permissionGroups(): Array<{ group: string; permissions: Array<string> }> {
   const groups = new Map<string, Array<string>>();
   for (const permission of validPermissions) {
-    const prefix = permission.split(":", 1)[0]!;
+    const prefix = must(permission.split(":", 1)[0], "permission prefix");
     const group =
       permission === "webhooks:post_bounce" ? "bounces" : (groupOf.get(prefix) ?? prefix);
     groups.set(group, [...(groups.get(group) ?? []), permission]);

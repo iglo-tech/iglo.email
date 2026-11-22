@@ -3,6 +3,7 @@ import { SaxesParser } from "saxes";
 import type { RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
 import { readBodyBytes } from "@/users/input";
+import { must } from "@/invariant";
 import { trimSpace } from "@/lists/store";
 
 export interface SubscriberInput {
@@ -127,7 +128,7 @@ function finiteNumbers(raw: string) {
   let quoted = false,
     escaped = false;
   for (let i = 0; i < raw.length; i++) {
-    const c = raw[i]!;
+    const c = raw.charAt(i);
     if (quoted) {
       if (escaped) {
         escaped = false;
@@ -159,7 +160,7 @@ function normalizeStrings(raw: string): string {
     const begin = i;
     let escaped = false;
     while (++i < raw.length) {
-      const c = raw[i]!;
+      const c = raw.charAt(i);
       if (escaped) {
         escaped = false;
       } else if (c === "\\") {
@@ -194,7 +195,7 @@ export function parseAttributes(raw: string): Record<string, unknown> | null {
   }
   const pending: Array<[unknown, number]> = [[attribs, 1]];
   while (pending.length) {
-    const [item, depth] = pending.pop()!;
+    const [item, depth] = must(pending.pop(), "pending attribute");
     if (depth > MAX_ATTRIBS_DEPTH) {
       throw new Error("nested too deeply");
     }
@@ -226,7 +227,7 @@ function jsonInput(
       let quoted = false,
         escaped = false;
       for (let i = 0; i < member.length; i++) {
-        const c = member[i]!;
+        const c = member.charAt(i);
         if (quoted) {
           if (escaped) {
             escaped = false;
@@ -308,7 +309,7 @@ function jsonInput(
     quoted = false,
     escaped = false;
   for (let i = start; i < body.length; i++) {
-    const c = body[i]!;
+    const c = body.charAt(i);
     if (quoted) {
       if (escaped) {
         escaped = false;
@@ -487,7 +488,9 @@ export async function subscriberInput(
         values.push(...new URLSearchParams(encoded), ...new URLSearchParams(query));
       } else {
         const form = await new Response(Uint8Array.from(body), {
-          headers: { "Content-Type": context.request.headers.get("content-type")! },
+          headers: {
+            "Content-Type": must(context.request.headers.get("content-type"), "content type"),
+          },
         }).formData();
         for (const [key, value] of form) {
           if (typeof value === "string") {

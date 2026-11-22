@@ -1,12 +1,13 @@
 // Validation adapted from Go 1.27.2 net/url/url.go and gen_encoding_table.go.
 // Copyright The Go Authors; the BSD notice is embedded from assets/licenses/go-1.27.2-BSD.txt.
 import { isIP } from "node:net";
+import { must } from "@/invariant";
 
 const hostChars = /^[A-Za-z0-9!$&'()*+,;=:[\]<>"_.~-]$/;
 const escaped = (s: string) => !/%(?![0-9a-fA-F]{2})/.test(s);
 function hostPartValid(s: string, zone = false): boolean {
   for (let i = 0; i < s.length; i++) {
-    const c = s[i]!;
+    const c = s.charAt(i);
     if (c === "%") {
       const hex = s.slice(i + 1, i + 3);
       if (!/^[0-9a-fA-F]{2}$/.test(hex)) {
@@ -31,18 +32,20 @@ function hostPartValid(s: string, zone = false): boolean {
 // url.Parse lowercases the scheme, retains the original value for storage and
 // validates path and fragment escapes, but does not parse query escapes.
 export function validTrustedURL(input: string): boolean {
-  const [withoutFragment, ...fragmentParts] = input.split("#");
+  const [head, ...fragmentParts] = input.split("#");
+  // split always returns at least one part, so the text before the fragment is there.
+  const withoutFragment = must(head, "URL before fragment");
   const fragment = fragmentParts.join("#");
   // Control characters are refused on purpose in a trusted URL.
   // oxlint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(withoutFragment!) || !escaped(fragment)) {
+  if (/[\u0000-\u001f\u007f]/.test(withoutFragment) || !escaped(fragment)) {
     return false;
   }
-  const match = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?]*)([^?]*)(?:\?.*)?$/s.exec(withoutFragment!);
-  if (!match || !["http", "https"].includes(match[1]!.toLowerCase())) {
+  const match = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?]*)([^?]*)(?:\?.*)?$/s.exec(withoutFragment);
+  if (!match || !["http", "https"].includes(must(match[1], "URL scheme").toLowerCase())) {
     return false;
   }
-  const authority = match[2]!;
+  const authority = must(match[2], "URL authority");
   const at = authority.lastIndexOf("@");
   if (at >= 0) {
     const user = authority.slice(0, at);
@@ -51,7 +54,7 @@ export function validTrustedURL(input: string): boolean {
     }
   }
   const host = authority.slice(at + 1);
-  if (!host || !escaped(match[3]!)) {
+  if (!host || !escaped(must(match[3], "URL path"))) {
     return false;
   }
   const bracket = host.lastIndexOf("[");

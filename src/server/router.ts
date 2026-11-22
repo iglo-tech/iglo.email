@@ -2,6 +2,7 @@
 // Path selection follows Echo v5.4.0 router.go and Go 1.27.2 net/url.setPath;
 // malformed path escapes follow Go's net/http/server.go transport rejection.
 import type { App } from "@/app";
+import { must } from "@/invariant";
 import type { Handler, Middleware, RequestContext } from "@/server/context";
 import { errorResponse, HttpError } from "@/server/response";
 import { assetResponse } from "@/server/assets";
@@ -44,8 +45,8 @@ function precedence(a: Route, b: Route): number {
     return a.segments.length - b.segments.length;
   }
   for (let i = 0; i < a.segments.length; i++) {
-    const left = a.segments[i]!;
-    const right = b.segments[i]!;
+    const left = must(a.segments[i], "route segment");
+    const right = must(b.segments[i], "route segment");
     if ("literal" in left !== "literal" in right) {
       return "literal" in left ? -1 : 1;
     }
@@ -78,8 +79,8 @@ function match(route: Route, parts: Array<string>): Record<string, string> | und
   }
   const params: Record<string, string> = Object.create(null);
   for (let i = 0; i < parts.length; i++) {
-    const segment = route.segments[i]!;
-    const part = parts[i]!;
+    const segment = must(route.segments[i], "route segment");
+    const part = must(parts[i], "path part");
     if ("literal" in segment) {
       if (part !== segment.literal) {
         return undefined;
@@ -125,7 +126,7 @@ export class Router {
           item.method === method &&
           item.segments.length === route.segments.length &&
           item.segments.every((part, i) => {
-            const other = route.segments[i]!;
+            const other = must(route.segments[i], "route segment");
             return "name" in part
               ? "name" in other
               : "literal" in other && part.literal === other.literal;

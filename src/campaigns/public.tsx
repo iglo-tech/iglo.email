@@ -6,6 +6,7 @@
 // src/public/archive.tsx.
 import type { Database } from "bun:sqlite";
 import { deflateSync, crc32 } from "node:zlib";
+import { must } from "@/invariant";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import { parseBool, readPreferences } from "@/public/form";
@@ -55,7 +56,7 @@ function transparentPixel(): Uint8Array {
 }
 /** D117: a test send's links carry `testSendUUID` and answer the test page for any subscriber. */
 const isTestSend = (context: RequestContext) =>
-  context.params.campUUID!.toLowerCase() === testSendUUID;
+  must(context.params.campUUID, "campaign UUID").toLowerCase() === testSendUUID;
 export function registerCampaignPublicRoutes(
   router: Router,
   deps: {
@@ -154,8 +155,8 @@ export function registerCampaignPublicRoutes(
     if (bad) {
       return bad;
     }
-    const camp = context.params.campUUID!.toLowerCase();
-    const found = pairing(camp, context.params.subUUID!);
+    const camp = must(context.params.campUUID, "campaign UUID").toLowerCase();
+    const found = pairing(camp, must(context.params.subUUID, "subscriber UUID"));
     if (!found) {
       return unpaired(t);
     }
@@ -188,8 +189,8 @@ export function registerCampaignPublicRoutes(
       if (bad) {
         return bad;
       }
-      const camp = context.params.campUUID!.toLowerCase();
-      const subUuid = context.params.subUUID!;
+      const camp = must(context.params.campUUID, "campaign UUID").toLowerCase();
+      const subUuid = must(context.params.subUUID, "subscriber UUID");
       if (!pairing(camp, subUuid)) {
         return unpaired(t);
       }
@@ -274,10 +275,11 @@ export function registerCampaignPublicRoutes(
       if (bad) {
         return bad;
       }
-      const camp = context.params.campUUID!.toLowerCase();
+      const camp = must(context.params.campUUID, "campaign UUID").toLowerCase();
       return (
-        deps.privacy.export(context, () => privacySubscriber(camp, context.params.subUUID!)) ??
-        unpaired(context.app.i18n)
+        deps.privacy.export(context, () =>
+          privacySubscriber(camp, must(context.params.subUUID, "subscriber UUID")),
+        ) ?? unpaired(context.app.i18n)
       );
     },
     ...privacyLimit,
@@ -293,14 +295,14 @@ export function registerCampaignPublicRoutes(
       if (bad) {
         return bad;
       }
-      const camp = context.params.campUUID!.toLowerCase();
+      const camp = must(context.params.campUUID, "campaign UUID").toLowerCase();
       // B126 (D123): the confirmation's "Keep my data" returns to this campaign's page, with the manage view
       // only when preferences are on.
-      const manage = `/subscription/${camp}/${context.params.subUUID!.toLowerCase()}${options().allowPreferences ? "?manage=true" : ""}`;
+      const manage = `/subscription/${camp}/${must(context.params.subUUID, "subscriber UUID").toLowerCase()}${options().allowPreferences ? "?manage=true" : ""}`;
       return (
         deps.privacy.wipe(
           context,
-          () => privacySubscriber(camp, context.params.subUUID!),
+          () => privacySubscriber(camp, must(context.params.subUUID, "subscriber UUID")),
           manage,
         ) ?? unpaired(context.app.i18n)
       );
@@ -314,8 +316,8 @@ export function registerCampaignPublicRoutes(
       return bad;
     }
     const settings = deps.settings();
-    const campUuid = context.params.campUUID!.toLowerCase();
-    const subUuid = context.params.subUUID!.toLowerCase();
+    const campUuid = must(context.params.campUUID, "campaign UUID").toLowerCase();
+    const subUuid = must(context.params.subUUID, "subscriber UUID").toLowerCase();
     // D126 (r2): a view is recorded only for a delivered campaign. With individual tracking, the
     // pixel's subscriber must be one the campaign was delivered to, and the view names them. Without
     // it, a pixel counts anonymously when it names the dummy subscriber of a campaign with any delivery
@@ -358,14 +360,16 @@ export function registerCampaignPublicRoutes(
     if (bad) {
       return bad;
     }
-    const link = deps.tracking.get(context.params.linkUUID!.toLowerCase());
+    const link = deps.tracking.get(must(context.params.linkUUID, "link UUID").toLowerCase());
     const settings = deps.settings();
     const invalid = () =>
       page(t, 400, t.T("globals.terms.error"), t.T("globals.messages.invalidLink"), noIndex);
     if (!link) {
       return invalid();
     }
-    const campaign = deps.store.byUuid(context.params.campUUID!.toLowerCase());
+    const campaign = deps.store.byUuid(
+      must(context.params.campUUID, "campaign UUID").toLowerCase(),
+    );
     if (!settings.disableTracking && !campaign) {
       return invalid();
     }
@@ -383,7 +387,7 @@ export function registerCampaignPublicRoutes(
     if (!settings.disableTracking) {
       // RegisterCampaignLinkClick: the subscriber is optional.
       const sub = settings.individualTracking
-        ? deps.subscribers.byUuid(context.params.subUUID!.toLowerCase())
+        ? deps.subscribers.byUuid(must(context.params.subUUID, "subscriber UUID").toLowerCase())
         : null;
       deps.store.registerClick(campaign.id, link.id, sub?.id ?? null);
     }

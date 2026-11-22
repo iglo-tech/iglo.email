@@ -1,12 +1,13 @@
 // Native: which resolved addresses `webhooks.block_private_addresses` refuses.
 import { isIPv4, isIPv6 } from "node:net";
+import { must } from "@/invariant";
 
 const octets = (address: string) => address.split(".").map(Number);
 const inRange = (bytes: Array<number>, prefix: Array<number>, bits: number) =>
   prefix.every((value, index) => {
     const mask = Math.max(0, Math.min(8, bits - index * 8));
     const shift = 8 - mask;
-    return bytes[index]! >> shift === value >> shift;
+    return must(bytes[index], "address byte") >> shift === value >> shift;
   });
 /** Everything but public unicast: RFC 6890 special-purpose ranges. */
 const blocked4: Array<[Array<number>, number]> = [
@@ -36,7 +37,7 @@ const v4Blocked = (bytes: Array<number>) =>
 const groups = (part: string | undefined) => (part ? part.split(":") : []);
 /** The 16 bytes of a valid IPv6 address, zone removed. */
 function bytes6(address: string): Array<number> {
-  let text = address.split("%", 1)[0]!;
+  let text = must(address.split("%", 1)[0], "address before zone");
   const dotted = /(\d+\.\d+\.\d+\.\d+)$/.exec(text)?.[1];
   if (dotted) {
     // The pattern captures exactly four octets, so the defaults never apply.

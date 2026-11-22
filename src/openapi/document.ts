@@ -1,6 +1,7 @@
 // The OpenAPI 3.1 document of GET /api/openapi.json. It starts from upstream's
 // docs/swagger/collections.yaml and holds no secret and nothing of this instance.
 import packageJson from "@/../package.json";
+import { must } from "@/invariant";
 import { differences } from "@/openapi/differences";
 import { excluded } from "@/openapi/excluded";
 import { operations } from "@/openapi/operations";
@@ -42,7 +43,9 @@ const pathParameters = ({ route, path }: Operation) =>
     name,
     in: "path",
     required: true,
-    schema: path?.[name!] ?? (name === "id" ? { type: "integer", minimum: 1 } : { type: "string" }),
+    schema:
+      path?.[must(name, "path parameter name")] ??
+      (name === "id" ? { type: "integer", minimum: 1 } : { type: "string" }),
   }));
 
 function build(operation: Operation) {

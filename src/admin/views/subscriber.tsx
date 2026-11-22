@@ -5,6 +5,7 @@
 // enrollments and sends tabs are native (docs/design/05-sequences.md#admin-ui): their rows come from
 // /api/subscribers/:id/*, under the same list scope, and reach the page through x-text.
 import { Icon } from "@/admin/layout/icon";
+import { must } from "@/invariant";
 import type { AdminRequest, AdminView } from "@/admin/page";
 import {
   Alert,
@@ -145,7 +146,7 @@ function Overview({ t, canSave }: { t: Translation; canSave: boolean }) {
         ].map(([label, value, test]) => (
           <div class="col-4">
             <div class="card float stat-card">
-              <h5 class="title">{t.T(label!)}</h5>
+              <h5 class="title">{t.T(must(label, "stat label"))}</h5>
               <div class="stat-value" data-testid={test} x-text={value}></div>
             </div>
           </div>

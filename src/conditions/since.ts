@@ -50,7 +50,8 @@ export function sinceBound(context: ConditionContext, now: number, since: string
         ? instant(context.triggerAt, "triggerAt")
         : instant(context.lastStepAt, "lastStepAt");
   } else {
-    time = now - parseDuration(since)!;
+    // An unparsed duration is NaN, as the unchecked subtraction gave, and that fails the bound later.
+    time = now - (parseDuration(since) ?? Number.NaN);
   }
   // Stored instants are ISO strings from year 1000; an earlier bound admits every event.
   return time < MIN_TIME ? "" : new Date(time).toISOString();

@@ -1,4 +1,5 @@
 // Adapted from listmonk's internal/i18n/i18n.go and cmd/i18n.go.
+import { must } from "@/invariant";
 import { languagePack } from "@/i18n/packs";
 
 export class Translation {
@@ -11,12 +12,13 @@ export class Translation {
     this.values = Object.freeze(Object.assign(Object.create(null), base, overlay));
   }
 
+  // The constructor requires both keys, and an overlay only adds to them.
   get code(): string {
-    return this.values["_.code"]!;
+    return must(this.values["_.code"], "language code");
   }
 
   get name(): string {
-    return this.values["_.name"]!;
+    return must(this.values["_.name"], "language name");
   }
 
   // Loading an overlay produces an independent, immutable translation instance.
@@ -28,7 +30,7 @@ export class Translation {
     if (!Object.hasOwn(this.values, key)) {
       return key;
     }
-    return singular(this.values[key]!);
+    return singular(must(this.values[key], "translation"));
   }
 
   Ts(key: string, ...params: Array<string>): string {
@@ -41,8 +43,9 @@ export class Translation {
     let value = this.T(key);
     const budget = { remaining: 256 };
     for (let index = 0; index < params.length; index += 2) {
-      const replacement = this.resolve(params[index + 1]!, new Set(), budget);
-      value = value.replaceAll(`{${params[index]!}}`, () => replacement);
+      // The argument count is even, so each name has its value.
+      const replacement = this.resolve(must(params[index + 1], "argument"), new Set(), budget);
+      value = value.replaceAll(`{${must(params[index], "argument name")}}`, () => replacement);
     }
     return value;
   }
@@ -51,12 +54,12 @@ export class Translation {
     if (!Object.hasOwn(this.values, key)) {
       return key;
     }
-    const value = this.values[key]!;
+    const value = must(this.values[key], "translation");
     if (count <= 1 || !value.includes("|")) {
       return singular(value);
     }
     const parts = value.split("|");
-    return (parts.length === 2 ? parts[1]! : parts[0]!).trim();
+    return must(parts.length === 2 ? parts[1] : parts[0], "translation part").trim();
   }
 
   private resolve(value: string, active: Set<string>, budget: { remaining: number }): string {
@@ -76,7 +79,7 @@ export class Translation {
 }
 
 function singular(value: string): string {
-  return value.includes("|") ? value.split("|")[0]!.trim() : value;
+  return value.includes("|") ? must(value.split("|")[0], "translation part").trim() : value;
 }
 
 export function createTranslation(code = "en"): Translation {

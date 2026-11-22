@@ -4,7 +4,7 @@ export function maskSql(sql: string): string {
   let state: "normal" | "single" | "double" | "backtick" | "bracket" | "line" | "block" = "normal";
   let masked = "";
   for (let i = 0; i < sql.length; i++) {
-    const ch = sql[i]!;
+    const ch = sql.charAt(i);
     const next = sql[i + 1];
     if (state === "normal") {
       if (ch === "-" && next === "-") {

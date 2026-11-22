@@ -2,6 +2,7 @@
 // and listmonk internal/utils/utils.go at 6fcd95f. Copyright 2009 The Go
 // Authors. See assets/licenses/go-1.27.2-BSD.txt for the complete license.
 import { isIP } from "node:net";
+import { must } from "@/invariant";
 import { trimSpace } from "@/lists/store";
 import { simpleLower } from "@/subscribers/unicode-lower";
 
@@ -10,7 +11,7 @@ function atom(value: string): boolean {
     return false;
   }
   for (const char of value) {
-    const code = char.codePointAt(0)!;
+    const code = must(char.codePointAt(0), "code point");
     if (code < 128 && (code < 33 || code > 126 || String.raw`()<>[]:;@\,"`.includes(char))) {
       return false;
     }
@@ -25,7 +26,9 @@ const parse = (part: string) =>
           return [Number.parseInt(x, 16)];
         }
         const bytes = x.split(".").map(Number);
-        return [bytes[0]! * 256 + bytes[1]!, bytes[2]! * 256 + bytes[3]!];
+        // A missing octet is NaN, as the unchecked read gave: such a word never matches.
+        const octet = (index: number) => bytes[index] ?? Number.NaN;
+        return [octet(0) * 256 + octet(1), octet(2) * 256 + octet(3)];
       })
     : [];
 // Go net.ParseIP(...).To4() also accepts IPv4-mapped IPv6 literals.

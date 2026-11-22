@@ -1,5 +1,6 @@
 // Named-block preparation adapted from listmonk's cmd/init.go: readQueries/prepareQueries.
 import type { Database, SQLQueryBindings, Statement } from "bun:sqlite";
+import { must } from "@/invariant";
 import { maskSql } from "@/db/sql";
 
 export interface QuerySource {
@@ -61,7 +62,7 @@ export function prepareNamedQueries(
           isNormalAt(source.sql, offset + markerOffset);
         if (marker && inLexicalContext) {
           finish();
-          name = marker[1]!.trim();
+          name = must(marker[1], "marker name").trim();
           if (!name) {
             throw new Error(`Empty named query name in ${source.name}`);
           }

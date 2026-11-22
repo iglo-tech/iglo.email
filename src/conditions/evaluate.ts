@@ -5,6 +5,7 @@
 // Failures are returned, never thrown, and nothing runs on the write connection, so a caller's
 // transaction is never involved.
 import type { Database, Statement } from "bun:sqlite";
+import { must } from "@/invariant";
 import { compile } from "@/conditions/compile";
 import type { CompiledCondition } from "@/conditions/compile";
 import { ContextError, instant, sinceBound, subscriberID } from "@/conditions/since";
@@ -40,7 +41,7 @@ export function createConditionEvaluator(options: {
     }
     statements.set(sql, stmt);
     if (statements.size > CACHE) {
-      const [oldest, old] = statements.entries().next().value!;
+      const [oldest, old] = must(statements.entries().next().value, "oldest statement");
       statements.delete(oldest);
       old.finalize();
     }

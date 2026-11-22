@@ -6,6 +6,7 @@ import type { Database } from "bun:sqlite";
 import { deflateSync, crc32 } from "node:zlib";
 import { dummyUUID } from "@/campaigns/render";
 import { writeTransaction } from "@/db/transaction";
+import { must } from "@/invariant";
 import type { Translation } from "@/i18n/i18n";
 import type { Sends } from "@/messaging/sends";
 import { parseBool, readPreferences } from "@/public/form";
@@ -151,7 +152,10 @@ export function registerUnsubscribeRoutes(
     if (bad) {
       return bad;
     }
-    const found = pairedSend(context.params.sendUUID!, context.params.subUUID!);
+    const found = pairedSend(
+      must(context.params.sendUUID, "send UUID"),
+      must(context.params.subUUID, "subscriber UUID"),
+    );
     if (!found) {
       return notFound(t, noIndex);
     }
@@ -160,7 +164,7 @@ export function registerUnsubscribeRoutes(
     }
     const manage = parseBool(context.url.searchParams.get("manage")) === true;
     // B123 (D126): the page's forms post to this send's paired routes.
-    const base = `/m/${context.params.sendUUID!.toLowerCase()}`;
+    const base = `/m/${must(context.params.sendUUID, "send UUID").toLowerCase()}`;
     // B126 (D123): a marketing link covers its send's list and may blocklist; a transactional link
     // reads its subscriber's memberships instead, and has no blocklist (D126, r1).
     const mode: PageMode = found.marketing
@@ -191,8 +195,8 @@ export function registerUnsubscribeRoutes(
       if (bad) {
         return bad;
       }
-      const sendUuid = context.params.sendUUID!;
-      const subUuid = context.params.subUUID!;
+      const sendUuid = must(context.params.sendUUID, "send UUID");
+      const subUuid = must(context.params.subUUID, "subscriber UUID");
       if (!pairedSend(sendUuid, subUuid)) {
         return notFound(t);
       }
@@ -290,9 +294,15 @@ export function registerUnsubscribeRoutes(
   // reaches a transactional send's pairing too, as its page offers it (B126, D123 item 8). Wipe does not:
   // a transactional send can carry Cc and Bcc copies, so only a marketing send's pairing may delete.
   const paired = (context: RequestContext) =>
-    pairedSend(context.params.sendUUID!, context.params.subUUID!)?.subscriber ?? null;
+    pairedSend(
+      must(context.params.sendUUID, "send UUID"),
+      must(context.params.subUUID, "subscriber UUID"),
+    )?.subscriber ?? null;
   const pairedMarketing = (context: RequestContext) =>
-    target(context.params.sendUUID!, context.params.subUUID!)?.subscriber ?? null;
+    target(
+      must(context.params.sendUUID, "send UUID"),
+      must(context.params.subUUID, "subscriber UUID"),
+    )?.subscriber ?? null;
   router.route(
     "POST",
     "/m/:sendUUID/export/:subUUID",
@@ -315,7 +325,7 @@ export function registerUnsubscribeRoutes(
       }
       // B126 (D123): the confirmation's "Keep my data" returns to the page this send shows, with the manage
       // view only when preferences are on (the view is the only thing ?manage=true asks for).
-      const manage = `/m/${context.params.sendUUID!.toLowerCase()}/unsubscribe/${context.params.subUUID!.toLowerCase()}${options().allowPreferences ? "?manage=true" : ""}`;
+      const manage = `/m/${must(context.params.sendUUID, "send UUID").toLowerCase()}/unsubscribe/${must(context.params.subUUID, "subscriber UUID").toLowerCase()}${options().allowPreferences ? "?manage=true" : ""}`;
       return (
         deps.privacy.wipe(context, () => pairedMarketing(context), manage) ??
         notFound(context.app.i18n)
@@ -331,7 +341,7 @@ export function registerUnsubscribeRoutes(
     }
     const settings = deps.settings();
     if (!settings.disableTracking) {
-      const send = deps.sends.byUuid(context.params.sendUUID!.toLowerCase());
+      const send = deps.sends.byUuid(must(context.params.sendUUID, "send UUID").toLowerCase());
       if (send) {
         try {
           deps.tracking.view(send.id, settings.individualTracking ? send.subscriber_id : null);
@@ -357,8 +367,8 @@ export function registerUnsubscribeRoutes(
     if (bad) {
       return bad;
     }
-    const sendUuid = context.params.sendUUID!.toLowerCase();
-    const linkUuid = context.params.linkUUID!.toLowerCase();
+    const sendUuid = must(context.params.sendUUID, "send UUID").toLowerCase();
+    const linkUuid = must(context.params.linkUUID, "link UUID").toLowerCase();
     const send = deps.sends.byUuid(sendUuid);
     const link = send ? deps.tracking.get(linkUuid) : null;
     // No open redirect: the link must have been rendered into this send's message.

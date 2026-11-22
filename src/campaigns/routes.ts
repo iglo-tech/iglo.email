@@ -3,6 +3,7 @@
 // runner: status changes here only record the state.
 import { refuseWhileHeld } from "@/settings/hold";
 import { writeTransaction } from "@/db/transaction";
+import { must } from "@/invariant";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import { newMessageId } from "@/messaging/email";
@@ -198,7 +199,9 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
     try {
       form = await new Request("http://form.invalid", {
         method: "POST",
-        headers: { "content-type": context.request.headers.get("content-type")! },
+        headers: {
+          "content-type": must(context.request.headers.get("content-type"), "content type"),
+        },
         body: bytes,
       }).formData();
     } catch {
@@ -727,7 +730,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     if (
       raw.archive_template_id !== undefined &&
       raw.archive_template_id !== null &&
-      input.archive_template_id! < 0n
+      (input.archive_template_id ?? 0n) < 0n
     ) {
       throw new HttpError(400);
     }
@@ -986,7 +989,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       writeTransaction(context.app.db, () =>
         testSends.record(
           messages.map((message) => ({
-            messageId: message.messageId!,
+            messageId: must(message.messageId, "Message-ID"),
             kind: "campaign",
             campaign_id: stored.id,
             sequence_id: null,

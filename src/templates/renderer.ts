@@ -2,6 +2,7 @@
 // models/messages.go and internal/manager/message.go at 6fcd95f.
 import { Context, Drop, Liquid, Output, defaultOperators, toValueSync } from "liquidjs";
 import type { Emitter, LiquidOptions, Template } from "liquidjs";
+import { must } from "@/invariant";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
 import { parseTemplateData } from "@/templates/data";
@@ -255,9 +256,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
             c === "&" ? 5 : c === "<" || c === ">" ? 4 : c === '"' || c === "'" ? 5 : byteLength(c);
         }
         budget(this.context).charge(size);
-        return input.replaceAll(
-          /[&<>"']/g,
-          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" })[c]!,
+        return input.replaceAll(/[&<>"']/g, (c) =>
+          must({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" }[c], "escape"),
         );
       };
     }
@@ -388,7 +388,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
         ["M", pad(date.getUTCMinutes())],
         ["S", pad(date.getUTCSeconds())],
       ]);
-      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => values.get(key)!);
+      // An unknown conversion letter renders as the text "undefined", as it always has.
+      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => String(values.get(key)));
       b.charge(byteLength(out));
       return out;
     });
@@ -641,7 +642,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       const pixel =
         request.mode === "plain"
           ? ""
-          : `<img src="${attribute(tracking!.view!)}" width="1" height="1" style="display:none;max-height:0;max-width:0;opacity:0" alt="">`;
+          : `<img src="${attribute(must(must(tracking, "render tracking").view, "tracking view"))}" width="1" height="1" style="display:none;max-height:0;max-width:0;opacity:0" alt="">`;
       const count = body.split(viewMarker).length - 1;
       const size = byteLength(body) + count * (byteLength(pixel) - byteLength(viewMarker));
       if (size > OUTPUT_LIMIT) {

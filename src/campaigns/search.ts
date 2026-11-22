@@ -3,6 +3,8 @@
 // character with the same simple lowercase form: `i` matches `I` and `İ`, `ß` matches `ẞ`.
 // Subscriber search uses a regex rule instead (src/subscribers/query-filter.ts).
 
+import { must } from "@/invariant";
+
 /** The single-character lowercase form, as the reference database's lower() returns it. */
 function simpleLower(char: string): string {
   const lower = char.toLowerCase();
@@ -12,7 +14,7 @@ function simpleLower(char: string): string {
   }
   // Full case mapping adds combining marks (İ → i̇); the simple mapping keeps the base letter.
   if (points.slice(1).every((point) => /\p{M}/u.test(point))) {
-    return points[0]!;
+    return must(points[0], "lowercase letter");
   }
   return char;
 }

@@ -3,6 +3,7 @@
 // 6fcd95f, on the M1.8 Liquid renderer (docs/design/06-templates.md).
 import type { ContentType, WritableCampaign } from "@/campaigns/store";
 import { hasTemplate } from "@/campaigns/input";
+import { must } from "@/invariant";
 import { createMessageBudget } from "@/templates/renderer";
 import type { RenderRequest, RenderTracking, TemplateRenderer } from "@/templates/renderer";
 
@@ -132,7 +133,7 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
             Object.entries(set).map(([k, v]) => [
               k,
               // Rendered values must stay single header lines.
-              plain(headers[i]![k] ?? null, v).replaceAll(/[\r\n\0]+/g, " "),
+              plain(must(headers[i], "header set")[k] ?? null, v).replaceAll(/[\r\n\0]+/g, " "),
             ]),
           ),
         ),

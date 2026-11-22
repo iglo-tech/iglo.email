@@ -6,6 +6,7 @@ import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import { getID, hasID } from "@/server/validation";
+import { must } from "@/invariant";
 import { trimSpace } from "@/lists/store";
 import { allowedDomain, sanitizeEmail } from "@/subscribers/email";
 import { titleWords } from "@/subscribers/unicode-title";
@@ -82,7 +83,7 @@ const selector = (c: RequestContext) => {
     if (values.length !== 1) {
       throw new HttpError(400);
     }
-    value = values[0]!;
+    value = must(values[0], "external id");
   } else {
     try {
       value = decodeURIComponent(c.url.pathname.slice("/api/subscribers/external/".length));
@@ -200,8 +201,7 @@ export function registerSubscriberRoutes(
     if (creating) {
       input.name = trimSpace(input.name ?? "");
       if (!input.name) {
-        input.name = (input.email ?? "")
-          .split("@")[0]!
+        input.name = must((input.email ?? "").split("@")[0], "email local part")
           .replaceAll(".", " ")
           .split(/[\t-\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/)
           .filter(Boolean)
@@ -226,17 +226,17 @@ export function registerSubscriberRoutes(
     const input = await subscriberInput(c, "crud");
     validate(c, input, true, false);
     auth.revalidate(c, "subscribers:manage");
-    let created: SubscriberRow;
-    const response = store.transaction(() => {
+    // The transaction returns the row it wrote, so the mail below reads it without a closure assignment.
+    const { response, created } = store.transaction(() => {
       listPermission(c, input.lists);
-      created = store.create(
+      const row = store.create(
         input as SubscriberInput & { email: string; name: string },
         scope(c, "manage"),
       );
-      return ok(store.project(created, maskScope(c)));
+      return { response: ok(store.project(row, maskScope(c))), created: row };
     });
     if (!input.preconfirm_subscriptions) {
-      optin?.afterAdminWrite(created!, permitted(c, input.lists));
+      optin?.afterAdminWrite(created, permitted(c, input.lists));
     }
     return response;
   };
@@ -255,18 +255,18 @@ export function registerSubscriberRoutes(
       const input = await subscriberInput(c, "crud");
       validate(c, input, false, patch);
       auth.revalidate(c, "subscribers:manage");
-      let updated: SubscriberRow;
-      const response = store.transaction(() => {
+      // The transaction returns the row it wrote, so the mail below reads it without a closure assignment.
+      const { response, updated } = store.transaction(() => {
         if (externalKey !== undefined && store.external(externalKey)?.id !== id) {
           throw missingExternal();
         }
         allowed(c, [id], "manage");
         listPermission(c, input.lists);
-        updated = store.update(required(c, id, external), input, patch, scope(c, "manage"));
-        return ok(store.project(updated, maskScope(c)));
+        const row = store.update(required(c, id, external), input, patch, scope(c, "manage"));
+        return { response: ok(store.project(row, maskScope(c))), updated: row };
       });
       if (!input.preconfirm_subscriptions && (!patch || input.lists?.length)) {
-        optin?.afterAdminWrite(updated!, permitted(c, input.lists));
+        optin?.afterAdminWrite(updated, permitted(c, input.lists));
       }
       return response;
     };
@@ -321,13 +321,14 @@ export function registerSubscriberRoutes(
     });
   const blockMany: Handler = async (c) => {
     const input = await subscriberInput(c, "blocklist");
-    if (!input.ids?.length) {
+    const ids = input.ids;
+    if (!ids?.length) {
       throw new HttpError(400, c.app.i18n.Ts("globals.messages.errorInvalidIDs", "error", "ids"));
     }
     auth.revalidate(c, "subscribers:manage");
     return store.transaction(() => {
-      allowed(c, input.ids!, "manage");
-      store.blocklist(input.ids!);
+      allowed(c, ids, "manage");
+      store.blocklist(ids);
       return ok(true);
     });
   };
@@ -339,16 +340,18 @@ export function registerSubscriberRoutes(
       if (!ids.length) {
         throw new HttpError(400, c.app.i18n.T("globals.messages.noIDs"));
       }
-      if (!input.target_list_ids?.length) {
+      const targetListIds = input.target_list_ids;
+      if (!targetListIds?.length) {
         throw new HttpError(400, c.app.i18n.T("subscribers.errorNoListsGiven"));
       }
       auth.revalidate(c, "subscribers:manage");
       return store.transaction(() => {
         allowed(c, ids, "manage");
-        listPermission(c, input.target_list_ids);
+        listPermission(c, targetListIds);
         const s = scope(c, "manage");
-        const targets = input.target_list_ids!.filter((id) => s.all || s.ids.includes(id));
-        if (!["add", "remove", "unsubscribe"].includes(input.action ?? "")) {
+        const targets = targetListIds.filter((id) => s.all || s.ids.includes(id));
+        const batchAction = input.action;
+        if (batchAction === undefined || !["add", "remove", "unsubscribe"].includes(batchAction)) {
           throw new HttpError(400, c.app.i18n.T("globals.messages.invalidAction"));
         }
         if (
@@ -361,7 +364,7 @@ export function registerSubscriberRoutes(
             c.app.i18n.Ts("globals.messages.invalidFields", "name", "status"),
           );
         }
-        store.action(ids, targets, input.action!, input.status ?? "");
+        store.action(ids, targets, batchAction, input.status ?? "");
         return ok(true);
       });
     };

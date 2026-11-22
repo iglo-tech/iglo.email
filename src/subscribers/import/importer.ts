@@ -169,8 +169,10 @@ export function createImporter(deps: {
         say(`skipping line ${line}. wrong number of fields`);
         return;
       }
+      // Narrowed by the header check above; cell reads it right away, within this call.
+      const known = columns;
       const cell = (key: string) => {
-        const index = columns!.get(key);
+        const index = known.get(key);
         return index === undefined ? "" : text(record.field(index));
       };
       const rawEmail = cell("email"),

@@ -1,5 +1,6 @@
 // Bootstrap flags and configuration are adapted from listmonk's cmd/init.go and cmd/main.go.
 import { isIP } from "node:net";
+import { must } from "@/invariant";
 import { version } from "@/../package.json";
 
 export interface BootstrapConfig {
@@ -51,7 +52,7 @@ export function parseBootstrap(args: Array<string>, env: Environment): Bootstrap
   let printVersion = false;
 
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
+    const arg = must(args[i], "argument");
     if (!arg.startsWith("-")) {
       if (arg !== "serve" || sawCommand) {
         throw new Error(`Unknown command: ${arg}`);

@@ -1,6 +1,7 @@
 // The `reset-password` command (D67). Not ported: listmonk recovers through its mail link alone,
 // which a held install must not send. Here the operator proves control of the machine instead.
 import { createRealClock } from "@/clock";
+import { must } from "@/invariant";
 import type { Clock } from "@/clock";
 import { withStoppedDatabase } from "@/db/connection";
 import { productionMigrations } from "@/db/migrations";
@@ -38,7 +39,7 @@ function parseArguments(args: Array<string>): ResetArguments {
   const valued = { "--user": "user", "--data-dir": "dataDir" } as const;
   const isValuedFlag = (name: string): name is keyof typeof valued => Object.hasOwn(valued, name);
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
+    const arg = must(args[i], "argument");
     if (arg === "--help") {
       parsed.help = true;
       continue;

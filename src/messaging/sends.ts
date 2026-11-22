@@ -109,12 +109,18 @@ export interface SendFilter {
   subscriberId?: bigint;
   listId?: bigint;
 }
-const jsonID = (v: bigint | null) =>
-  v === null
-    ? null
-    : v <= BigInt(Number.MAX_SAFE_INTEGER)
-      ? Number(v)
-      : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(v.toString());
+const jsonBigint = (v: bigint) =>
+  v <= BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number(v)
+    : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(v.toString());
+const jsonID = (v: bigint | null) => (v === null ? null : jsonBigint(v));
+/** A row the module expects: a query that always returns one, or a row it has just written. */
+function expectRow<T>(row: T | null, what: string): T {
+  if (!row) {
+    throw new Error(`sends: ${what} is missing`);
+  }
+  return row;
+}
 function project(row: PublicRow) {
   return {
     id: jsonID(row.id),
@@ -152,7 +158,7 @@ export type BounceTarget = Pick<
 >;
 const noop = () => {};
 const summary = (row: PublicRow): SendSummary => ({
-  id: jsonID(row.id)!,
+  id: jsonBigint(row.id),
   uuid: row.uuid,
   status: row.status,
   smtp_message_id: row.smtp_message_id,
@@ -285,7 +291,7 @@ export function createSends(options: {
       "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?, claimed_until=?, next_attempt_at=NULL WHERE id=? AND status='queued'",
       [time.toISOString(), lease.toISOString(), row.id],
     );
-    return changes ? get(row.id)! : null;
+    return changes ? get(row.id) : null;
   }
   /**
    * Decode and recheck a claimed row. A row that cannot be sent is settled here; a sendable
@@ -484,7 +490,7 @@ export function createSends(options: {
           input.source,
           input.kind,
           input.subscriberId ?? null,
-          input.message.to[0]!,
+          input.message.to[0] ?? null,
           input.templateId ?? null,
           input.enrollmentId ?? null,
           input.stepId ?? null,
@@ -494,10 +500,10 @@ export function createSends(options: {
           payload,
           now(),
         );
-      return row!.id;
+      return expectRow(row, "inserted send").id;
     });
     wake();
-    return project(getPublic(id)!);
+    return project(expectRow(getPublic(id), "queued send"));
   }
   function resend(id: bigint, authorize: () => void) {
     const result = writeTransaction(db, () => {
@@ -540,7 +546,8 @@ export function createSends(options: {
           original.id,
           now(),
         );
-      return project(getPublic(inserted!.id)!);
+      const resent = expectRow(inserted, "resent send");
+      return project(expectRow(getPublic(resent.id), "resent send"));
     });
     wake();
     return result;
@@ -627,7 +634,11 @@ export function createSends(options: {
       input.authorize?.();
       const prefix = input.idempotency ? keyPrefix(input.idempotency.key) : null;
       if (prefix) {
-        const previous = replay(prefix, fingerprint!);
+        // The key and its fingerprint are validated above, so a fingerprint is always present here.
+        if (typeof fingerprint !== "string") {
+          throw new Error("sends: idempotent request has no fingerprint");
+        }
+        const previous = replay(prefix, fingerprint);
         if (previous) {
           return {
             replayed: true,
@@ -640,7 +651,10 @@ export function createSends(options: {
       const rows: Array<PublicRow> = [];
       const queued: Array<bigint> = [];
       prepared.forEach(({ send, subscriberUuid, payload }, index) => {
-        const to = send.message.to[0]!;
+        const to = send.message.to[0];
+        if (to === undefined) {
+          throw new Error("sends: prepared message has no recipient");
+        }
         let skip: string | null = null;
         if (send.subscriberId !== null && send.subscriberId !== undefined) {
           const current = subscribers.get(send.subscriberId);
@@ -660,7 +674,7 @@ export function createSends(options: {
           });
         }
         const uuid = send.uuid ?? crypto.randomUUID();
-        const row = db
+        const inserted = db
           .query<{ id: bigint }, Array<SQLQueryBindings>>(
             `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
           )
@@ -680,11 +694,12 @@ export function createSends(options: {
             messageId(uuid),
             skip ? null : payload,
             now(),
-          )!;
+          );
+        const row = expectRow(inserted, "queued send");
         if (!skip) {
           queued.push(row.id);
         }
-        rows.push(getPublic(row.id)!);
+        rows.push(expectRow(getPublic(row.id), "queued send"));
       });
       return {
         replayed: false,
@@ -806,7 +821,7 @@ export function createSends(options: {
             uuid: input.prepared.send.uuid ?? crypto.randomUUID(),
             kind: input.prepared.send.kind,
             subscriberId: input.prepared.send.subscriberId ?? null,
-            to: input.prepared.send.message.to[0]!,
+            to: input.prepared.send.message.to[0] ?? null,
             templateId: input.prepared.send.templateId ?? null,
             enrollmentId: input.prepared.send.enrollmentId ?? null,
             stepId: input.prepared.send.stepId ?? null,
@@ -831,7 +846,7 @@ export function createSends(options: {
     if (row.enrollmentId === null || row.stepId === null) {
       throw new Error("Invalid prepared send");
     }
-    return db
+    const inserted = db
       .query<{ id: bigint }, Array<SQLQueryBindings>>(
         `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, 'sequence', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
@@ -849,7 +864,8 @@ export function createSends(options: {
         messageId(row.uuid),
         row.payload,
         now(),
-      )!.id;
+      );
+    return expectRow(inserted, "sequence send").id;
   }
   return {
     enqueue,
@@ -902,15 +918,22 @@ export function createSends(options: {
      */
     sequenceAdmission(prepared: PreparedSequenceSend): string | null {
       const { send, subscriberUuid } = prepared;
-      const current = subscribers.get(send.subscriberId!);
-      if (!current || current.uuid !== subscriberUuid || current.email !== send.message.to[0]) {
+      // A sequence send names its subscriber; without one, the subscriber is unavailable, as a missing row is.
+      const subscriberId = send.subscriberId ?? null;
+      const current = subscriberId === null ? null : subscribers.get(subscriberId);
+      if (
+        subscriberId === null ||
+        !current ||
+        current.uuid !== subscriberUuid ||
+        current.email !== send.message.to[0]
+      ) {
         return "subscriber_unavailable";
       }
       if (current.status === "blocklisted" || blocklisted(current.email)) {
         return "subscriber_blocklisted";
       }
       if (send.kind === "marketing") {
-        return marketing(send.subscriberId!, send.listId ?? null, {
+        return marketing(subscriberId, send.listId ?? null, {
           lineage: null,
           pending: true,
         });
@@ -941,7 +964,7 @@ export function createSends(options: {
           if (!changed.changes) {
             continue;
           }
-          const row = get(id)!;
+          const row = expectRow(get(id), "claimed send");
           claimed.push({ row, message: admit(row) });
         }
         return claimed;
@@ -1014,11 +1037,14 @@ export function createSends(options: {
         }
       }
       const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
-      const total = db
-        .query<{ total: bigint }, Array<SQLQueryBindings>>(
-          `SELECT count(*) AS total FROM sends${where}`,
-        )
-        .get(...values)!.total;
+      const total = expectRow(
+        db
+          .query<{ total: bigint }, Array<SQLQueryBindings>>(
+            `SELECT count(*) AS total FROM sends${where}`,
+          )
+          .get(...values),
+        "send count",
+      ).total;
       const rows = db
         .query<PublicRow, Array<SQLQueryBindings>>(
           `SELECT ${publicColumns} FROM sends${where} ORDER BY id DESC LIMIT ? OFFSET ?`,

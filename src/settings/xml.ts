@@ -1,5 +1,6 @@
 // XML binding follows listmonk models/settings.go with Echo's encoding/xml decoder.
 import { SaxesParser } from "saxes";
+import { must } from "@/invariant";
 import { int64, Members, parseStoredJson } from "@/settings/json";
 import { xmlNames } from "@/settings/xml-names";
 import { trimSpace } from "@/lists/store";
@@ -24,7 +25,7 @@ function xmlRoot(body: Buffer): Node {
     }
     const node: Node = { name: tag.name.slice(tag.name.indexOf(":") + 1), text: "", children: [] };
     if (stack.length) {
-      stack.at(-1)!.children.push(node);
+      must(stack.at(-1), "open element").children.push(node);
     } else {
       root = node;
     }
@@ -32,7 +33,7 @@ function xmlRoot(body: Buffer): Node {
   });
   const characters = (text: string) => {
     if (stack.length) {
-      stack.at(-1)!.text += text;
+      must(stack.at(-1), "open element").text += text;
     }
   };
   parser.on("text", characters);

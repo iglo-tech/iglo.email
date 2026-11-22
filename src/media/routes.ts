@@ -4,6 +4,7 @@
 // served, and never a row without its file. Deletion removes the row first for the same reason.
 // Thumbnails are not generated (01-scope.md): `thumb` names the image itself. See 07-api-and-ui.md.
 import { imageSize } from "@/media/image";
+import { must } from "@/invariant";
 import { extensionOf, makeFilename, uploadRoot, UploadRootError } from "@/media/filesystem";
 import type { Filesystem } from "@/media/filesystem";
 import type { MediaRow, MediaStore } from "@/media/store";
@@ -312,7 +313,7 @@ export function registerMediaRoutes(
     const ext = extensionOf(name);
     // Same origin as the admin: with `nosniff`, this type is what stops `<script src>` on an upload
     // from passing the admin's `script-src 'self'` (D71).
-    const known = Bun.file(ext ? `file.${ext}` : "file").type.split(";", 1)[0]!;
+    const known = must(Bun.file(ext ? `file.${ext}` : "file").type.split(";", 1)[0], "media type");
     const type = /script/.test(known) ? "application/octet-stream" : known;
     const tag = `"${file.size.toString(16)}-${Math.floor(file.modified).toString(16)}"`;
     const modified = new Date(file.modified).toUTCString();
