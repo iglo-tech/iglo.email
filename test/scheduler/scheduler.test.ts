@@ -465,7 +465,10 @@ test("a step whose template was deleted records a skipped send, logs once, and a
 
 test("a rendering failure is a recorded skipped send, not a crash", async () => {
   const f = await open();
-  const bad = await f.template("{% for i in (1..100000000) %}xxxxxxxxxx{% endfor %}");
+  // The event carries no `when`, so the date fails when the step sends it. A save cannot judge a
+  // value the sample lacks (D134), so the template saves; a template whose own text cannot render
+  // is refused at save instead.
+  const bad = await f.template('{{ trigger.data.when | date: "%Y" }}');
   const good = await f.template();
   const seq = await f.sequence({
     steps: [tx(bad), tx(good, { wait: "PT1H" })],
