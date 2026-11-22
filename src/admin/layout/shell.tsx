@@ -66,7 +66,7 @@ function scriptJSON(value: JSONValue): string {
       throw new TypeError("Invalid bootstrap JSON");
     }
     seen.add(item);
-    for (const child of Object.values(item)) {
+    for (const child of Object.values<JSONValue>(item)) {
       validate(child);
     }
     seen.delete(item);

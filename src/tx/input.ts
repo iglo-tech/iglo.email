@@ -152,7 +152,7 @@ function bindJSON(text: string, out: TxMessage) {
         if (typeof value === "number" && context?.source !== undefined) {
           let entries = sources.get(this);
           if (!entries) {
-            sources.set(this, (entries = new Map()));
+            sources.set(this, (entries = new Map<string, string>()));
           }
           entries.set(key, context.source);
         }

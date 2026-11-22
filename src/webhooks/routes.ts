@@ -58,7 +58,9 @@ const validEvents = (c: RequestContext, value: unknown) => {
   if (
     !Array.isArray(value) ||
     !value.length ||
-    value.some((event) => !webhookEvents.includes(event))
+    value.some(
+      (event) => typeof event !== "string" || !webhookEvents.some((name) => name === event),
+    )
   ) {
     throw invalid(c, "events");
   }

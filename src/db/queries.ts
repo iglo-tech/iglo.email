@@ -1,5 +1,5 @@
 // Named-block preparation adapted from listmonk's cmd/init.go: readQueries/prepareQueries.
-import type { Database, Statement } from "bun:sqlite";
+import type { Database, SQLQueryBindings, Statement } from "bun:sqlite";
 import { maskSql } from "@/db/sql";
 
 export interface QuerySource {
@@ -43,7 +43,7 @@ export function prepareNamedQueries(
           throw new Error(`Named query ${name} must contain one SQL statement`);
         }
         try {
-          statements.set(name, db.prepare(block));
+          statements.set(name, db.prepare<unknown, Array<SQLQueryBindings>>(block));
         } catch (error) {
           throw new Error(`Invalid named query ${name} in ${source.name}`, { cause: error });
         }

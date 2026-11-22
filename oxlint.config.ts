@@ -267,6 +267,33 @@ export default defineConfig({
       files: ["src/messaging/payload.ts", "src/public/settings.ts", "src/settings/validate.ts"],
       rules: { "typescript/no-unsafe-call": "off" },
     },
+    // Exceptions, for the lead to decide at review (no-unsafe-argument). Settings values are `any` per key, and
+    // a per-key schema is a separate design (D132): these files pass single settings values, or the settings
+    // record, to typed parameters.
+    {
+      files: [
+        "src/main.ts",
+        "src/media/routes.ts",
+        "src/public/settings.ts",
+        "src/settings/routes.ts",
+        "src/settings/validate.ts",
+        "src/settings/xml.ts",
+      ],
+      rules: { "typescript/no-unsafe-argument": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-argument). These pass parsed JSON that is `any` until a
+    // boundary check: a stored journal payload (checked field by field by check()), a stored archive's metadata,
+    // stored aggregate definitions, stored subscriber attributes, and the SMTP test request body.
+    {
+      files: [
+        "src/messaging/payload.ts",
+        "src/messaging/test.ts",
+        "src/public/archive.tsx",
+        "src/scheduler/scheduler.ts",
+        "src/subscribers/store.ts",
+      ],
+      rules: { "typescript/no-unsafe-argument": "off" },
+    },
     // Exceptions, for the lead to decide at review (no-unsafe-return). `main.ts` returns single settings values
     // (`Record<string, any>`, one type per key: D132's per-key schema is a separate design). `validate.ts` binds a
     // settings value to its shape, which is `any` by design.
@@ -299,7 +326,6 @@ export default defineConfig({
     // B134d/B134e: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed:
     // B134e takes the typescript/no-unsafe-* rules, B134d takes the rest.
     "typescript/no-non-null-assertion": "off", // B134d
-    "typescript/no-unsafe-argument": "off", // B134e
     "typescript/no-unsafe-assignment": "off", // B134e
     "typescript/no-unsafe-member-access": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
