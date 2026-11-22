@@ -27,7 +27,7 @@ const browser = async (...args: Array<string>) => {
   });
   if (result.code !== 0) {
     throw new Error(
-      `Browser operation failed: ${args[0]}: ${result.stderr.replace(/https?:\/\/\S+/g, "[local URL]").slice(0, 400)}`,
+      `Browser operation failed: ${args[0]}: ${result.stderr.replaceAll(/https?:\/\/\S+/g, "[local URL]").slice(0, 400)}`,
     );
   }
   return result.stdout;

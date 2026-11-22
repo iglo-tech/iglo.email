@@ -90,7 +90,7 @@ function parts(raw: string) {
       if (split < 0) continue;
       const headers = section.slice(0, split);
       if (!/^Content-Transfer-Encoding:\s*base64/im.test(headers)) continue;
-      const body = Buffer.from(section.slice(split + 4).replace(/\s+/g, ""), "base64");
+      const body = Buffer.from(section.slice(split + 4).replaceAll(/\s+/g, ""), "base64");
       found.push({ headers, body });
     }
   }

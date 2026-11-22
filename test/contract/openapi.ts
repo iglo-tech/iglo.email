@@ -1518,7 +1518,7 @@ export async function runOpenApiContract(target: {
               key.split(" ")[0]!,
               key
                 .split(" ")[1]!
-                .replace(/\{(\w+)\}/g, (_, name: string) =>
+                .replaceAll(/\{(\w+)\}/g, (_, name: string) =>
                   name === tested ? "x" : integerParams.has(name) ? "999999" : "x",
                 ),
             )

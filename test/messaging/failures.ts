@@ -70,8 +70,8 @@ try {
       assert.equal(received.length, fault === "partial-rcpt" || fault === "lost-final" ? 1 : 0);
       if (received.length) {
         assert.equal(
-          received[0]!.MessageID.replace(/[<>]/g, ""),
-          send.messageId.replace(/[<>]/g, ""),
+          received[0]!.MessageID.replaceAll(/[<>]/g, ""),
+          send.messageId.replaceAll(/[<>]/g, ""),
         );
       }
     } finally {
