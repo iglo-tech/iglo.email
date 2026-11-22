@@ -528,7 +528,7 @@ SET body = '{% comment %}Adapted from listmonk static/email-templates/sample-tx.
     </div>
 </body>
 </html>
-'
+', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE type = 'tx' AND body = '{% comment %}Adapted from listmonk static/email-templates/sample-tx.tpl at 6fcd95f.{% endcomment %}
 <!doctype html>
 <html>

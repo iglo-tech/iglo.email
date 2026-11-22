@@ -181,6 +181,32 @@ test("a test send renders Liquid per recipient, with unsubscribe headers that na
   ]).toEqual([0, 0, 0, 0, "draft", "Stored"]);
 });
 
+test("a test send carries the operator's brand: the accent on its button, the link colour on its links", async () => {
+  const f = await open();
+  // The brand is read at each send, as the settings page sets it (D127).
+  f.settings.brand = { ...f.settings.brand, accent: "#ff0066", font: "system-serif" };
+  const news = await f.list("news");
+  await f.subscriber("ada@example.test", [news]);
+  const c = await f.campaign({ name: "Brand", subject: "Brand", lists: [news] });
+  const sent = await f.json(`/api/campaigns/${c.id}/test`, "POST", {
+    name: "Brand",
+    subject: "Brand",
+    lists: [news],
+    messenger: "email",
+    content_type: "markdown",
+    body: "# Hello\n\n[a link](https://example.test/)",
+    subscribers: ["ada@example.test"],
+  });
+  expect(sent.status).toBe(200);
+  const [message] = await f.mail(1);
+  expect(message).toBeDefined();
+  const data = decode(message!.data);
+  // #ff0066 is the button's fill (black text on it, 4.9:1), and #e8005d is its links' colour (4.5:1 on white).
+  expect(data).toContain("background: #ff0066;");
+  expect(data).toContain("color: #e8005d;");
+  expect(data).not.toContain("listmonk");
+});
+
 test("disabled tracking and headers follow the privacy settings", async () => {
   const f = await open();
   const news = await f.list("news");

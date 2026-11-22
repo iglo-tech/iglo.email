@@ -1193,8 +1193,8 @@ the time of each page view. A system font makes no such request. Choose a system
 subscribers' privacy rules out that request.
 
 **Source offer.** iglo.email is licensed under AGPL-3.0. Section 13 asks that a modified version
-offers its source to all users who interact with it remotely, and a subscriber who reads a public
-page or a mail from the modified site is one of them. The admin's sidebar links the upstream
+offers its source to all users who interact with it remotely, and a subscriber who uses its public
+pages (subscribe, confirm, manage, unsubscribe) is one of them. The admin's sidebar links the upstream
 repository, `https://github.com/iglo-tech/iglo.email`, which is the built-in offer for operators.
 An operator who modifies iglo.email must keep offering its source to every such user, not only to
 the admins: the admin link does not discharge that for subscribers. Offer the modified source from
