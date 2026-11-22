@@ -4,6 +4,7 @@
 // and on this branch (after).
 //   bun test/sequences/measure-skips.ts
 import { schedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const RUNS = Number(process.env.SKIPS_MEASURE_RUNS ?? 5);
 const EVENTS = Number(process.env.SKIPS_MEASURE_EVENTS ?? 1000);
@@ -39,7 +40,8 @@ try {
   });
   const post = (email: string, name: string) =>
     f.json("/api/subscriber-events", "POST", { subscriber: { email }, name });
-  const blocked = (await post("blocked@example.test", "signup")).body.data.subscriber_id as number;
+  const signup = await post("blocked@example.test", "signup");
+  const blocked = asBody<number>(signup.body.data.subscriber_id);
   await f.json(`/api/subscribers/${blocked}/blocklist`, "PUT", {});
 
   const workloads: Array<[string, () => Promise<{ status: number }>]> = [

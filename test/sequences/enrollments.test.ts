@@ -7,6 +7,21 @@ import { ascending } from "@/test/order";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SequencesFixture } from "@/test/sequences/fixture";
+import { asBody } from "@/test/read-body";
+
+type Enrollment = {
+  id: number;
+  sequence_id: number;
+  subscriber_id: number;
+  status: string;
+  exit_reason: string | null;
+  [field: string]: unknown;
+};
+type Outcome = {
+  started: Array<{ id: number; sequence_id: number }>;
+  ended: Array<{ id: number; sequence_id: number; exit_reason?: string }>;
+  skipped: Array<unknown>;
+};
 
 const ids = (list: Array<{ sequence_id: number }>) =>
   list.map((e) => e.sequence_id).sort(ascending);
@@ -41,10 +56,12 @@ async function sequence(f: SequencesFixture, extra: JsonObject = {}, status = "a
   if (created.status !== 200) {
     throw new Error(JSON.stringify(created.body));
   }
-  return created.body.data as { id: number; steps: Array<{ id: number }> };
+  return asBody<{ id: number; steps: Array<{ id: number }> }>(created.body.data);
 }
-const enrollments = async (f: SequencesFixture, query = "") =>
-  (await f.json(`/api/enrollments${query}`)).body.data.results as Array<Record<string, any>>;
+const enrollments = async (f: SequencesFixture, query = "") => {
+  const body = (await f.json(`/api/enrollments${query}`)).body.data;
+  return asBody<{ results: Array<Enrollment> }>(body).results;
+};
 const paid = (email: string, extra: JsonObject = {}) => ({
   subscriber: { email },
   name: "order_paid",
@@ -100,7 +117,8 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
   const batch = await f.json("/api/subscriber-events/batch", "POST", {
     events: [paid("d1@example.test"), paid("d2@example.test")],
   });
-  expect(batch.body.data.results.map((x: any) => x.enrollments.started.length)).toEqual([1, 1]);
+  const rows = asBody<{ results: Array<{ enrollments: Outcome }> }>(batch.body.data).results;
+  expect(rows.map((x) => x.enrollments.started.length)).toEqual([1, 1]);
   expect(await enrollments(f, `?sequence_id=${seq.id}`)).toHaveLength(3);
   expect(await enrollments(f, `?sequence_id=${draft.id}`)).toHaveLength(0);
   expect(await enrollments(f, `?sequence_id=${paused.id}`)).toHaveLength(0);
@@ -125,12 +143,10 @@ test("trigger.where filters on event data and the subscriber after the event's u
       },
     },
   });
-  const started = async (body: JsonObject) =>
-    (
-      (await f.event(body)).body.data.enrollments.started as Array<{
-        sequence_id: number;
-      }>
-    ).map((s) => s.sequence_id);
+  const started = async (body: JsonObject) => {
+    const outcome = asBody<Outcome>((await f.event(body)).body.data.enrollments);
+    return outcome.started.map((s) => s.sequence_id);
+  };
   expect(await started(paid("a@example.test", { data: { product: "prepaid", n: 2 } }))).toEqual([
     data.id,
   ]);
@@ -222,7 +238,7 @@ test("exit_on events end enrollments of paused and draft sequences too, clearing
   const exits = await sequence(f, { exit_on: ["refund"] });
   const draft = await sequence(f, { exit_on: ["refund"] });
   const first = await f.event(paid("y@example.test"));
-  const ids = first.body.data.enrollments.started.map((e: any) => e.id);
+  const ids = asBody<Outcome>(first.body.data.enrollments).started.map((e) => e.id);
   expect(ids).toHaveLength(2);
   await f.json(`/api/sequences/${exits.id}/status`, "PUT", {
     status: "paused",
@@ -237,9 +253,8 @@ test("exit_on events end enrollments of paused and draft sequences too, clearing
     subscriber: { email: "y@example.test" },
     name: "refund",
   });
-  expect(refund.body.data.enrollments.ended.map((e: any) => e.id).sort(ascending)).toEqual(
-    [...ids].sort(ascending),
-  );
+  const refunded = asBody<Outcome>(refund.body.data.enrollments);
+  expect(refunded.ended.map((e) => e.id).sort(ascending)).toEqual([...ids].sort(ascending));
   // Resuming does not bring them back.
   await f.json(`/api/sequences/${exits.id}/status`, "PUT", {
     status: "active",
@@ -341,17 +356,19 @@ test("reentry never, after_exit and always", async () => {
   const never = await sequence(f, { reentry: "never" });
   const afterExit = await sequence(f, { reentry: "after_exit" });
   const always = await sequence(f, { reentry: "always" });
-  const send = async (name = "order_paid") =>
-    (await f.event({ subscriber: { email: "r@example.test" }, name })).body.data.enrollments;
+  const send = async (name = "order_paid") => {
+    const r = await f.event({ subscriber: { email: "r@example.test" }, name });
+    return asBody<Outcome>(r.body.data.enrollments);
+  };
   const first = await send();
   expect(ids(first.started)).toEqual([never.id, afterExit.id, always.id].sort(ascending));
   // While running: never and after_exit do nothing; always replaces the running one.
   const second = await send();
   expect(ids(second.started)).toEqual([always.id]);
-  const replaced = first.started.find((e: any) => e.sequence_id === always.id);
+  const replaced = first.started.find((e) => e.sequence_id === always.id);
   expect(second.ended).toEqual([
     {
-      id: replaced.id,
+      id: replaced!.id,
       sequence_id: always.id,
       exit_reason: "event:order_paid",
     },
@@ -597,10 +614,8 @@ test("a repeated public unsubscribe exits enrollments started after the first on
     });
   expect((await unsubscribe()).status).toBe(200);
   // A later matching event legitimately re-enrolls under after_exit and always.
-  const restarted = (await go()).body.data.enrollments.started as Array<{
-    id: number;
-  }>;
-  expect(restarted.map((e: any) => e.sequence_id).sort(ascending)).toEqual(
+  const restarted = asBody<Outcome>((await go()).body.data.enrollments).started;
+  expect(restarted.map((e) => e.sequence_id).sort(ascending)).toEqual(
     [afterExit.id, always.id].sort(ascending),
   );
   // The membership is already unsubscribed; the repeated POST still exits the new ones.
@@ -631,8 +646,10 @@ test("admin add-as-unsubscribed and unsubscribe without a membership exit those 
   const onNews = await marketing(news);
   const onPromo = await marketing(promo);
   // Events enroll subscribers without any list membership.
-  const start = async (email: string) =>
-    (await f.event({ subscriber: { email }, name: "go" })).body.data.subscriber_id as number;
+  const start = async (email: string) => {
+    const r = await f.event({ subscriber: { email }, name: "go" });
+    return asBody<number>(r.body.data.subscriber_id);
+  };
   const states = async (id: number) =>
     Object.fromEntries(
       (await enrollments(f, `?subscriber_id=${id}`)).map((e) => [
@@ -641,9 +658,9 @@ test("admin add-as-unsubscribed and unsubscribe without a membership exit those 
       ]),
     );
   const membership = async (id: number, list: number) =>
-    ((await f.json(`/api/subscribers/${id}`)).body.data.lists as Array<any>).find(
-      (l) => l.id === list,
-    )?.subscription_status;
+    asBody<Array<{ id: number; subscription_status: string }>>(
+      (await f.json(`/api/subscribers/${id}`)).body.data.lists,
+    ).find((l) => l.id === list)?.subscription_status;
   const cases: Array<{
     email: string;
     route: "ids" | "query";
@@ -868,7 +885,7 @@ test("archiving exits active enrollments; archived sequences no longer trigger",
   const put = await f.json(`/api/sequences/${seq.id}`, "PUT", {
     ...def,
     status: "archived",
-    steps: def.steps.map((s: any) => ({ ...s })),
+    steps: asBody<Array<object>>(def.steps).map((s) => ({ ...s })),
   });
   expect(put.status).toBe(200);
   expect(await enrollments(f, "?status=active")).toEqual([]);

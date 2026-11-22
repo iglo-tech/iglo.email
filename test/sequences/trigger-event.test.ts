@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { SequencesFixture } from "@/test/sequences/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
@@ -29,7 +30,7 @@ async function sequence(f: SequencesFixture) {
     steps: [{ wait: "P3D", kind: "transactional", template_id: tx }],
   });
   expect(created.status).toBe(200);
-  return created.body.data.id as number;
+  return asBody<number>(created.body.data.id);
 }
 
 test("D101: a manual enrollment records the subscriber's earlier event as its trigger", async () => {
@@ -42,7 +43,7 @@ test("D101: a manual enrollment records the subscriber's earlier event as its tr
     occurred_at: new Date(f.clock.now().getTime() - 2 * day).toISOString(),
   });
   expect(paid.status).toBe(200);
-  const eventId = paid.body.data.event_id as number;
+  const eventId = asBody<number>(paid.body.data.event_id);
 
   const enrolled = await f.json("/api/enrollments", "POST", {
     sequence_id: seq,
@@ -63,7 +64,7 @@ test("D101: a test enrollment records it too, and a null ID is the same as none"
     subscriber: { email: "test-trigger@example.test" },
     name: "order_paid",
   });
-  const eventId = paid.body.data.event_id as number;
+  const eventId = asBody<number>(paid.body.data.event_id);
 
   const tested = await f.json("/api/enrollments", "POST", {
     sequence_id: seq,
@@ -88,12 +89,14 @@ test("D101: another subscriber's event, another event name or an unknown ID is 4
   const seq = await sequence(f);
   const mine = await f.subscriber("mine@example.test");
   await f.subscriber("theirs@example.test");
-  const theirs = (
-    await f.event({ subscriber: { email: "theirs@example.test" }, name: "order_paid" })
-  ).body.data.event_id as number;
-  const feedback = (
-    await f.event({ subscriber: { email: "mine@example.test" }, name: "feedback_given" })
-  ).body.data.event_id as number;
+  const theirs = asBody<number>(
+    (await f.event({ subscriber: { email: "theirs@example.test" }, name: "order_paid" })).body.data
+      .event_id,
+  );
+  const feedback = asBody<number>(
+    (await f.event({ subscriber: { email: "mine@example.test" }, name: "feedback_given" })).body
+      .data.event_id,
+  );
   const before = f.count("enrollments");
 
   const cases: Array<[string, unknown]> = [

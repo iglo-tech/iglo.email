@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SequencesFixture } from "@/test/sequences/fixture";
+import { asBody } from "@/test/read-body";
 
 const one = (spec: JsonObject) => ({ n: { event: "e", ...spec } });
 
@@ -132,16 +133,19 @@ test("create, read, list, update with stable step IDs, and delete", async () => 
   expect(updated.status).toBe(200);
   expect(updated.body.data.name).toBe("Renamed");
   expect(updated.body.data.updated_at).toBe(f.clock.now().toISOString());
-  expect(updated.body.data.steps.map((s: any) => [s.id, s.position, s.wait, s.max_late])).toEqual([
+  const steps = asBody<
+    Array<{ id: number; position: number; wait: string; max_late: string | null }>
+  >(updated.body.data.steps);
+  expect(steps.map((s) => [s.id, s.position, s.wait, s.max_late])).toEqual([
     [second.id, 0, "P1D", null],
     [expect.any(Number), 1, "PT1H", null],
   ]);
   expect(updated.body.data.steps[1].id).not.toBe(first.id);
   expect(updated.body.data.steps[1].subject).toBe("Override");
   // The removed step still exists, marked deleted; it is never reused or revived.
-  const row = f.db.query("SELECT status FROM sequence_steps WHERE id = ?").get(first.id) as {
-    status: string;
-  };
+  const row = asBody<{ status: string }>(
+    f.db.query("SELECT status FROM sequence_steps WHERE id = ?").get(first.id),
+  );
   expect(row.status).toBe("deleted");
   const revive = await f.json(`/api/sequences/${seq.id}`, "PUT", {
     ...definition,
@@ -317,13 +321,8 @@ test("max_late defaults to P2D for marketing and no limit for transactional", as
     ],
   });
   expect(r.status).toBe(200);
-  expect(r.body.data.steps.map((s: { max_late: string | null }) => s.max_late)).toEqual([
-    "P2D",
-    null,
-    "PT6H",
-    null,
-    "P1D",
-  ]);
+  const steps = asBody<Array<{ max_late: string | null }>>(r.body.data.steps);
+  expect(steps.map((s) => s.max_late)).toEqual(["P2D", null, "PT6H", null, "P1D"]);
 });
 
 test("sql conditions need subscribers:sql_query; sequences permissions are enforced", async () => {
@@ -425,13 +424,15 @@ test("status changes, activation checks, archive and delete rules", async () => 
   ).toBe(200);
   expect((await f.json(`/api/sequences/${seq.id}`, "DELETE")).status).toBe(409);
   const list = await f.json("/api/sequences?status=active");
-  expect(list.body.data.results.map((s: { id: number }) => s.id)).toEqual([seq.id]);
+  const listed = asBody<{ results: Array<{ id: number }> }>(list.body.data);
+  expect(listed.results.map((s) => s.id)).toEqual([seq.id]);
   expect(list.body.data.results[0].active_enrollments).toBe(1);
   expect((await f.json("/api/sequences?status=nope")).status).toBe(400);
   expect((await f.json("/api/sequences?per_page=101")).status).toBe(400);
   const paged = await f.json("/api/sequences?per_page=1&page=2");
   expect(paged.body.data).toMatchObject({ total: 2, page: 2, per_page: 1 });
-  expect(paged.body.data.results.map((s: { id: number }) => s.id)).toEqual([seq.id]);
+  const pagedRows = asBody<{ results: Array<{ id: number }> }>(paged.body.data);
+  expect(pagedRows.results.map((s) => s.id)).toEqual([seq.id]);
 });
 
 test("aggregates are validated on save like conditions, and a rejection writes nothing (D100)", async () => {

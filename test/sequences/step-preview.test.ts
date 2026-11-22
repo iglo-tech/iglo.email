@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { day, hour, schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
@@ -101,10 +102,10 @@ async function eventId(
   if (r.status !== 200) {
     throw new Error(JSON.stringify(r.body));
   }
-  return r.body.data.event_id as number;
+  return asBody<number>(r.body.data.event_id);
 }
 const enrollmentTotal = async (f: SchedulerFixture) =>
-  (await f.json("/api/enrollments")).body.data.total as number;
+  asBody<number>((await f.json("/api/enrollments")).body.data.total);
 
 test("preview without input renders the dummy subscriber, no trigger and zero aggregates", async () => {
   const f = await open();
@@ -177,10 +178,12 @@ test("trigger_event_id must be the subscriber's own event under the trigger name
 
 test("an unreadable subscriber is 404 exactly as an absent one", async () => {
   const f = await open();
-  const a = (await f.json("/api/lists", "POST", { name: "a", type: "public", optin: "single" }))
-    .body.data.id as number;
-  const b = (await f.json("/api/lists", "POST", { name: "b", type: "public", optin: "single" }))
-    .body.data.id as number;
+  const listOf = async (name: string) => {
+    const created = await f.json("/api/lists", "POST", { name, type: "public", optin: "single" });
+    return asBody<number>(created.body.data.id);
+  };
+  const a = await listOf("a");
+  const b = await listOf("b");
   const hidden = await f.subscriber("hidden@example.test", { lists: [b] });
   const { sequence, step } = await setup(f);
   const scoped = await caller(
@@ -478,7 +481,8 @@ async function heldPost(
   await between();
   release();
   const response = await pending;
-  return { status: response.status, body: (await response.json()) as Record<string, any> };
+  const parsed = await readJson<Record<string, any>>(response);
+  return { status: response.status, body: parsed };
 }
 
 /** An API user like `caller`, that also returns its role IDs, so a test can change them. */
@@ -501,17 +505,20 @@ async function heldCaller(
     throw new Error(JSON.stringify(user.body));
   }
   return {
-    userRoleId: role.body.data.id as number,
-    listRoleId: listRole.body.data.id as number,
+    userRoleId: asBody<number>(role.body.data.id),
+    listRoleId: asBody<number>(listRole.body.data.id),
     headers: { authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}` },
   };
 }
 
 /** A subscriber in list `a` for the caller who reads through that list, and a step to preview. */
 async function readableBy(f: SchedulerFixture, name: string, permissions: Array<string>) {
-  const a = (
-    await f.json("/api/lists", "POST", { name: `${name}-a`, type: "public", optin: "single" })
-  ).body.data.id as number;
+  const created = await f.json("/api/lists", "POST", {
+    name: `${name}-a`,
+    type: "public",
+    optin: "single",
+  });
+  const a = asBody<number>(created.body.data.id);
   const ada = await f.subscriber("ada@example.test", { name: "Ada", lists: [a] });
   const { sequence, step } = await setup(f);
   const user = await heldCaller(f, name, permissions, [{ id: a, permissions: ["list:get"] }]);
@@ -655,11 +662,14 @@ test("sample aggregates keep the step's aggregate order, which the scheduler's t
 
 test("a marketing step's test send links to a test page, and clicking it changes no subscriber", async () => {
   const f = await open();
-  const list = (
-    await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const created = await f.json("/api/lists", "POST", {
+    name: "news",
+    type: "public",
+    optin: "single",
+  });
+  const list = asBody<number>(created.body.data.id);
   const subscriber = await f.subscriber("ada@example.test", { lists: [list] });
-  const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid);
   const template = await f.template(
     '<p><a href="{{ unsubscribe_url }}">unsubscribe</a></p>',
     "Offer",
@@ -691,18 +701,20 @@ test("a marketing step's test send links to a test page, and clicking it changes
   expect(await page.text()).toContain("This link is from a test send.");
   const after = (await f.json(`/api/subscribers/${subscriber}`)).body.data;
   expect(after.status).toBe("enabled");
-  expect(after.lists.find((l: { id: number }) => l.id === list)?.subscription_status).toBe(
-    "unconfirmed",
-  );
+  const lists = asBody<Array<{ id: number; subscription_status: string }>>(after.lists);
+  expect(lists.find((l) => l.id === list)?.subscription_status).toBe("unconfirmed");
 });
 
 test("a step test names no real subscriber UUID in its message, its headers or its body", async () => {
   const f = await open();
-  const list = (
-    await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const created = await f.json("/api/lists", "POST", {
+    name: "news",
+    type: "public",
+    optin: "single",
+  });
+  const list = asBody<number>(created.body.data.id);
   const subscriber = await f.subscriber("ada@example.test", { lists: [list] });
-  const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid);
   const template = await f.template(
     '<p><a href="{{ unsubscribe_url }}">unsubscribe</a> {{ subscriber.uuid }}</p>',
     "Offer",

@@ -10,6 +10,7 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { writeTransaction } from "@/db/transaction";
 import { sequencesFixture } from "@/test/sequences/fixture";
+import { asBody } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const base = resolve(process.env.IGLO_EMAIL_PERF_DIR ?? join(repository, "upstream/measurements"));
@@ -42,7 +43,7 @@ async function once(mode: "before" | "after") {
         { wait: "PT1H", kind: "transactional", template_id: tx },
       ],
     });
-    const seq = made.body.data as { id: number; steps: Array<{ id: number }> };
+    const seq = asBody<{ id: number; steps: Array<{ id: number }> }>(made.body.data);
     const now = f.clock.now();
     f.db.run("BEGIN");
     f.db.run(

@@ -2,6 +2,7 @@
 // through HTTP, and the scheduler's send path for due steps, in the in-process production owners of
 // test/scheduler/fixture.ts. Run: bun test/sequences/measure-preview.ts. Not a CI threshold.
 import { day, hour, schedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const median = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -32,7 +33,7 @@ async function allSends() {
   const rows: Array<{ status: string }> = [];
   for (let page = 1; ; page++) {
     const body = (await f.json(`/api/sends?per_page=100&page=${page}`)).body.data;
-    rows.push(...(body.results as Array<{ status: string }>));
+    rows.push(...asBody<Array<{ status: string }>>(body.results));
     if (page * 100 >= body.total || body.results.length === 0) {
       return { total: body.total, rows };
     }
@@ -42,7 +43,8 @@ async function allSends() {
 async function openSends() {
   let open = 0;
   for (const status of ["queued", "sending"]) {
-    open += (await f.json(`/api/sends?per_page=1&status=${status}`)).body.data.total as number;
+    const page = await f.json(`/api/sends?per_page=1&status=${status}`);
+    open += asBody<number>(page.body.data.total);
   }
   return open;
 }
@@ -58,7 +60,7 @@ async function delivered(count: number, label: string) {
     await new Promise((resolve) => {
       setImmediate(resolve);
     });
-    const total = (await f.json("/api/sends?per_page=1")).body.data.total as number;
+    const total = asBody<number>((await f.json("/api/sends?per_page=1")).body.data.total);
     const open = await openSends();
     if (total >= count && open === 0) {
       return;

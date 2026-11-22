@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { SequencesFixture } from "@/test/sequences/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
@@ -81,7 +82,7 @@ test("D103: a null fn on a step update is refused and the stored aggregate is un
     ],
   });
   expect(created.status).toBe(200);
-  const id = created.body.data.id as number;
+  const id = asBody<number>(created.body.data.id);
   const stored = created.body.data.steps[0].aggregates;
   const full = (await f.json(`/api/sequences/${id}`)).body.data;
   delete full.status;
