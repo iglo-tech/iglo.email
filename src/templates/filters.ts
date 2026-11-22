@@ -32,6 +32,106 @@ export function scalar(value: unknown): string {
   throw new ValueError("Invalid value");
 }
 
+const JSON_DEPTH = 32;
+
+/** The UTF-8 bytes of a string as JSON.stringify writes it, counted without building the text. */
+function quotedBytes(text: string): number {
+  let bytes = 2;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c === 0x22 || c === 0x5c) {
+      bytes += 2;
+    } else if (c < 0x20) {
+      // \b, \t, \n, \f and \r are two characters; every other control character is \u00XX.
+      bytes += c === 0x08 || c === 0x09 || c === 0x0a || c === 0x0c || c === 0x0d ? 2 : 6;
+    } else if (c < 0x80) {
+      bytes += 1;
+    } else if (c < 0x08_00) {
+      bytes += 2;
+    } else if (c >= 0xd8_00 && c <= 0xdb_ff && i + 1 < text.length) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc_00 && next <= 0xdf_ff) {
+        bytes += 4;
+        i++;
+      } else {
+        bytes += 6;
+      }
+    } else if (c >= 0xd8_00 && c <= 0xdf_ff) {
+      // A lone surrogate is written as \uXXXX (well-formed JSON.stringify).
+      bytes += 6;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+/**
+ * The UTF-8 bytes of `JSON.stringify(value)`, computed before the text exists. Only plain message
+ * data is admitted: null-prototype records, dense arrays, strings, finite numbers and booleans. A
+ * loop record or another class instance has no JSON form here (D23), so it is refused.
+ */
+function jsonBytes(value: unknown, depth: number, walk: { nodes: number }): number {
+  if (depth > JSON_DEPTH) {
+    throw new Error("Nesting limit");
+  }
+  walk.nodes++;
+  if (value === null) {
+    return 4;
+  }
+  if (typeof value === "boolean") {
+    return value ? 4 : 5;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("Invalid value");
+    }
+    // The text of a finite number is ASCII, so its length is its byte count.
+    return String(value).length;
+  }
+  if (typeof value === "string") {
+    return quotedBytes(value);
+  }
+  if (Array.isArray(value)) {
+    let bytes = 2 + Math.max(0, value.length - 1);
+    for (let i = 0; i < value.length; i++) {
+      if (!(i in value)) {
+        throw new Error("Invalid value");
+      }
+      bytes += jsonBytes(value[i], depth + 1, walk);
+    }
+    return bytes;
+  }
+  if (typeof value === "object" && Object.getPrototypeOf(value) === null) {
+    const entries = Object.entries(value);
+    // Braces, a colon per member and a comma between members.
+    let bytes = 2 + Math.max(0, entries.length - 1) + entries.length;
+    for (const [key, item] of entries) {
+      bytes += quotedBytes(key) + jsonBytes(item, depth + 1, walk);
+    }
+    return bytes;
+  }
+  throw new Error("Invalid value");
+}
+
+/**
+ * `json`: the JSON text of a value, for a template that prints data as JSON. Its bytes are charged
+ * to the message budget before the text is built, and the walk that counts them is bounded by the
+ * data limits (D54). Nil is `null`. The text escapes like any other value in its output context
+ * (HTML escapes its quotes unless it is piped through `raw`).
+ */
+export function json(value: unknown, b: FilterBudget): string {
+  b.step();
+  if (value === undefined) {
+    return "null";
+  }
+  const walk = { nodes: 0 };
+  const bytes = jsonBytes(value, 0, walk);
+  b.step(walk.nodes);
+  b.charge(bytes);
+  return JSON.stringify(value);
+}
+
 /**
  * `size`: the length of a string in characters (JavaScript's `length`, so a character outside the
  * Basic Multilingual Plane counts as two), the items of an array, or the own keys of a plain

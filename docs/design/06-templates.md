@@ -31,7 +31,7 @@ M0.8 measured the selected library and found the precise library-limit semantics
 | Capability | Current behavior |
 |---|---|
 | Tags | `if`, `unless`, `for`, `assign`, `capture`, `comment`, `raw`, `break`, `continue`; other tags, including user `include`, `render` and `layout`, are rejected |
-| Filters | `default`, `upcase`, `strip`, `raw`, `t`, `date`, `track_link`, `number`, `size`; other filters are rejected. These filters act on scalar inputs, except `size`, which also takes an array or a plain object (`size` is the length of a string in characters, JavaScript's `length`, so a character outside the Basic Multilingual Plane counts as two; the items of an array; the keys of an object; 0 for nil and other values). `number` passes any value that is not a finite number through unchanged, and `t` accepts up to four name/value pairs, with bounded argument sizes and literal placeholder substitution. `number` formats a finite number with English grouping and at most three fraction digits ([D102](09-decisions.md#d102-the-number-liquid-filter-lead-2026-11-16)) |
+| Filters | `default`, `upcase`, `strip`, `raw`, `t`, `date`, `track_link`, `number`, `size`, `json`; other filters are rejected. These filters act on scalar inputs, except `size` and `json`, which also take an array or a plain object. `size` is the length of a string in characters (JavaScript's `length`, so a character outside the Basic Multilingual Plane counts as two), the items of an array, the keys of an object, and 0 for nil and other values. `json` is the JSON text of the value (nil is `null`; a loop's `[key, value]` pair is an array), escaped in HTML like any value unless piped through `raw`; a value over the output or work budget is refused. `number` passes any value that is not a finite number through unchanged, and `t` accepts up to four name/value pairs, with bounded argument sizes and literal placeholder substitution. `number` formats a finite number with English grouping and at most three fraction digits ([D102](09-decisions.md#d102-the-number-liquid-filter-lead-2026-11-16)) |
 | Dates | `now` and `today` use the injected clock; supported format directives are `%Y`, `%m`, `%d`, `%H`, `%M`, `%S` and `%%` in UTC. Other date strings must be a date or UTC ISO timestamp |
 
 #### Data and functions
@@ -153,7 +153,7 @@ and work before the library creates the string, so truthiness or indirect
 conversion cannot bypass the shared intermediate budget.
 
 Filter arity is checked before argument evaluation or argv allocation, and
-every evaluated argument consumes work. `raw`, `upcase`, `strip`, `number`, `size` and
+every evaluated argument consumes work. `raw`, `upcase`, `strip`, `number`, `size`, `json` and
 `track_link` accept no extra arguments; `default` and `date` accept at most
 one. `t` accepts zero to eight arguments in name/value pairs. This applies to
 literal arguments too; ignored extra arguments do not provide free work.

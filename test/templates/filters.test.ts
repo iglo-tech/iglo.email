@@ -26,12 +26,14 @@ async function render(f: TxFixture, body: string, data: JsonObject = {}) {
   const row = response.body?.data?.sends?.[0];
   const raw = f.mailTo(email)[0]?.data ?? "";
   const at = raw.indexOf("\r\n\r\n");
-  const message = raw
+  // The quoted-printable bytes are UTF-8: decode them as bytes, then as text.
+  const bytes = raw
     .slice(at + 4)
     .replaceAll("=\r\n", "")
     .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
       String.fromCharCode(Number.parseInt(hex, 16)),
     );
+  const message = Buffer.from(bytes, "latin1").toString("utf-8");
   return { http: response.status, status: asBody<string | undefined>(row?.status), message };
 }
 
@@ -72,6 +74,58 @@ test("size of a loop's pair counts its two items, and size nests inside a loop",
   // The row is an array of two items; its first item is a string of two characters.
   expect(sent.status).toBe("sent");
   expect(sent.message).toContain("[2:2]");
+});
+
+test("json escapes its quotes in HTML unless piped through raw", async () => {
+  const f = await open();
+  const sent = await render(f, "[{{ data.obj | json }}] [{{ data.obj | json | raw }}]", {
+    obj: { a: 1, b: [true, null, "x<y"] },
+  });
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain(
+    '[{&#34;a&#34;:1,&#34;b&#34;:[true,null,&#34;x&lt;y&#34;]}] [{"a":1,"b":[true,null,"x<y"]}]',
+  );
+});
+
+test("json of nil, numbers, escaped strings and empty values is their JSON text", async () => {
+  const f = await open();
+  const text = 'a"b\\c\nd\u0001e😀';
+  const sent = await render(
+    f,
+    "[{{ data.missing | json }}] [{{ data.n | json | raw }}] [{{ data.s | json | raw }}] " +
+      "[{{ data.e | json | raw }}] [{{ data.x | json | raw }}] [{{ data.f | json | raw }}]",
+    { n: 1.5, s: text, e: {}, x: [], f: false },
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain(`[null] [1.5] [${JSON.stringify(text)}] [{}] [[]] [false]`);
+});
+
+test("json prints a loop's pair as its JSON array", async () => {
+  const f = await open();
+  const sent = await render(f, "{% for kv in data.obj %}{{ kv | json | raw }};{% endfor %}", {
+    obj: { a: 1, b: "x" },
+  });
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain('["a",1];["b","x"];');
+});
+
+test("json charges the emission budget before it builds the text", async () => {
+  const f = await open();
+  // 100 texts of 60 KB are 6 MB, over the 4 MiB emission budget (D54): refused, not built.
+  const sent = await render(f, "{% for i in (1..100) %}{{ data.big | json | raw }}{% endfor %}", {
+    big: "x".repeat(60_000),
+  });
+  expect(sent.http).toBe(400);
+});
+
+test("json walks its value within the work budget", async () => {
+  const f = await open();
+  const obj = Object.fromEntries(Array.from({ length: 1000 }, (_, n) => [`k${n}`, n]));
+  const sent = await render(f, "{% for i in (1..20) %}{{ data.obj | json | size }}{% endfor %}", {
+    obj,
+  });
+  // 20 walks of 1,001 nodes are 20,020 steps, over the 10,000-step work budget (D54).
+  expect(sent.http).toBe(400);
 });
 
 test("size keeps the work budget: a loop that sizes a large object is refused", async () => {
