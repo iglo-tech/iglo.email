@@ -3,7 +3,7 @@
 // A rejected value is a 400 that changes nothing. The admin page names the source of the software,
 // and the sign-in page loads a Google font only when one is set. Public boundaries only.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { admin, api, get, login } from "@/test/admin/support";
+import { admin, api, get, login, userWith } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
@@ -124,5 +124,28 @@ test("the sign-in page loads a Google font's stylesheet only when the brand name
   expect(await (await fetch(`${f.origin}/admin/login`)).text()).toContain(
     "https://fonts.googleapis.com/css2?family=Lora",
   );
+  // Only the sign-in pages render the brand font, so the rest of the admin keeps the policy without
+  // the Google hosts (review N6).
+  const inside = await get(f, "/admin/settings", cookie);
+  expect(inside.status).toBe(200);
+  expect(inside.headers.get("Content-Security-Policy") ?? "").not.toContain("fonts.googleapis.com");
   expect((await put("appearance.brand.font", "system-sans")).status).toBe(200);
+});
+
+test("the logo upload is offered only to a user who may save settings and upload media", async () => {
+  const both = await userWith(f, cookie, "brand-both", [
+    "settings:get",
+    "settings:manage",
+    "media:manage",
+  ]);
+  const settingsOnly = await userWith(f, cookie, "brand-settings", [
+    "settings:get",
+    "settings:manage",
+  ]);
+  // Media without settings: the file would land in the library and never be saved (review N5).
+  const mediaOnly = await userWith(f, cookie, "brand-media", ["settings:get", "media:manage"]);
+  const page = async (session: string) => (await get(f, "/admin/settings", session)).text();
+  expect(await page(both)).toContain('name="app.logo_url.upload"');
+  expect(await page(settingsOnly)).not.toContain('name="app.logo_url.upload"');
+  expect(await page(mediaOnly)).not.toContain('name="app.logo_url.upload"');
 });

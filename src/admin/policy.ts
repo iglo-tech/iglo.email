@@ -52,6 +52,17 @@ export function adminPolicy(options: {
   ].join("; ");
 }
 
+/**
+ * The admin pages that render the public shell, so the only ones that load the brand font (B129,
+ * D127, review N6). Every other admin page keeps the policy without the Google hosts.
+ */
+const signInPaths = new Set([
+  "/admin/login",
+  "/admin/login/twofa",
+  "/admin/forgot",
+  "/admin/reset",
+]);
+
 /** One seam, so a page, error or login screen under /admin cannot leave without a policy. */
 export function adminPolicyHeader(site: () => PolicySite): Middleware {
   return async (context, next) => {
@@ -65,7 +76,10 @@ export function adminPolicyHeader(site: () => PolicySite): Middleware {
       const { rootUrl, faviconUrl, googleFonts } = site();
       response.headers.set(
         "Content-Security-Policy",
-        adminPolicy({ origins: [rootUrl, faviconUrl], googleFonts: googleFonts === true }),
+        adminPolicy({
+          origins: [rootUrl, faviconUrl],
+          googleFonts: googleFonts === true && signInPaths.has(pathname),
+        }),
       );
     }
     return response;

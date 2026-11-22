@@ -1057,7 +1057,13 @@ export const settingsView: AdminView = ({ context, can }) => {
   const t = context.app.i18n;
   const canManage = can("settings:manage");
   const tabs = [
-    ["general", t.T("globals.terms.general"), <General t={t} canUpload={can("media:manage")} />],
+    // A logo or favicon upload is a media write and then a settings save, so both permissions are
+    // needed; without the media one the file would land in the library and never be used (N5).
+    [
+      "general",
+      t.T("globals.terms.general"),
+      <General t={t} canUpload={can("settings:manage") && can("media:manage")} />,
+    ],
     ["performance", t.T("globals.terms.performance"), <Performance t={t} />],
     ["privacy", t.T("globals.terms.privacy"), <Privacy t={t} />],
     ["security", t.T("globals.terms.security"), <Security t={t} />],
