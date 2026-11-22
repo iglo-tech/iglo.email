@@ -3,6 +3,8 @@
 // timeline, and the dashboard, at 1280 and 390 px. It prints what each screen said, and
 // E2E_SHOTS=<directory> keeps a screenshot per screen and width. `bun run e2e:browser:operator`.
 import { randomBytes } from "node:crypto";
+import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import { withStack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
 
@@ -49,11 +51,41 @@ const seed = `(async () => {
     name: "Blocked", status: "blocklisted", lists: [] });
   await call("POST", "/api/subscriber-events", { subscriber: {
     email: "blocked@example.com", name: "Blocked" }, name: "operator_signup" });
+  // A transactional send to a blocklisted person is refused: a skipped row with no subject.
+  const refused = await call("POST", "/api/tx", { subscriber_id: blocked.id,
+    template_id: tx.id, data: {} });
+  // A sequence whose marketing step the frequency cap holds for Ana (she got one this minute).
+  const held = await call("POST", "/api/sequences", { name: "Held", status: "active",
+    trigger: { event: "operator_hold" }, reentry: "always", list_id: news.id,
+    steps: [{ wait: "PT1H", kind: "marketing", template_id: tx.id }] });
+  const heldStart = await call("POST", "/api/subscriber-events", { subscriber: {
+    email: "ana@example.com", name: "Ana" }, name: "operator_hold" });
+  // A sequence that an event exits: Ana's enrollment ends on operator_stop.
+  await call("POST", "/api/sequences", { name: "Exit", status: "active",
+    trigger: { event: "operator_start" }, exit_on: ["operator_stop"], reentry: "always",
+    list_id: news.id, steps: [{ wait: "P1D", kind: "transactional", template_id: tx.id }] });
+  const started = await call("POST", "/api/subscriber-events", { subscriber: {
+    email: "ana@example.com", name: "Ana" }, name: "operator_start" });
+  await call("POST", "/api/subscriber-events", { subscriber: {
+    email: "ana@example.com", name: "Ana" }, name: "operator_stop" });
+  // A transactional send to Ana, as the producer sends it: its row names the template.
+  const plainTx = await call("POST", "/api/tx", { subscriber_id: ana.subscriber_id,
+    template_id: tx.id, data: {} });
+  // A person whose data was wiped: their send keeps its row, with no address and no subject.
+  const gone = await call("POST", "/api/subscribers", { email: "gone@example.com",
+    name: "Gone", status: "enabled", lists: [] });
+  const wiped = await call("POST", "/api/tx", { subscriber_id: gone.id, template_id: tx.id,
+    data: {} });
+  await call("DELETE", "/api/subscribers/" + gone.id);
   return JSON.stringify({ sequence: sequence.id, subscriber: ana.subscriber_id,
-    enrollment: ana.enrollments.started[0].id, blocked: blocked.id, external: "ext-42" });
+    enrollment: ana.enrollments.started[0].id, blocked: blocked.id, external: "ext-42",
+    refused: refused.sends[0].id, wiped: wiped.sends[0].id, held: held.id,
+    heldEnrollment: heldStart.enrollments.started[0].id,
+    exitedEnrollment: started.enrollments.started[0].id,
+    txStatus: plainTx.sends[0].status });
 })()`;
 
-process.exitCode = await withStack(async ({ origin }) => {
+process.exitCode = await withStack(async ({ origin, dataDir }) => {
   // Each screen at a width; the layout must not scroll sideways at 390 px.
   const visit = (path: string, name: string, width: number) => {
     browser("set", "viewport", String(width), width === 390 ? "844" : "900");
@@ -79,12 +111,43 @@ process.exitCode = await withStack(async ({ origin }) => {
     settle();
 
     const made = String(value(seed));
-    const { subscriber, enrollment, blocked, external } = JSON.parse(made);
+    const {
+      subscriber,
+      enrollment,
+      blocked,
+      external,
+      heldEnrollment,
+      exitedEnrollment,
+      txStatus,
+    } = JSON.parse(made);
+    see("live transactional send", txStatus);
     await Bun.sleep(1500);
+    // The thirty-day retention pass cannot run inside a browser pass, so the marketing message Ana was
+    // sent loses its payload as that pass leaves it (the same column, cleared): the row a retained
+    // send shows, with its address and its status kept.
+    const journal = new Database(join(dataDir, "iglo-email.db"));
+    try {
+      journal.run(
+        "UPDATE sends SET payload = NULL WHERE subscriber_id = ? AND kind = 'transactional' AND status = 'sent' AND source = 'sequence'",
+        [subscriber],
+      );
+    } finally {
+      journal.close();
+    }
 
     both("/admin/sends", "send-log", () => {
       see("send log rows", text('[data-testid="send-row"]'));
     });
+    see(
+      "server log",
+      value(`fetch("/api/logs?per_page=5").then((r) => r.text()).then((t) => t.slice(0, 1200))`),
+    );
+    see(
+      "journal (status, error, payload kept)",
+      value(`fetch("/api/sends?per_page=10").then((r) => r.json()).then((d) =>
+        d.data.results.map((s) => [s.id, s.status, s.error, s.skip_reason, s.subject !== null])
+      )`),
+    );
     both("/admin/sends?status=sent&source=sequence", "send-log-filtered", () => {
       see(
         "filtered rows",
@@ -119,6 +182,18 @@ process.exitCode = await withStack(async ({ origin }) => {
     });
     both(`/admin/sequences/enrollments/${enrollment}`, "timeline", () => {
       see("timeline", text('[data-testid="timeline"]'));
+    });
+    both(`/admin/subscribers/${subscriber}/enrollments`, "subscriber-enrollments", () => {
+      see("enrollments tab", text('[data-testid="enrollment-row"]'));
+    });
+    both(`/admin/sequences/enrollments/${exitedEnrollment}`, "exited-timeline", () => {
+      see("exited timeline", text('[data-testid="timeline"]'));
+    });
+    both(`/admin/sequences/enrollments/${heldEnrollment}`, "held-timeline", () => {
+      see("held timeline", text('[data-testid="timeline"]'));
+    });
+    both(`/admin/subscribers/${blocked}/sends`, "blocked-sends", () => {
+      see("refused send", text('[data-testid="send-row"]'));
     });
     both("/admin", "dashboard", () => {
       see("dashboard stats", text(".stat-card"));
