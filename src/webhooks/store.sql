@@ -1,22 +1,35 @@
 -- Native outbound webhooks (docs/design/04-sending.md#outbound-webhooks); no upstream query.
 -- name: webhook-list
-SELECT id, url, events, enabled, created_at, updated_at FROM webhooks ORDER BY id LIMIT ? OFFSET ?;
+SELECT id, url, events, enabled, created_at, updated_at, previous_secret_until FROM webhooks
+  ORDER BY id LIMIT ? OFFSET ?;
 -- name: webhook-count
 SELECT count(*) AS n FROM webhooks;
 -- name: webhook-get
-SELECT id, url, events, enabled, created_at, updated_at FROM webhooks WHERE id = ?;
+SELECT id, url, events, enabled, created_at, updated_at, previous_secret_until FROM webhooks WHERE id = ?;
 -- name: webhook-insert
 INSERT INTO webhooks (url, secret, events, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-  RETURNING id, url, events, enabled, created_at, updated_at;
+  RETURNING id, url, events, enabled, created_at, updated_at, previous_secret_until;
 -- name: webhook-update
 UPDATE webhooks SET url = ?, events = ?, enabled = ?, updated_at = ? WHERE id = ?
-  RETURNING id, url, events, enabled, created_at, updated_at;
+  RETURNING id, url, events, enabled, created_at, updated_at, previous_secret_until;
+-- name: webhook-rotate
+-- The current secret becomes the previous one until ?2 (null: no overlap, so the previous one is
+-- dropped). An earlier previous secret still in its window ends now, so one rotation is one step.
+-- SQLite evaluates every SET expression on the row as it was, so the CASE reads the old secret.
+UPDATE webhooks SET previous_secret = CASE WHEN ?2 IS NULL THEN NULL ELSE secret END,
+    previous_secret_until = ?2, secret = ?1, updated_at = ?3
+  WHERE id = ?4;
+-- name: webhook-expire-secrets
+-- Ends every rotated secret whose window has passed; signing already stops at the window's end.
+UPDATE webhooks SET previous_secret = NULL, previous_secret_until = NULL
+  WHERE previous_secret_until <= ?1
+  RETURNING id;
 -- name: webhook-delete
 DELETE FROM webhooks WHERE id = ?;
 -- name: webhook-enabled-targets
 SELECT id, url FROM webhooks WHERE enabled = 1 ORDER BY id;
 -- name: webhook-targets
-SELECT id, url, secret, enabled FROM webhooks ORDER BY id;
+SELECT id, url, enabled FROM webhooks ORDER BY id;
 -- name: webhooks-for-event
 SELECT id FROM webhooks WHERE enabled = 1 AND ? IN (SELECT value FROM json_each(events)) ORDER BY id;
 -- name: delivery-insert
@@ -52,8 +65,13 @@ UPDATE webhook_deliveries SET attempts = attempts + 1, next_attempt_at = ?1, cla
     ORDER BY next_attempt_at, id LIMIT ?4
   )
   RETURNING id, uuid, webhook_id, event, attempts, created_at, claimed_until;
--- name: delivery-claimed-payload
-SELECT payload FROM webhook_deliveries WHERE id = ? AND status = 'queued' AND claimed_until = ?;
+-- name: delivery-signing
+-- The body to send and the secrets to sign it with, read by the attempt. A previous secret signs
+-- only while its window (?3, the attempt's time) is open.
+SELECT d.payload, w.secret,
+    CASE WHEN w.previous_secret_until > ?3 THEN w.previous_secret END AS previous_secret
+  FROM webhook_deliveries d JOIN webhooks w ON w.id = d.webhook_id
+  WHERE d.id = ?1 AND d.status = 'queued' AND d.claimed_until = ?2;
 -- name: delivery-due
 SELECT id, created_at FROM webhook_deliveries
   WHERE webhook_id = ? AND status = 'queued' AND next_attempt_at <= ?

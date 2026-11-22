@@ -5,7 +5,13 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import type { Credentials } from "@/test/contract/types";
 import { startSink } from "@/test/tx/sink";
-import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
+import {
+  signatureCount,
+  signatureTime,
+  signatureValid,
+  startReceiver,
+} from "@/test/webhooks/receiver";
+import { verifyDelivery } from "@/test/webhooks/verify-delivery";
 import { asBody } from "@/test/read-body";
 
 const dummy = "00000000-0000-0000-0000-000000000000";
@@ -337,6 +343,43 @@ export async function runWebhooksContract(target: {
     }
     check(bytes.includes("clicked@example.test"), "others-kept");
 
+    // D130: a rotation signs with both secrets for its window, shows the new secret once, and keeps
+    // the window across a restart. The documented helper accepts the delivery with the new secret.
+    check(
+      (await call(`/api/webhooks/${id}/rotate-secret`, "POST", { overlap_hours: 169 })).status ===
+        400,
+      "rotate-range",
+    );
+    check(
+      (await call("/api/webhooks/999999/rotate-secret", "POST", {})).status === 404,
+      "rotate-missing",
+    );
+    check(
+      (await call(`/api/webhooks/${id}/rotate-secret`, "POST", {}, denied)).status === 403,
+      "rotate-permission",
+    );
+    const rotation = await call(`/api/webhooks/${id}/rotate-secret`, "POST", { overlap_hours: 24 });
+    check(rotation.status === 200 && /^[0-9a-f]{64}$/.test(rotation.body.data.secret), "rotate");
+    const next: string = rotation.body.data.secret;
+    const until: string = rotation.body.data.previous_secret_until;
+    check(next !== secret && Date.parse(until) - Date.now() > 23 * 3_600_000, "rotate-window");
+    check(!JSON.stringify((await call("/api/webhooks")).body).includes(next), "rotate-hidden");
+    const windowed = await subscriber("rotated");
+    await call(`/api/subscribers/${windowed.id}/blocklist`, "PUT", {});
+    await arrived("subscriber.blocklisted", 5);
+    const during = ofEvent("subscriber.blocklisted").at(-1)!;
+    check(
+      signatureCount(during) === 2 &&
+        signatureValid(during, next) &&
+        signatureValid(during, secret),
+      "rotate-both",
+    );
+    check(
+      verifyDelivery(during.text, during.signature, [next], () => false, signatureTime(during))
+        .event === "subscriber.blocklisted",
+      "rotate-helper",
+    );
+
     // A public-address policy refuses the loopback receiver at delivery time.
     check(
       (await call("/api/settings/webhooks.block_private_addresses", "PUT", true)).status === 200,
@@ -401,10 +444,16 @@ export async function runWebhooksContract(target: {
       (await call("/api/settings")).body.data["webhooks.block_private_addresses"] === false,
       "restart-keeps-stored-false",
     );
+    // D130: the rotation's window is stored, so after a restart the old secret still signs.
+    const kept = asBody<{ results: Array<{ id: number; previous_secret_until: unknown }> }>(
+      (await call("/api/webhooks")).body.data,
+    ).results.find((hook) => hook.id === id)!;
+    check(kept.previous_secret_until === until, "restart-keeps-window");
     const restarted = await subscriber("restarted");
     await call(`/api/subscribers/${restarted.id}`, "DELETE");
     await arrived("subscriber.deleted", 3);
     check(signatureValid(ofEvent("subscriber.deleted")[2]!, secret), "restart-signature");
+    check(signatureValid(ofEvent("subscriber.deleted")[2]!, next), "restart-next-signature");
     check((await call(`/api/webhooks/${id}`, "DELETE")).status === 200, "delete");
     check((await call(`/api/webhooks/${id}/deliveries`)).status === 404, "deleted-gone");
     check(!stored(), "deliveries-gone");

@@ -107,8 +107,17 @@ async function drain(response: Response) {
   }
 }
 
-export const signature = (secret: string, unix: number, body: string) =>
-  `t=${unix},v1=${createHmac("sha256", secret).update(`${unix}.${body}`).digest("hex")}`;
+/**
+ * `t=<unix>,v1=<hex>` with one `v1` per secret, the current secret first (D130). A receiver
+ * accepts the delivery when any `v1` matches a secret it holds.
+ */
+export const signature = (secrets: ReadonlyArray<string>, unix: number, body: string) =>
+  [
+    `t=${unix}`,
+    ...secrets.map(
+      (secret) => `v1=${createHmac("sha256", secret).update(`${unix}.${body}`).digest("hex")}`,
+    ),
+  ].join(",");
 
 /** Create and start, for callers that deliver at once. The server creates, then starts (B52). */
 export function startWebhookDelivery(options: WebhookDeliveryOptions) {
@@ -167,12 +176,14 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
     try {
       const url = new URL(delivery.target.url);
       const route = options.blockPrivate() ? await beforeAbort(pinned(url, transport)) : null;
-      // Read after the last wait: a deletion during DNS must not leave the claim's body to send.
-      const payload = webhooks.claimedPayload(delivery);
-      if (payload === null) {
+      // Read after the last wait: a deletion during DNS must not leave the claim's body to send,
+      // and a rotated secret whose window ended during DNS must not sign.
+      const now = clock.now();
+      const signing = webhooks.signing(delivery, now);
+      if (signing === null) {
         return CLAIM_GONE;
       }
-      const unix = Math.floor(clock.now().getTime() / 1000);
+      const unix = Math.floor(now.getTime() / 1000);
       const response = await send(route?.url ?? url, {
         method: "POST",
         redirect: "manual",
@@ -182,9 +193,9 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
           ...route?.headers,
           "Content-Type": "application/json",
           "User-Agent": "iglo.email",
-          "X-Iglo-Email-Signature": signature(delivery.target.secret, unix, payload),
+          "X-Iglo-Email-Signature": signature(signing.secrets, unix, signing.payload),
         },
-        body: payload,
+        body: signing.payload,
         ...route?.tls,
       });
       if (response.status >= 200 && response.status < 300) {

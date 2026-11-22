@@ -1099,10 +1099,26 @@ export const schemas = {
       enabled: boolean,
       created_at: time,
       updated_at: time,
-      secret: { ...string, description: "Only in the answer that creates the webhook." },
+      previous_secret_until: {
+        ...nullable(time),
+        description:
+          "When a rotated-out secret stops signing; null when none is in its overlap window (D130).",
+      },
+      secret: {
+        ...string,
+        description: "Only in the answer that creates the webhook or rotates its secret.",
+      },
     },
     ["secret"],
   ),
+  WebhookRotation: input({
+    overlap_hours: {
+      ...integer,
+      minimum: 0,
+      maximum: 168,
+      description: "Hours the old secret keeps signing; 0 drops it at once. Default 24.",
+    },
+  }),
   WebhookInput: input(
     {
       url: string,

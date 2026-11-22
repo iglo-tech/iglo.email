@@ -733,6 +733,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       purges: [
         users.purgeSessions,
         webhooks.purge,
+        webhooks.expireSecrets,
         createSendCompaction(db),
         testSends.purge,
         createEventPurge(events),

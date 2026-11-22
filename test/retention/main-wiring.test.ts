@@ -17,6 +17,7 @@ import { readJson } from "@/test/read-body";
 
 setDefaultTimeout(120_000);
 
+const HOUR = 3_600_000;
 const DAY = 86_400_000;
 let build = "";
 let executable = "";
@@ -49,8 +50,12 @@ test("the server's first retention pass runs every owner's purge", async () => {
       sessions.run("old-legacy", "{}", iso(30 * DAY));
       sessions.run("still-live", JSON.stringify({ expires_at: Date.now() + DAY }), iso(DAY));
 
+      // Webhook 1's secret rotation window ended an hour ago; webhook 2's is still open.
       db.run(
-        "INSERT INTO webhooks (id, url, secret, events) VALUES (1, 'http://127.0.0.1:9/', 's', '[]')",
+        `INSERT INTO webhooks (id, url, secret, events, previous_secret, previous_secret_until)
+         VALUES (1, 'http://127.0.0.1:9/', 's', '[]', 'ended', ?1),
+                (2, 'http://127.0.0.1:9/', 's', '[]', 'open', ?2)`,
+        [iso(HOUR), iso(-DAY)],
       );
       const deliveries = db.prepare(
         `INSERT INTO webhook_deliveries (uuid, webhook_id, event, payload, status, created_at, updated_at)
@@ -82,7 +87,8 @@ test("the server's first retention pass runs every owner's purge", async () => {
         count(reader, "sessions WHERE id IN ('old-expired', 'old-legacy')") === 0 &&
         count(reader, "webhook_deliveries WHERE uuid = 'old-delivery'") === 0 &&
         count(reader, "sends WHERE payload IS NULL") === 1 &&
-        count(reader, "events WHERE created_at < datetime('now', '-400 days')") === 0;
+        count(reader, "events WHERE created_at < datetime('now', '-400 days')") === 0 &&
+        count(reader, "webhooks WHERE id = 1 AND previous_secret IS NOT NULL") === 0;
       // The loop pauses between owners, so a pass per owner takes about a second.
       for (const deadline = Date.now() + 60_000; !gone(); await Bun.sleep(50)) {
         if (Date.now() > deadline) {
@@ -94,12 +100,17 @@ test("the server's first retention pass runs every owner's purge", async () => {
         oldDelivery: count(reader, "webhook_deliveries WHERE uuid = 'old-delivery'"),
         compacted: count(reader, "sends WHERE payload IS NULL"),
         oldEvents: count(reader, "events WHERE created_at < datetime('now', '-400 days')"),
-      }).toEqual({ sessions: 0, oldDelivery: 0, compacted: 1, oldEvents: 0 });
+        endedSecret: count(
+          reader,
+          "webhooks WHERE id = 1 AND (previous_secret IS NOT NULL OR previous_secret_until IS NOT NULL)",
+        ),
+      }).toEqual({ sessions: 0, oldDelivery: 0, compacted: 1, oldEvents: 0, endedSecret: 0 });
       // What is still due stays.
       expect(count(reader, "sessions WHERE id = 'still-live'")).toBe(1);
       expect(count(reader, "webhook_deliveries WHERE uuid = 'new-delivery'")).toBe(1);
       expect(count(reader, "sends WHERE payload IS NOT NULL")).toBe(1);
       expect(count(reader, "events")).toBe(1);
+      expect(count(reader, "webhooks WHERE id = 2 AND previous_secret = 'open'")).toBe(1);
     } finally {
       reader.close(true);
       await second.stop();

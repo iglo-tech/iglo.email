@@ -163,7 +163,7 @@ Deleting a subscriber anonymizes their sends in the same transaction (D25), whic
 
 ### `webhooks`, `webhook_deliveries`
 
-`webhooks`: `id`, `url`, `secret`, `events` (JSON array), `enabled`, timestamps.
+`webhooks`: `id`, `url`, `secret`, `events` (JSON array), `enabled`, timestamps, and `previous_secret` and `previous_secret_until` (migration 26, D130): the rotated-out secret while its window is open, both NULL otherwise.
 
 `webhook_deliveries`: `id`, `uuid` (the delivery ID in webhook bodies), `webhook_id`, `event`, `payload` (the exact body, fixed at queueing and changed only by a deletion clearing it, and by the end of a `subscriber.deleted` delivery clearing its external ID and list IDs), `subscriber_id` (no foreign key, so the row outlives the subscriber; it finds the rows to clear on deletion), `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error` (a safe code, never a response body), `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`. At most 20 webhooks can be configured. `delivered` and `failed` rows are deleted 30 days after their last change, found through the partial `idx_webhook_deliveries_finished` (migration 14, D70). `queued` rows are never deleted.
 

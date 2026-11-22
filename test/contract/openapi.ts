@@ -1299,6 +1299,15 @@ export async function runOpenApiContract(target: {
       params: { id: hook.id },
       body: { enabled: true },
     });
+    await op("POST /api/webhooks/{id}/rotate-secret", {
+      params: { id: hook.id },
+      body: { overlap_hours: 1 },
+    });
+    await op("POST /api/webhooks/{id}/rotate-secret", {
+      params: { id: 999_999 },
+      body: {},
+      expect: 404,
+    });
     await op("PUT /api/subscribers/{id}/blocklist", {
       params: { id: other.id },
     });
