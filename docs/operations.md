@@ -978,7 +978,8 @@ the window's end whatever the time of that pass.
 The receiver's rules:
 
 - **Verify the exact body.** Compute the HMAC over the raw bytes of the request body, before any
-  JSON parsing or re-encoding, and compare with a constant-time function.
+  JSON parsing or re-encoding, and compare with a constant-time function. Pass `await request.text()`
+  to the helper, never a re-serialised object: `JSON.stringify` of a parsed body changes the bytes.
 - **Accept any `v1` value** that matches one of your secrets: the current one, and a rotated one
   while its window is open.
 - **Timestamp tolerance.** Reject a `t` more than 5 minutes from your clock (300 seconds either way).
@@ -1043,6 +1044,31 @@ export function verifyDelivery(
     throw new Error("replay");
   }
   return delivery;
+}
+```
+
+To read the body within the 64 KiB cap, use this in place of `request.text()`. It counts the bytes as
+they arrive, so a chunked request without `Content-Length` is capped too. Answer `413` on `null`:
+
+```ts
+/** The body as text, or `null` above `limit` bytes. */
+export async function readBody(request: Request, limit = 64 * 1024): Promise<string | null> {
+  const reader = request.body?.getReader();
+  const chunks: Array<Uint8Array> = [];
+  let size = 0;
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
 }
 ```
 
