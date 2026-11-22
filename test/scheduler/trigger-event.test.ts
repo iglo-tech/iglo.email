@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { day, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
@@ -43,9 +44,9 @@ async function record(
     throw new Error(JSON.stringify(r.body));
   }
   return {
-    id: r.body.data.event_id as number,
-    subscriber: r.body.data.subscriber_id as number,
-    started: r.body.data.enrollments.started[0]?.id as number | undefined,
+    id: asBody<number>(r.body.data.event_id),
+    subscriber: asBody<number>(r.body.data.subscriber_id),
+    started: asBody<number | undefined>(r.body.data.enrollments.started[0]?.id),
   };
 }
 /** Set the first step's wait as the editor saves it; enrollments keep their due times. */
@@ -161,7 +162,7 @@ test("D101: a reschedule counts a manual enrollment's first wait from its creati
     trigger_event_id: paid.id,
   });
   expect(started.status).toBe(200);
-  const id = started.body.data.id as number;
+  const id = asBody<number>(started.body.data.id);
   const created = f.clock.now().getTime();
   expect(Date.parse(started.body.data.due_at) - created).toBe(7 * day);
 

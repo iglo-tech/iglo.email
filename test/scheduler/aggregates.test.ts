@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
@@ -378,7 +379,7 @@ test("10,001 events of the name in the window hold the step: skipped with aggreg
   ]);
   expect(f.sink.messages).toHaveLength(0);
   expect(f.errors).toHaveLength(1);
-  const logged = f.errors.map((e) => (e as Error).message).join("\n");
+  const logged = f.errors.map((e) => asBody<Error>(e).message).join("\n");
   expect(logged).toContain("aggregate");
   expect(logged).not.toContain(email);
   // The step advanced past the last step: no retry, no second log, no partial total.

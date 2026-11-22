@@ -6,6 +6,7 @@ import { ascending } from "@/test/order";
 import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
@@ -51,7 +52,7 @@ test("a blocklisted person's event names each sequence it would start, marketing
     steps: [tx(template)],
   });
   const created = await event(f, { subscriber: { email: "bl@example.test" }, name: "signup" });
-  const subscriber = created.body.data.subscriber_id as number;
+  const subscriber = asBody<number>(created.body.data.subscriber_id);
   expect((await f.json(`/api/subscribers/${subscriber}/blocklist`, "PUT", {})).status).toBe(200);
 
   const paid = await event(f, { subscriber: { email: "bl@example.test" }, name: "order_paid" });
@@ -66,8 +67,9 @@ test("a blocklisted person's event names each sequence it would start, marketing
   );
 
   // The subscriber's own event list shows the same outcome for that event.
-  const timeline = (await f.json(`/api/subscribers/${subscriber}/subscriber-events`)).body.data
-    .results as Array<{ name: string; skipped: Array<unknown> }>;
+  const timeline = asBody<Array<{ name: string; skipped: Array<unknown> }>>(
+    (await f.json(`/api/subscribers/${subscriber}/subscriber-events`)).body.data.results,
+  );
   expect(timeline.find((e) => e.name === "order_paid")?.skipped).toEqual([
     { sequence_id: marketing.id, reason: "subscriber_blocklisted" },
     { sequence_id: receipt.id, reason: "subscriber_blocklisted" },
@@ -103,16 +105,16 @@ test("a suppressed person's marketing start is named suppressed, and their trans
   // The grant adds consent, so the marketing sequence starts and its mail goes out.
   const first = await order();
   expect(
-    first.body.data.enrollments.started
-      .map((s: { sequence_id: number }) => s.sequence_id)
+    asBody<{ started: Array<{ sequence_id: number }> }>(first.body.data.enrollments)
+      .started.map((s) => s.sequence_id)
       .sort(ascending),
   ).toEqual([marketing.id, receipt.id].sort(ascending));
-  const subscriber = first.body.data.subscriber_id as number;
+  const subscriber = asBody<number>(first.body.data.subscriber_id);
   await f.until(async () => (await f.sendLog("&kind=marketing&status=sent")).length === 1);
 
   // The person wipes through the paired link of that marketing mail.
-  const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
-  const send = (await f.sendLog("&kind=marketing"))[0]!.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid);
+  const send = (await f.sendLog("&kind=marketing"))[0]!.uuid;
   expect((await f.request(`/m/${send}/wipe/${uuid}?confirm=true`, { method: "POST" })).status).toBe(
     200,
   );
@@ -125,7 +127,9 @@ test("a suppressed person's marketing start is named suppressed, and their trans
   const again = await order();
   expect(again.body.data.grants).toEqual([{ list_id: news, result: "suppressed" }]);
   expect(
-    again.body.data.enrollments.started.map((s: { sequence_id: number }) => s.sequence_id),
+    asBody<{ started: Array<{ sequence_id: number }> }>(again.body.data.enrollments).started.map(
+      (s) => s.sequence_id,
+    ),
   ).toEqual([receipt.id]);
   expect(again.body.data.enrollments.skipped).toEqual([
     { sequence_id: marketing.id, reason: "suppressed" },

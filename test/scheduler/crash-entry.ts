@@ -13,6 +13,7 @@ import { createRoles } from "@/roles/roles";
 import { createSettings } from "@/settings/store";
 import { offsetClock, seed, startRuntime } from "@/test/scheduler/runtime";
 import type { Wrap } from "@/test/scheduler/runtime";
+import { asBody } from "@/test/read-body";
 
 const dataDir = process.env.SCHEDULER_CRASH_DIR!;
 const smtpPort = Number(process.env.SCHEDULER_CRASH_SMTP_PORT);
@@ -41,7 +42,7 @@ const wrap: Wrap = (name, owner) => {
         if (when === "before") {
           kill();
         }
-        const result = (value as (...a: Array<unknown>) => unknown).apply(target, args);
+        const result = asBody<(...a: Array<unknown>) => unknown>(value).apply(target, args);
         kill();
         return result;
       };
@@ -71,7 +72,7 @@ if (seedOnly) {
     ...current,
     smtp: [
       {
-        ...(current.smtp as Array<Record<string, unknown>>)[0],
+        ...asBody<Array<Record<string, unknown>>>(current.smtp)[0],
         name: "sink",
         enabled: true,
         host: "127.0.0.1",

@@ -6,6 +6,7 @@ import { afterEach, expect, test } from "bun:test";
 import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const definition = (steps: Array<object>) => ({
   name: "Onboarding",
@@ -834,7 +835,7 @@ test("an enrollment waiting on a deleted step reaches the right next step after 
     for (let i = 0; i < 4 && (await f.enrollment(id)).status === "active"; i++) {
       await f.pass(day);
     }
-    const sent = (await sendsOf(f, id)).map((s) => ids.indexOf(s.step_id));
+    const sent = (await sendsOf(f, id)).map((s) => ids.indexOf(s.step_id!));
     expect({ name: c.name, sent }).toEqual({ name: c.name, sent: c.expected });
     expect((await f.enrollment(id)).status).toBe("completed");
   }
@@ -855,9 +856,10 @@ test("enrollments whose condition keeps failing do not starve healthy due work",
     await f.event(`fail-${i}@example.test`);
   }
   const healthy = (await f.event("healthy@example.test", "signup")).enrollments.started[0]!.id;
-  const first = (await f.json(`/api/enrollments?sequence_id=${failing.id}&per_page=1`)).body.data
-    .results[0] as { id: number; due_at: string };
-  const healthySubscriber = (await f.enrollment(healthy)).subscriber_id as number;
+  const first = asBody<{ results: Array<{ id: number; due_at: string }> }>(
+    (await f.json(`/api/enrollments?sequence_id=${failing.id}&per_page=1`)).body.data,
+  ).results[0]!;
+  const healthySubscriber = asBody<number>((await f.enrollment(healthy)).subscriber_id);
 
   let evaluations = 0;
   let reachedAfter: number | null = null;
