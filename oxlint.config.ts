@@ -107,11 +107,10 @@ export default defineConfig({
       ],
       rules: { "quality/no-unknown-returns": "off" },
     },
-    // Exceptions, for the lead to decide at review (no-known-value-widening). The first group is a value that is
-    // `unknown` until a boundary check (parsed JSON or form bodies, ordered settings JSON, an OpenAPI schema walk, an
-    // XML value, a cast that writes known keys from a string list, the Nodemailer envelope), where an explicit
-    // literal type would be a lie. The rest are `Record<string, unknown>` dictionaries of parsed values: they are
-    // typed by no-unsafe-dictionary-type (B134d), which removes their entries here.
+    // Exceptions, for the lead to decide at review (no-known-value-widening). A value that is `unknown` until a
+    // boundary check (parsed JSON or form bodies, ordered settings JSON, an OpenAPI schema walk, an XML value, a cast
+    // that writes known keys from a string list, the Nodemailer envelope) cannot take a literal type without a lie.
+    // The `Record<string, unknown>` dictionaries among them are no-unsafe-dictionary-type exceptions below.
     {
       files: [
         "src/campaigns/input.ts", // cast that writes known keys from a string list
@@ -122,14 +121,71 @@ export default defineConfig({
         "src/settings/routes.ts", // parsed request body
         "src/settings/xml.ts", // settings values from XML
         "src/users/handlers.ts", // parsed request JSON
-        "src/mcp/tools.ts", // dictionary of tool arguments (no-unsafe-dictionary-type)
-        "src/settings/validate.ts", // dictionary of settings shapes (no-unsafe-dictionary-type)
-        "src/subscribers/input.ts", // dictionary cast (no-unsafe-dictionary-type)
-        "src/subscribers/query-routes.ts", // dictionary binding (no-unsafe-dictionary-type)
-        "src/subscribers/store.ts", // dictionary binding (no-unsafe-dictionary-type)
-        "src/templates/sample.ts", // dictionary of template data (no-unsafe-dictionary-type)
+        "src/mcp/tools.ts", // dictionary of tool arguments (see the dictionary exceptions below)
+        "src/settings/validate.ts", // dictionary of settings shapes (see the dictionary exceptions below)
+        "src/subscribers/input.ts", // dictionary cast (see the dictionary exceptions below)
+        "src/subscribers/query-routes.ts", // dictionary binding (see the dictionary exceptions below)
+        "src/subscribers/store.ts", // dictionary binding (see the dictionary exceptions below)
+        "src/templates/sample.ts", // dictionary of template data (see the dictionary exceptions below)
       ],
       rules: { "quality/no-known-value-widening": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-dictionary-type). Each dictionary below holds a value
+    // whose type comes from a payload that is parsed at runtime: a request body, a stored JSON column, an SNS or
+    // captcha response, MCP arguments, a settings record keyed by name, SQL rows, or template data. A value type for
+    // these needs a schema per payload, a design change (D132: per-key settings schema, typed component props), not a
+    // lint fix. The entries are removed when their schema lands.
+    {
+      files: [
+        "src/analytics/summaries.ts", // stored summary data by name
+        "src/bounces/routes.ts", // parsed bounce metadata and request body
+        "src/bounces/ses.ts", // SNS message JSON
+        "src/campaigns/input.ts", // request body JSON
+        "src/campaigns/render.ts", // archive metadata JSON
+        "src/campaigns/routes.ts", // request body JSON
+        "src/campaigns/runner/runner.ts", // stored subscriber attributes JSON
+        "src/campaigns/store.ts", // stored campaign JSON columns
+        "src/captcha/captcha.ts", // captcha provider response
+        "src/conditions/validate.ts", // stored condition JSON
+        "src/events/input.ts", // event request body JSON
+        "src/jsx/jsx-runtime.ts", // component props (HTML attributes)
+        "src/jsx/render.ts", // component props (HTML attributes)
+        "src/lists/input.ts", // parsed form body JSON
+        "src/mcp/generated.ts", // MCP tool schema JSON
+        "src/mcp/routes.ts", // MCP JSON-RPC message
+        "src/mcp/tools.ts", // MCP tool arguments
+        "src/media/routes.ts", // settings record (any value per key)
+        "src/messaging/test.ts", // SMTP test request JSON
+        "src/openapi/document.ts", // OpenAPI document objects
+        "src/openapi/schemas.ts", // OpenAPI schema objects
+        "src/public/form.ts", // form and JSON field values
+        "src/public/settings.ts", // settings record (any value per key)
+        "src/roles/routes.ts", // request body JSON
+        "src/sequences/enrollments.ts", // stored trigger JSON
+        "src/sequences/input.ts", // stored step definition JSON
+        "src/sequences/routes.ts", // request body JSON
+        "src/sequences/step-preview.ts", // stored step and trigger JSON
+        "src/server/response.ts", // response body and extra headers
+        "src/settings/store.ts", // settings record (any value per key)
+        "src/settings/validate.ts", // settings record and shapes
+        "src/settings/xml.ts", // settings record and shapes
+        "src/subscribers/export.ts", // subscriber attributes JSON
+        "src/subscribers/input.ts", // subscriber attributes JSON
+        "src/subscribers/query-routes.ts", // SQL result rows
+        "src/subscribers/query-runner.ts", // SQL result rows
+        "src/subscribers/store.ts", // subscriber attributes JSON
+        "src/templates/data.ts", // template data
+        "src/templates/input.ts", // parsed form body JSON
+        "src/templates/renderer.ts", // template data
+        "src/templates/sample.ts", // sample data
+        "src/tx/input.ts", // transactional request JSON
+        "src/unsubscribe/policy.ts", // settings record (any value per key)
+        "src/users/factor.ts", // parsed form fields
+        "src/users/handlers.ts", // request body JSON
+        "src/webhooks/routes.ts", // request body JSON
+        "src/webhooks/store.ts", // stored webhook payload JSON
+      ],
+      rules: { "quality/no-unsafe-dictionary-type": "off" },
     },
     // Exceptions, for the lead to decide at review (no-conditional-empty-object-spread). Each object below reaches an
     // API response, a webhook payload, stored JSON, an email or a rendered page, where key order is observable, so the
@@ -204,6 +260,7 @@ export default defineConfig({
         "quality/no-unknown-returns": "off", // B134c: test/ still has the rule's findings.
         "quality/no-known-value-widening": "off", // B134c: test/ still has the rule's findings.
         "quality/no-conditional-empty-object-spread": "off", // B134c: test/ still has the rule's findings.
+        "quality/no-unsafe-dictionary-type": "off", // B134c: test/ still has the rule's findings.
         "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
       },
     },
@@ -238,7 +295,6 @@ export default defineConfig({
     "typescript/no-unsafe-member-access": "off", // B134e
     "typescript/no-unsafe-return": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
-    "quality/no-unsafe-dictionary-type": "off", // B134d
 
     // B134c: findings remain only in test/.
     "typescript/no-require-imports": "off", // B134c
