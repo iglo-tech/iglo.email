@@ -7,6 +7,7 @@ import { generateRuntimeFunction } from "@alpinejs/csp/src/parser.js";
 import { expect } from "@playwright/test";
 import { api, ORIGIN, test, unique, signIn } from "../helpers.js";
 
+// Loads each address as a classic script on an admin page, as injected markup would.
 const asScript = (page, paths) =>
   page.evaluate(async (list) => {
     const outcomes = {};
@@ -141,8 +142,6 @@ test("every screen works under the policy", async ({ page }) => {
 });
 
 test.describe("responses that hold authored text", () => {
-  // Loads each address as a classic script on an admin page, as injected markup would.
-
   test("do not run as same-origin script", async ({ page }) => {
     await signIn(page);
     const list = await ok(page, "/api/lists", "POST", {
