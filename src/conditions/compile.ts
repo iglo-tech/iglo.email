@@ -60,13 +60,18 @@ export function compile(condition: Condition): CompiledCondition {
       }
       return attributeSQL(c.attr, c.op, c.value);
     }
-    return eventCountSQL<Slot>({
+    const input: Parameters<typeof eventCountSQL<Slot>>[0] = {
       subscriber,
       name: c.event,
-      ...(c.since !== undefined ? { after: { slot: "after", since: c.since } } : {}),
-      ...(c.where ? { where: c.where } : {}),
       count: c.count ?? { gte: 1 },
-    });
+    };
+    if (c.since !== undefined) {
+      input.after = { slot: "after", since: c.since };
+    }
+    if (c.where) {
+      input.where = c.where;
+    }
+    return eventCountSQL<Slot>(input);
   };
   const statement = subscriberConditionSQL(part(condition), subscriber);
   return { sql: statement.sql, params: statement.args, fragments };

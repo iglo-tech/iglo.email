@@ -11,11 +11,8 @@ export function sidebar(
   can: Can,
   now: Date,
 ): Array<NavigationLink | NavigationGroup> {
-  const link = (id: string, label: string, href: string): NavigationLink => ({
-    label,
-    href,
-    ...(pageId === id ? { current: true } : {}),
-  });
+  const link = (id: string, label: string, href: string): NavigationLink =>
+    pageId === id ? { label, href, current: true } : { label, href };
   const group = (
     id: string,
     icon: string,

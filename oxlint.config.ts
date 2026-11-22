@@ -189,11 +189,10 @@ export default defineConfig({
     },
     // Exceptions, for the lead to decide at review (no-conditional-empty-object-spread). Each object below reaches an
     // API response, a webhook payload, stored JSON, an email or a rendered page, where key order is observable, so the
-    // spread stays. A separate-statement build is not used because it would move keys. Internal option objects of the
-    // SQL builders (conditions/compile, events/aggregate) would need the builders' generic parameter spelled out.
+    // spread stays. The objects that never reach one of those (SQL builder options, the session identity, the
+    // navigation link, the Liquid options and the render snapshot) are built in separate statements, with the same keys.
     {
       files: [
-        "src/admin/layout/sidebar.ts", // rendered navigation
         "src/admin/page.tsx", // rendered page config
         "src/admin/password-reset.tsx", // email message
         "src/admin/system.ts", // system JSON for the admin page and API
@@ -201,8 +200,6 @@ export default defineConfig({
         "src/bounces/store.ts", // bounce JSON in the API response
         "src/campaigns/routes.ts", // email message and preview
         "src/campaigns/runner/runner.ts", // email message (wire format) and render context
-        "src/conditions/compile.ts", // internal SQL builder options, generic parameter
-        "src/events/aggregate.ts", // internal SQL builder options, generic parameter
         "src/mcp/generated.ts", // MCP tool JSON schema
         "src/media/attachments.ts", // email attachment (wire format)
         "src/messaging/email.ts", // SMTP transport and email message (wire format)
@@ -219,10 +216,8 @@ export default defineConfig({
         "src/sequences/routes.ts", // API response
         "src/subscribers/query-routes.ts", // HTTP response headers
         "src/subscribers/store.ts", // stored subscriber attributes JSON
-        "src/templates/renderer.ts", // template snapshot and its stored form
         "src/templates/routes.ts", // API response
         "src/tx/routes.ts", // API response and transactional email
-        "src/users/auth.ts", // session cookie and API response
         "src/users/models.ts", // user API response
         "src/webhooks/effects.ts", // webhook payload
       ],

@@ -312,13 +312,17 @@ export async function createAuthentication(
     if (!role) {
       throw new HttpError(403, "invalid session");
     }
-    return {
-      user,
-      role,
-      transport,
-      ...(sessionId ? { sessionId } : {}),
-      ...(csrf ? { csrf } : {}),
-    };
+    // The session fields are present only when they hold a value, so each combination is its own literal.
+    if (sessionId && csrf) {
+      return { user, role, transport, sessionId, csrf };
+    }
+    if (sessionId) {
+      return { user, role, transport, sessionId };
+    }
+    if (csrf) {
+      return { user, role, transport, csrf };
+    }
+    return { user, role, transport };
   }
   function authorize(context: RequestContext, permission?: string): Identity {
     const principal = identity(context.request);

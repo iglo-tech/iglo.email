@@ -55,11 +55,11 @@ interface Compiled {
  */
 function compile(aggregate: Aggregate, subscriber: bigint, after: string | undefined): Compiled {
   const { event, where, fn, field } = aggregate;
-  const window = windowSQL<Param>({
-    subscriber,
-    name: event,
-    ...(aggregate.since === undefined ? {} : { after: after ?? "" }),
-  });
+  const input: Parameters<typeof windowSQL<Param>>[0] = { subscriber, name: event };
+  if (aggregate.since !== undefined) {
+    input.after = after ?? "";
+  }
+  const window = windowSQL<Param>(input);
   const hit = whereSQL(where);
   const path = field === undefined ? "" : jsonPath(field.slice("data.".length));
   const numeric = "json_type(data, ?) IN ('integer', 'real')";

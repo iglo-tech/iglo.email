@@ -1,7 +1,7 @@
 // Liquid rendering context and composition adapted from listmonk models/campaigns.go,
 // models/messages.go and internal/manager/message.go at 6fcd95f.
 import { Context, Drop, Liquid, Output, defaultOperators, toValueSync } from "liquidjs";
-import type { Emitter, Template } from "liquidjs";
+import type { Emitter, LiquidOptions, Template } from "liquidjs";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
 import { parseTemplateData } from "@/templates/data";
@@ -230,7 +230,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
         return yield original(left, right, ctx);
       };
     }
-    const liquid = new Liquid({
+    const options: LiquidOptions = {
       operators,
       templates: Object.create(null),
       strictFilters: true,
@@ -239,30 +239,24 @@ export function createRenderer(clock: Clock, translation: Translation) {
       memoryLimit: TOTAL_LIMIT,
       globals: Object.create(null),
       locale: "en-US",
-      ...(html
-        ? {
-            outputEscape(this: { context: Context }, value: unknown) {
-              const input = scalar(value);
-              let size = 0;
-              for (const c of input) {
-                size +=
-                  c === "&"
-                    ? 5
-                    : c === "<" || c === ">"
-                      ? 4
-                      : c === '"' || c === "'"
-                        ? 5
-                        : byteLength(c);
-              }
-              budget(this.context).charge(size);
-              return input.replaceAll(
-                /[&<>"']/g,
-                (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" })[c]!,
-              );
-            },
-          }
-        : {}),
-    });
+    };
+    // The HTML engine escapes output; the plain-text engine has no escape option at all.
+    if (html) {
+      options.outputEscape = function outputEscape(this: { context: Context }, value: unknown) {
+        const input = scalar(value);
+        let size = 0;
+        for (const c of input) {
+          size +=
+            c === "&" ? 5 : c === "<" || c === ">" ? 4 : c === '"' || c === "'" ? 5 : byteLength(c);
+        }
+        budget(this.context).charge(size);
+        return input.replaceAll(
+          /[&<>"']/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" })[c]!,
+        );
+      };
+    }
+    const liquid = new Liquid(options);
     for (const tag of Object.keys(liquid.tags)) {
       if (
         ![
@@ -685,20 +679,23 @@ export function createRenderer(clock: Clock, translation: Translation) {
     }
     // Strings and mode are captured once; neither a caller mutation nor a same-clock
     // database update can change this snapshot. There is no instance-wide cache.
-    const snapshot = {
-      body: input.body,
-      mode: input.mode,
-      ...(input.subject === undefined ? {} : { subject: input.subject }),
-      ...(input.layout === undefined ? {} : { layout: input.layout }),
-      ...(input.transactional === undefined ? {} : { transactional: input.transactional }),
-    };
+    const snapshot: Omit<RenderRequest, "data"> = { body: input.body, mode: input.mode };
+    if (input.subject !== undefined) {
+      snapshot.subject = input.subject;
+    }
+    if (input.layout !== undefined) {
+      snapshot.layout = input.layout;
+    }
+    if (input.transactional !== undefined) {
+      snapshot.transactional = input.transactional;
+    }
     const compiled: Compiled = {
       body: parse(snapshot.body, snapshot.mode !== "plain"),
       subject: parse(snapshot.subject ?? "", false, SUBJECT_LIMIT),
-      ...(snapshot.layout === undefined
-        ? {}
-        : { layout: parse(snapshot.layout, snapshot.mode !== "plain") }),
     };
+    if (snapshot.layout !== undefined) {
+      compiled.layout = parse(snapshot.layout, snapshot.mode !== "plain");
+    }
     return Object.freeze({
       renderSync(data: string, tracking?: RenderTracking, budget?: MessageBudget) {
         if (active >= 4) {
