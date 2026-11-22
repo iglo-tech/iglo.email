@@ -229,9 +229,11 @@ export default defineConfig({
       rules: {
         // Permanent: test runners, measure and reference scripts print their own command output, which AGENTS.md allows.
         "no-console": "off",
-        // Tests read HTTP JSON, mail and webhook bodies that are `unknown` until the assertion reads them.
+        // Discarded or timed callback results (cleanups, harness `during` and timing callbacks), SQL scalars, generated
+        // fuzz values, a JSON reviver signature and a Proxy forwarder.
         "quality/no-unknown-returns": "off",
-        // The same boundary: a literal or narrowed type on a value that is `unknown` until a test reads it would be a lie.
+        // Tables indexed by a runtime string, measure reports that gain keys later, recursive fixtures built in a loop,
+        // header bags assigned to a wider `let`, and `unknown` bindings a test reassigns.
         "quality/no-known-value-widening": "off",
         // Fixtures and response bags are dictionaries whose values a test checks field by field, not a schema per payload.
         "quality/no-unsafe-dictionary-type": "off",
