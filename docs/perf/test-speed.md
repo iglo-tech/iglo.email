@@ -115,3 +115,143 @@ bun run check                      # whole gate
 bun run test                       # build once, then the parallel suite
 bun test --parallel=4 --timeout=30000 --timings=test/timings.json --update-timings  # refresh timings
 ```
+
+## 2026-11-22: B137, faster and steadier suite (D133)
+
+Hosts. macOS: Apple Silicon, 8 CPUs, shared with other agents; the 1-minute load was 4 to 17 for
+the runs below, and up to 134 in a few minutes of the session (those timings are marked). Linux:
+Docker (OrbStack) container `oven/bun:1.4.5`, 8 CPUs, user `bun`, `--security-opt seccomp=unconfined
+--security-opt apparmor=unconfined`, the tree copied from the committed worktree. Steps that need
+Docker (the `reference:run` family) ran against a `docker:27-dind` sidecar that shares its network
+namespace with the test container, because the harness checks `127.0.0.1`. Load is `/proc/loadavg`
+at the start and end of each container run.
+
+### Results
+
+| | Before | After |
+|---|---|---|
+| `bun run check`, Linux container, alone | 304 s, 1780 pass, 0 fail (load 6.8 to 11.6) | 357 s, 1780 pass, 0 fail (load 7.4 to 8.5) |
+| `bun run check`, macOS | 262 s, 1766 pass, 7 skip, 7 fail (load 5 to 8) | 172 s, 1773 pass, 7 skip, 0 fail (load 4 to 8) |
+
+The Linux wall time did not fall in this measurement: the same host load gave 304 s before and
+357 s after. The per-file gains below are real (the interrupted backup file, the send-rate file, the
+converter test), but the total at this load did not show them. macOS went from 7 failures to 0.
+
+### Per item
+
+1. **Parallelism.** `--parallel=4` and `--parallel=8`, container, two runs each, back to back, current
+   timings file:
+
+   | workers | run | wall (tests) | result | load |
+   |---|---|---|---|---|
+   | 4 | A | 254.6 s | 1780 pass | 1.1 to 9.4 |
+   | 4 | B | 259.8 s | 1780 pass | 5.3 to 7.8 |
+   | 8 | A | 198.3 s | 1779 pass, 1 fail (`interrupted`: race while seeding, fixed in `e767fe6`) | 9.0 to 14.2 |
+   | 8 | B | 196.7 s | 1779 pass, 1 fail (compiled-server readiness, 8.9 s, the 5 s budget) | 7.8 to 11.4 |
+
+   Eight workers are about 23 % faster but failed in both runs, and each failure is a timing bound
+   starved by eight busy cores. Not reliable, so the script keeps **4**. Eight workers also
+   failed 23 tests in the first 8-worker container run, taken while the macOS host was at load 44.
+   Not tried: a core-count
+   expression, or 6 workers.
+
+2. **Timings.** `test/timings.json` listed 103 of 168 files. Refreshed in the container with
+   `--update-timings` at 4 workers (load 10 to 13): 168 entries, slowest first. Top: runner (122 s,
+   summed over its tests), markdown-liquid (109 s), backup (83 s), auth (80 s). That refresh run
+   failed the tracked-links case (65 s, the bound of 60 s); the case is changed in item 7.
+
+3. **`templates:compiled`.** No change. In the container at idle load: the compile takes 78 to
+   117 ms (`bun build --compile` of the fixture), the bwrap run takes 285 ms, and the whole step takes
+   0.35 to 0.42 s. The 179 s was not reproduced. The step's own limits are 60 s for the compile and
+   30 s for the run, so 179 s cannot come from these two phases; it came from the host around the run.
+
+4. **send-rate.** Cause: the sink stamps receipts with the injected clock, and the wait loop moved
+   that clock while SMTP I/O was pending. The clock now moves only when no granted send is still in
+   flight (grants counted through a wrapper of the limiter), and a wait fails only after 3 s with no
+   grant, receipt or send-status change. Every assertion is unchanged.
+   - macOS before: 4 of 14 fail on every run (1, 3, 7b, 7c). After: 10 of 10 runs, 14 of 14 each.
+   - Container before: 1b flaked once in five runs. After: 5 of 5, 14 of 14 each. An intermediate
+     version (no progress budget) failed 1b once in five, so the budget change is part of the fix.
+
+5. **Interrupted backup.** The 300k rows are seeded once in a `beforeAll`, and each case copies the
+   stopped data directory into its own base directory. The seed helper now finalizes its statement
+   before closing, so the template has one database file (before, a live statement kept the WAL on
+   disk, and a copy could race with it).
+   - Container before: SIGKILL 40.1 s, SIGTERM 31.9 s, file 73.3 s. After: 3.8 to 4.8 s per case,
+     file about 40 s of one-time build and seed, 3 of 3 runs pass.
+   - macOS: file 54.6 s before, 49.5 s after (first version, before the seed fix).
+
+6. **Converter worst case.** The single absolute sample (under 1 s, failed at 1006 to 1181 ms
+   under load, B120) is now a ratio within the run: the median of three at 64 KiB and at 1 MiB,
+   bound 32x. Linear work gives about 16x for 16x the input.
+   - Measured, real converter: macOS 14.3, 18.3, 14.3x (load 27 to 93); container 13.9, 15.4, 15.3x.
+   - A 4x ratio bound was tried first and rejected: the container measured 4.0 to 5.2x for 4x input,
+     too close to a bound of 5.
+   - Quadratic check: a scratch copy of `src/messaging/plain.ts` with a quadratic loop in front of
+     the conversion (inner step 100). The new test fails at 118.9x. The same stub fails 16 existing
+     tests in the file at 8.9 to 22x (bound 5) and 19.5x (bound 6), so the file's ratio tests also
+     catch the property.
+   - Test count unchanged at 43 in the file.
+
+7. **Slow files.**
+   - `runner.test.ts`, tracked links (changed): the 300-message render is CPU-bound, 27 to 65 s in the
+     container, and one run in six passed the 60 s bound by a margin of zero. Its wait now fails after
+     60 s with no new push and stops at 75 s in all, before the 90 s test timeout. Settling each
+     push once (settle is idempotent) replaces a settle of every push on every iteration, which kept
+     a core busy. Alone: 38.7 s before, 28.3 s after (container, load 12 and 7). Inside the file:
+     24.5 s. The first version of this change let a timed-out loop drive the next test's fixture;
+     the final version fixes that.
+   - `scheduler.test.ts`, enrollments with a failing condition (changed): the wait gave up at 15 s of
+     wall time for 1000 failing evaluations. It now fails after 15 s with no new evaluation; the 60 s
+     test timeout still bounds it. Container alone: 51.5 s, passing (was 43 s and failing in the full
+     run). macOS: 8.5 s.
+   - `hold.test.ts`, no change. The quiet period (6.5 s) covers the campaign runner's 5 s scan
+     (`scanInterval` in `src/campaigns/runner/runner.ts`); a shorter period would not cover one full
+     scan. Measured time from restart to a released campaign's delivery: 282 to 559 ms in the
+     container, 578 ms on macOS (load 12), including the server start.
+   - `auth.test.ts`, no change. The cost is argon2id hashing by `Bun.password` with its default
+     parameters; no test-only setting exists, so the cost was not lowered.
+   - `instance-lock.test.ts`, no change. Its only wait is a 5 s watchdog on runs that must end by
+     themselves, and it is not reached in a passing run; the time is process starts.
+   - `backup.test.ts`, no change. About 60 small cases; the waits poll every 5 ms for progress.
+
+8. **Other macOS fixes (not in the brief).**
+   - `test/templates/render.test.ts`: the caller stopped its server before the body of a 1 MiB reply
+     was read (ECONNRESET on macOS; Linux's larger buffers hid it). The body is now read first.
+   - `test/backup/fixture.ts`: `seedSubscribers` finalizes its statement before closing (item 5).
+
+### Not changed, open
+
+- `bootstrap/cli.test.ts` readiness: a compiled server's first start of a new binary content took
+  1.8 s on macOS, against 0.36 s for a repeat start (`startup` probe, low load). The 5 s budget is
+  met at low load, and failed at load 20 to 40 (two cases, baseline). No warm-up added on this evidence.
+- `scheduler.test.ts`, enrollments test: 51.5 s alone in the container against a 60 s timeout; its
+  1000 sequential event requests are the cost.
+- `runner.test.ts`, tracked links: still 25 to 28 s, the render cost itself (a product question:
+  about 90 ms per message for 60 KB of link text).
+
+### Judgement calls for review
+
+Three waits measured a real-time budget for CPU-bound or I/O-bound work. They now measure
+**progress** (a grant, a receipt, a push or an evaluation) with the stall budget unchanged: send-rate's
+`drive`, the tracked-links wait, and the scheduler's `until`. Each still fails at its stall bound
+and each test still has its own total limit. This is a change of what the budget measures, so the
+owner should confirm it.
+
+### Acceptance
+
+- macOS `bun run check` on the final commit: exit 0; 1773 pass, 7 skip, 0 fail; 172 s.
+- Container, in order, as user `bun`: `bun install --frozen-lockfile` exit 0; one `bun run check` on
+  the final commit (`1b0c154`): exit 0, 1780 pass, 0 fail, 357 s. Then `bun run ui:verify`,
+  `templates:compiled`, `contract:templates`, `contract:normal`, `contract:auth`, `contract:roles`,
+  `contract:lists`, `contract:subscribers`, `contract:settings`, `contract:sends`,
+  `sends:batch-crash`, `contract:fixture`, `contract:messaging`, `messaging:fixture`,
+  `contract:events`, `contract:sequences`, `contract:bounces`, `contract:media`, `contract:import`,
+  `contract:webhooks`, `contract:campaigns`, `contract:analytics`, `contract:tx`,
+  `contract:unsubscribe`, `contract:public`, `contract:maintenance`, `contract:openapi`: all exit 0.
+  The reference-based ones ran against the sidecar.
+- The `Configure and probe` step: `apt-get install bubblewrap` and the `bwrap` probe succeed. The
+  `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` line cannot run in the container (the
+  knob is not in `/proc/sys`); it is a runner-host setting and the probe passes without it.
+- An earlier container `bun run check` on `bdd84cb` failed 5 tests (1775 pass): a leak from the
+  tracked-links loop (fixed in `1b0c154`) and the scheduler wait. It is not the acceptance run.
