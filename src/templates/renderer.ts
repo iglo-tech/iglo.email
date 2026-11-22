@@ -1,7 +1,7 @@
 // Liquid rendering context and composition adapted from listmonk models/campaigns.go,
 // models/messages.go and internal/manager/message.go at 6fcd95f.
 import { Context, Drop, Liquid, Output, defaultOperators, toValueSync } from "liquidjs";
-import type { Emitter, Template } from "liquidjs";
+import type { Emitter, LiquidOptions, Template } from "liquidjs";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
 import { parseTemplateData } from "@/templates/data";
@@ -16,16 +16,16 @@ const MAX_WORK = 10_000;
 const MAX_DEPTH = 32;
 const dangerous = new Set(["__proto__", "prototype", "constructor"]);
 const loopProperties = new Set(["index", "index0", "rindex", "rindex0", "first", "last", "length"]);
-const filterArguments: Readonly<Record<string, number>> = {
-  raw: 0,
-  default: 1,
-  upcase: 0,
-  strip: 0,
-  t: 8,
-  date: 1,
-  track_link: 0,
-  number: 0,
-};
+const filterArguments = new Map([
+  ["raw", 0],
+  ["default", 1],
+  ["upcase", 0],
+  ["strip", 0],
+  ["t", 8],
+  ["date", 1],
+  ["track_link", 0],
+  ["number", 0],
+]);
 const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
 
 export class TemplateSourceError extends Error {
@@ -140,6 +140,26 @@ export interface RenderTracking {
 }
 const attribute = (value: string) => value.replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+const pad = (n: number) => String(n).padStart(2, "0");
+function hasContent(templates: Array<Template>): boolean {
+  for (const tpl of templates) {
+    if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText())) {
+      return true;
+    }
+    // A content reference captured into a variable is not itself a layout output.
+    if ("name" in tpl && tpl.name === "capture") {
+      continue;
+    }
+    if (
+      "children" in tpl &&
+      tpl.children &&
+      hasContent(toValueSync<Array<Template>>(tpl.children(false, true)))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 /** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
 export function createRenderer(clock: Clock, translation: Translation) {
   // en-US only (D102). Negative zero and values that round to zero render as 0, not -0.
@@ -210,7 +230,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
         return yield original(left, right, ctx);
       };
     }
-    const liquid = new Liquid({
+    const options: LiquidOptions = {
       operators,
       templates: Object.create(null),
       strictFilters: true,
@@ -219,30 +239,24 @@ export function createRenderer(clock: Clock, translation: Translation) {
       memoryLimit: TOTAL_LIMIT,
       globals: Object.create(null),
       locale: "en-US",
-      ...(html
-        ? {
-            outputEscape(this: { context: Context }, value: unknown) {
-              const input = scalar(value);
-              let size = 0;
-              for (const c of input) {
-                size +=
-                  c === "&"
-                    ? 5
-                    : c === "<" || c === ">"
-                      ? 4
-                      : c === '"' || c === "'"
-                        ? 5
-                        : byteLength(c);
-              }
-              budget(this.context).charge(size);
-              return input.replaceAll(
-                /[&<>"']/g,
-                (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" })[c]!,
-              );
-            },
-          }
-        : {}),
-    });
+    };
+    // The HTML engine escapes output; the plain-text engine has no escape option at all.
+    if (html) {
+      options.outputEscape = function outputEscape(this: { context: Context }, value: unknown) {
+        const input = scalar(value);
+        let size = 0;
+        for (const c of input) {
+          size +=
+            c === "&" ? 5 : c === "<" || c === ">" ? 4 : c === '"' || c === "'" ? 5 : byteLength(c);
+        }
+        budget(this.context).charge(size);
+        return input.replaceAll(
+          /[&<>"']/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" })[c]!,
+        );
+      };
+    }
+    const liquid = new Liquid(options);
     for (const tag of Object.keys(liquid.tags)) {
       if (
         ![
@@ -360,17 +374,16 @@ export function createRenderer(clock: Clock, translation: Translation) {
       if (!Number.isFinite(date.getTime())) {
         throw new Error("Invalid date");
       }
-      const pad = (n: number) => String(n).padStart(2, "0");
-      const values: Record<string, string> = {
-        "%": "%",
-        Y: String(date.getUTCFullYear()),
-        m: pad(date.getUTCMonth() + 1),
-        d: pad(date.getUTCDate()),
-        H: pad(date.getUTCHours()),
-        M: pad(date.getUTCMinutes()),
-        S: pad(date.getUTCSeconds()),
-      };
-      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => values[key]!);
+      const values = new Map([
+        ["%", "%"],
+        ["Y", String(date.getUTCFullYear())],
+        ["m", pad(date.getUTCMonth() + 1)],
+        ["d", pad(date.getUTCDate())],
+        ["H", pad(date.getUTCHours())],
+        ["M", pad(date.getUTCMinutes())],
+        ["S", pad(date.getUTCSeconds())],
+      ]);
+      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => values.get(key)!);
       b.charge(byteLength(out));
       return out;
     });
@@ -427,25 +440,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
     checkSource(source, limit);
     return (html ? htmlEngine : plainEngine).parse(source);
   }
-  function hasContent(templates: Array<Template>): boolean {
-    for (const tpl of templates) {
-      if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText())) {
-        return true;
-      }
-      // A content reference captured into a variable is not itself a layout output.
-      if ("name" in tpl && tpl.name === "capture") {
-        continue;
-      }
-      if (
-        "children" in tpl &&
-        tpl.children &&
-        hasContent(toValueSync<Array<Template>>(tpl.children(false, true)))
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
   function validate(body: string, subject: string, campaign: boolean) {
     let compiled: Array<Template>;
     try {
@@ -470,7 +464,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     compiled?: Compiled,
     tracking?: RenderTracking,
     budget?: MessageBudget,
-  ): { body: string; subject: string } {
+  ) {
     if (budget !== undefined && !(budget instanceof Budget)) {
       throw new Error("Invalid budget");
     }
@@ -528,11 +522,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
         if (name === "[object Function]" && count === 0) {
           return;
         }
-        if (
-          !Object.hasOwn(filterArguments, name) ||
-          count > filterArguments[name]! ||
-          (name === "t" && count % 2 !== 0)
-        ) {
+        const maximum = filterArguments.get(name);
+        if (maximum === undefined || count > maximum || (name === "t" && count % 2 !== 0)) {
           throw new Error("Invalid filter arguments");
         }
       };
@@ -657,10 +648,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     return { body, subject };
   }
 
-  function renderSync(
-    request: RenderRequest,
-    budget?: MessageBudget,
-  ): { body: string; subject: string } {
+  function renderSync(request: RenderRequest, budget?: MessageBudget) {
     if (active >= 4) {
       throw new RenderCapacityError();
     }
@@ -691,20 +679,23 @@ export function createRenderer(clock: Clock, translation: Translation) {
     }
     // Strings and mode are captured once; neither a caller mutation nor a same-clock
     // database update can change this snapshot. There is no instance-wide cache.
-    const snapshot = {
-      body: input.body,
-      mode: input.mode,
-      ...(input.subject === undefined ? {} : { subject: input.subject }),
-      ...(input.layout === undefined ? {} : { layout: input.layout }),
-      ...(input.transactional === undefined ? {} : { transactional: input.transactional }),
-    };
+    const snapshot: Omit<RenderRequest, "data"> = { body: input.body, mode: input.mode };
+    if (input.subject !== undefined) {
+      snapshot.subject = input.subject;
+    }
+    if (input.layout !== undefined) {
+      snapshot.layout = input.layout;
+    }
+    if (input.transactional !== undefined) {
+      snapshot.transactional = input.transactional;
+    }
     const compiled: Compiled = {
       body: parse(snapshot.body, snapshot.mode !== "plain"),
       subject: parse(snapshot.subject ?? "", false, SUBJECT_LIMIT),
-      ...(snapshot.layout === undefined
-        ? {}
-        : { layout: parse(snapshot.layout, snapshot.mode !== "plain") }),
     };
+    if (snapshot.layout !== undefined) {
+      compiled.layout = parse(snapshot.layout, snapshot.mode !== "plain");
+    }
     return Object.freeze({
       renderSync(data: string, tracking?: RenderTracking, budget?: MessageBudget) {
         if (active >= 4) {

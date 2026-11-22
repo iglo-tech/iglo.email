@@ -17,19 +17,13 @@ const csvExample = `email,name,attributes
 user1@mail.com,"User One","{""age"": 42, ""planet"": ""Mars""}"
 user2@mail.com,"User Two","{""age"": 24, ""job"": ""Time Traveller""}"`;
 
+const radio = (name: string, value: string, model: string, label: string) => (
+  <label>
+    <input type="radio" name={name} value={value} x-model={model} data-testid={`check-${value}`} />{" "}
+    {label}
+  </label>
+);
 function Parameters({ t }: { t: Translation }) {
-  const radio = (name: string, value: string, model: string, label: string) => (
-    <label>
-      <input
-        type="radio"
-        name={name}
-        value={value}
-        x-model={model}
-        data-testid={`check-${value}`}
-      />{" "}
-      {label}
-    </label>
-  );
   return (
     <fieldset class="card">
       <legend>{t.T("import.title")}</legend>

@@ -34,6 +34,7 @@ export interface SessionData {
   expires_at: number;
 }
 
+const noop = () => {};
 export function createUserStore(db: Database, clock: Clock, roles: Roles) {
   const queries = prepareNamedQueries(db, [{ name: "users", sql }]);
   const count = () => (queries.get("count-users").get() as { count: bigint }).count;
@@ -51,7 +52,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         count: bigint;
       }
     ).count;
-  let onMutation: (id: bigint) => void = () => {};
+  let onMutation: (id: bigint) => void = noop;
   function insert(fields: UserFields): UserRow {
     const time = now();
     return queries
@@ -76,7 +77,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     onIdentityMutation(callback: (id: bigint) => void): void {
       onMutation = callback;
     },
-    roleAssigned(id: bigint): boolean {
+    roleAssigned: (id: bigint): boolean => {
       return (queries.get("assigned-role-count").get(id, id) as { count: bigint }).count > 0n;
     },
     byId,
@@ -374,7 +375,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       queries.get("delete-session").run(id);
     },
     /** Delete up to `limit` sessions expired at `now`. */
-    purgeSessions(now: Date, limit: number) {
+    purgeSessions: (now: Date, limit: number) => {
       return queries.get("purge-expired-sessions").all(now.getTime(), limit);
     },
     close: () => queries.close(),

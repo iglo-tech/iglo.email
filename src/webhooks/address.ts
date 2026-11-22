@@ -33,6 +33,7 @@ const blocked6: Array<[Array<number>, number]> = [
 const v4Blocked = (bytes: Array<number>) =>
   blocked4.some(([prefix, bits]) => inRange(bytes, prefix, bits));
 
+const groups = (part: string | undefined) => (part ? part.split(":") : []);
 /** The 16 bytes of a valid IPv6 address, zone removed. */
 function bytes6(address: string): Array<number> {
   let text = address.split("%", 1)[0]!;
@@ -42,7 +43,6 @@ function bytes6(address: string): Array<number> {
     text = `${text.slice(0, -dotted.length)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
   }
   const [head, tail] = text.split("::") as [string, string | undefined];
-  const groups = (part: string | undefined) => (part ? part.split(":") : []);
   const before = groups(head),
     after = groups(tail);
   const words =

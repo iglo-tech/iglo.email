@@ -229,7 +229,7 @@ export interface BackupOptions {
   available?: (path: string) => number;
   /** Runs at the moment of publication; a test's way to race it. The command line never sets it. */
   beforePublish?: () => void;
-  warn(message: string): void;
+  warn: (message: string) => void;
 }
 
 function freeBytes(path: string): number {
@@ -344,6 +344,10 @@ function realFolder(path: string): boolean {
   return !!currentAt(path)?.isDirectory();
 }
 
+interface MissingFolders {
+  existing: string;
+  missing: Array<string>;
+}
 /**
  * The folders of `directory` that do not exist, shallowest first, and the deepest one that does.
  * Each component is checked from the root, so the first problem named is the one nearest the root.
@@ -351,7 +355,7 @@ function realFolder(path: string): boolean {
  * with createFolders. The caller resolves the parent as the realpath of `existing`, joined with the
  * folders still to be made, so an alias in the existing part is followed as the kernel would.
  */
-function missingFolders(directory: string): { existing: string; missing: Array<string> } {
+function missingFolders(directory: string): MissingFolders {
   const names = directory.split(sep).filter(Boolean);
   let existing: string = sep;
   for (const [index, name] of names.entries()) {

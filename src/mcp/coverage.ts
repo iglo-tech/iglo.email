@@ -8,7 +8,7 @@
  * generated tool repeats it. `update_sequence_step` changes one step, so it covers no operation
  * here: the whole `updateSequenceById` is generated.
  */
-export const HANDWRITTEN_COVERAGE: Record<string, string> = {
+export const HANDWRITTEN_COVERAGE = {
   getTemplates: "list_templates",
   getTemplateById: "get_template",
   createTemplate: "create_template",
@@ -29,10 +29,10 @@ export const HANDWRITTEN_COVERAGE: Record<string, string> = {
   getMedia: "list_media",
   getSequences: "list_sequences",
   getSequenceById: "get_sequence",
-};
+} satisfies Record<string, string>;
 
 /** Operations no tool exposes, each with its reason. Adding an endpoint means adding it here or leaving it generated. */
-export const EXCLUDED_OPERATIONS: Record<string, string> = {
+export const EXCLUDED_OPERATIONS = {
   // Not agent actions: anonymous, health and document endpoints, the MCP endpoint itself, provider webhooks.
   getHealthCheck: "Anonymous liveness probe for load balancers.",
   getAuthenticatedHealth: "Liveness probe, not an action.",
@@ -79,4 +79,4 @@ export const EXCLUDED_OPERATIONS: Record<string, string> = {
 
   // Whole-settings replace: each key changes through updateSettingByKey, one at a time.
   updateSettings: "Replaces every setting at once; settings change one key at a time.",
-};
+} satisfies Record<string, string>;

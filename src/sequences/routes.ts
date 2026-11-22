@@ -80,6 +80,100 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const idOf = (value: number | { rawJSON: string }): bigint =>
   BigInt(typeof value === "number" ? value : value.rawJSON);
 
+const invalid = (c: RequestContext, field: string, detail?: string) =>
+  new HttpError(
+    400,
+    c.app.i18n.Ts(
+      "globals.messages.invalidFields",
+      "name",
+      detail ? `${field} (${detail})` : field,
+    ),
+  );
+const identity = (c: RequestContext) => {
+  if (!c.identity) {
+    throw new Error("Identity required");
+  }
+  return c.identity;
+};
+const addressed = (row: EnrollmentRow, addresses: Map<bigint, string>) => {
+  const email = addresses.get(row.subscriber_id);
+  return { ...project(row), ...(email === undefined ? {} : { subscriber_email: email }) };
+};
+const body = async (c: RequestContext, limit: number) => {
+  const value = parseJson(c.request, await readBounded(c.request, limit));
+  if (!isObject(value)) {
+    throw invalid(c, "body");
+  }
+  return value;
+};
+const params = (c: RequestContext) => {
+  const search = c.url.searchParams;
+  const one = (key: string) => {
+    const values = search.getAll(key);
+    if (values.length > 1) {
+      throw invalid(c, key);
+    }
+    return values[0];
+  };
+  const positive = (key: string, max: bigint) => {
+    const raw = one(key);
+    if (raw === undefined) {
+      return undefined;
+    }
+    if (!/^[1-9]\d{0,18}$/.test(raw) || BigInt(raw) > max) {
+      throw invalid(c, key);
+    }
+    return BigInt(raw);
+  };
+  return { one, positive };
+};
+const paging = (c: RequestContext) => {
+  const { positive } = params(c);
+  return {
+    page: Number(positive("page", 1_000_000n) ?? 1n),
+    perPage: Number(positive("per_page", 100n) ?? 20n),
+  };
+};
+/** The body of a preview or test: optional IDs and a sample, and `emails` for a test. */
+const previewBody = async (c: RequestContext, extra: ReadonlyArray<string> = []) => {
+  const bytes = await readBounded(c.request, PREVIEW_BODY_BYTES);
+  const value = bytes.length === 0 ? {} : parseJson(c.request, bytes);
+  if (!isObject(value)) {
+    throw invalid(c, "body");
+  }
+  for (const key of Object.keys(value)) {
+    if (!["subscriber_id", "trigger_event_id", "sample", ...extra].includes(key)) {
+      throw invalid(c, key);
+    }
+  }
+  const id = (field: "subscriber_id" | "trigger_event_id") => {
+    try {
+      return idValue(value[field], field) ?? null;
+    } catch (error) {
+      if (error instanceof DefinitionError) {
+        throw invalid(c, field);
+      }
+      throw error;
+    }
+  };
+  let sample: Sample | undefined;
+  if (value.sample !== undefined) {
+    try {
+      sample = parseSampleValue(value.sample, { data: false });
+    } catch (error) {
+      if (error instanceof SampleError) {
+        throw invalid(c, error.field);
+      }
+      throw error;
+    }
+  }
+  return {
+    subscriberId: id("subscriber_id"),
+    triggerEventId: id("trigger_event_id"),
+    sample,
+    emails: value.emails,
+  };
+};
 export function registerSequenceRoutes(
   router: Router,
   deps: {
@@ -107,28 +201,6 @@ export function registerSequenceRoutes(
 ) {
   const { sequences, enrollments, subscribers, events, sends, templates, roles, auth, testSends } =
     deps;
-  const invalid = (c: RequestContext, field: string, detail?: string) =>
-    new HttpError(
-      400,
-      c.app.i18n.Ts(
-        "globals.messages.invalidFields",
-        "name",
-        detail ? `${field} (${detail})` : field,
-      ),
-    );
-  const body = async (c: RequestContext, limit: number) => {
-    const value = parseJson(c.request, await readBounded(c.request, limit));
-    if (!isObject(value)) {
-      throw invalid(c, "body");
-    }
-    return value;
-  };
-  const identity = (c: RequestContext) => {
-    if (!c.identity) {
-      throw new Error("Identity required");
-    }
-    return c.identity;
-  };
   /** Validate a definition and write it, both inside one write transaction. */
   const save = (
     c: RequestContext,
@@ -155,45 +227,12 @@ export function registerSequenceRoutes(
         throw error;
       }
     });
-  const params = (c: RequestContext) => {
-    const search = c.url.searchParams;
-    const one = (key: string) => {
-      const values = search.getAll(key);
-      if (values.length > 1) {
-        throw invalid(c, key);
-      }
-      return values[0];
-    };
-    const positive = (key: string, max: bigint) => {
-      const raw = one(key);
-      if (raw === undefined) {
-        return undefined;
-      }
-      if (!/^[1-9]\d{0,18}$/.test(raw) || BigInt(raw) > max) {
-        throw invalid(c, key);
-      }
-      return BigInt(raw);
-    };
-    return { one, positive };
-  };
-  const paging = (c: RequestContext) => {
-    const { positive } = params(c);
-    return {
-      page: Number(positive("page", 1_000_000n) ?? 1n),
-      perPage: Number(positive("per_page", 100n) ?? 20n),
-    };
-  };
   const maxID = 9_223_372_036_854_775_807n;
   /** Enrollments name their subscriber by ID; anything of the person follows the owner's rule. */
   const readable = (c: RequestContext, rows: Array<EnrollmentRow>) =>
     readableSubscribers(roles, subscribers, identity(c), [
       ...new Set(rows.map((row) => row.subscriber_id)),
     ]);
-  const addressed = (row: EnrollmentRow, addresses: Map<bigint, string>) => {
-    const email = addresses.get(row.subscriber_id);
-    return { ...project(row), ...(email === undefined ? {} : { subscriber_email: email }) };
-  };
-
   router.route(
     "GET",
     "/api/sequences",
@@ -360,46 +399,6 @@ export function registerSequenceRoutes(
     auth.middleware(MANAGE),
     hasID,
   );
-  /** The body of a preview or test: optional IDs and a sample, and `emails` for a test. */
-  const previewBody = async (c: RequestContext, extra: ReadonlyArray<string> = []) => {
-    const bytes = await readBounded(c.request, PREVIEW_BODY_BYTES);
-    const value = bytes.length === 0 ? {} : parseJson(c.request, bytes);
-    if (!isObject(value)) {
-      throw invalid(c, "body");
-    }
-    for (const key of Object.keys(value)) {
-      if (!["subscriber_id", "trigger_event_id", "sample", ...extra].includes(key)) {
-        throw invalid(c, key);
-      }
-    }
-    const id = (field: "subscriber_id" | "trigger_event_id") => {
-      try {
-        return idValue(value[field], field) ?? null;
-      } catch (error) {
-        if (error instanceof DefinitionError) {
-          throw invalid(c, field);
-        }
-        throw error;
-      }
-    };
-    let sample: Sample | undefined;
-    if (value.sample !== undefined) {
-      try {
-        sample = parseSampleValue(value.sample, { data: false });
-      } catch (error) {
-        if (error instanceof SampleError) {
-          throw invalid(c, error.field);
-        }
-        throw error;
-      }
-    }
-    return {
-      subscriberId: id("subscriber_id"),
-      triggerEventId: id("trigger_event_id"),
-      sample,
-      emails: value.emails,
-    };
-  };
   /** The step named by the path, with its sequence; 400 for a malformed step, else 404 when
    * either is not there. The step's form is checked first, as the reschedule route does. */
   const stepOf = (c: RequestContext) => {

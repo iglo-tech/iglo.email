@@ -162,6 +162,9 @@ export function uploadRoot(dataDir: string, uploadPath: string): string {
   return dir;
 }
 
+/** Characters with a meaning in a URL are escaped, so that it names the file. */
+const escapeName = (name: string) =>
+  name.replaceAll(/[%#?"<>]/g, (char) => encodeURIComponent(char));
 export function createFilesystem(dataDir: string, settings: () => FilesystemSettings) {
   const directory = () => uploadRoot(dataDir, settings().uploadPath);
   /** filepath.Clean of the URI, or null when it cannot serve files. */
@@ -175,10 +178,6 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
     }
     return reserved(clean) ? null : clean;
   }
-  /** Characters with a meaning in a URL are escaped, so that it names the file. */
-  const escapeName = (name: string) =>
-    name.replaceAll(/[%#?"<>]/g, (char) => encodeURIComponent(char));
-
   return {
     /** The path of a stored name, beginning at `rootUrl`, as `GetURL`. */
     url(rootUrl: string, name: string): string {

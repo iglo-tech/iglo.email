@@ -90,8 +90,22 @@ function* rows(found: Iterable<Row>, interval: Interval, list: boolean): Generat
   }
 }
 
+const plain = (row: Record<string, bigint | string>) =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key,
+      typeof value === "bigint" ? Number(value) : value,
+    ]),
+  );
+const total = (values: Array<bigint>) =>
+  values.length ? Number(values.reduce((sum, value) => sum + value, 0n)) : null;
 export function createAnalyticsStore(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "analytics", sql }]);
+  const days = (name: string) =>
+    (q.get(name).all() as Array<{ count: bigint; date: string }>).map((row) => ({
+      count: Number(row.count),
+      date: row.date,
+    }));
   const prepare = (table: string) =>
     prepareNamedQueries(db, [
       {
@@ -167,13 +181,6 @@ export function createAnalyticsStore(db: Database) {
     /** Native: enrollments by status and sends by step, for one page of sequence IDs. */
     sequenceCounts(ids: Array<string>) {
       const list = `[${ids.join(",")}]`;
-      const plain = (row: Record<string, bigint | string>) =>
-        Object.fromEntries(
-          Object.entries(row).map(([key, value]) => [
-            key,
-            typeof value === "bigint" ? Number(value) : value,
-          ]),
-        );
       return {
         enrollments: (
           q.get("sequence-enrollment-counts").all(list) as Array<Record<string, bigint | string>>
@@ -198,8 +205,6 @@ export function createAnalyticsStore(db: Database) {
         count: bigint;
         sent: bigint;
       }>;
-      const total = (values: Array<bigint>) =>
-        values.length ? Number(values.reduce((sum, value) => sum + value, 0n)) : null;
       const blocklisted = subscribers.find((row) => row.status === "blocklisted");
       return {
         subscribers: {
@@ -225,11 +230,6 @@ export function createAnalyticsStore(db: Database) {
     },
     /** mat_dashboard_charts: the 31 days up to each table's newest campaign row. */
     dashboardCharts() {
-      const days = (name: string) =>
-        (q.get(name).all() as Array<{ count: bigint; date: string }>).map((row) => ({
-          count: Number(row.count),
-          date: row.date,
-        }));
       return {
         link_clicks: days("chart-clicks"),
         campaign_views: days("chart-views"),

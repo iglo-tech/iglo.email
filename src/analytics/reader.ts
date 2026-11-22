@@ -131,6 +131,10 @@ function defaultCommand(): Array<string> {
     : [process.execPath, join(import.meta.dir, "child.ts")];
 }
 
+const overloaded = () => new ReaderError("egress", "analytics responses are waiting to be sent");
+const busy = () => new ReaderError("busy", "too many analytics reads in progress");
+const cancelled = () => new ReaderError("cancelled", "analytics read cancelled");
+const closing = () => new ReaderError("closed", "analytics reader closed");
 export function createAnalyticsReader(options: ReaderOptions) {
   const command = options.command ?? defaultCommand();
   const timeoutMs = options.timeoutMs ?? 30_000;
@@ -144,10 +148,6 @@ export function createAnalyticsReader(options: ReaderOptions) {
   const now = options.now ?? Date.now;
   let held = 0;
   let streakStart = 0;
-  const overloaded = () => new ReaderError("egress", "analytics responses are waiting to be sent");
-  const busy = () => new ReaderError("busy", "too many analytics reads in progress");
-  const cancelled = () => new ReaderError("cancelled", "analytics read cancelled");
-  const closing = () => new ReaderError("closed", "analytics reader closed");
   /** Each running child and how to stop it with a reason. */
   const children = new Map<Bun.Subprocess, (error: ReaderError) => void>();
   /** Queued reads in arrival order: called with nothing to admit, or with why not. */

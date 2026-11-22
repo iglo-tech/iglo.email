@@ -75,13 +75,13 @@ interface Row {
 /** Expired receipts one provider request removes. A request adds at most one. */
 const RECEIPT_PRUNE_BATCH = 100;
 // Upstream's `campaign_name` names no column and fails with a 500 (07-api-and-ui.md).
-const sortColumns: Record<string, string> = {
-  email: "email",
-  campaign_name: "c.name",
-  source: "b.source",
-  created_at: "b.created_at",
-  type: "b.type",
-};
+const sortColumns = new Map([
+  ["email", "email"],
+  ["campaign_name", "c.name"],
+  ["source", "b.source"],
+  ["created_at", "b.created_at"],
+  ["type", "b.type"],
+]);
 const safeID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER)
     ? Number(id)
@@ -102,6 +102,22 @@ const project = (row: Row) => ({
     row.campaign_id === null ? null : { id: safeID(row.campaign_id), name: row.campaign_name },
 });
 
+const json = (ids: Array<bigint | number>) => JSON.stringify(ids.map(String));
+/**
+ * Who a bounce names, or null when nobody is left to link. A send that resolves is the answer
+ * and matching stops there: an anonymized send names nobody, and an unlinked one no subscriber,
+ * whoever holds its address now. An event that disagrees with the delivery is someone else's
+ * (a copy, an address since changed): it is noted for no subscriber or send, because a row
+ * linked to the send reads as that delivery's bounce, with its address. A delivery to an address
+ * its subscriber has since left stays the send's, but says nothing of the subscriber's new one.
+ * Rows without a subscriber there keep only codes, since no wipe finds them.
+ */
+const coded = (event: BounceEvent) => ({
+  subscriber: null,
+  send: null,
+  meta: event.bareMeta,
+  source: event.bareSource,
+});
 export function createBounceStore(
   db: Database,
   clock: Clock,
@@ -125,11 +141,10 @@ export function createBounceStore(
   },
 ) {
   const q = prepareNamedQueries(db, [{ name: "bounces/store", sql }]);
-  const json = (ids: Array<bigint | number>) => JSON.stringify(ids.map(String));
   const rows = (filter: BounceFilter) => {
     // B80: order takes any case; anything but asc sorts descending, as before.
     const direction = filter.order?.toLowerCase() === "asc" ? "ASC" : "DESC";
-    const column = sortColumns[filter.orderBy ?? ""] ?? "b.created_at";
+    const column = sortColumns.get(filter.orderBy ?? "") ?? "b.created_at";
     // Postgres sorts nulls as the largest value; the ID settles ties in stored rows.
     const order = `${column} ${direction} NULLS ${direction === "ASC" ? "LAST" : "FIRST"}, b.id DESC`;
     return db
@@ -144,21 +159,6 @@ export function createBounceStore(
         filter.limit < 1 ? -1 : filter.limit,
       );
   };
-  /**
-   * Who a bounce names, or null when nobody is left to link. A send that resolves is the answer
-   * and matching stops there: an anonymized send names nobody, and an unlinked one no subscriber,
-   * whoever holds its address now. An event that disagrees with the delivery is someone else's
-   * (a copy, an address since changed): it is noted for no subscriber or send, because a row
-   * linked to the send reads as that delivery's bounce, with its address. A delivery to an address
-   * its subscriber has since left stays the send's, but says nothing of the subscriber's new one.
-   * Rows without a subscriber there keep only codes, since no wipe finds them.
-   */
-  const coded = (event: BounceEvent) => ({
-    subscriber: null,
-    send: null,
-    meta: event.bareMeta,
-    source: event.bareSource,
-  });
   const identify = (event: BounceEvent) => {
     const owner = deps.subscribers();
     const addressed = (email: string) =>

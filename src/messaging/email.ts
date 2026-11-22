@@ -30,6 +30,8 @@ export interface SMTPServer {
   from_addresses: Array<string> | null;
   dkim?: { domain_name: string; key_selector: string; private_key: string } | null;
 }
+/** Extra message headers by name; a repeated name carries several values. */
+export type MessageHeaders = Record<string, string | Array<string>>;
 export interface Message {
   from: string;
   to: Array<string>;
@@ -37,7 +39,7 @@ export interface Message {
   contentType: "plain" | "html";
   body: Uint8Array;
   altBody?: Uint8Array;
-  headers?: Record<string, string | Array<string>>;
+  headers?: MessageHeaders;
   attachments?: Array<{
     name: string;
     content: Uint8Array;
@@ -225,6 +227,13 @@ function bareAddress(value: string): string {
   const parsed = parseAddress(trimSpace(value));
   return parsed === undefined ? "" : simpleLower(parsed);
 }
+const one = (value: string) => {
+  const address = parseAddress(value);
+  if (address === undefined) {
+    throw new Error("Invalid mailbox");
+  }
+  return { address };
+};
 function build(
   s: SMTPServer,
   input: Message,
@@ -304,13 +313,6 @@ function build(
     };
   });
   const customHeaders = Array.from(headers.values(), ({ name: key, value }) => ({ key, value }));
-  const one = (value: string) => {
-    const address = parseAddress(value);
-    if (address === undefined) {
-      throw new Error("Invalid mailbox");
-    }
-    return { address };
-  };
   // Nodemailer 10 supports explicit address objects here. The separately pinned
   // @types/nodemailer 8 envelope type omits them. Keep this adapter at the SDK
   // boundary so an already parsed mailbox cannot be expanded as an address list.

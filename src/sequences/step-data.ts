@@ -28,10 +28,10 @@ export interface StepData {
   manage_url: string;
 }
 
+const id = (value: bigint) => JSON.stringify(numberID(value));
+const text = (value: string) => JSON.stringify(value);
 /** The JSON the template is rendered with, byte for byte what the scheduler has always sent. */
 export function stepDataText(data: StepData): string {
-  const id = (value: bigint) => JSON.stringify(numberID(value));
-  const text = (value: string) => JSON.stringify(value);
   const {
     subscriber,
     trigger,

@@ -762,13 +762,18 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
     });
     analyticsPurge = createAnalyticsPurge(db, readonly);
+    // Read by the routes below, so it exists before them; requests only arrive after startServer sets it.
+    interface ServerRef {
+      server?: ReturnType<typeof startServer>;
+    }
+    const serverRef: ServerRef = {};
     maintenance = registerMaintenanceRoutes(router, {
       subscribers: subscriberStore,
       analytics: analyticsPurge,
       logs,
       auth,
       clock,
-      keepOpen: (request) => server?.timeout(request, 0),
+      keepOpen: (request) => serverRef.server?.timeout(request, 0),
       individualTracking: () => settings!.read()["privacy.individual_tracking"],
     });
     registerAdminRoutes(router, {
@@ -818,6 +823,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     // The port is bound before any loop starts (B52). A bind that fails throws here, with nothing
     // started, so the finally block closes the stores and releases the lock and nothing else.
     const server = startServer(app, router);
+    serverRef.server = server;
     const listening = server;
     await new Promise<void>((resolve, reject) => {
       let closing = false;

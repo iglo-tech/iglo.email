@@ -25,7 +25,7 @@ export function safeLogo(value: string): string {
     return "";
   }
 }
-function parse(value: unknown): { server: SMTPServer; email: string } {
+function parse(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new HttpError(400, "Invalid data.");
   }

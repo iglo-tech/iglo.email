@@ -6,7 +6,7 @@ import { writeTransaction } from "@/db/transaction";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import { newMessageId } from "@/messaging/email";
-import type { Message, Outcome } from "@/messaging/email";
+import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import type { TestSends } from "@/messaging/test-sends";
@@ -221,14 +221,78 @@ function headerMessageId(headers: Record<string, string | Array<string>>): strin
   return undefined;
 }
 
+const identity = (context: RequestContext) => {
+  if (!context.identity) {
+    throw new Error("Authenticated identity required");
+  }
+  return context.identity;
+};
+const t = (context: RequestContext) => context.app.i18n;
+const subscriberContext = (sub: {
+  uuid: string;
+  email: string;
+  name: string;
+  attribs: string;
+  external_id: string | null;
+}): CampaignSubscriber => ({
+  uuid: sub.uuid,
+  email: sub.email,
+  name: sub.name,
+  attribs: JSON.parse(sub.attribs),
+  external_id: sub.external_id ?? "",
+});
+const size = (value: string) => Buffer.byteLength(value);
+const notFound = (context: RequestContext) =>
+  new HttpError(
+    400,
+    t(context).Ts("globals.messages.notFound", "name", "{globals.terms.campaign}"),
+  );
+const translate = (context: RequestContext, error: unknown): never => {
+  if (error instanceof CampaignError) {
+    if (error.reason === "missing") {
+      throw notFound(context);
+    }
+    if (error.reason === "slug")
+    // D-campaign-slug: a safe conflict instead of upstream's database error.
+    {
+      throw new HttpError(409, "Archive slug already exists.");
+    }
+    if (error.reason === "template") {
+      throw new HttpError(
+        400,
+        t(context).Ts("globals.messages.invalidFields", "name", "template_id"),
+      );
+    }
+    const key = error.reason.slice("status:".length);
+    if (key === "invalid") {
+      throw new HttpError(400, t(context).Ts("globals.messages.invalidFields", "name", "status"));
+    }
+    throw new HttpError(400, t(context).T(`campaigns.${key}`));
+  }
+  throw error;
+};
+const renderFailure = (context: RequestContext, error: unknown, key: string): never => {
+  if (error instanceof HttpError) {
+    throw error;
+  }
+  if (error instanceof RenderCapacityError) {
+    throw new HttpError(429, "Too many template renders in progress.");
+  }
+  // The Markdown size cap (D112) is a clear 400 with its own message, as on test send and send.
+  if (error instanceof MarkdownSourceError) {
+    throw new HttpError(400, t(context).Ts(key, "error", error.message));
+  }
+  throw new HttpError(
+    400,
+    t(context).Ts(
+      key,
+      "error",
+      error instanceof CampaignSourceError ? `invalid ${error.field}` : "invalid template",
+    ),
+  );
+};
 export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   const { store, roles, auth, testSends } = deps;
-  const identity = (context: RequestContext) => {
-    if (!context.identity) {
-      throw new Error("Authenticated identity required");
-    }
-    return context.identity;
-  };
   const can = (context: RequestContext, permission: string) =>
     roles.can(identity(context).role, permission);
   /** auth.Perm: any of the permissions; the message names the last one checked. */
@@ -264,12 +328,6 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     const scope = permitted(context, true);
     return scope.all ? ids : ids.filter((id) => scope.ids.includes(id));
   };
-  const t = (context: RequestContext) => context.app.i18n;
-  const notFound = (context: RequestContext) =>
-    new HttpError(
-      400,
-      t(context).Ts("globals.messages.notFound", "name", "{globals.terms.campaign}"),
-    );
   /** checkCampaignPerm. */
   const checkCampaign = (context: RequestContext, manage: boolean, id: bigint) => {
     if (can(context, manage ? "campaigns:manage_all" : "campaigns:get_all")) {
@@ -292,30 +350,6 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     (() => {
       throw notFound(context);
     })();
-  const translate = (context: RequestContext, error: unknown): never => {
-    if (error instanceof CampaignError) {
-      if (error.reason === "missing") {
-        throw notFound(context);
-      }
-      if (error.reason === "slug")
-      // D-campaign-slug: a safe conflict instead of upstream's database error.
-      {
-        throw new HttpError(409, "Archive slug already exists.");
-      }
-      if (error.reason === "template") {
-        throw new HttpError(
-          400,
-          t(context).Ts("globals.messages.invalidFields", "name", "template_id"),
-        );
-      }
-      const key = error.reason.slice("status:".length);
-      if (key === "invalid") {
-        throw new HttpError(400, t(context).Ts("globals.messages.invalidFields", "name", "status"));
-      }
-      throw new HttpError(400, t(context).T(`campaigns.${key}`));
-    }
-    throw error;
-  };
   const policy = (context: RequestContext) => {
     const current = deps.settings();
     return {
@@ -339,40 +373,6 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   /** The template body a campaign renders with: a chosen ID or the stored one, else none. */
   const templateBody = (id: bigint | null) =>
     id === null ? "" : (deps.templates.get(id)?.body ?? "");
-  const renderFailure = (context: RequestContext, error: unknown, key: string): never => {
-    if (error instanceof HttpError) {
-      throw error;
-    }
-    if (error instanceof RenderCapacityError) {
-      throw new HttpError(429, "Too many template renders in progress.");
-    }
-    // The Markdown size cap (D112) is a clear 400 with its own message, as on test send and send.
-    if (error instanceof MarkdownSourceError) {
-      throw new HttpError(400, t(context).Ts(key, "error", error.message));
-    }
-    throw new HttpError(
-      400,
-      t(context).Ts(
-        key,
-        "error",
-        error instanceof CampaignSourceError ? `invalid ${error.field}` : "invalid template",
-      ),
-    );
-  };
-  const subscriberContext = (sub: {
-    uuid: string;
-    email: string;
-    name: string;
-    attribs: string;
-    external_id: string | null;
-  }): CampaignSubscriber => ({
-    uuid: sub.uuid,
-    email: sub.email,
-    name: sub.name,
-    attribs: JSON.parse(sub.attribs),
-    external_id: sub.external_id ?? "",
-  });
-
   const collection: Handler = (context) => {
     const params = context.url.searchParams;
     const scope = can(context, "campaigns:get_all")
@@ -936,7 +936,6 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         } catch (error) {
           return sendError(error);
         }
-        const size = (value: string) => Buffer.byteLength(value);
         totalWork += budget.work;
         totalBytes += size(out.body) + size(altBody ?? "") + size(out.subject) + size(out.from);
         totalBytes += attachmentBytes;
@@ -952,7 +951,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
             "The test send is too large: send it to fewer recipients or reduce the rendered size.",
           );
         }
-        const headers: Record<string, string | Array<string>> = {
+        const headers: MessageHeaders = {
           "X-Listmonk-Campaign": stored.uuid,
           "X-Listmonk-Subscriber": sub.uuid,
         };

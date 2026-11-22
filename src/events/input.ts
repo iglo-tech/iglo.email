@@ -179,12 +179,12 @@ export function parseOccurredAt(value: string): string | undefined {
   return new Date(time).toISOString();
 }
 
+const field = () => new EventInputError("subscriber.grant_lists");
 /** `subscriber.grant_lists`: 1 to MAX_GRANT_LISTS distinct positive integers; absent is none. */
 function grantedLists(value: unknown): Array<bigint> {
   if (optional(value)) {
     return [];
   }
-  const field = () => new EventInputError("subscriber.grant_lists");
   if (!Array.isArray(value) || value.length < 1 || value.length > MAX_GRANT_LISTS) {
     throw field();
   }

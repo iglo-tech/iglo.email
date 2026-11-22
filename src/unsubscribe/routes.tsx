@@ -42,16 +42,16 @@ const noEffects: UnsubscribeEffects = { unsubscribed() {} };
 const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const noIndex = { "X-Robots-Tag": "noindex" };
 
+const chunk = (type: string, data: Uint8Array) => {
+  const out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0);
+  out.write(type, 4, "latin1");
+  out.set(data, 8);
+  out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+  return out;
+};
 /** Go image/png encoding of a transparent 1x1 RGBA image, as listmonk's pixelPNG. */
 function transparentPixel(): Uint8Array {
-  const chunk = (type: string, data: Uint8Array) => {
-    const out = Buffer.alloc(12 + data.length);
-    out.writeUInt32BE(data.length, 0);
-    out.write(type, 4, "latin1");
-    out.set(data, 8);
-    out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
-    return out;
-  };
   const header = Buffer.alloc(13);
   header.writeUInt32BE(1, 0);
   header.writeUInt32BE(1, 4);

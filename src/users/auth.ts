@@ -54,7 +54,7 @@ export function cookie(request: Request, name: string): string {
   return values.length === 1 ? values[0]!.slice(name.length + 1) : "";
 }
 
-function parseAuthorization(header: string): { user: string; token: string } {
+function parseAuthorization(header: string) {
   let pair: string;
   if (header.startsWith("token")) {
     pair = header.slice(5).replaceAll(/^ +| +$/g, "");
@@ -196,7 +196,7 @@ export async function createAuthentication(
     }
     return value;
   }
-  function newChallenge(user: UserRow): { token: string } {
+  function newChallenge(user: UserRow) {
     for (const key of challenges.keys()) {
       challenge(key);
     }
@@ -312,13 +312,17 @@ export async function createAuthentication(
     if (!role) {
       throw new HttpError(403, "invalid session");
     }
-    return {
-      user,
-      role,
-      transport,
-      ...(sessionId ? { sessionId } : {}),
-      ...(csrf ? { csrf } : {}),
-    };
+    // The session fields are present only when they hold a value, so each combination is its own literal.
+    if (sessionId && csrf) {
+      return { user, role, transport, sessionId, csrf };
+    }
+    if (sessionId) {
+      return { user, role, transport, sessionId };
+    }
+    if (csrf) {
+      return { user, role, transport, csrf };
+    }
+    return { user, role, transport };
   }
   function authorize(context: RequestContext, permission?: string): Identity {
     const principal = identity(context.request);

@@ -55,6 +55,24 @@ export interface UserRole {
 
 export class RoleChildError extends Error {}
 
+function decoded(value: RoleRow): Array<string> {
+  const result: unknown = JSON.parse(value.permissions);
+  if (!Array.isArray(result) || result.some((entry) => typeof entry !== "string")) {
+    throw new Error("Invalid role permissions");
+  }
+  return result as Array<string>;
+}
+function isPrimordial(value: RoleRow): boolean {
+  const actual = decoded(value);
+  return (
+    value.type === "user" &&
+    value.parent_id === null &&
+    value.list_id === null &&
+    value.name === "Super Admin" &&
+    actual.length === permissions.length &&
+    permissions.every((permission) => actual.includes(permission))
+  );
+}
 export function createRoles(db: Database, lists: ListReferences) {
   const queries = prepareNamedQueries(db, [{ name: "roles", sql }]);
   const raw = (id: bigint): RoleRow | null => queries.get("get-role").get(id) as RoleRow | null;
@@ -67,24 +85,6 @@ export function createRoles(db: Database, lists: ListReferences) {
       return null;
     }
     return value;
-  }
-  function decoded(value: RoleRow): Array<string> {
-    const result: unknown = JSON.parse(value.permissions);
-    if (!Array.isArray(result) || result.some((entry) => typeof entry !== "string")) {
-      throw new Error("Invalid role permissions");
-    }
-    return result as Array<string>;
-  }
-  function isPrimordial(value: RoleRow): boolean {
-    const actual = decoded(value);
-    return (
-      value.type === "user" &&
-      value.parent_id === null &&
-      value.list_id === null &&
-      value.name === "Super Admin" &&
-      actual.length === permissions.length &&
-      permissions.every((permission) => actual.includes(permission))
-    );
   }
   return {
     primordial(now: string): bigint {

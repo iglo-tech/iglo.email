@@ -39,13 +39,13 @@ function niceDuration(seconds: number): string {
   return `${total}s`;
 }
 
+const meminfo = (name: string) => {
+  const found = new RegExp(`^${name}:\\s+(\\d+)`, "m").exec(procFile("/proc/meminfo"));
+  return found ? Number(found[1]) * 1024 : undefined;
+};
 function memory(): SystemStats["memory"] {
-  const value = (name: string) => {
-    const found = new RegExp(`^${name}:\\s+(\\d+)`, "m").exec(procFile("/proc/meminfo"));
-    return found ? Number(found[1]) * 1024 : undefined;
-  };
-  const total = value("MemTotal");
-  const available = value("MemAvailable");
+  const total = meminfo("MemTotal");
+  const available = meminfo("MemAvailable");
   if (!total || available === undefined) {
     return undefined;
   }

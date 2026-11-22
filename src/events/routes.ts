@@ -23,14 +23,31 @@ const MAX_BATCHES_IN_FLIGHT = 4;
 /** Single-event requests admitted until their commit settles; excess requests get 429. */
 export const MAX_SINGLES_IN_FLIGHT = 1000;
 
+const invalid = (c: RequestContext, field: string) =>
+  new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", field));
+const item = (c: RequestContext, value: unknown): EventInput | HttpError => {
+  try {
+    return eventInput(value);
+  } catch (error) {
+    if (error instanceof EventInputError) {
+      return invalid(c, error.field);
+    }
+    throw error;
+  }
+};
+const respond = (r: EventResult) => {
+  if (r.status !== 200) {
+    throw new HttpError(r.status, "message" in r ? r.message : "");
+  }
+  const { status: _status, ...data } = r as Extract<EventResult, { status: 200 }>;
+  return ok(data);
+};
 export function registerEventRoutes(
   router: Router,
   store: EventStore,
   auth: Authentication,
   roles: Roles,
 ) {
-  const invalid = (c: RequestContext, field: string) =>
-    new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", field));
   /**
    * The grants of an event (D99) need `subscribers:manage` and manage scope on every granted
    * list, the rule of PUT /api/subscribers/lists. An existing subscriber also needs a managed
@@ -64,23 +81,6 @@ export function registerEventRoutes(
         c.app.i18n.Ts("globals.messages.permissionDenied", "name", "subscriber"),
       );
     }
-  };
-  const item = (c: RequestContext, value: unknown): EventInput | HttpError => {
-    try {
-      return eventInput(value);
-    } catch (error) {
-      if (error instanceof EventInputError) {
-        return invalid(c, error.field);
-      }
-      throw error;
-    }
-  };
-  const respond = (r: EventResult) => {
-    if (r.status !== 200) {
-      throw new HttpError(r.status, "message" in r ? r.message : "");
-    }
-    const { status: _status, ...data } = r as Extract<EventResult, { status: 200 }>;
-    return ok(data);
   };
   let singles = 0;
   router.route(

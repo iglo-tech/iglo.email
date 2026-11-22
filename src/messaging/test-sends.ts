@@ -69,7 +69,7 @@ export function createTestSends(db: Database, clock: Clock) {
       return lookup.get(key, since) ?? null;
     },
     /** One retention pass inside the loop's write transaction: at most `limit` records past the window. */
-    purge(now: Date, limit: number): Array<Id> {
+    purge: (now: Date, limit: number): Array<Id> => {
       const before = new Date(now.getTime() - TEST_SEND_RETENTION_MS).toISOString();
       return db
         .query<{ id: bigint }, [string, number]>(

@@ -13,7 +13,7 @@ import { sendingHeld } from "@/settings/hold";
 import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
-import type { Message, Outcome } from "@/messaging/email";
+import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
 import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
@@ -162,6 +162,8 @@ export function startCampaignRunner(deps: RunnerDeps) {
   return runner;
 }
 
+const iso = (ms: number) => new Date(ms).toISOString();
+const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
 /** Creates the runner without starting it: no orphan is recovered and nothing is claimed yet. */
 export function createCampaignRunner(deps: RunnerDeps) {
   const { db, clock, store } = deps;
@@ -180,9 +182,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
   let slidingCount = 0;
   let slidingUntil = 0;
 
-  const iso = (ms: number) => new Date(ms).toISOString();
   const log = (safe: SafeMessage, message: string) => deps.logger.attention(message, safe);
-  const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
 
   const pendingNotifications: Array<{
     campaign: { id: bigint; name: string; status: string; sent: number; to_send: number };
@@ -528,7 +528,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         const altBody =
           out.altBody ??
           (c.content_type === "plain" ? null : (await plainText(out.body, budget)) || null);
-        const headers: Record<string, string | Array<string>> = {
+        const headers: MessageHeaders = {
           "X-Listmonk-Campaign": c.uuid,
           "X-Listmonk-Subscriber": sub.uuid,
         };

@@ -44,6 +44,7 @@ export function multipartBoundary(contentType: string | null): string | undefine
   return value && value.length <= 200 ? value : undefined;
 }
 
+const noop = () => {};
 /** Stream `body` into `file`, stopping with the upload limit or `signal`. */
 export async function receiveForm(
   body: ReadableStream<Uint8Array>,
@@ -149,7 +150,7 @@ export async function receiveForm(
     }
   };
   const reader = body.getReader();
-  let onAbort = () => {};
+  let onAbort = noop;
   const aborted = new Promise<never>((_, reject) => {
     onAbort = () => reject(signal.reason);
     if (signal.aborted) {

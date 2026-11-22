@@ -63,7 +63,7 @@ export function createMediaStore(db: Database, clock: Clock) {
     filename(id: bigint | number): string | null {
       return (q.get("get-media").get(id) as MediaRow | null)?.filename ?? null;
     },
-    filenameTaken(filename: string): boolean {
+    filenameTaken: (filename: string): boolean => {
       return q.get("media-filename-exists").get(filename) !== null;
     },
     /** The removed row; campaign_media keeps its filename and loses the ID (ON DELETE SET NULL). */

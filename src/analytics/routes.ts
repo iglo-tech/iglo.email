@@ -33,14 +33,59 @@ export interface AnalyticsDeps {
   settings: () => AnalyticsSettings;
 }
 
+const identity = (context: RequestContext) => {
+  if (!context.identity) {
+    throw new Error("Authenticated identity required");
+  }
+  return context.identity;
+};
+const t = (context: RequestContext) => context.app.i18n;
+/** A cached body, with the headers of ok(). Reader responses carry their own. */
+const body = (text: string) =>
+  new Response(text, { headers: { "Content-Type": "application/json" } });
+const invalidData = (context: RequestContext) =>
+  new HttpError(400, t(context).T("globals.messages.invalidData"));
+const invalidDates = (context: RequestContext) =>
+  new HttpError(400, t(context).T("analytics.invalidDates"));
+/** parseStringIDs, as canonical decimal text. */
+const parseIDs = (context: RequestContext) => {
+  const invalid = (error: string) =>
+    new HttpError(400, t(context).Ts("globals.messages.errorInvalidIDs", "error", error));
+  const ids = context.url.searchParams.getAll("id").map((value) => {
+    const quoted = JSON.stringify(value);
+    if (!/^[+-]?\d+$/.test(value)) {
+      throw invalid(`strconv.Atoi: parsing ${quoted}: invalid syntax`);
+    }
+    const id = BigInt(value);
+    if (id < -9_223_372_036_854_775_808n || id > 9_223_372_036_854_775_807n) {
+      throw invalid(`strconv.Atoi: parsing ${quoted}: value out of range`);
+    }
+    if (id < 1n) {
+      throw invalid(`${id} is not a valid ID`);
+    }
+    return id;
+  });
+  if (!ids.length) {
+    throw new HttpError(400, t(context).Ts("globals.messages.missingFields", "name", "`id`"));
+  }
+  return ids;
+};
+/** The from and to query values: 10 to 30 bytes, in a form src/analytics/dates.ts accepts. */
+const parseRange = (context: RequestContext): Range => {
+  const params = context.url.searchParams;
+  const from = params.get("from") ?? "";
+  const to = params.get("to") ?? "";
+  if (!strHasLen(from, 10, 30) || !strHasLen(to, 10, 30)) {
+    throw invalidDates(context);
+  }
+  const range = { from: parseBound(from, "up"), to: parseBound(to, "down") };
+  if (range.from === null || range.to === null) {
+    throw invalidDates(context);
+  }
+  return range as Range;
+};
 export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   const { reader, summaries, campaigns, roles, auth, settings } = deps;
-  const identity = (context: RequestContext) => {
-    if (!context.identity) {
-      throw new Error("Authenticated identity required");
-    }
-    return context.identity;
-  };
   const can = (context: RequestContext, permission: string) =>
     roles.can(identity(context).role, permission);
   /** User.GetPermittedLists(PermTypeGet | PermTypeManage). */
@@ -56,14 +101,6 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   const scope = (context: RequestContext): Scope =>
     can(context, "campaigns:get_all") ? { all: true, ids: [] } : permitted(context);
 
-  const t = (context: RequestContext) => context.app.i18n;
-  const invalidData = (context: RequestContext) =>
-    new HttpError(400, t(context).T("globals.messages.invalidData"));
-  const invalidDates = (context: RequestContext) =>
-    new HttpError(400, t(context).T("analytics.invalidDates"));
-  /** A cached body, with the headers of ok(). Reader responses carry their own. */
-  const body = (text: string) =>
-    new Response(text, { headers: { "Content-Type": "application/json" } });
   const refused: Partial<Record<ReaderError["kind"], [number, string]>> = {
     busy: [429, "Too many analytics reads in progress."],
     egress: [503, "Analytics responses are still being sent. Try again shortly."],
@@ -95,43 +132,6 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
         ),
       );
     }
-  };
-  /** parseStringIDs, as canonical decimal text. */
-  const parseIDs = (context: RequestContext) => {
-    const invalid = (error: string) =>
-      new HttpError(400, t(context).Ts("globals.messages.errorInvalidIDs", "error", error));
-    const ids = context.url.searchParams.getAll("id").map((value) => {
-      const quoted = JSON.stringify(value);
-      if (!/^[+-]?\d+$/.test(value)) {
-        throw invalid(`strconv.Atoi: parsing ${quoted}: invalid syntax`);
-      }
-      const id = BigInt(value);
-      if (id < -9_223_372_036_854_775_808n || id > 9_223_372_036_854_775_807n) {
-        throw invalid(`strconv.Atoi: parsing ${quoted}: value out of range`);
-      }
-      if (id < 1n) {
-        throw invalid(`${id} is not a valid ID`);
-      }
-      return id;
-    });
-    if (!ids.length) {
-      throw new HttpError(400, t(context).Ts("globals.messages.missingFields", "name", "`id`"));
-    }
-    return ids;
-  };
-  /** The from and to query values: 10 to 30 bytes, in a form src/analytics/dates.ts accepts. */
-  const parseRange = (context: RequestContext): Range => {
-    const params = context.url.searchParams;
-    const from = params.get("from") ?? "";
-    const to = params.get("to") ?? "";
-    if (!strHasLen(from, 10, 30) || !strHasLen(to, 10, 30)) {
-      throw invalidDates(context);
-    }
-    const range = { from: parseBound(from, "up"), to: parseBound(to, "down") };
-    if (range.from === null || range.to === null) {
-      throw invalidDates(context);
-    }
-    return range as Range;
   };
 
   /** getAnalytics. */

@@ -79,21 +79,21 @@ const dateFields = [
   ["send_at", "globals.terms.scheduled"],
 ] as const;
 
+const item = (when: string, label: string, status: string, icon: string, danger = false) => (
+  <template x-if={`canChange(c) && ${when}`}>
+    <button
+      type="button"
+      role="menuitem"
+      class="ghost"
+      {...(danger ? { "data-variant": "danger" } : {})}
+      x-bind:disabled="changing"
+      {...{ "x-on:click.prevent": `onChangeStatus(c, '${status}')` }}
+    >
+      <Icon name={icon} /> {label}
+    </button>
+  </template>
+);
 function StatusControls({ t }: { t: Translation }) {
-  const item = (when: string, label: string, status: string, icon: string, danger = false) => (
-    <template x-if={`canChange(c) && ${when}`}>
-      <button
-        type="button"
-        role="menuitem"
-        class="ghost"
-        {...(danger ? { "data-variant": "danger" } : {})}
-        x-bind:disabled="changing"
-        {...{ "x-on:click.prevent": `onChangeStatus(c, '${status}')` }}
-      >
-        <Icon name={icon} /> {label}
-      </button>
-    </template>
-  );
   return (
     <>
       {item("c.status === 'draft' && !c.send_at", t.T("campaigns.start"), "running", "send")}

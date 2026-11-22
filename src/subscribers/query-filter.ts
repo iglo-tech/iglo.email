@@ -134,7 +134,7 @@ export function caseInsensitiveGlob(search: string): string {
  * The substring condition upstream's search applies. SQLite's lower() folds only ASCII, which
  * is exact for ASCII input; other input uses the case-variant GLOB above.
  */
-function substringSQL(search: string): { sql: string; args: Array<Arg> } {
+function substringSQL(search: string) {
   if (ascii(search)) {
     const lower = search.toLowerCase();
     return {

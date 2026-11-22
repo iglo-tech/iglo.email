@@ -104,8 +104,20 @@ export function createImporter(deps: {
   const { clock, logger, i18n, store } = deps;
   const directory = join(deps.dataDir, TEMPORARY);
   const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  const text = (bytes: Buffer) => {
+    try {
+      const value = decoder.decode(bytes);
+      return value.includes("\0") ? undefined : value;
+    } catch {
+      return undefined;
+    }
+  };
   let status = idle();
   let log = createLog(clock);
+  const failed = (message: string) => {
+    log.add(message);
+    status.status = "failed";
+  };
   let uploading = false;
   let stopRequested = false;
   const closing = new AbortController();
@@ -133,14 +145,6 @@ export function createImporter(deps: {
     let columns: Map<string, number> | undefined;
     let width = 0;
     let line = 0;
-    const text = (bytes: Buffer) => {
-      try {
-        const value = decoder.decode(bytes);
-        return value.includes("\0") ? undefined : value;
-      } catch {
-        return undefined;
-      }
-    };
     const header = (record: CsvRecord) => {
       columns = new Map();
       width = record.count;
@@ -301,10 +305,6 @@ export function createImporter(deps: {
 
   async function run(path: string, options: ImportOptions) {
     let file: FileHandle | undefined;
-    const failed = (message: string) => {
-      log.add(message);
-      status.status = "failed";
-    };
     try {
       const domains = deps.domainPolicy();
       file = await open(path, "r");

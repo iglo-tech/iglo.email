@@ -52,6 +52,13 @@ const checkedID =
     return view(request);
   };
 
+// Appearance settings as authored: only pages behind this session check load them.
+const custom =
+  (type: string, value: (site: AdminSite) => string): AdminView =>
+  ({ site: current }) =>
+    new Response(value(current), {
+      headers: { "Content-Type": `${type}; charset=utf-8`, "Cache-Control": "no-store" },
+    });
 export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   const { auth, roles, site } = deps;
   const { adminPage } = createAdminPages({ auth, roles, site });
@@ -62,12 +69,6 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
     page(path, checkedID(view), ...permissions);
 
   // Appearance settings as authored: only pages behind this session check load them.
-  const custom =
-    (type: string, value: (site: AdminSite) => string): AdminView =>
-    ({ site: current }) =>
-      new Response(value(current), {
-        headers: { "Content-Type": `${type}; charset=utf-8`, "Cache-Control": "no-store" },
-      });
   page(
     "/admin/custom.css",
     custom("text/css", (current) => current.customCss),

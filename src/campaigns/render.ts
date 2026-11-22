@@ -4,7 +4,7 @@
 import type { ContentType, WritableCampaign } from "@/campaigns/store";
 import { hasTemplate } from "@/campaigns/input";
 import { createMessageBudget } from "@/templates/renderer";
-import type { RenderTracking, TemplateRenderer } from "@/templates/renderer";
+import type { RenderRequest, RenderTracking, TemplateRenderer } from "@/templates/renderer";
 
 export const dummyUUID = "00000000-0000-0000-0000-000000000000";
 /**
@@ -61,33 +61,31 @@ export function nameChunk(name: string, last: boolean): string {
 const mode = (type: ContentType) =>
   type === "markdown" ? "markdown" : type === "plain" ? "plain" : "html";
 
+const fields = <T>(field: "body" | "subject" | "from" | "altbody" | "header", run: () => T): T => {
+  try {
+    return run();
+  } catch {
+    throw new CampaignSourceError(field);
+  }
+};
 /** One compiled campaign; render it for many subscribers. Throws on invalid source. */
 export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) {
   const layout = c.templateBody && c.content_type !== "visual" ? c.templateBody : undefined;
-  const fields = (
-    field: "body" | "subject" | "from" | "altbody" | "header",
-    run: () => unknown,
-  ) => {
-    try {
-      return run();
-    } catch {
-      throw new CampaignSourceError(field);
-    }
-  };
   fields("subject", () => renderer.compile({ body: "", subject: c.subject, mode: "plain" }));
-  const main = fields("body", () =>
-    renderer.compile({
+  const main = fields("body", () => {
+    const request: Omit<RenderRequest, "data"> = {
       body: c.body,
       subject: c.subject,
       mode: mode(c.content_type),
-      ...(layout === undefined ? {} : { layout }),
-    }),
-  ) as ReturnType<TemplateRenderer["compile"]>;
+    };
+    if (layout !== undefined) {
+      request.layout = layout;
+    }
+    return renderer.compile(request);
+  });
   const text = (field: "from" | "altbody" | "header", value: string) =>
     hasTemplate(value)
-      ? (fields(field, () => renderer.compile({ body: value, mode: "plain" })) as ReturnType<
-          TemplateRenderer["compile"]
-        >)
+      ? fields(field, () => renderer.compile({ body: value, mode: "plain" }))
       : null;
   const from = text("from", c.from_email);
   const alt = c.content_type !== "plain" && c.altbody !== null ? text("altbody", c.altbody) : null;
@@ -142,9 +140,9 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
     },
   };
 }
+const text = (value: unknown) => (typeof value === "string" ? value : "");
 /** compileArchiveCampaigns: `archive_meta` is the sample subscriber. */
 export function archiveSubscriber(meta: Record<string, unknown>): CampaignSubscriber {
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
   return {
     uuid: text(meta.uuid),
     email: text(meta.email),

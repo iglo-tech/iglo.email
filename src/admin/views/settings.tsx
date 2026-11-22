@@ -413,15 +413,15 @@ function Privacy({ t }: { t: Translation }) {
   );
 }
 
+const budget = (key: string, label: string) => (
+  <NumberField
+    model={`form['security.public_rate_limit'].${key}`}
+    label={label}
+    min="1"
+    max="1000000"
+  />
+);
 function Security({ t }: { t: Translation }) {
-  const budget = (key: string, label: string) => (
-    <NumberField
-      model={`form['security.public_rate_limit'].${key}`}
-      label={label}
-      min="1"
-      max="1000000"
-    />
-  );
   return (
     <div class="settings-items">
       <fieldset class="card" data-keywords="login session duration expiry timeout">
@@ -858,8 +858,8 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
   );
 }
 
+const provider = (model: string, label: string) => <Switch model={model} label={label} />;
 function Bounces({ t }: { t: Translation }) {
-  const provider = (model: string, label: string) => <Switch model={model} label={label} />;
   return (
     <div class="settings-items">
       <label
@@ -933,17 +933,17 @@ function Bounces({ t }: { t: Translation }) {
   );
 }
 
+const editor = (key: string, lang: string, legend: string, keywords: string) => (
+  <fieldset class="card" data-keywords={keywords}>
+    <legend>{legend}</legend>
+    <code-editor
+      lang={lang}
+      x-init={`setValue($el, form['appearance.${key}'])`}
+      x-on:input={`form['appearance.${key}'] = $event.target.value`}
+    ></code-editor>
+  </fieldset>
+);
 function Appearance({ t }: { t: Translation }) {
-  const editor = (key: string, lang: string, legend: string, keywords: string) => (
-    <fieldset class="card" data-keywords={keywords}>
-      <legend>{legend}</legend>
-      <code-editor
-        lang={lang}
-        x-init={`setValue($el, form['appearance.${key}'])`}
-        x-on:input={`form['appearance.${key}'] = $event.target.value`}
-      ></code-editor>
-    </fieldset>
-  );
   const css = t.T("settings.appearance.customCSS");
   const js = t.T("settings.appearance.customJS");
   return (

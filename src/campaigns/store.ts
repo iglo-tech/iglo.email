@@ -57,6 +57,11 @@ export interface CampaignRow {
   lists: string;
   media: string;
 }
+/** One page of campaigns, and how many match the filter in all. */
+export interface CampaignPage {
+  rows: Array<CampaignRow>;
+  total: number;
+}
 /** The writable campaign fields after request binding and validation. */
 export interface WritableCampaign {
   type: "regular" | "optin";
@@ -112,6 +117,12 @@ export interface CampaignReferences {
   mediaFilename(id: bigint): string | null;
 }
 
+const values = (c: WritableCampaign) => ({
+  headers: JSON.stringify(c.headers),
+  attribs: JSON.stringify(c.attribs),
+  tags: c.tags.length ? JSON.stringify(c.tags) : null,
+  archiveMeta: JSON.stringify(c.archive_meta),
+});
 export function createCampaignStore(db: Database, clock: Clock, refs: CampaignReferences) {
   const q = prepareNamedQueries(db, [{ name: "campaigns/store", sql }]);
   const get = (id: bigint) => q.get("campaign-by-id").get(id) as CampaignRow | null;
@@ -140,12 +151,6 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       }
     }
   };
-  const values = (c: WritableCampaign) => ({
-    headers: JSON.stringify(c.headers),
-    attribs: JSON.stringify(c.attribs),
-    tags: c.tags.length ? JSON.stringify(c.tags) : null,
-    archiveMeta: JSON.stringify(c.archive_meta),
-  });
   return {
     get,
     byUuid: (uuid: string) =>
@@ -200,7 +205,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       order: string,
       offset: number,
       limit: number,
-    ): { rows: Array<CampaignRow>; total: number } {
+    ): CampaignPage {
       const field = sortFields.has(orderBy) ? orderBy : "created_at";
       // B80: order takes any case; anything but asc sorts descending, as before.
       const direction = order.toLowerCase() === "asc" ? "ASC" : "DESC";

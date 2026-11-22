@@ -29,7 +29,7 @@ export function decodeJsonBytes(bytes: Uint8Array): string {
   return out.join("");
 }
 const raw = JSON as typeof JSON & {
-  rawJSON(value: string): unknown;
+  rawJSON(value: string): { rawJSON: string };
   isRawJSON(value: unknown): value is { rawJSON: string };
 };
 export function parseStoredJson(text: string): unknown {

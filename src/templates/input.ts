@@ -108,13 +108,13 @@ function jsonMembers(body: string): Array<[string, unknown]> {
 }
 function xmlInput(body: Buffer): TemplatePatch {
   const out: TemplatePatch = {};
-  const names: Record<string, Field> = {
-    Name: "name",
-    Type: "type",
-    Subject: "subject",
-    Body: "body",
-    BodySource: "body_source",
-  };
+  const names = new Map<string, Field>([
+    ["Name", "name"],
+    ["Type", "type"],
+    ["Subject", "subject"],
+    ["Body", "body"],
+    ["BodySource", "body_source"],
+  ]);
   let depth = 0,
     complete = false,
     field: Field | undefined,
@@ -143,7 +143,7 @@ function xmlInput(body: Buffer): TemplatePatch {
     depth++;
     if (depth === 2) {
       const local = tag.name.slice(tag.name.indexOf(":") + 1);
-      field = Object.hasOwn(names, local) ? names[local] : undefined;
+      field = names.get(local);
       text = "";
     }
   });

@@ -85,6 +85,143 @@ export default defineConfig({
     // Exception, for the lead to decide at review: the Nodemailer envelope in messaging/email.ts carries address
     // objects that @types/nodemailer 8 omits, so its SDK boundary cast can only be a chained one, never a checked type.
     { files: ["src/messaging/email.ts"], rules: { "quality/no-chained-type-assertions": "off" } },
+    // Exception, for the lead to decide at review (no-unknown-returns). Each file returns a value that is `unknown`
+    // until a boundary check: parsed JSON (request bodies, stored JSON, the reviver, the OpenAPI document), form
+    // fields, a stored summary, a method chosen by name at runtime, a Liquid operator, another module's JSON response,
+    // and the writeTransaction callback, whose type argument test/db pins. A named type would be `any` at JSON.parse.
+    {
+      files: [
+        "src/analytics/reader.ts", // runtime method dispatch, serialized as JSON
+        "src/analytics/summaries.ts", // stored summary JSON
+        "src/db/transaction.ts", // F extends () => unknown; test/db/typecheck.ts pins the explicit type argument
+        "src/events/input.ts", // parsed request JSON
+        "src/mcp/generated.ts", // OpenAPI schema JSON walk
+        "src/public/form.ts", // form or JSON field values
+        "src/sequences/routes.ts", // write callback result, passed to writeTransaction's F
+        "src/server/validation.ts", // parsed request JSON
+        "src/settings/json.ts", // ordered settings JSON
+        "src/settings/xml.ts", // settings values from XML
+        "src/subscribers/routes.ts", // activity and export JSON from other modules
+        "src/templates/renderer.ts", // Liquid operator signature
+        "src/users/handlers.ts", // JSON.parse reviver
+      ],
+      rules: { "quality/no-unknown-returns": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-known-value-widening). A value that is `unknown` until a
+    // boundary check (parsed JSON or form bodies, ordered settings JSON, an OpenAPI schema walk, an XML value, a cast
+    // that writes known keys from a string list, the Nodemailer envelope) cannot take a literal type without a lie.
+    // The `Record<string, unknown>` dictionaries among them are no-unsafe-dictionary-type exceptions below.
+    {
+      files: [
+        "src/campaigns/input.ts", // cast that writes known keys from a string list
+        "src/mcp/generated.ts", // OpenAPI schema JSON walk
+        "src/messaging/email.ts", // Nodemailer envelope boundary cast
+        "src/roles/routes.ts", // parsed request JSON
+        "src/settings/json.ts", // ordered settings JSON
+        "src/settings/routes.ts", // parsed request body
+        "src/settings/xml.ts", // settings values from XML
+        "src/users/handlers.ts", // parsed request JSON
+        "src/mcp/tools.ts", // dictionary of tool arguments (see the dictionary exceptions below)
+        "src/settings/validate.ts", // dictionary of settings shapes (see the dictionary exceptions below)
+        "src/subscribers/input.ts", // dictionary cast (see the dictionary exceptions below)
+        "src/subscribers/query-routes.ts", // dictionary binding (see the dictionary exceptions below)
+        "src/subscribers/store.ts", // dictionary binding (see the dictionary exceptions below)
+        "src/templates/sample.ts", // dictionary of template data (see the dictionary exceptions below)
+      ],
+      rules: { "quality/no-known-value-widening": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-dictionary-type). Each dictionary below holds a value
+    // whose type comes from a payload that is parsed at runtime: a request body, a stored JSON column, an SNS or
+    // captcha response, MCP arguments, a settings record keyed by name, SQL rows, or template data. A value type for
+    // these needs a schema per payload, a design change (D132: per-key settings schema, typed component props), not a
+    // lint fix. The entries are removed when their schema lands.
+    {
+      files: [
+        "src/analytics/summaries.ts", // stored summary data by name
+        "src/bounces/routes.ts", // parsed bounce metadata and request body
+        "src/bounces/ses.ts", // SNS message JSON
+        "src/campaigns/input.ts", // request body JSON
+        "src/campaigns/render.ts", // archive metadata JSON
+        "src/campaigns/routes.ts", // request body JSON
+        "src/campaigns/runner/runner.ts", // stored subscriber attributes JSON
+        "src/campaigns/store.ts", // stored campaign JSON columns
+        "src/captcha/captcha.ts", // captcha provider response
+        "src/conditions/validate.ts", // stored condition JSON
+        "src/events/input.ts", // event request body JSON
+        "src/jsx/jsx-runtime.ts", // component props (HTML attributes)
+        "src/jsx/render.ts", // component props (HTML attributes)
+        "src/lists/input.ts", // parsed form body JSON
+        "src/mcp/generated.ts", // MCP tool schema JSON
+        "src/mcp/routes.ts", // MCP JSON-RPC message
+        "src/mcp/tools.ts", // MCP tool arguments
+        "src/media/routes.ts", // settings record (any value per key)
+        "src/messaging/test.ts", // SMTP test request JSON
+        "src/openapi/schemas.ts", // OpenAPI schema objects
+        "src/public/form.ts", // form and JSON field values
+        "src/public/settings.ts", // settings record (any value per key)
+        "src/roles/routes.ts", // request body JSON
+        "src/sequences/enrollments.ts", // stored trigger JSON
+        "src/sequences/input.ts", // stored step definition JSON
+        "src/sequences/routes.ts", // request body JSON
+        "src/sequences/step-preview.ts", // stored step and trigger JSON
+        "src/server/response.ts", // response body and extra body members
+        "src/settings/store.ts", // settings record (any value per key)
+        "src/settings/validate.ts", // settings record and shapes
+        "src/settings/xml.ts", // settings record and shapes
+        "src/subscribers/export.ts", // subscriber attributes JSON
+        "src/subscribers/input.ts", // subscriber attributes JSON
+        "src/subscribers/query-routes.ts", // SQL result rows
+        "src/subscribers/query-runner.ts", // SQL result rows
+        "src/subscribers/store.ts", // subscriber attributes JSON
+        "src/templates/data.ts", // template data
+        "src/templates/input.ts", // parsed form body JSON
+        "src/templates/renderer.ts", // template data
+        "src/templates/sample.ts", // sample data
+        "src/tx/input.ts", // transactional request JSON
+        "src/unsubscribe/policy.ts", // settings record (any value per key)
+        "src/users/factor.ts", // parsed form fields
+        "src/users/handlers.ts", // request body JSON
+        "src/webhooks/routes.ts", // request body JSON
+        "src/webhooks/store.ts", // stored webhook payload JSON
+      ],
+      rules: { "quality/no-unsafe-dictionary-type": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-conditional-empty-object-spread). Each object below reaches an
+    // API response, a webhook payload, stored JSON, an email or a rendered page, where key order is observable, so the
+    // spread stays. The objects that never reach one of those (SQL builder options, the session identity, the
+    // navigation link, the Liquid options and the render snapshot) are built in separate statements, with the same keys.
+    {
+      files: [
+        "src/admin/page.tsx", // rendered page config
+        "src/admin/password-reset.tsx", // email message
+        "src/admin/system.ts", // system JSON for the admin page and API
+        "src/admin/views/user.tsx", // rendered page links
+        "src/bounces/store.ts", // bounce JSON in the API response
+        "src/campaigns/routes.ts", // email message and preview
+        "src/campaigns/runner/runner.ts", // email message (wire format) and render context
+        "src/mcp/generated.ts", // MCP tool JSON schema
+        "src/media/attachments.ts", // email attachment (wire format)
+        "src/messaging/email.ts", // SMTP transport and email message (wire format)
+        "src/messaging/notify.ts", // admin notification email
+        "src/messaging/payload.ts", // stored message payload JSON
+        "src/messaging/test.ts", // test email
+        "src/openapi/document.ts", // OpenAPI document (API output)
+        "src/openapi/operations.ts", // OpenAPI operations (API output)
+        "src/openapi/schemas.ts", // OpenAPI schemas (API output)
+        "src/public/mail.ts", // email and public page output
+        "src/scheduler/scheduler.ts", // email message (wire format)
+        "src/sequences/enrollments.ts", // stored enrollment JSON
+        "src/sequences/input.ts", // stored step definitions JSON
+        "src/sequences/routes.ts", // API response
+        "src/subscribers/query-routes.ts", // HTTP response headers
+        "src/subscribers/store.ts", // stored subscriber attributes JSON
+        "src/templates/routes.ts", // API response
+        "src/tx/routes.ts", // API response and transactional email
+        "src/users/models.ts", // user API response
+        "src/webhooks/effects.ts", // webhook payload
+      ],
+      rules: { "quality/no-conditional-empty-object-spread": "off" },
+    },
     // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
     // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
     {
@@ -114,6 +251,11 @@ export default defineConfig({
         "typescript/no-unnecessary-type-assertion": "off",
         "@nkzw/no-instanceof": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
+        "quality/no-unknown-returns": "off", // B134c: test/ still has the rule's findings.
+        "quality/no-known-value-widening": "off", // B134c: test/ still has the rule's findings.
+        "quality/no-conditional-empty-object-spread": "off", // B134c: test/ still has the rule's findings.
+        "quality/no-unsafe-dictionary-type": "off", // B134c: test/ still has the rule's findings.
+        "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
       },
     },
     // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
@@ -147,12 +289,6 @@ export default defineConfig({
     "typescript/no-unsafe-member-access": "off", // B134e
     "typescript/no-unsafe-return": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
-    "typescript/unbound-method": "off", // B134d
-    "quality/no-conditional-empty-object-spread": "off", // B134d
-    "quality/no-known-value-widening": "off", // B134d
-    "quality/no-unknown-returns": "off", // B134d
-    "quality/no-unsafe-dictionary-type": "off", // B134d
-    "unicorn/consistent-function-scoping": "off", // B134d
 
     // B134c: findings remain only in test/.
     "typescript/no-require-imports": "off", // B134c

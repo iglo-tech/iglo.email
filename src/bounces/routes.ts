@@ -84,6 +84,58 @@ export function bounceMeta(value: unknown): string {
   );
 }
 
+const invalidID = (c: RequestContext) =>
+  new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
+const invalidField = (c: RequestContext, name: string) =>
+  new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", name));
+const invalidData = (c: RequestContext) =>
+  new HttpError(400, c.app.i18n.T("globals.messages.invalidData"));
+const unknownService = (c: RequestContext) =>
+  new HttpError(400, c.app.i18n.T("bounces.unknownService"));
+const unavailable = (c: RequestContext) =>
+  new HttpError(503, c.app.i18n.T("globals.messages.internalError"));
+// A type outside the enum fails upstream's cast with a 500: here it matches nothing.
+const typeFilter = (value: string) =>
+  value && !(bounceTypes as ReadonlyArray<string>).includes(value) ? "none" : value;
+/** The body, up to SNS's own message limit; a larger one is refused before it is parsed. */
+const readSns = async (request: Request) => {
+  if (Number(request.headers.get("content-length")) > SES_BODY_LIMIT) {
+    throw new HttpError(413);
+  }
+  const chunks: Array<Uint8Array> = [];
+  let size = 0;
+  const reader = request.body?.getReader();
+  if (reader) {
+    try {
+      for (;;) {
+        const item = await reader.read();
+        if (item.done) {
+          break;
+        }
+        size += item.value.length;
+        if (size > SES_BODY_LIMIT) {
+          await reader.cancel();
+          throw new HttpError(413);
+        }
+        chunks.push(item.value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+};
+const campaignFilter = (c: RequestContext) => {
+  const raw = c.url.searchParams.get("campaign_id");
+  if (!raw) {
+    return 0;
+  }
+  const id = /^[+-]?\d+$/.test(raw) ? Number(raw) : 0;
+  if (id < 1) {
+    throw invalidID(c);
+  }
+  return id;
+};
 export function registerBounceRoutes(
   router: Router,
   deps: {
@@ -105,16 +157,6 @@ export function registerBounceRoutes(
 ) {
   const { db, clock, store, subscribers, roles, auth, settings, page, logger } = deps;
   const sns = deps.sns ?? createSnsClient({ clock });
-  const invalidID = (c: RequestContext) =>
-    new HttpError(400, c.app.i18n.T("globals.messages.invalidID"));
-  const invalidField = (c: RequestContext, name: string) =>
-    new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", name));
-  const invalidData = (c: RequestContext) =>
-    new HttpError(400, c.app.i18n.T("globals.messages.invalidData"));
-  const unknownService = (c: RequestContext) =>
-    new HttpError(400, c.app.i18n.T("bounces.unknownService"));
-  const unavailable = (c: RequestContext) =>
-    new HttpError(503, c.app.i18n.T("globals.messages.internalError"));
 
   /** Upstream has no route at all without `bounce.webhooks_enabled`. */
   const webhooksEnabled: Middleware = (c, next) =>
@@ -146,21 +188,6 @@ export function registerBounceRoutes(
       );
     }
   };
-  const campaignFilter = (c: RequestContext) => {
-    const raw = c.url.searchParams.get("campaign_id");
-    if (!raw) {
-      return 0;
-    }
-    const id = /^[+-]?\d+$/.test(raw) ? Number(raw) : 0;
-    if (id < 1) {
-      throw invalidID(c);
-    }
-    return id;
-  };
-  // A type outside the enum fails upstream's cast with a 500: here it matches nothing.
-  const typeFilter = (value: string) =>
-    value && !(bounceTypes as ReadonlyArray<string>).includes(value) ? "none" : value;
-
   const collection: Handler = (c) => {
     const params = c.url.searchParams;
     let page = atoi(params.get("page"));
@@ -325,34 +352,6 @@ export function registerBounceRoutes(
     // Each accepted POST counts, as upstream: this API has no event identity to deduplicate.
     writeTransaction(db, () => store.record(event));
     return ok(true);
-  };
-  /** The body, up to SNS's own message limit; a larger one is refused before it is parsed. */
-  const readSns = async (request: Request) => {
-    if (Number(request.headers.get("content-length")) > SES_BODY_LIMIT) {
-      throw new HttpError(413);
-    }
-    const chunks: Array<Uint8Array> = [];
-    let size = 0;
-    const reader = request.body?.getReader();
-    if (reader) {
-      try {
-        for (;;) {
-          const item = await reader.read();
-          if (item.done) {
-            break;
-          }
-          size += item.value.length;
-          if (size > SES_BODY_LIMIT) {
-            await reader.cancel();
-            throw new HttpError(413);
-          }
-          chunks.push(item.value);
-        }
-      } finally {
-        reader.releaseLock();
-      }
-    }
-    return Buffer.concat(chunks).toString("utf-8");
   };
   /**
    * B108 (D114): one attention line for a test send's bounce or complaint. The fixed text is what

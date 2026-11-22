@@ -103,12 +103,16 @@ const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJS
 const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(id) : rawJSON(id.toString());
 
+interface StoredOutcome {
+  enrollments: Enrollments;
+  grants: Array<Grant>;
+}
 /**
  * What the first request under an idempotency key did, as stored in `events.enrollments`:
  * `{started, ended, grants, skipped}`. A row written before grants existed has no `grants`, and
  * one written before B116 has no `skipped`.
  */
-function storedOutcome(text: string | null): { enrollments: Enrollments; grants: Array<Grant> } {
+function storedOutcome(text: string | null): StoredOutcome {
   if (text === null) {
     return { enrollments: { started: [], ended: [], skipped: [] }, grants: [] };
   }
@@ -135,6 +139,17 @@ class TransactionLost extends Error {
   }
 }
 
+const result = (
+  id: bigint,
+  subscriberId: bigint,
+  outcome: { enrollments: Enrollments; grants: Array<Grant> },
+): EventResult => ({
+  status: 200,
+  event_id: numberID(id),
+  subscriber_id: numberID(subscriberId),
+  enrollments: outcome.enrollments,
+  grants: outcome.grants,
+});
 export function createEventStore(
   db: Database,
   subscribers: SubscriberStore,
@@ -147,17 +162,6 @@ export function createEventStore(
   const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
   const aggregates = createEventAggregates(db);
   const exitThenTrigger = options.exitThenTrigger ?? noSequences;
-  const result = (
-    id: bigint,
-    subscriberId: bigint,
-    outcome: { enrollments: Enrollments; grants: Array<Grant> },
-  ): EventResult => ({
-    status: 200,
-    event_id: numberID(id),
-    subscriber_id: numberID(subscriberId),
-    enrollments: outcome.enrollments,
-    grants: outcome.grants,
-  });
   /**
    * One grant (D99) after the subscriber upsert. A blocklisted subscriber gets nothing; a
    * missing membership is inserted confirmed, and any existing one is left as it is.

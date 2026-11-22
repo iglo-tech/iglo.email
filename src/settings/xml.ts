@@ -121,7 +121,7 @@ export function xmlSettings(body: Buffer, shapes: Record<string, unknown>): Memb
     const entries: Array<[string, unknown]> = [];
     const arrays = new Map<string, Array<unknown>>();
     for (const child of node.children) {
-      const key = xmlNames[child.name];
+      const key = xmlNames.get(child.name);
       if (!key || !Object.hasOwn(shape, key)) {
         continue;
       }

@@ -10,6 +10,8 @@ import { parseBound } from "@/analytics/dates";
 import { HttpError } from "@/server/response";
 
 export type Resource = "campaigns" | "lists";
+const formBound = (value: string | null) =>
+  value ? parseBound(value, "down")?.slice(0, 16) : undefined;
 
 function Range({ request, from, to }: { request: AdminRequest; from: string; to: string }) {
   const t = request.context.app.i18n;
@@ -147,14 +149,12 @@ export const analyticsView =
       }
     }
     // Resolve the date range, defaulting to the last 7 days. The API reads times as UTC.
-    const input = (value: string | null) =>
-      value ? parseBound(value, "down")?.slice(0, 16) : undefined;
     const now = context.app.clock.now();
     // The form holds minutes, so "now" rounds up: it must not leave out the current minute.
     const to =
-      input(params.get("to")) ?? new Date(now.getTime() + 60_000).toISOString().slice(0, 16);
+      formBound(params.get("to")) ?? new Date(now.getTime() + 60_000).toISOString().slice(0, 16);
     const from =
-      input(params.get("from")) ??
+      formBound(params.get("from")) ??
       new Date(now.getTime() - 7 * 86_400_000).toISOString().slice(0, 16);
     const interval = params.get("interval") || "day";
     const unique = site.individualTracking && params.get("unique") === "true";

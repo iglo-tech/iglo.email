@@ -16,13 +16,13 @@ const empty = (): ListInput => ({
   tags: [],
 });
 type StringField = "name" | "type" | "optin" | "status" | "description";
-const stringFields: Record<string, StringField> = {
-  name: "name",
-  type: "type",
-  optin: "optin",
-  status: "status",
-  description: "description",
-};
+const stringFields = new Map<string, StringField>([
+  ["name", "name"],
+  ["type", "type"],
+  ["optin", "optin"],
+  ["status", "status"],
+  ["description", "description"],
+]);
 
 // JSON.parse validates the complete document. Split only its top-level members
 // afterward so duplicate keys and case aliases are applied in source order.
@@ -79,9 +79,7 @@ function jsonInput(body: string): ListInput {
   let tagStorage: Array<string> = [];
   for (const [key, value] of jsonMembers(body)) {
     const normalizedKey = key.toLowerCase().replaceAll("ſ", "s");
-    const field = Object.hasOwn(stringFields, normalizedKey)
-      ? stringFields[normalizedKey]
-      : undefined;
+    const field = stringFields.get(normalizedKey);
     if (field) {
       if (value === null) {
         continue;
@@ -118,13 +116,13 @@ function jsonInput(body: string): ListInput {
 // permits fatal UTF-8 decoding without touching bytes after the closing root.
 function xmlInput(body: Buffer): ListInput {
   const out = empty();
-  const fields: Record<string, StringField> = {
-    Name: "name",
-    Type: "type",
-    Optin: "optin",
-    Status: "status",
-    Description: "description",
-  };
+  const fields = new Map<string, StringField>([
+    ["Name", "name"],
+    ["Type", "type"],
+    ["Optin", "optin"],
+    ["Status", "status"],
+    ["Description", "description"],
+  ]);
   let depth = 0,
     complete = false,
     field: StringField | "tags" | undefined,
@@ -154,7 +152,7 @@ function xmlInput(body: Buffer): ListInput {
     depth++;
     if (depth === 2) {
       const local = tag.name.slice(tag.name.indexOf(":") + 1);
-      field = local === "Tags" ? "tags" : Object.hasOwn(fields, local) ? fields[local] : undefined;
+      field = local === "Tags" ? "tags" : fields.get(local);
       text = "";
     }
   });

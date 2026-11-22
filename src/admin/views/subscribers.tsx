@@ -208,8 +208,8 @@ function Row({ t, manage, bounces }: { t: Translation; manage: boolean; bounces:
     </tr>
   );
 }
+const click = (handler: string) => ({ "x-on:click.prevent": handler });
 function BulkMenu({ t, manage }: { t: Translation; manage: boolean }) {
-  const click = (handler: string) => ({ "x-on:click.prevent": handler });
   return (
     <template x-if="numSelected > 0">
       <ot-dropdown class="bulk-actions" data-variant="primary">

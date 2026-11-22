@@ -66,6 +66,35 @@ export const readableSubscribers = (
     ? store.readable(ids, listScope(roles, reader, "get"))
     : new Map<bigint, string>();
 
+const identity = (c: RequestContext) => {
+  if (!c.identity) {
+    throw new Error("Identity required");
+  }
+  return c.identity;
+};
+const missingExternal = () => new HttpError(404, "Subscriber not found.");
+const notFound = (c: RequestContext, name: string) =>
+  new HttpError(400, c.app.i18n.Ts("globals.messages.notFound", "name", name));
+const selector = (c: RequestContext) => {
+  let value: string;
+  if (c.url.pathname === "/api/subscribers/external") {
+    const values = c.url.searchParams.getAll("external_id");
+    if (values.length !== 1) {
+      throw new HttpError(400);
+    }
+    value = values[0]!;
+  } else {
+    try {
+      value = decodeURIComponent(c.url.pathname.slice("/api/subscribers/external/".length));
+    } catch {
+      throw new HttpError(400);
+    }
+  }
+  if (!validExternal(value)) {
+    throw new HttpError(400);
+  }
+  return value;
+};
 export function registerSubscriberRoutes(
   router: Router,
   store: SubscriberStore,
@@ -84,12 +113,6 @@ export function registerSubscriberRoutes(
   activity?: SubscriberActivity,
   records?: SubscriberRecords,
 ) {
-  const identity = (c: RequestContext) => {
-    if (!c.identity) {
-      throw new Error("Identity required");
-    }
-    return c.identity;
-  };
   const scope = (c: RequestContext, kind: "get" | "manage"): Scope =>
     listScope(roles, identity(c), kind);
   const maskScope = (c: RequestContext): Scope => {
@@ -114,9 +137,6 @@ export function registerSubscriberRoutes(
   };
   // A well-formed external ID that matches no subscriber is a 404 (D101). The numeric route keeps
   // listmonk's 400 for the same case.
-  const missingExternal = () => new HttpError(404, "Subscriber not found.");
-  const notFound = (c: RequestContext, name: string) =>
-    new HttpError(400, c.app.i18n.Ts("globals.messages.notFound", "name", name));
   const required = (c: RequestContext, id: bigint, external = false) =>
     store.get(id) ??
     (() => {
@@ -189,26 +209,6 @@ export function registerSubscriberRoutes(
           .join(" ");
       }
     }
-  };
-  const selector = (c: RequestContext) => {
-    let value: string;
-    if (c.url.pathname === "/api/subscribers/external") {
-      const values = c.url.searchParams.getAll("external_id");
-      if (values.length !== 1) {
-        throw new HttpError(400);
-      }
-      value = values[0]!;
-    } else {
-      try {
-        value = decodeURIComponent(c.url.pathname.slice("/api/subscribers/external/".length));
-      } catch {
-        throw new HttpError(400);
-      }
-    }
-    if (!validExternal(value)) {
-      throw new HttpError(400);
-    }
-    return value;
   };
   const resolve = (c: RequestContext, external: boolean) =>
     external ? store.external(selector(c))?.id : BigInt(getID(c));

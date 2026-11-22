@@ -4,6 +4,8 @@ import { trimSpace } from "@/lists/store";
 import { cronDuration } from "@/settings/duration";
 import { knownLocation } from "@/settings/timezones";
 
+const decimal = (whole: bigint, fraction: bigint, width: number) =>
+  `${whole}${fraction ? `.${String(fraction).padStart(width, "0").replace(/0+$/, "")}` : ""}`;
 // time.Duration.String formats the parsed duration, rather than its input spelling.
 function durationString(value: bigint): string {
   const sign = value < 0n ? "-" : "";
@@ -11,8 +13,6 @@ function durationString(value: bigint): string {
   if (n === 0n) {
     return "0s";
   }
-  const decimal = (whole: bigint, fraction: bigint, width: number) =>
-    `${whole}${fraction ? `.${String(fraction).padStart(width, "0").replace(/0+$/, "")}` : ""}`;
   if (n < 1000n) {
     return `${sign}${n}ns`;
   }

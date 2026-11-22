@@ -38,23 +38,23 @@ function DateField({ model, label }: { model: string; label: string }) {
   );
 }
 
+const data = (model: string, options: Array<[string, string]>, hints: Array<string> = []) => (
+  <div class="col-4">
+    <label data-field="">
+      Data
+      <select aria-label="Data" x-model={model}>
+        {options.map(([value, label]) => (
+          <option value={value}>{label}</option>
+        ))}
+      </select>
+      {hints.map((hint) => (
+        <small data-hint="">{hint}</small>
+      ))}
+    </label>
+  </div>
+);
 export const maintenanceView: AdminView = ({ context }) => {
   const t = context.app.i18n;
-  const data = (model: string, options: Array<[string, string]>, hints: Array<string> = []) => (
-    <div class="col-4">
-      <label data-field="">
-        Data
-        <select aria-label="Data" x-model={model}>
-          {options.map(([value, label]) => (
-            <option value={value}>{label}</option>
-          ))}
-        </select>
-        {hints.map((hint) => (
-          <small data-hint="">{hint}</small>
-        ))}
-      </label>
-    </div>
-  );
   const title = t.T("globals.terms.maintenance");
   return {
     title,

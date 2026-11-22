@@ -10,8 +10,11 @@ const root = resolve(import.meta.dir, "..");
 // D89: Linux x86-64 and Linux arm64 only. Each runner builds and verifies its own architecture, so
 // the architecture of this process names the file. `bun build --compile --target=bun-linux-arm64`
 // cross-compiles the other one.
-const architectures: Record<string, string | undefined> = { x64: "x64", arm64: "arm64" };
-const architecture = architectures[process.arch];
+const architectures = new Map([
+  ["x64", "x64"],
+  ["arm64", "arm64"],
+]);
+const architecture = architectures.get(process.arch);
 if (process.platform !== "linux" || architecture === undefined) {
   throw new Error(`Unsupported platform ${process.platform}/${process.arch}: Linux x64 and arm64`);
 }
@@ -161,11 +164,11 @@ async function verify(source: string): Promise<void> {
  */
 const runtime = { bun: "1.4.5", webkit: "d6375c72affe0f70222cdcb45012b10f0bf3a9d5" };
 
+const license = (name: string) => Bun.file(join(root, "assets/licenses", name)).text();
 async function notices(): Promise<string> {
   if (Bun.version !== runtime.bun) {
     throw new Error(`Update the WebKit revision in notices() for Bun ${Bun.version}`);
   }
-  const license = (name: string) => Bun.file(join(root, "assets/licenses", name)).text();
   const sections = [
     `iglo.email ${version} third-party notices
 

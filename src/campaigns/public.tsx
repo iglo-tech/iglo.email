@@ -32,16 +32,16 @@ export interface PublicCampaignSettings {
   individualTracking: boolean;
 }
 
+const chunk = (type: string, data: Uint8Array) => {
+  const out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0);
+  out.write(type, 4, "latin1");
+  out.set(data, 8);
+  out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+  return out;
+};
 /** Go image/png encoding of a transparent 1x1 RGBA image, as listmonk's pixelPNG. */
 function transparentPixel(): Uint8Array {
-  const chunk = (type: string, data: Uint8Array) => {
-    const out = Buffer.alloc(12 + data.length);
-    out.writeUInt32BE(data.length, 0);
-    out.write(type, 4, "latin1");
-    out.set(data, 8);
-    out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
-    return out;
-  };
   const header = Buffer.alloc(13);
   header.writeUInt32BE(1, 0);
   header.writeUInt32BE(1, 4);
@@ -53,6 +53,9 @@ function transparentPixel(): Uint8Array {
     chunk("IEND", new Uint8Array()),
   ]);
 }
+/** D117: a test send's links carry `testSendUUID` and answer the test page for any subscriber. */
+const isTestSend = (context: RequestContext) =>
+  context.params.campUUID!.toLowerCase() === testSendUUID;
 export function registerCampaignPublicRoutes(
   router: Router,
   deps: {
@@ -139,9 +142,6 @@ export function registerCampaignPublicRoutes(
   const unpaired = (t: Translation) =>
     page(t, 404, t.T("globals.terms.notFound"), t.T("globals.messages.invalidLink"), noIndex);
 
-  /** D117: a test send's links carry `testSendUUID` and answer the test page for any subscriber. */
-  const isTestSend = (context: RequestContext) =>
-    context.params.campUUID!.toLowerCase() === testSendUUID;
   const testPage = (t: Translation) =>
     page(t, 200, t.T("public.testSendTitle"), t.T("public.testSendInfo"), noIndex);
 

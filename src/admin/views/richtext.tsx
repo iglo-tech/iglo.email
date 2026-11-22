@@ -6,6 +6,11 @@ import type { Child } from "@/jsx/render";
 const file = "richtext-icons.svg";
 const icon = (name: string) => <Icon name={name} file={file} />;
 
+const block = (value: string, label: Child) => (
+  <button type="button" role="menuitem" class="ghost" data-cmd="block" data-value={value}>
+    {label}
+  </button>
+);
 function Toolbar({ t }: { t: Translation }) {
   /** A toolbar button named by its title. */
   const command = (
@@ -20,11 +25,6 @@ function Toolbar({ t }: { t: Translation }) {
   );
   const tool = (cmd: string, key: string, name: string, extra: Record<string, string> = {}) =>
     command(cmd, t.T(`editor.${key}`), name, extra);
-  const block = (value: string, label: Child) => (
-    <button type="button" role="menuitem" class="ghost" data-cmd="block" data-value={value}>
-      {label}
-    </button>
-  );
   const heading = (level: number) => {
     const label = `${t.T("editor.heading")} ${level}`;
     const Tag = `h${level}` as "h1";
@@ -245,6 +245,23 @@ function Toolbar({ t }: { t: Translation }) {
     </div>
   );
 }
+const submit = (label: string) => (
+  <button type="button" data-variant="primary" data-rte-act="submit">
+    {label}
+  </button>
+);
+const text = (label: string, name: string, autofocus = false) => (
+  <div data-field="">
+    <label>{label}</label>
+    <input type="text" name={name} {...(autofocus ? { autofocus: true } : {})} />
+  </div>
+);
+const size = (label: string, name: string) => (
+  <div data-field="">
+    <label>{label}</label>
+    <input type="number" name={name} min="1" step="1" inputmode="numeric" />
+  </div>
+);
 function Dialogs({ t }: { t: Translation }) {
   const close = (
     <button type="button" class="outline" data-rte-act="cancel">
@@ -255,23 +272,6 @@ function Dialogs({ t }: { t: Translation }) {
     <p role="alert" class="text-danger" data-rte-url-error="" hidden>
       {t.T("editor.urlRefused")}
     </p>
-  );
-  const submit = (label: string) => (
-    <button type="button" data-variant="primary" data-rte-act="submit">
-      {label}
-    </button>
-  );
-  const text = (label: string, name: string, autofocus = false) => (
-    <div data-field="">
-      <label>{label}</label>
-      <input type="text" name={name} {...(autofocus ? { autofocus: true } : {})} />
-    </div>
-  );
-  const size = (label: string, name: string) => (
-    <div data-field="">
-      <label>{label}</label>
-      <input type="number" name={name} min="1" step="1" inputmode="numeric" />
-    </div>
   );
   const code = (name: string, title: string, label: string) => (
     <dialog class="rte-dialog rte-dialog-code" data-rte-dialog={name}>

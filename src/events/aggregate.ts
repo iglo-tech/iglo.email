@@ -55,11 +55,11 @@ interface Compiled {
  */
 function compile(aggregate: Aggregate, subscriber: bigint, after: string | undefined): Compiled {
   const { event, where, fn, field } = aggregate;
-  const window = windowSQL<Param>({
-    subscriber,
-    name: event,
-    ...(aggregate.since === undefined ? {} : { after: after ?? "" }),
-  });
+  const input: Parameters<typeof windowSQL<Param>>[0] = { subscriber, name: event };
+  if (aggregate.since !== undefined) {
+    input.after = after ?? "";
+  }
+  const window = windowSQL<Param>(input);
   const hit = whereSQL(where);
   const path = field === undefined ? "" : jsonPath(field.slice("data.".length));
   const numeric = "json_type(data, ?) IN ('integer', 'real')";
@@ -115,7 +115,10 @@ export function createEventAggregates(db: Database) {
      * Values are JSON numbers and are never truncated: an aggregate that cannot be computed
      * exactly within its bounds returns `{ ok: false, limit: true }` and no total at all.
      */
-    evaluate(aggregates: Record<string, Aggregate>, context: ConditionContext): AggregateResult {
+    evaluate: (
+      aggregates: Record<string, Aggregate>,
+      context: ConditionContext,
+    ): AggregateResult => {
       let id: bigint, now: number;
       try {
         id = subscriberID(context.subscriberId);

@@ -284,20 +284,20 @@ function Clear({ t, id, type }: { t: Translation; id: string; type: string }) {
     </ot-dropdown>
   );
 }
+const click = (handler: string) => ({ "x-on:click.prevent": handler });
+const item = (test: string, icon: string, label: string, handler: string, danger = false) => (
+  <button
+    type="button"
+    role="menuitem"
+    class="ghost"
+    data-testid={test}
+    {...(danger ? { "data-variant": "danger" } : {})}
+    {...click(handler)}
+  >
+    <Icon name={icon} /> {label}
+  </button>
+);
 function Subscriptions({ t, canSave }: { t: Translation; canSave: boolean }) {
-  const click = (handler: string) => ({ "x-on:click.prevent": handler });
-  const item = (test: string, icon: string, label: string, handler: string, danger = false) => (
-    <button
-      type="button"
-      role="menuitem"
-      class="ghost"
-      data-testid={test}
-      {...(danger ? { "data-variant": "danger" } : {})}
-      {...click(handler)}
-    >
-      <Icon name={icon} /> {label}
-    </button>
-  );
   return (
     <div class="card page-content has-table subscriptions">
       <div class="table-wrapper">
