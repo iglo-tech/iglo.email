@@ -1,6 +1,9 @@
 // The bounded Liquid filters of B135 (docs/design/06-templates.md, D23, D54, D134), observed through
 // POST /api/tx into the loopback SMTP sink.
 import { afterEach, expect, test } from "bun:test";
+import { createRealClock } from "@/clock";
+import { createTranslation } from "@/i18n/i18n";
+import { createRenderer } from "@/templates/renderer";
 import { txFixture } from "@/test/tx/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { TxFixture } from "@/test/tx/fixture";
@@ -74,6 +77,17 @@ test("size of a loop's pair counts its two items, and size nests inside a loop",
   // The row is an array of two items; its first item is a string of two characters.
   expect(sent.status).toBe("sent");
   expect(sent.message).toContain("[2:2]");
+});
+
+test("a number above 2^53 prints as the nearest double, and a string prints exactly", () => {
+  // The raw JSON text is the input: a JavaScript number has already rounded before a fixture sends it.
+  const renderer = createRenderer(createRealClock(), createTranslation());
+  const out = renderer.renderSync({
+    body: "[{{ data.n }}] [{{ data.s }}]",
+    mode: "plain",
+    data: '{"data":{"n":9007199254740993,"s":"9007199254740993"}}',
+  });
+  expect(out.body).toBe("[9007199254740992] [9007199254740993]");
 });
 
 test("json escapes its quotes in HTML unless piped through raw", async () => {

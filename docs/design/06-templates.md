@@ -59,6 +59,8 @@ M0.8 measured the selected library and found the precise library-limit semantics
 | `{{ Safe "<b>…</b>" }}` | `{{ "<b>…</b>" \| raw }}` |
 | Sprig (`default`, `upper`, `trim`, …) | Liquid standard filters (`default`, `upcase`, `strip`, …) |
 
+A number in `data` is a JSON number, read as a double, so an integer above 2^53 (9007199254740992) loses precision and prints as the nearest double: `9007199254740993` prints `9007199254740992`. JSON parsing is not changed for this. Send such ids (order numbers, external IDs of 16 digits or more) as strings, which print exactly.
+
 `unsubscribe_url` in a transactional send renders an empty string: a transactional email has nothing to unsubscribe from. Saving a `tx` template that references it logs nothing, because the same `tx` template also serves marketing sends (`POST /api/tx` with `kind: "marketing"`, sequence marketing steps), where it is filled in; the send kind, not the template, decides.
 
 #### Layouts
