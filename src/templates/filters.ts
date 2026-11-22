@@ -710,17 +710,22 @@ export function last(value: unknown, b: FilterBudget) {
 }
 
 /**
- * `url_encode`: the text percent-encoded as `encodeURIComponent` writes it, with a space written as `+`, as
- * LiquidJS does. A lone surrogate is written as U+FFFD first, so the encoding never throws. The bytes are
- * counted before the text is built: a character outside the unreserved set takes three bytes per byte.
+ * `url_encode` (RFC 3986): every byte outside the unreserved set (ASCII letters, digits, `-`, `_`, `.` and `~`) is
+ * percent-encoded, so a space is `%20` and `!'()*` are encoded too. A lone surrogate is written as U+FFFD first,
+ * so the encoding never throws. The bytes are counted before the text is built: a character outside the
+ * unreserved set takes three bytes per byte.
  */
 export function urlEncode(value: unknown, b: FilterBudget): string {
   b.step();
   const text = scalar(value, b).toWellFormed();
   let bytes = 0;
   for (const character of text) {
-    bytes += /[A-Za-z0-9\-_.!~*'() ]/.test(character) ? 1 : 3 * byteLength(character);
+    bytes += /[A-Za-z0-9\-_.~]/.test(character) ? 1 : 3 * byteLength(character);
   }
   b.charge(bytes);
-  return encodeURIComponent(text).replaceAll("%20", "+");
+  // encodeURIComponent leaves the sub-delims `!'()*` as they are; RFC 3986 encodes them.
+  return encodeURIComponent(text).replaceAll(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }

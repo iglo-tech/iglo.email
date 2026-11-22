@@ -106,11 +106,11 @@ test("newline_to_br escapes the text once in HTML and writes each line break as 
   expect(sent.text).toContain("a<b>");
 });
 
-test("url_encode percent-encodes the text, with a space as a plus sign", async () => {
+test("url_encode percent-encodes the text per RFC 3986: a space is %20, and !'()* are encoded", async () => {
   const f = await open();
-  const sent = await render(f, "{{ 'a b&c/é' | url_encode }}");
+  const sent = await render(f, "{{ 'a b&c/é' | url_encode }} {{ \"!'()*-_.~\" | url_encode }}");
   expect(sent.status).toBe("sent");
-  expect(sent.html).toContain("a+b%26c%2F%C3%A9");
+  expect(sent.html).toContain("a%20b%26c%2F%C3%A9 %21%27%28%29%2A-_.~");
 });
 
 test("url_encode counts its output before it builds it, so a long encoding is refused at the output limit", async () => {
