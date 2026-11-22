@@ -517,6 +517,12 @@ export const differences: Array<Difference> = [
     applies: ["POST /api/campaigns/{id}/test"],
   },
   {
+    area: "Campaign test subject (D124)",
+    summary:
+      "A campaign test message's subject starts with `[Test] `, as a step test's does. Upstream sends the subject as given, so a test reads like a real send.",
+    applies: ["POST /api/campaigns/{id}/test"],
+  },
+  {
     area: "Campaign runner delivery (M3.2)",
     summary:
       "At-most-once: the cursor and a per-subscriber claim commit before a batch is sent; a crash skips at most that batch and logs its range.",

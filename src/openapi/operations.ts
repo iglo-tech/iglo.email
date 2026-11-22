@@ -851,7 +851,7 @@ const sending: Array<Operation> = [
     tag: "Events",
     summary: "Record an event, upsert its subscriber, grant list consent, start and end sequences.",
     description:
-      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list, and for an existing subscriber on a list it already has a membership on (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe. An `email` another subscriber holds: when that subscriber has no `external_id` and this event's `external_id` is free, the event claims it (the holder keeps its lists and history); otherwise the answer is 409 `email_conflict`, naming the holder's `conflict.external_id` where the caller manages it (D129).",
+      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list, and for an existing subscriber on a list it already has a membership on (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe. An `email` another subscriber holds: when that subscriber has no `external_id` and this event's `external_id` is free, the event claims it (the holder keeps its lists and history); otherwise the answer is 409 `email_conflict`, naming the holder's `conflict.external_id` where the caller manages it (D129). An `occurred_at` more than 15 minutes ahead of the server clock is 400 `invalid_fields` (`Invalid fields: occurred_at`) and writes nothing; within that it is kept as given (D124).",
     native: true,
     permissions: ["subscriber_events:create"],
     errors: [400, 404, 409, 413, 429],
@@ -864,7 +864,7 @@ const sending: Array<Operation> = [
     tag: "Events",
     summary: "Record at most 500 events; each has its own result.",
     description:
-      "Each item has its own `subscriber.grant_lists` check (D99): a refused grant fails that item only. Each item's address conflict is its own result too, with the same `code` and `conflict` as a single event (D129).",
+      "Each item has its own `subscriber.grant_lists` check (D99): a refused grant fails that item only. Each item's address conflict is its own result too, with the same `code` and `conflict` as a single event (D129). An item whose `occurred_at` is more than 15 minutes ahead of the server clock fails alone with 400 `invalid_fields` (D124).",
     native: true,
     permissions: ["subscriber_events:create"],
     errors: [400, 413, 429],
@@ -1196,6 +1196,8 @@ const campaigns: Array<Operation> = [
     id: "testCampaignById",
     tag: "Campaigns",
     summary: "Send a test to known subscribers.",
+    description:
+      "The test's subject starts with `[Test] ` (D124), so a recipient can tell it from a real send; a real send's subject is unchanged. Its links are inert (D117).",
     permissions: ["campaigns:manage", "campaigns:manage_all"],
     query: [{ name: "template_id", schema: integer }],
     body: ref("CampaignTestInput"),

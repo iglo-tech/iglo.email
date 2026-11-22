@@ -393,7 +393,10 @@ const HANDWRITTEN_DEFINITIONS: Array<ToolDefinition> = [
           description: "Recipient email addresses for the test send",
         },
         name: { type: "string", description: "Optional campaign name override" },
-        subject: { type: "string", description: "Optional subject override" },
+        subject: {
+          type: "string",
+          description: "Optional subject override; the test's subject starts with `[Test] `",
+        },
         from_email: { type: "string", description: "Optional sender email override" },
         body: { type: "string", description: "Optional body override in Liquid" },
         content_type: {

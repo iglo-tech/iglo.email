@@ -26,9 +26,9 @@ export const MAX_SINGLES_IN_FLIGHT = 1000;
 
 const invalid = (c: RequestContext, field: string) =>
   new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", field));
-const item = (c: RequestContext, value: unknown): EventInput | HttpError => {
+const item = (c: RequestContext, value: unknown, receivedAt: Date): EventInput | HttpError => {
   try {
-    return eventInput(value);
+    return eventInput(value, receivedAt);
   } catch (error) {
     if (error instanceof EventInputError) {
       return invalid(c, error.field);
@@ -108,7 +108,7 @@ export function registerEventRoutes(
       singles++;
       try {
         const body = await readBounded(c.request, SINGLE_BODY_BYTES);
-        const input = item(c, parseJson(c.request, body));
+        const input = item(c, parseJson(c.request, body), receivedAt);
         if (input instanceof HttpError) {
           throw input;
         }
@@ -147,7 +147,7 @@ export function registerEventRoutes(
           }
           throw error;
         }
-        items = values.map((value) => item(c, value));
+        items = values.map((value) => item(c, value, receivedAt));
       } finally {
         batches--;
       }

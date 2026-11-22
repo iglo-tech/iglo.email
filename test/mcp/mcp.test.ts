@@ -534,7 +534,8 @@ describe("B34 MCP endpoint tests", () => {
     });
     expect(testSendDeclaredOnlyRes.isError).toBeFalsy();
 
-    const mailDeclaredOnly = await mailbox.one(subEmail, "Brand New Subject Only");
+    // D124: a campaign test's subject starts with "[Test] ".
+    const mailDeclaredOnly = await mailbox.one(subEmail, "[Test] Brand New Subject Only");
     expect(mailDeclaredOnly.body).toContain("STORED BODY CTA-VALUE");
 
     // Test send delivers one email to Mailpit / sink with rendered content
@@ -554,7 +555,7 @@ describe("B34 MCP endpoint tests", () => {
     expect(testSendRes.isError).toBeFalsy();
 
     // Verify email was received by mailbox
-    const mail = await mailbox.one(subEmail, "Updated MCP Subject");
+    const mail = await mailbox.one(subEmail, "[Test] Updated MCP Subject");
     expect(mail.body).toContain("Hello MCP Subscriber, welcome to MCP campaign!");
 
     // Blocker 2: upload media, attach to campaign, delete media, then update_campaign and send_campaign_test succeed
@@ -623,7 +624,7 @@ describe("B34 MCP endpoint tests", () => {
       },
     });
     expect(testSendAfterMediaDelRes.isError).toBeFalsy();
-    const mailMediaDel = await mailbox.one(subEmail, "Subject After Media Delete");
+    const mailMediaDel = await mailbox.one(subEmail, "[Test] Subject After Media Delete");
     expect(mailMediaDel.body).toContain("Media test body");
 
     // Optional / Blocker 2: campaign with two lists, delete one list, update_campaign with subject only still succeeds
@@ -1319,7 +1320,7 @@ describe("B34 MCP endpoint tests", () => {
       arguments: { id: campId, subscribers: [subEmail] },
     });
     expect(testSend.isError).toBeFalsy();
-    const mail = await mailbox.one(subEmail, "B39 Created Subject");
+    const mail = await mailbox.one(subEmail, "[Test] B39 Created Subject");
     expect(mail.body).toContain("Updated body for B39 Subscriber");
 
     // A list ID that is not an integer is refused by the endpoint: same message, nothing created.

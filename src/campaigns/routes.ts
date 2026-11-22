@@ -27,6 +27,7 @@ import { MarkdownSourceError } from "@/templates/markdown";
 import type { TemplateStore } from "@/templates/store";
 import type { Authentication } from "@/users/auth";
 import { convertContent } from "@/campaigns/content";
+import { TEST_SUBJECT } from "@/sequences/step-data";
 import {
   bindCampaign,
   emptyCampaign,
@@ -942,7 +943,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
           return sendError(error);
         }
         totalWork += budget.work;
-        totalBytes += size(out.body) + size(altBody ?? "") + size(out.subject) + size(out.from);
+        // D124: the subject starts with `[Test] `, as a step test's does.
+        const testSubject = `${TEST_SUBJECT}${out.subject}`;
+        totalBytes += size(out.body) + size(altBody ?? "") + size(testSubject) + size(out.from);
         totalBytes += attachmentBytes;
         for (const set of out.headers) {
           for (const [name, header] of Object.entries(set)) {
@@ -973,7 +976,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         messages.push({
           from: out.from,
           to: [sub.email],
-          subject: out.subject,
+          subject: testSubject,
           contentType: campaign.content_type === "plain" ? "plain" : "html",
           body: Buffer.from(out.body),
           ...(altBody !== null ? { altBody: Buffer.from(altBody) } : {}),

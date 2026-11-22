@@ -159,7 +159,8 @@ test("a test send renders Liquid per recipient, with unsubscribe headers that na
   // Marketing deliveries go to the subscriber only: server copy headers are dropped.
   expect(message!.to).toEqual(["ada@example.test"]);
   const data = decode(message!.data).replaceAll(/\r\n[ \t]+/g, " ");
-  expect(data).toContain("Subject: Hi Ada");
+  // D124: a campaign test's subject starts with "[Test] ".
+  expect(data).toContain("Subject: [Test] Hi Ada");
   expect(data).toContain("X-Who: ada@example.test");
   expect(data).toContain(`X-Listmonk-Campaign: ${c.uuid}`);
   // D117: the unsubscribe link names the test page, not the campaign or the subscriber's list.
