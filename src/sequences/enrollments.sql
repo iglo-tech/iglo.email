@@ -40,19 +40,21 @@ UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NUL
 -- name: exit-by-lists
 -- B130 (D128, r1): leaving a list ends only the enrollments whose next step is marketing, as the all-lists
 -- option does. A transactional step keeps running, even in a sequence tied to the list; a mixed sequence
--- delivers its transactional step and ends at its marketing step.
+-- delivers its transactional step and ends at its marketing step. `+status` keeps SQLite from choosing the
+-- status-only claim index, which would read every active enrollment in the install (docs/perf/B130-public-defaults.md).
 UPDATE enrollments SET status = 'exited', exit_reason = 'unsubscribed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
-  WHERE status = 'active' AND subscriber_id IN (SELECT value FROM json_each(?))
+  WHERE +status = 'active' AND subscriber_id IN (SELECT value FROM json_each(?))
     AND sequence_id IN (SELECT id FROM sequences WHERE list_id IN (SELECT value FROM json_each(?)))
     AND step_id IN (SELECT id FROM sequence_steps WHERE kind = 'marketing');
 -- name: exit-by-subscribers
+-- `+status`: see exit-by-lists. The subscriber's enrollments, not every active one, are the rows read.
 UPDATE enrollments SET status = 'exited', exit_reason = 'blocklisted', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
-  WHERE status = 'active' AND subscriber_id IN (SELECT value FROM json_each(?));
+  WHERE +status = 'active' AND subscriber_id IN (SELECT value FROM json_each(?));
 -- name: exit-marketing-by-subscriber
 -- B130 (D128): the public "all lists" option. An enrollment whose next step is marketing ends now, as an
--- unsubscribe does; one whose next step is transactional keeps running.
+-- unsubscribe does; one whose next step is transactional keeps running. `+status`: see exit-by-lists.
 UPDATE enrollments SET status = 'exited', exit_reason = 'unsubscribed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
-  WHERE status = 'active' AND subscriber_id = ?
+  WHERE +status = 'active' AND subscriber_id = ?
     AND step_id IN (SELECT id FROM sequence_steps WHERE kind = 'marketing');
 -- name: exit-by-sequence
 UPDATE enrollments SET status = 'exited', exit_reason = 'sequence_archived', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?

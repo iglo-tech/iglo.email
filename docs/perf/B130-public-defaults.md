@@ -50,11 +50,34 @@ matches, then 0028 is timed. The script checks that exactly the sample row chang
 
 The statement runs once per upgrade, on one row of a table of about twenty.
 
-## The public "all lists" exit and the single-list exit
+## Enrollment exits: the index choice (B130 r2, blocker 1)
 
-The all-lists option's enrollment exit is one `UPDATE` by `subscriber_id`, which the existing `(subscriber_id,
-sequence_id)` index serves, and it runs once per click on the public page. The single-list exit (`exit-by-lists`)
-gains one filter on the step: it reads the same enrollments the statement already reads, and its step check is an
-`IN` over the sequence steps' kinds. Neither was timed separately. A click is a person's request, not a loop, and
-both statements touch only one subscriber's enrollments. The suppression the option writes is one `suppressed` read
-and at most one insert, as a self-wipe writes.
+The all-lists option ends a subscriber's marketing enrollments (`exit-marketing-by-subscriber`), and the single-list
+unsubscribe ends a list's (`exit-by-lists`). Both, and the block-list exit (`exit-by-subscribers`), are one `UPDATE`
+per click. Without `ANALYZE` (the schema has no statistics), SQLite chose by its heuristics: with `status = 'active'`
+beside the subscriber predicate, it searched the status-only claim index `idx_enrollments_claim (status=?)`, which
+reads every active enrollment in the install for one subscriber. `+status = 'active'` (the `+` keeps the status
+predicate from using an index) makes SQLite choose the subscriber index, `idx_enrollments_subscriber_sequence`.
+
+`bun test/perf/b130-enrollment-exits.ts`: the production schema (every migration in the catalog), 200k subscribers,
+603k active enrollments. The scoped list has three sequences (transactional, mixed, marketing) with 1,000 active
+enrollments each; the other list has three sequences with 200k each. Each row is the median of 9 single-subscriber
+runs, each in a transaction that is rolled back, after one warm-up run.
+
+| Statement | Host | Before (e8985a93 SQL): plan, median | After `+status`: plan, median |
+|---|---|---|---|
+| `exit-by-lists` | macOS arm64, Bun 1.4.5, SQLite 3.54.0 | `idx_enrollments_claim (status=?)`, 44.8 ms | `idx_enrollments_subscriber_sequence (subscriber_id=? AND sequence_id=?)`, 0.044 ms |
+| `exit-marketing-by-subscriber` | macOS | `idx_enrollments_claim (status=?)`, 38.3 ms | `idx_enrollments_subscriber_sequence (subscriber_id=?)`, 0.033 ms |
+| `exit-by-subscribers` | macOS | `idx_enrollments_claim (status=?)`, 44.6 ms | `idx_enrollments_subscriber_sequence (subscriber_id=?)`, 0.058 ms |
+| `exit-by-lists` | Linux (`oven/bun:1.4.5` container on the same host, aarch64, SQLite 3.54.1) | `idx_enrollments_sequence_status (sequence_id=? AND status=?)`, 0.218 ms | `idx_enrollments_subscriber_sequence (subscriber_id=? AND sequence_id=?)`, 0.021 ms |
+| `exit-marketing-by-subscriber` | Linux | `idx_enrollments_claim (status=?)`, 34.5 ms | `idx_enrollments_subscriber_sequence (subscriber_id=?)`, 0.020 ms |
+| `exit-by-subscribers` | Linux | `idx_enrollments_claim (status=?)`, 42.8 ms | `idx_enrollments_subscriber_sequence (subscriber_id=?)`, 0.041 ms |
+
+The Linux `exit-by-lists` before-plan is the list's sequence index, `(sequence_id, status)`. Its cost grows with the
+list's active enrollments, not one subscriber's; the scoped list is small here, so its number is low. The all-lists
+and block-list exits, without the change, read every active enrollment in the install (the status-only index), which
+is the 35–45 ms in both hosts' before rows. The `+status` predicate matches the same rows: every enrollment state
+(waiting, due, deferred, retrying, claimed, paused sequence) keeps `status = 'active'`.
+
+A click is a person's request, not a loop. The suppression the all-lists option writes is one `suppressed` read and at
+most one insert, as a self-wipe writes.
