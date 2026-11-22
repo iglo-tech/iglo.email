@@ -239,6 +239,7 @@ export async function txFixture(
     rootUrl: () => "http://fixture.test",
     ...(webhookEffects ? { ended: webhookEffects.sendEnded } : {}),
     marketingPolicy: createMarketingPolicy({ subscribers, lists, settings: () => marketing }),
+    templateNames: (ids) => templates.names(ids),
   });
   const tracking = createTracking(db, clock);
   let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });

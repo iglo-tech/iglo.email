@@ -216,6 +216,14 @@ export function createTemplateStore(
   return {
     initialize,
     get: byId,
+    /** The name of each listed template, for a send's label (B127). A missing template has no entry. */
+    names(ids: Array<bigint>): Map<bigint, string> {
+      const rows = q.get("template-names").all(`[${ids.join(",")}]`) as Array<{
+        id: bigint;
+        name: string;
+      }>;
+      return new Map(rows.map((row) => [row.id, row.name]));
+    },
     getDefault: defaultRow,
     list,
     create,

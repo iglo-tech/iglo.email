@@ -147,7 +147,7 @@ function expectRow<T>(row: T | null, what: string): T {
   }
   return row;
 }
-function project(row: PublicRow, label?: StepLabel) {
+function project(row: PublicRow, label?: StepLabel, templateName?: string) {
   return {
     id: jsonID(row.id),
     uuid: row.uuid,
@@ -156,6 +156,8 @@ function project(row: PublicRow, label?: StepLabel) {
     subscriber_id: jsonID(row.subscriber_id),
     to_email: row.to_email,
     template_id: jsonID(row.template_id),
+    // The template's name, so a transactional send names what it sent (B127); null once it is deleted.
+    template_name: templateName ?? null,
     enrollment_id: jsonID(row.enrollment_id),
     step_id: jsonID(row.step_id),
     list_id: jsonID(row.list_id),
@@ -209,6 +211,8 @@ export function createSends(options: {
   ended?: (send: EndedSend) => void;
   /** The sequence and position of each step, read by the sequences module (B127). */
   stepLabels?: (ids: Array<bigint>) => Map<bigint, StepLabel>;
+  /** The name of each template, read by the templates module for a send's label (B127). */
+  templateNames?: (ids: Array<bigint>) => Map<bigint, string>;
 }) {
   const { db, clock, subscribers } = options;
   // Every projection of a send carries its step's label, read in one call per list.
@@ -218,10 +222,24 @@ export function createSends(options: {
       ? options.stepLabels(ids)
       : new Map<bigint, StepLabel>();
   };
+  // Every projection of a send carries its template's name too (B127), read in one call per list.
+  const templateRows = (rows: Array<PublicRow>): Map<bigint, string> => {
+    const ids = [
+      ...new Set(rows.flatMap((row) => (row.template_id === null ? [] : [row.template_id]))),
+    ];
+    return ids.length && options.templateNames
+      ? options.templateNames(ids)
+      : new Map<bigint, string>();
+  };
   const projectAll = (rows: Array<PublicRow>) => {
     const labels = labelRows(rows);
+    const names = templateRows(rows);
     return rows.map((row) =>
-      project(row, row.step_id === null ? undefined : labels.get(row.step_id)),
+      project(
+        row,
+        row.step_id === null ? undefined : labels.get(row.step_id),
+        row.template_id === null ? undefined : names.get(row.template_id),
+      ),
     );
   };
   const projectOne = (row: PublicRow) => expectRow(projectAll([row])[0] ?? null, "send");

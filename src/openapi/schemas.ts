@@ -597,6 +597,11 @@ export const schemas = {
     enrollment_id: nullable(integer),
     step_id: nullable(integer),
     list_id: nullable(integer),
+    template_name: {
+      ...nullable(string),
+      description:
+        "The name of the send's template (B127), so a transactional send names what it sent. Null when it has no template, or the template was deleted.",
+    },
     subject: {
       ...nullable(string),
       description:

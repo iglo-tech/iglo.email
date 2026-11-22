@@ -3,7 +3,7 @@
 import Alpine from '@alpinejs/csp';
 import { pageLinks, pageQuery, read, subscriberID } from '@/assets/admin/js/listing.js';
 import {
-  sequenceStepText, skipText, sourceText, statusText, statusVariant, subjectText,
+  sequenceOrTemplateText, skipText, sourceText, statusText, statusVariant, subjectText,
 } from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
@@ -75,7 +75,7 @@ function sendsView() {
 
     sourceText,
 
-    sequenceText: sequenceStepText,
+    sequenceText: sequenceOrTemplateText,
   };
 }
 

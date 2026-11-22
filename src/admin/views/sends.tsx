@@ -38,6 +38,7 @@ export const sendKeys = [
   ...sendSourceKeys,
   ...skipReasonKeys,
   ...subjectKeys,
+  "sends.sequenceOrTemplate",
   "sends.sequenceStep",
 ];
 
@@ -141,7 +142,7 @@ export const sendsView: AdminView = ({ context }) => {
                   <th>{t.T("sends.subject")}</th>
                   <th>{t.T("subscribers.sendTo")}</th>
                   <th>{t.T("sends.source")}</th>
-                  <th>{t.T("sequences.sequence")}</th>
+                  <th>{t.T("sends.sequenceOrTemplate")}</th>
                   <th>{t.T("globals.fields.status")}</th>
                   <th>{t.T("subscribers.sentAt")}</th>
                 </tr>

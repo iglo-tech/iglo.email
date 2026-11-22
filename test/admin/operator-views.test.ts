@@ -34,6 +34,7 @@ test("the send log is a page of its own behind sends:get, with its filters and t
     "sends.subjectExpired",
     "sends.subjectSkipped",
     "sends.subjectWiped",
+    "sends.sequenceOrTemplate",
     "sends.sequenceStep",
     "skipReasons.frequency_cap",
     "skipReasons.subscriber_blocklisted",

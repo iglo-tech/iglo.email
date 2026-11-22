@@ -491,6 +491,7 @@
     "sends.subjectNotSent": "Not sent",
     "sends.subjectSkipped": "Not sent: {reason}",
     "sends.subjectWiped": "Removed (data wiped)",
+    "sends.sequenceOrTemplate": "Sequence / template",
     "sends.sequenceStep": "{name}, step {position}",
     "sends.source": "Source",
     "sends.sourceSequence": "Sequence",

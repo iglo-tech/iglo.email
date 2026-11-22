@@ -436,6 +436,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         campaignDeliveries: runnerStore,
       }),
       stepLabels: (ids) => wired(sequences, "sequences").stepLabels(ids),
+      templateNames: (ids) => wired(templates, "templates").names(ids),
     });
     notifier = createAdminNotifier({
       sends,

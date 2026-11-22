@@ -56,6 +56,32 @@ async function apiUser(f: TxFixture, permissions: Array<string>) {
   };
 }
 
+// B127 r1: a transactional send names the template it used, so its row stays identifiable once the
+// payload is gone; a deleted template leaves the send with no name.
+test("a transactional send names its template, and a deleted template names none", async () => {
+  const f = await open();
+  const template = await f.template("<p>{{ subscriber.name }}</p>", "Your order");
+  const ada = await f.subscriber("ada@example.test");
+  const sent = await f.json("/api/tx", "POST", {
+    subscriber_id: ada,
+    template_id: template,
+    data: {},
+  });
+  expect(sent.status).toBe(200);
+  const id = asBody<Array<{ id: number }>>(sent.body.data.sends)[0]!.id;
+  const row = async () =>
+    asBody<Record<string, unknown>>((await f.json(`/api/sends/${id}`)).body.data);
+  const name = asBody<string>((await f.json(`/api/templates/${template}`)).body.data.name);
+  expect(await row()).toMatchObject({ kind: "transactional", template_name: name });
+  const listed = asBody<Array<Record<string, unknown>>>(
+    (await f.json("/api/sends")).body.data.results,
+  );
+  expect(listed.find((send) => send.id === id)).toMatchObject({ template_name: name });
+
+  expect((await f.json(`/api/templates/${template}`, "DELETE")).status).toBe(200);
+  expect(await row()).toMatchObject({ template_id: null, template_name: null });
+});
+
 test("sync send renders listmonk-compatible context and journals the outcome", async () => {
   const f = await open();
   const template = await f.template(

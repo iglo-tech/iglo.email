@@ -186,6 +186,8 @@ test("a send with no subject says why: a refused one was never prepared, a wiped
   const wiped = page.locator(`[data-testid="send-row"][data-id="${wipedRow}"]`);
   await expect(wiped).toContainText("Removed (data wiped)");
   await expect(wiped).not.toContainText(tx.subject);
+  // The template still names the send, though its payload and address are gone.
+  await expect(wiped).toContainText(tx.name);
 });
 
 test.describe("on a phone", () => {

@@ -56,3 +56,9 @@ export function sequenceStepText(send) {
     ? i18n.ts('sends.sequenceStep', { name: send.sequence_name, position: send.step_position + 1 })
     : '';
 }
+
+// The "Sequence / template" column (B127): a sequence send's sequence and step, else the name of the
+// template a transactional send used. A template that was deleted has no name, so it shows a dash.
+export function sequenceOrTemplateText(send) {
+  return send.sequence_name ? sequenceStepText(send) : send.template_name || '-';
+}

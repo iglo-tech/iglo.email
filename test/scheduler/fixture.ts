@@ -180,6 +180,7 @@ export async function schedulerFixture(
     }),
     // As src/main.ts: the send log names each sequence step (B127).
     stepLabels: (ids) => sequences.stepLabels(ids),
+    templateNames: (ids) => templates.names(ids),
   });
   const tracking = createTracking(db, clock);
   const testSends = createTestSends(db, clock);

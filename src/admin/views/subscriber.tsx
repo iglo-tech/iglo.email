@@ -639,7 +639,7 @@ function Sends({ t, id }: { t: Translation; id: string }) {
                 <th>{t.T("subscribers.sendTo")}</th>
                 <th>{t.T("globals.fields.type")}</th>
                 <th>{t.T("sends.subject")}</th>
-                <th>{t.T("sequences.sequence")}</th>
+                <th>{t.T("sends.sequenceOrTemplate")}</th>
                 <th>{t.T("globals.fields.status")}</th>
                 <th>{t.T("subscribers.sentAt")}</th>
               </tr>
@@ -651,7 +651,10 @@ function Sends({ t, id }: { t: Translation; id: string }) {
                   <td data-label={t.T("subscribers.sendTo")} x-text="row.to_email"></td>
                   <td data-label={t.T("globals.fields.type")} x-text="row.kind"></td>
                   <td data-label={t.T("sends.subject")} x-text="subjectText(row)"></td>
-                  <td data-label={t.T("sequences.sequence")} x-text="sequenceCell(row)"></td>
+                  <td
+                    data-label={t.T("sends.sequenceOrTemplate")}
+                    x-text="sequenceOrTemplateText(row)"
+                  ></td>
                   <td data-label={t.T("globals.fields.status")}>
                     <span
                       class="badge enum"
@@ -667,7 +670,7 @@ function Sends({ t, id }: { t: Translation; id: string }) {
                   ></td>
                 </tr>
               </template>
-              <EmptyRow when="!activity.length" colspan={5} t={t} />
+              <EmptyRow when="!activity.length" colspan={7} t={t} />
             </tbody>
           </table>
           <Pages />
