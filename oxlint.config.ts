@@ -259,6 +259,10 @@ export default defineConfig({
         "typescript/no-unsafe-type-assertion": "off", // B134g: test/ still asserts from any and unknown.
       },
     },
+    // Exception, for the lead to decide at review (no-reflect-get). The crash fixture's Proxy get trap forwards
+    // a property with Reflect.get and the proxy as receiver, so a getter on the owner sees the proxy as `this`;
+    // a property read would bind it to the target instead.
+    { files: ["test/scheduler/crash-entry.ts"], rules: { "quality/no-reflect-get": "off" } },
     // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
     // (its values are typed per key, and a per-key schema is a separate design, D132), and the journal payload is
     // parsed JSON that check() validates field by field before the message is returned.
@@ -472,7 +476,6 @@ export default defineConfig({
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
     // B134c: findings remain only in test/.
-    "quality/no-reflect-get": "off", // B134c
     "quality/no-unknown-type-aliases": "off", // B134c
     "unicorn/prefer-native-coercion-functions": "off", // B134c
   },
