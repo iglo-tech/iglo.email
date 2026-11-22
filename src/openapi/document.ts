@@ -114,7 +114,7 @@ function build(operation: Operation) {
 
 /** The document as text. Cheap, and the route builds it once, on the first request. */
 export function buildDocument(): string {
-  const paths: Record<string, Record<string, unknown>> = {};
+  const paths: Record<string, Record<string, ReturnType<typeof build>>> = {};
   for (const operation of operations) {
     const [method, path] = operation.route.split(" ") as [string, string];
     (paths[path] ??= {})[method.toLowerCase()] = build(operation);

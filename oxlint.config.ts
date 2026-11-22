@@ -156,7 +156,6 @@ export default defineConfig({
         "src/mcp/tools.ts", // MCP tool arguments
         "src/media/routes.ts", // settings record (any value per key)
         "src/messaging/test.ts", // SMTP test request JSON
-        "src/openapi/document.ts", // OpenAPI document objects
         "src/openapi/schemas.ts", // OpenAPI schema objects
         "src/public/form.ts", // form and JSON field values
         "src/public/settings.ts", // settings record (any value per key)
