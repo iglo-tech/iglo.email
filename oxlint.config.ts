@@ -251,19 +251,9 @@ export default defineConfig({
         "typescript/no-unsafe-return": "off",
       },
     },
-    // B134h: the TypeScript findings of these two rules and the type assertions are fixed with typed boundary helpers
-    // under test/ (see the helper exceptions below), and each rule's line comes off when its findings are gone.
-    {
-      files: ["test/**/*.{ts,tsx,mts,cts}"],
-      rules: {
-        "typescript/no-unsafe-call": "off", // B134h
-        "typescript/no-unsafe-return": "off", // B134h
-        "typescript/no-unsafe-type-assertion": "off", // B134h
-      },
-    },
     // Exception, for the lead to decide at review (no-unsafe-type-assertion). The two casts that type a parsed body
     // for a test (readJson and asBody): the test names the shape and asserts the fields it reads, so the shape is the
-    // check, and no other file under test/ casts a parsed body (B134h).
+    // check, and no other file under test/ casts a parsed body.
     { files: ["test/read-body.ts"], rules: { "typescript/no-unsafe-type-assertion": "off" } },
     // Exception, for the lead to decide at review (no-floating-promises). The m14 browser scripts are evaluated as an
     // expression by agent-browser, and their async IIFE is that expression's value, the promise the browser awaits.
