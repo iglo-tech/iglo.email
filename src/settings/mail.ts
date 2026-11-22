@@ -1,6 +1,7 @@
 // Address syntax adapted from Go 1.27.2 net/mail/message.go, Copyright The Go Authors.
 // The complete BSD notice is embedded from assets/licenses/go-1.27.2-BSD.txt.
 import { isIP } from "node:net";
+import { must } from "@/invariant";
 
 /** One encoded word after decoding; `encoded` is false for a word that stays literal. */
 interface DecodedWord {
@@ -8,7 +9,8 @@ interface DecodedWord {
   content: string;
   error: boolean;
 }
-const visible = (c: string) => !!c && ((c >= "!" && c <= "~") || c.codePointAt(0)! >= 128);
+const visible = (c: string) =>
+  !!c && ((c >= "!" && c <= "~") || must(c.codePointAt(0), "code point") >= 128);
 const atext = (c: string) => visible(c) && !String.raw`()<>[]:;@\,"`.includes(c);
 // Decode syntax before charset conversion, as mime.WordDecoder does. Invalid
 // encoded words remain literal; only an unsupported charset is fatal.
@@ -17,9 +19,9 @@ const decodeWord = (word: string): DecodedWord => {
   if (!match) {
     return { encoded: false, content: word, error: false };
   }
-  const text = match[3]!;
+  const text = must(match[3], "encoded text");
   let bytes: Uint8Array;
-  if (match[2]!.toLowerCase() === "b") {
+  if (must(match[2], "encoding").toLowerCase() === "b") {
     const encoded = text.replaceAll(/[\r\n]/g, "");
     if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
       return { encoded: false, content: word, error: false };
@@ -28,7 +30,7 @@ const decodeWord = (word: string): DecodedWord => {
   } else {
     const values: Array<number> = [];
     for (let i = 0; i < text.length; i++) {
-      const c = text[i]!;
+      const c = text.charAt(i);
       if (c === "=") {
         const hex = text.slice(i + 1, i + 3);
         if (!/^[0-9a-fA-F]{2}$/.test(hex)) {
@@ -47,7 +49,7 @@ const decodeWord = (word: string): DecodedWord => {
     bytes = Uint8Array.from(values);
   }
   // EqualFold's long-s equivalence matters for the ASCII built-in charset names.
-  const charset = match[1]!.toLowerCase().replaceAll("ſ", "s");
+  const charset = must(match[1], "charset").toLowerCase().replaceAll("ſ", "s");
   return {
     encoded: true,
     content:
@@ -74,7 +76,7 @@ export function parseAddress(input: string): string | undefined {
     pos++;
     let count = 0;
     while (pos < input.length) {
-      const c = input[pos++]!;
+      const c = input.charAt(pos++);
       if (c === '"') {
         return allowEmpty || count > 0;
       }
@@ -92,7 +94,7 @@ export function parseAddress(input: string): string | undefined {
   };
   const atom = (permissive: boolean) => {
     const start = pos;
-    while (pos < input.length && atext(input[pos]!)) {
+    while (pos < input.length && atext(input.charAt(pos))) {
       pos++;
     }
     const value = input.slice(start, pos);
@@ -109,9 +111,9 @@ export function parseAddress(input: string): string | undefined {
     let content = "";
     let depth = 1;
     while (pos < input.length && depth) {
-      let c = input[pos++]!;
+      let c = input.charAt(pos++);
       if (c === "\\" && pos < input.length) {
-        c = input[pos++]!;
+        c = input.charAt(pos++);
       } else if (c === "(") {
         depth++;
       } else if (c === ")") {

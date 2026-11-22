@@ -1,5 +1,6 @@
 // Syntax validation adapted from github.com/gdgvda/cron v0.7.0, parser.go and internal/parser.
 // Copyright Rob Figueiredo; the complete MIT license is embedded with the assets.
+import { must } from "@/invariant";
 import { trimSpace } from "@/lists/store";
 import { cronDuration } from "@/settings/duration";
 import { knownLocation } from "@/settings/timezones";
@@ -122,8 +123,8 @@ export function cronError(input: string): string | null {
   ] as const;
   // The upstream parser validates day of month and day of week before month.
   for (const index of [0, 1, 2, 4, 3]) {
-    const [min, max] = bounds[index]!;
-    const field = fields[index]!;
+    const [min, max] = must(bounds[index], "cron bounds");
+    const field = must(fields[index], "cron field");
     const options = field.split(",").filter(Boolean);
     if (!options.length) {
       return "invalid expression: empty list";
@@ -138,20 +139,24 @@ export function cronError(input: string): string | null {
     };
     for (const option of options) {
       const slash = option.split("/");
-      const range = slash[0]!.split("-");
+      const range = must(slash[0], "cron term").split("-");
       if (slash.length > 2 || range.length > 2) {
         return `${option}: invalid expression`;
       }
-      const first = range[0]!;
+      const first = must(range[0], "cron range start");
       if (index === 2 && first === "L") {
         if (slash.length > 1) {
           return `${option}: invalid expression`;
         }
-        if (range.length === 2 && number(range[1]!) !== null && number(range[1]!)! > 30n) {
-          return `${option}: invalid amount of days subtracted`;
-        }
-        if (range.length === 2 && number(range[1]!) === null) {
-          return parseIntError(range[1]!);
+        if (range.length === 2) {
+          const end = must(range[1], "cron range end");
+          const days = number(end);
+          if (days === null) {
+            return parseIntError(end);
+          }
+          if (days > 30n) {
+            return `${option}: invalid amount of days subtracted`;
+          }
         }
         continue;
       }
@@ -182,21 +187,22 @@ export function cronError(input: string): string | null {
         if (parts.length > 2) {
           return `${option}: invalid expression`;
         }
-        const day = number(parts[0]!);
+        const dayPart = must(parts[0], "cron day");
+        const day = number(dayPart);
         if (day === null) {
-          return parseIntError(parts[0]!);
+          return parseIntError(dayPart);
         }
         if (day > 6n) {
           return `${option}: value ${day} out of valid range [0, 6]`;
         }
         if (parts.length > 1) {
-          const rawOccurrence = parts[1]!;
+          const rawOccurrence = must(parts[1], "cron occurrence");
           const occurrence =
             /^\+?\d+$/.test(rawOccurrence) && BigInt(rawOccurrence) <= 9_223_372_036_854_775_807n
               ? BigInt(rawOccurrence)
               : null;
           if (occurrence === null) {
-            return parseIntError(parts[1]!);
+            return parseIntError(rawOccurrence);
           }
           if (occurrence < 1n || occurrence > 5n) {
             return `${option}: value ${occurrence} out of valid range [1, 5]`;
@@ -216,7 +222,7 @@ export function cronError(input: string): string | null {
       const high = wild
         ? BigInt(max)
         : range.length > 1
-          ? number(range[1]!)
+          ? number(must(range[1], "cron range end"))
           : slash.length > 1
             ? BigInt(max)
             : low;
@@ -227,7 +233,7 @@ export function cronError(input: string): string | null {
         return `${expression}: value ${low} out of valid range [${min}, ${max}]`;
       }
       if (high === null) {
-        return parseIntError(range[1]!);
+        return parseIntError(must(range[1], "cron range end"));
       }
       if (high < BigInt(min) || high > BigInt(max)) {
         return `${expression}: value ${high} out of valid range [${min}, ${max}]`;
@@ -236,7 +242,7 @@ export function cronError(input: string): string | null {
         return `${expression}: beginning of range (${low}) beyond end of range (${high})`;
       }
       if (slash.length > 1) {
-        const step = slash[1]!;
+        const step = must(slash[1], "cron step");
         if (
           !/^[+-]?\d+$/.test(step) ||
           BigInt(step) < 0n ||

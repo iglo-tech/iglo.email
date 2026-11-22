@@ -1,4 +1,5 @@
 // Duration syntax adapted from Go time.ParseDuration and the explicit settings day convention.
+import { must } from "@/invariant";
 import { HttpError } from "@/server/response";
 const fail = (): never => {
   throw new HttpError(400, "Invalid data.");
@@ -26,7 +27,8 @@ function duration(input: string, days = false): number {
     if (!m) {
       return Number.NaN;
     }
-    const factor = units.get(m[2]!);
+    // Group 2 always matches when the expression does. Without a unit there is no factor, as before.
+    const factor = units.get(m[2] ?? "");
     if (factor === undefined) {
       return Number.NaN;
     }
@@ -100,14 +102,14 @@ export function cronDuration(input: string): CronDuration {
   const limit = 9_223_372_036_854_775_808n;
   let total = 0n;
   while (rest) {
-    const numeric = /^(\d*)(?:\.(\d*))?/.exec(rest)!;
-    const integer = numeric[1]!;
+    const numeric = must(/^(\d*)(?:\.(\d*))?/.exec(rest), "duration number");
+    const integer = must(numeric[1], "duration integer");
     const fraction = numeric[2] ?? "";
     if ((!integer && !fraction) || (integer && BigInt(integer) > limit)) {
       return fail("invalid duration");
     }
     rest = rest.slice(numeric[0].length);
-    const unit = /^[^\d.]*/u.exec(rest)![0];
+    const unit = must(/^[^\d.]*/u.exec(rest), "duration unit")[0];
     if (!unit) {
       return fail("missing unit in duration");
     }
@@ -156,16 +158,18 @@ export function intervalStart(input: string, now: Date): Date | null | undefined
   if (!m) {
     return undefined;
   }
-  const [y, mo, w, d, h, mi, s] = m.slice(1).map((v) => Number(v ?? 0));
+  // Each group maps to a number, a missing one as 0, so the defaults below only name the type.
+  const groups = m.slice(1).map((v) => Number(v ?? 0));
+  const [y = 0, mo = 0, w = 0, d = 0, h = 0, mi = 0, s = 0] = groups;
   const at = new Date(now.getTime());
   // Calendar months clamp to the target month's last day (31 March - P1M = 28 February).
-  const year = at.getUTCFullYear() - y!,
-    month = at.getUTCMonth() - mo!;
+  const year = at.getUTCFullYear() - y,
+    month = at.getUTCMonth() - mo;
   const days = new Date(0);
   days.setUTCFullYear(year, month + 1, 0);
   at.setUTCFullYear(year, month, Math.min(at.getUTCDate(), days.getUTCDate()));
-  at.setUTCDate(at.getUTCDate() - w! * 7 - d!);
-  const time = at.getTime() - ((h! * 60 + mi!) * 60 + s!) * 1000;
+  at.setUTCDate(at.getUTCDate() - w * 7 - d);
+  const time = at.getTime() - ((h * 60 + mi) * 60 + s) * 1000;
   // Bound to dates JavaScript and ISO strings represent (year 0 onwards).
   if (!Number.isFinite(time) || time < -62_167_219_200_000) {
     return undefined;
