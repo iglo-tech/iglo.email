@@ -296,6 +296,76 @@ export interface RenderTracking {
 const attribute = (value: string) => value.replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 const pad = (n: number) => String(n).padStart(2, "0");
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** The single-character directives of a date format (`-d` is the day without padding). */
+const DIRECTIVES = "%YymdeHIMSpbBaAj";
+const SUPPORTED_DIRECTIVES =
+  "%%, %Y, %y, %m, %d, %-d, %e, %H, %I, %M, %S, %p, %b, %B, %a, %A and %j";
+/**
+ * The first directive of a date format that is not supported, or undefined. A format is read left to
+ * right, so `%%` is one literal percent sign and its second `%` is not a directive of its own.
+ */
+function unsupportedDirective(format: string): string | undefined {
+  for (let i = 0; i < format.length; i++) {
+    if (format[i] !== "%") {
+      continue;
+    }
+    const next = format[i + 1];
+    if (next === "-" && format[i + 2] === "d") {
+      i += 2;
+    } else if (next !== undefined && DIRECTIVES.includes(next)) {
+      i += 1;
+    } else {
+      return `%${next ?? ""}`;
+    }
+  }
+  return undefined;
+}
+/** The UTC date a format writes. Every directive has been checked by `unsupportedDirective`. */
+function formatDate(format: string, date: Date): string {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  const hour = date.getUTCHours();
+  const weekday = date.getUTCDay();
+  const startOfYear = Date.UTC(year, 0, 1);
+  const dayOfYear = Math.floor((Date.UTC(year, month, day) - startOfYear) / 86_400_000) + 1;
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  const values = new Map<string, string>([
+    ["%", "%"],
+    ["Y", String(year)],
+    ["y", pad(year % 100)],
+    ["m", pad(month + 1)],
+    ["d", pad(day)],
+    ["-d", String(day)],
+    ["e", String(day).padStart(2, " ")],
+    ["H", pad(hour)],
+    ["I", pad(hour12)],
+    ["M", pad(date.getUTCMinutes())],
+    ["S", pad(date.getUTCSeconds())],
+    ["p", hour < 12 ? "AM" : "PM"],
+    ["b", must(MONTHS[month], "month").slice(0, 3)],
+    ["B", must(MONTHS[month], "month")],
+    ["a", must(WEEKDAYS[weekday], "weekday").slice(0, 3)],
+    ["A", must(WEEKDAYS[weekday], "weekday")],
+    ["j", String(dayOfYear).padStart(3, "0")],
+  ]);
+  return format.replaceAll(/%(-d|.)/g, (_, key: string) => must(values.get(key), "date directive"));
+}
 function hasContent(templates: Array<Template>): boolean {
   for (const tpl of templates) {
     if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText())) {
@@ -328,6 +398,25 @@ export function createRenderer(clock: Clock, translation: Translation) {
     }
     return result;
   };
+  /**
+   * The UTC date a `date` filter reads (D134): `now` and `today` are the clock's, and anything else must be
+   * a calendar date or UTC timestamp that exists. JavaScript rolls 2026-02-30 over to 2026-03-02, so a date
+   * is kept only when its canonical form keeps the date (and the time, for a timestamp).
+   */
+  function parseDate(text: string): Date | undefined {
+    if (text === "now" || text === "today") {
+      return clock.now();
+    }
+    if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)?$/.test(text)) {
+      return undefined;
+    }
+    const date = new Date(text);
+    if (!Number.isFinite(date.getTime())) {
+      return undefined;
+    }
+    const digits = text.length === 10 ? 10 : 19;
+    return date.toISOString().slice(0, digits) === text.slice(0, digits) ? date : undefined;
+  }
   function engine(html: boolean) {
     const operators = { ...defaultOperators };
     const chargeComparison = (value: unknown, b: Budget): number => {
@@ -518,45 +607,35 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("date", function (value, format) {
       const b = budget(this.context);
       b.step();
-      const text = scalar(value, b);
+      // Nil is empty, so a date of nothing renders nothing (D134).
+      const text = value === null || value === undefined ? "" : scalar(value, b);
       const fmt = scalar(format, b);
-      // Left to right: a percent sign is either the pair `%%` (a literal %) or one of the directives,
-      // so the second percent of `%%` is not a directive of its own.
-      if (byteLength(fmt) > 256 || !/^(?:[^%]|%[%YmdHMS])*$/.test(fmt)) {
-        throw new TextError("a date format has an unsupported directive");
+      if (byteLength(fmt) > 256) {
+        throw new TextError("a date format is longer than 256 bytes");
       }
-      if (
-        text !== "now" &&
-        text !== "today" &&
-        !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)?$/.test(text)
-      ) {
-        throw new ValueError("Invalid date");
+      const unsupported = unsupportedDirective(fmt);
+      if (unsupported !== undefined) {
+        throw new TextError(
+          `a date format has the unsupported directive ${unsupported}; the supported directives are ${SUPPORTED_DIRECTIVES}`,
+        );
       }
-      const date = text === "now" || text === "today" ? clock.now() : new Date(text);
-      if (!Number.isFinite(date.getTime())) {
-        throw new ValueError("Invalid date");
+      // An empty format returns the input, as LiquidJS does.
+      if (fmt === "") {
+        return text;
       }
-      // JavaScript rolls 2026-02-30 over to 2026-03-02. A date that does not exist is invalid, as an
-      // unparseable one is: its canonical form must keep the date (and the time, for a timestamp).
-      if (text !== "now" && text !== "today") {
-        const digits = text.length === 10 ? 10 : 19;
-        if (date.toISOString().slice(0, digits) !== text.slice(0, digits)) {
-          throw new ValueError("Invalid date");
+      const date = parseDate(text);
+      if (date === undefined) {
+        // A value that is not a date renders empty. A literal one is the template's own text, which a save refuses.
+        if (b.literal() && text !== "") {
+          throw new ValueError(
+            `needs a valid date (YYYY-MM-DD or a UTC timestamp), got ${kindOf(value)}`,
+          );
         }
+        return "";
       }
-      const values = new Map([
-        ["%", "%"],
-        ["Y", String(date.getUTCFullYear())],
-        ["m", pad(date.getUTCMonth() + 1)],
-        ["d", pad(date.getUTCDate())],
-        ["H", pad(date.getUTCHours())],
-        ["M", pad(date.getUTCMinutes())],
-        ["S", pad(date.getUTCSeconds())],
-      ]);
-      // Every `%` now starts a valid pair, so each key is in the map.
-      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => String(values.get(key)));
-      b.charge(byteLength(out));
-      return out;
+      // Each format byte writes at most a month or weekday name of nine bytes, so the bound is charged first.
+      b.charge(byteLength(fmt) * 9);
+      return formatDate(fmt, date);
     });
     liquid.registerFilter("size", function (value: unknown) {
       return sizeOf(value, budget(this.context));

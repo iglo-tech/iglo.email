@@ -26,8 +26,8 @@ test("a template whose text cannot render is refused at save, with its cause", a
   const cases: Array<[string, string]> = [
     ["{{ 'x' | upcase: 'y' }}", "a filter has the wrong number of arguments"],
     ["{{ data.x | slice: 1, 2, 3 }}", "a filter has the wrong number of arguments"],
-    ["{{ 'x' | date: '%q' }}", "a date format has an unsupported directive"],
-    ["{{ data.when | date: '%q' }}", "a date format has an unsupported directive"],
+    ["{{ 'x' | date: '%q' }}", "a date format has the unsupported directive %q"],
+    ["{{ data.when | date: '%q' }}", "a date format has the unsupported directive %q"],
     ["{% for i in (1..2000) %}x{% endfor %}", "a range or loop is out of bounds"],
   ];
   for (const [body, cause] of cases) {
@@ -118,15 +118,15 @@ test("a campaign layout is checked for its own text, with its content slot", asy
   expect(refused.body.message).toContain("it fails to render: a filter has the wrong number");
 });
 
-test("a value failure is not refused at save: the template saves and the message without the value fails at send", async () => {
+test("a value the sample lacks is not refused at save: a message without it renders the date empty", async () => {
   const f = await open();
-  // The preview's sample has no `when`: a date of nil is a value failure, so the save accepts it.
-  const id = await f.template('<p>{{ data.when | date: "%Y" }}</p>');
+  // The preview's sample has no `when`: a date of nil is a value, so the save accepts the template.
+  const id = await f.template('<p>[{{ data.when | date: "%Y" }}]</p>');
   expect(id).toBeGreaterThan(0);
-  // A message that lacks `when` fails at send, and one that carries it renders.
+  // A message that lacks `when` renders nothing for it, and one that carries it renders.
   const email = `c-${crypto.randomUUID().slice(0, 12)}@example.test`;
   const without = await f.tx({ subscriber_emails: [email], template_id: id, data: {} });
-  expect(without.status).toBe(400);
+  expect(without.status).toBe(200);
   const withValue = await f.tx({
     subscriber_emails: [`d-${email}`],
     template_id: id,
