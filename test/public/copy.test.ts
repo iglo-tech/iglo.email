@@ -6,6 +6,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const placeholder = "00000000-0000-0000-0000-000000000000";
 const form = { "content-type": "application/x-www-form-urlencoded" };
@@ -34,7 +35,7 @@ async function sendTo(
 ) {
   const list = await f.list(name, type);
   const id = await f.subscriber(email, "Ada", { lists: [list.id] });
-  const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
   const template = await f.template(`<a href="{{ unsubscribe_url }}">unsub</a>`, name);
   const sent = await f.tx({
     subscriber_id: id,
@@ -43,7 +44,7 @@ async function sendTo(
     list_id: list.id,
     data: {},
   });
-  return { list, id, uuid, send: sent.body.data.sends[0].uuid as string };
+  return { list, id, uuid, send: asBody<string>(sent.body.data.sends[0].uuid) };
 }
 
 /** Decoded message text: unfolded headers plus a quoted-printable-decoded body. */
@@ -102,7 +103,7 @@ test("a revisited unsubscribe link says the person is already unsubscribed, and 
   const news = await f.list("News");
   const other = await f.list("Other");
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id, other.id] });
-  const adaUuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const adaUuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const template = await f.template(`<a href="{{ unsubscribe_url }}">unsub</a>`, "News");
   const sent = await f.tx({
     subscriber_id: ada,
@@ -236,7 +237,7 @@ test("the public pages carry no product credit", async () => {
 test("the data mail is branded, titled for the site, and has a text part", async () => {
   const f = await open({ siteName: "Brand Co", logoUrl: logo });
   const { send, uuid, id } = await sendTo(f, "Noa");
-  const email = (await f.json(`/api/subscribers/${id}`)).body.data.email as string;
+  const email = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.email);
 
   const exported = await f.fresh(`/m/${send}/export/${uuid}`);
   expect(exported.status).toBe(200);
@@ -321,7 +322,7 @@ test("a campaign's revisited link covers its own lists only, and its unsubscribe
   const news = await f.list("News");
   const other = await f.list("Other");
   const id = await f.subscriber("camp@example.test", "Cam", { lists: [news.id, other.id] });
-  const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
   const camp = f.deliveredCampaign([id], [news.id]);
   const page = `/subscription/${camp}/${uuid}`;
 
@@ -383,7 +384,7 @@ test("a site name and a list name with $ patterns are printed as typed, wherever
 test("the subscriber mails name the site and link it when the site URL is set, and the text part prints the link", async () => {
   const f = await open({ siteName: "Brand Co", logoUrl: logo, siteUrl: brandUrl });
   const { send, uuid, id } = await sendTo(f, "Noa");
-  const email = (await f.json(`/api/subscribers/${id}`)).body.data.email as string;
+  const email = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.email);
   expect((await f.fresh(`/m/${send}/export/${uuid}`)).status).toBe(200);
   const list = await f.list("Monthly", "public", "double");
   await f.fresh(
@@ -409,7 +410,7 @@ test("the subscriber mails name the site and link it when the site URL is set, a
 test("without a site URL the subscriber mails name the site as plain text", async () => {
   const f = await open({ siteName: "Brand Co", logoUrl: logo });
   const { send, uuid, id } = await sendTo(f, "Noa");
-  const email = (await f.json(`/api/subscribers/${id}`)).body.data.email as string;
+  const email = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.email);
   expect((await f.fresh(`/m/${send}/export/${uuid}`)).status).toBe(200);
   await f.drain();
 
@@ -470,7 +471,7 @@ test("with preferences off, a campaign's Keep my data goes to its link without ?
   const f = await open({ allowPreferences: false });
   const news = await f.list("News");
   const id = await f.subscriber("camp@example.test", "Cam", { lists: [news.id] });
-  const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
   const camp = f.deliveredCampaign([id], [news.id]);
 
   const asked = await (await f.fresh(`/subscription/${camp}/wipe/${uuid}`)).text();

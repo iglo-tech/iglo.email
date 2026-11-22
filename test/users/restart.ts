@@ -2,6 +2,7 @@
 import { createHmac } from "node:crypto";
 import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 
 const admin = { user: "restart-admin", password: "restart-synthetic-password" };
 const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
@@ -118,7 +119,7 @@ await withProduction(
     const session = cookie(first, "session"),
       csrf = cookie(first, "csrf");
     const profile = await fetch(`${origin}/api/profile`, { headers: { cookie: session } });
-    const id = ((await profile.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(profile)).data.id;
     const enabled = await fetch(`${origin}/api/users/${id}/twofa`, {
       method: "PUT",
       headers: {
@@ -139,7 +140,7 @@ await withProduction(
     const after = await fetch(`${origin}/api/profile`, { headers: { cookie: completedSession } });
     check(
       after.status === 200 &&
-        ((await after.json()) as { data: { twofa_type: string } }).data.twofa_type === "totp",
+        (await readJson<{ data: { twofa_type: string } }>(after)).data.twofa_type === "totp",
       "restart-factor-and-session-persist",
     );
     const stale = await finish(pendingLocation);

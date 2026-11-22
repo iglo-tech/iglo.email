@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 
 const root = resolve(import.meta.dir, "../..");
 const fixture = await readFile(resolve(root, "test/users/fixtures.md"), "utf-8");
@@ -68,7 +69,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         throw new Error("Session missing");
       }
       const profile = await fetch(`${origin}/api/profile`, { headers: { cookie: session } });
-      const id = ((await profile.json()) as { data: { id: number } }).data.id;
+      const id = (await readJson<{ data: { id: number } }>(profile)).data.id;
       const headers = { cookie: session, "x-csrf-token": csrf, "content-type": "application/json" };
       async function role() {
         const begin = performance.now();
@@ -83,7 +84,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         if (created.status !== 200) {
           throw new Error("Role creation failed");
         }
-        const roleId = ((await created.json()) as { data: { id: number } }).data.id;
+        const roleId = (await readJson<{ data: { id: number } }>(created)).data.id;
         const updated = await fetch(`${origin}/api/roles/users/${roleId}`, {
           method: "PUT",
           headers,

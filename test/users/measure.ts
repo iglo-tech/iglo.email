@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const fixture = await readFile(resolve(repository, "test/users/fixtures.md"), "utf-8");
@@ -109,7 +110,7 @@ async function userUpdates(origin: string, authorization: string) {
   if (created.status !== 200) {
     throw new Error("Update measurement setup failed");
   }
-  const id = ((await created.json()) as { data: { id: number } }).data.id;
+  const id = (await readJson<{ data: { id: number } }>(created)).data.id;
   if (!Number.isSafeInteger(id) || id < 1) {
     throw new Error("Update measurement ID failed");
   }
@@ -131,7 +132,7 @@ async function userUpdates(origin: string, authorization: string) {
       throw new Error("Update measurement failed");
     }
     const result = (
-      (await response.json()) as { data: { status: string; user_role: { id: number } } }
+      await readJson<{ data: { status: string; user_role: { id: number } } }>(response)
     ).data;
     if (result.status !== "enabled" || result.user_role.id !== 1) {
       throw new Error("Update measurement authority failed");

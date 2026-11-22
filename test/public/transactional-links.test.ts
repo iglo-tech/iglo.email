@@ -8,6 +8,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const brandUrl = "https://brand.example.test/";
 
@@ -28,10 +29,10 @@ const receipt = (f: PublicFixture) => f.template("<p>Your receipt</p>", "Receipt
 
 /** A transactional send to one subscriber; its page and the subscriber's UUID. */
 async function txPage(f: PublicFixture, template: number, id: number) {
-  const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
   const sent = await f.tx({ subscriber_id: id, template_id: template });
   expect(sent.status).toBe(200);
-  const send = sent.body.data.sends[0].uuid as string;
+  const send = asBody<string>(sent.body.data.sends[0].uuid);
   return { send, uuid, page: `/m/${send}/unsubscribe/${uuid}` };
 }
 
@@ -287,7 +288,7 @@ test("a transactional send cannot blocklist, and a random subscriber UUID pairs 
   const bob = await f.subscriber("bob@example.test", "Bob", { lists: [news.id] });
   await change(f, ada, "add", [news.id], "confirmed");
   const link = await txPage(f, template, ada);
-  const bobUuid = (await f.json(`/api/subscribers/${bob}`)).body.data.uuid as string;
+  const bobUuid = asBody<string>((await f.json(`/api/subscribers/${bob}`)).body.data.uuid);
 
   expect((await f.fresh(link.page, "blocklist=true")).status).toBe(404);
   expect((await f.json(`/api/subscribers/${ada}`)).body.data.status).toBe("enabled");
@@ -300,14 +301,14 @@ test("a Cc or Bcc copy of a transactional send cannot wipe the subscriber; expor
   const template = await receipt(f);
   const news = await f.list("News", "public");
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id] });
-  const uuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const sent = await f.tx({
     subscriber_id: ada,
     template_id: template,
     headers: [{ Cc: "copy@third.example.test" }, { Bcc: "hidden@third.example.test" }],
   });
   expect(sent.status).toBe(200);
-  const send = sent.body.data.sends[0].uuid as string;
+  const send = asBody<string>(sent.body.data.sends[0].uuid);
   await f.drain();
   const before = f.mailTo("ada@example.test").length;
 

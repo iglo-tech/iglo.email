@@ -29,6 +29,7 @@ import { createRenderer } from "@/templates/renderer";
 import { registerAdminRoutes } from "@/admin/routes";
 import { publicSettings } from "@/public/settings";
 import type { Message } from "@/messaging/email";
+import { asBody, readJson } from "@/test/read-body";
 
 export async function startUserFixture(
   policy: AuthPolicy = defaultAuthPolicy,
@@ -121,7 +122,10 @@ export async function startUserFixture(
       logger: app.logger,
       send: (message) => {
         outgoing.push(message);
-        return { messageId: "<fixture>", result: Promise.resolve({ status: "local" } as never) };
+        return {
+          messageId: "<fixture>",
+          result: Promise.resolve(asBody<never>({ status: "local" })),
+        };
       },
       site: () => ({
         siteName: settings.read()["app.site_name"],
@@ -254,7 +258,7 @@ export async function startUserFixture(
       return ok(true);
     });
     router.route("POST", "/fixture/role", async ({ request }) => {
-      const value = (await request.json()) as { name?: unknown; permissions?: unknown };
+      const value = await readJson<{ name?: unknown; permissions?: unknown }>(request);
       if (
         typeof value.name !== "string" ||
         !Array.isArray(value.permissions) ||
@@ -266,7 +270,7 @@ export async function startUserFixture(
         Number(
           roles.createUserRole(
             value.name,
-            value.permissions as Array<string>,
+            asBody<Array<string>>(value.permissions),
             clock.now().toISOString(),
           ),
         ),
@@ -290,9 +294,11 @@ export async function startUserFixture(
     });
     // Synthetic list provisioning is a fixture boundary, not a production list API.
     router.route("POST", "/fixture/list", () => {
-      const row = db
-        .query("INSERT INTO lists(uuid, name, type) VALUES (?, ?, 'private') RETURNING id")
-        .get(crypto.randomUUID(), "Synthetic list") as { id: bigint };
+      const row = asBody<{ id: bigint }>(
+        db
+          .query("INSERT INTO lists(uuid, name, type) VALUES (?, ?, 'private') RETURNING id")
+          .get(crypto.randomUUID(), "Synthetic list"),
+      );
       return ok(Number(row.id));
     });
     router.route(
