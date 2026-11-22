@@ -1188,7 +1188,7 @@ test("pinned HTTPS checks the configured name, sends it as SNI and refuses a bad
   const seen: Array<{ sni: unknown; host: string | undefined }> = [];
   const server = createServer({ cert, key }, (request, response) => {
     seen.push({
-      sni: (request.socket as unknown as { servername?: unknown }).servername,
+      sni: "servername" in request.socket ? request.socket.servername : undefined,
       host: request.headers.host,
     });
     request.resume();

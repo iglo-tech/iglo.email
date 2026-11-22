@@ -138,7 +138,8 @@ async function user(response: Response): Promise<UserRecord> {
     "user_role",
     "username",
   ];
-  const entry = value.data as unknown as Record<string, unknown>;
+  // A copy of the JSON object, read as a dictionary: the check also reads keys the record type does not name.
+  const entry: Record<string, unknown> = { ...value.data };
   if (
     JSON.stringify(Object.keys(entry).sort()) !== JSON.stringify(keys.sort()) ||
     typeof entry.username !== "string" ||

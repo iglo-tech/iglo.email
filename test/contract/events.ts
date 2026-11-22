@@ -176,8 +176,7 @@ export async function runEventsContract(target: {
   check(rows.length === before + 2, "batch-rows");
   const last = rows.at(-1)!;
   check(
-    last.name === "b3" &&
-      (last as unknown as { occurred_at: string }).occurred_at === "2020-01-01T00:00:00.000Z",
+    last.name === "b3" && "occurred_at" in last && last.occurred_at === "2020-01-01T00:00:00.000Z",
     "backfill-stored",
   );
   check(

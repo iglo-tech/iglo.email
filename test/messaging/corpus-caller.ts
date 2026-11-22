@@ -20,12 +20,14 @@ const server: SMTPServer = {
   email_headers: [{ "X-Fixture": "server-default", "X-Server": "server-only" }],
   from_addresses: [],
 };
-const message = JSON.parse(process.env.M21_MESSAGE!) as Message & {
+// The JSON carries the body as text; the message owner takes bytes.
+const parsed = JSON.parse(process.env.M21_MESSAGE!) as Omit<Message, "body"> & {
+  body: string;
   binary?: boolean;
   alt?: string;
   inline?: { name: string; cid: string; bytes: string };
 };
-message.body = Buffer.from(message.body as unknown as string);
+const message = { ...parsed, body: Buffer.from(parsed.body) };
 if (message.alt) {
   message.altBody = Buffer.from(message.alt);
 }

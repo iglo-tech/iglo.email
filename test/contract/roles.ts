@@ -34,7 +34,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     const response = await request(`/api/roles/${kind}`, "POST", body);
     check(response.status === 200, `role-create-${kind}`);
     const data = ((await response.json()) as { data: { id: number } }).data;
-    const row = data as unknown as Record<string, unknown>;
+    const row: Record<string, unknown> = data;
     const keys =
       kind === "users"
         ? ["created_at", "id", "lists", "name", "permissions", "type", "updated_at"]

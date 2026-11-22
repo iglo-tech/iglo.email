@@ -238,7 +238,6 @@ export default defineConfig({
         "unicorn/prefer-string-replace-all": "off",
         "no-empty": "off",
         "no-promise-executor-return": "off",
-        "quality/no-chained-type-assertions": "off",
         "quality/no-object-parameters": "off",
         "@nkzw/no-instanceof": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
@@ -269,6 +268,13 @@ export default defineConfig({
         "test/users/m14-browser-submit.js",
       ],
       rules: { "unicorn/prefer-top-level-await": "off" },
+    },
+    // Exception, for the lead to decide at review (no-chained-type-assertions). The tail probe wraps Database.prototype
+    // and JSON by method name, so each patch writes through a dictionary view of a built-in: no typed slot takes a
+    // dynamic key, and the chain is that one boundary.
+    {
+      files: ["test/perf/m61/tail-probe.ts"],
+      rules: { "quality/no-chained-type-assertions": "off" },
     },
     // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
     // (its values are typed per key, and a per-key schema is a separate design, D132), and the journal payload is
