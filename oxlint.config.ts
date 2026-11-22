@@ -476,7 +476,6 @@ export default defineConfig({
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
     // B134c: findings remain only in test/.
-    "quality/no-unknown-type-aliases": "off", // B134c
     "unicorn/prefer-native-coercion-functions": "off", // B134c
   },
 });

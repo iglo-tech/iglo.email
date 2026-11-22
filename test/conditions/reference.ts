@@ -3,7 +3,6 @@
 // written from the documented type rules rather than from the compiler.
 import type { ModelSubscriber } from "@/test/conditions/fixture";
 
-type Value = unknown;
 type Context = {
   triggerAt?: string;
   enrolledAt?: string;
@@ -13,7 +12,7 @@ type Context = {
 
 const missing = Symbol("missing");
 
-function lookup(root: Record<string, unknown>, path: string): Value | typeof missing {
+function lookup(root: Record<string, unknown>, path: string): unknown {
   let current: unknown = root;
   for (const segment of path.split(".")) {
     if (typeof current !== "object" || current === null || Array.isArray(current)) {
@@ -30,7 +29,7 @@ function lookup(root: Record<string, unknown>, path: string): Value | typeof mis
 // SQLite compares text as UTF-8 bytes.
 const utf8Compare = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 
-function equals(actual: Value | typeof missing, expected: unknown): boolean {
+function equals(actual: unknown, expected: unknown): boolean {
   if (typeof expected === "string") {
     return typeof actual === "string" && actual === expected;
   }
@@ -43,7 +42,7 @@ function equals(actual: Value | typeof missing, expected: unknown): boolean {
   return false;
 }
 
-function ordered(actual: Value | typeof missing, op: string, expected: unknown): boolean {
+function ordered(actual: unknown, op: string, expected: unknown): boolean {
   let order: number;
   if (typeof expected === "string" && typeof actual === "string") {
     order = utf8Compare(actual, expected);
