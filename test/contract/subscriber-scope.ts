@@ -1,5 +1,6 @@
 // Reference: listmonk cmd/subscribers.go and internal/auth/models.go at 6fcd95f.
 import { createConnection } from "node:net";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runSubscriberScope(target: {
@@ -20,7 +21,7 @@ export async function runSubscriberScope(target: {
   async function denied(response: Response, subject: string, label: string) {
     check(
       response.status === 403 &&
-        JSON.stringify(await response.json()) ===
+        JSON.stringify(listmonkEnvelope(await response.json())) ===
           JSON.stringify({ message: `Permission denied: ${subject}` }),
       label,
     );

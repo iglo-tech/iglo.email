@@ -1,4 +1,5 @@
 // Reference: listmonk subscriber/importer handlers at 6fcd95f; D43 validation.
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runSubscriberCouncilRevisions(target: {
@@ -78,7 +79,7 @@ export async function runSubscriberCouncilRevisions(target: {
       const response = await request(subscribers + query, "DELETE");
       check(
         response.status === 400 &&
-          JSON.stringify(await response.json()) ===
+          JSON.stringify(listmonkEnvelope(await response.json())) ===
             JSON.stringify({ message: `One or more IDs are invalid: ${detail}` }),
         `delete-context-${query}`,
       );

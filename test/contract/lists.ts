@@ -1,4 +1,5 @@
 // Reference: listmonk cmd/lists.go, internal/core/lists.go and queries/lists.sql at 6fcd95f.
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runListsContract(target: {
@@ -894,7 +895,7 @@ export async function runListsContract(target: {
             : { message: "List not found" };
       check(
         response.status === (target.mode === "reference" ? 500 : method === "DELETE" ? 200 : 400) &&
-          JSON.stringify(await response.json()) === JSON.stringify(expected),
+          JSON.stringify(listmonkEnvelope(await response.json())) === JSON.stringify(expected),
         `D34-list-int32-limit-${action}-${path.includes("?") ? "query" : "path"}`,
       );
     }

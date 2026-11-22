@@ -109,7 +109,10 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
         body,
       });
       expect(rejected.status).toBe(400);
-      expect(await rejected.json()).toEqual({ message: "Invalid fields: tags" });
+      expect(await rejected.json()).toEqual({
+        message: "Invalid fields: tags",
+        code: "invalid_fields",
+      });
       expect(((await (await request(`/api/lists/${first}`)).json()) as { data: any }).data).toEqual(
         beforeRejected,
       );

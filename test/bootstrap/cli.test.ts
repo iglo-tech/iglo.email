@@ -272,7 +272,9 @@ describe("compiled executable", () => {
       }
       const protectedHealth = await fetch(`http://127.0.0.1:${port}/api/health`);
       expect(protectedHealth.status).toBe(403);
-      expect(await protectedHealth.text()).toBe('{"message":"invalid session"}\n');
+      expect(await protectedHealth.text()).toBe(
+        '{"message":"invalid session","code":"permission_denied"}\n',
+      );
     } finally {
       expect(await shutDown(child, "SIGTERM")).toBe(0);
     }

@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { cases as corpus } from "@/test/contract/cases";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type {
   ContractCase,
   ContractTarget,
@@ -691,7 +692,12 @@ async function compareBody(
     return;
   }
   if (expected.kind === "wire") {
-    if (actual !== expected.value) {
+    // An owned error's stable `code` is the additive member listmonk's bytes lack (D129). It is
+    // removed from the bytes only when the expected body names no `code`; every other byte stays.
+    const comparable = expected.value.includes('"code"')
+      ? actual
+      : actual.replace(/,"code":"[a-z_]+"(?=[,}])/, "");
+    if (comparable !== expected.value) {
       throw new Error(`body ${JSON.stringify(actual)}; expected ${JSON.stringify(expected.value)}`);
     }
     return;
@@ -728,7 +734,13 @@ async function compareBody(
     throw new Error("Invalid JSON response");
   }
   const normalized = normalize(value, expected.volatile, bindings, numericTokens);
-  if (!isDeepStrictEqual(normalized, expected.value)) {
+  // An expected body that names no `code` compares listmonk's envelope (see envelope.ts, D129).
+  const expectsCode =
+    typeof expected.value === "object" &&
+    expected.value !== null &&
+    Object.hasOwn(expected.value, "code");
+  const comparable = expectsCode ? normalized : listmonkEnvelope(normalized);
+  if (!isDeepStrictEqual(comparable, expected.value)) {
     throw new Error(
       `JSON body ${JSON.stringify(normalized)}; expected ${JSON.stringify(expected.value)}`,
     );

@@ -1,5 +1,6 @@
 // Reference: listmonk cmd/roles.go and cmd/users.go at 6fcd95f.
 import { createHmac, randomUUID } from "node:crypto";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { AuthTarget } from "@/test/contract/auth";
 
 function check(value: unknown, name: string): asserts value {
@@ -288,7 +289,8 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       : "Error creating Role";
     check(
       duplicate.status === 500 &&
-        (await duplicate.text()) === JSON.stringify({ message: duplicateMessage }) + "\n",
+        JSON.stringify(listmonkEnvelope(JSON.parse(await duplicate.text()))) ===
+          JSON.stringify({ message: duplicateMessage }),
       "D31-duplicate-role-message",
     );
     const childDetail =
