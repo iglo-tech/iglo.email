@@ -20,6 +20,7 @@ export const MAX_WEBHOOKS = 20;
 export const DELIVERY_WINDOW_MS = 86_400_000;
 /** Finished deliveries stay this long after their last change (D70). */
 export const DELIVERY_RETENTION_MS = 30 * 86_400_000;
+const HOUR_MS = 3_600_000;
 const FIRST_RETRY_MS = 30_000;
 const MAX_RETRY_MS = 3_600_000;
 /** Delivery rows of one disabled webhook advanced per claim. */
@@ -44,11 +45,12 @@ interface Row {
   enabled: bigint;
   created_at: string;
   updated_at: string;
+  previous_secret_until: string | null;
 }
+/** The secrets are read at each attempt, not kept here, so a rotation takes effect at once. */
 export interface WebhookTarget {
   id: bigint;
   url: string;
-  secret: string;
 }
 interface DeliveryRow {
   id: bigint;
@@ -90,6 +92,7 @@ const project = (row: Row) => ({
   enabled: row.enabled === 1n,
   created_at: row.created_at,
   updated_at: row.updated_at,
+  previous_secret_until: row.previous_secret_until,
 });
 const projectDelivery = (row: DeliveryRow) => ({
   id: safeID(row.id),
@@ -113,6 +116,19 @@ const page = (rows: Array<unknown>, total: bigint, page: number, perPage: number
 /** Generated secrets are 256 random bits. */
 export const generateSecret = () => randomBytes(32).toString("hex");
 
+/** A row of `delivery-signing`, checked rather than cast: the statement's rows are untyped. */
+const isSigning = (
+  value: unknown,
+): value is { payload: string; secret: string; previous_secret: string | null } =>
+  typeof value === "object" &&
+  value !== null &&
+  "payload" in value &&
+  typeof value.payload === "string" &&
+  "secret" in value &&
+  typeof value.secret === "string" &&
+  "previous_secret" in value &&
+  (value.previous_secret === null || typeof value.previous_secret === "string");
+
 const noop = () => {};
 const retryDelay = (attempts: bigint) =>
   Math.min(FIRST_RETRY_MS * 2 ** Math.min(Number(attempts) - 1, 20), MAX_RETRY_MS);
@@ -127,6 +143,10 @@ export function createWebhookStore(db: Database, clock: Clock) {
     const deadline = Date.parse(createdAt) + DELIVERY_WINDOW_MS;
     return now >= deadline ? null : new Date(Math.min(now + delay, deadline)).toISOString();
   };
+  const read = (id: bigint) => {
+    const row = q.get("webhook-get").get(id) as Row | null;
+    return row && project(row);
+  };
   let wake = noop;
   const subscribed = (event: WebhookEvent) => q.get("webhooks-for-event").all(event).length;
   return {
@@ -140,10 +160,7 @@ export function createWebhookStore(db: Database, clock: Clock) {
       const rows = q.get("webhook-list").all(perPage, (pageNumber - 1) * perPage) as Array<Row>;
       return page(rows.map(project), count("webhook-count"), pageNumber, perPage);
     },
-    get(id: bigint) {
-      const row = q.get("webhook-get").get(id) as Row | null;
-      return row && project(row);
-    },
+    get: read,
     /** Inside the caller's write transaction. Null when the configured limit is reached. */
     create(input: WebhookInput, secret: string) {
       if (count("webhook-count") >= BigInt(MAX_WEBHOOKS)) {
@@ -173,6 +190,18 @@ export function createWebhookStore(db: Database, clock: Clock) {
           id,
         ) as Row | null;
       return row && project(row);
+    },
+    /**
+     * Make `secret` the current one. The old one signs until the overlap ends, `overlapHours` from
+     * now (0 drops it at once). Null when there is no such webhook. Inside the caller's write
+     * transaction.
+     */
+    rotate(id: bigint, secret: string, overlapHours: number) {
+      const now = clock.now();
+      const until =
+        overlapHours > 0 ? new Date(now.getTime() + overlapHours * HOUR_MS).toISOString() : null;
+      const changed = q.get("webhook-rotate").run(secret, until, now.toISOString(), id).changes;
+      return changed > 0 ? read(id) : null;
     },
     remove(id: bigint) {
       return q.get("webhook-delete").run(id).changes > 0;
@@ -247,15 +276,22 @@ export function createWebhookStore(db: Database, clock: Clock) {
       }
     },
     /**
-     * The body to send now, which a deletion may have cleared since the claim. Null when the
-     * row no longer holds this claim, as when its webhook was deleted.
+     * The body to send now, which a deletion may have cleared since the claim, and the secrets to
+     * sign it with at `now`: the current one, and the previous one while its window is open
+     * (D130). Null when the row no longer holds this claim, as when its webhook was deleted.
      */
-    claimedPayload(delivery: ClaimedDelivery) {
-      const row = q.get("delivery-claimed-payload").get(delivery.id, delivery.claimed_until) as {
-        payload: string;
-      } | null;
-      return row?.payload ?? null;
+    signing(delivery: ClaimedDelivery, now: Date) {
+      const found: unknown = q
+        .get("delivery-signing")
+        .get(delivery.id, delivery.claimed_until, now.toISOString());
+      if (!isSigning(found)) {
+        return null;
+      }
+      const { payload, secret, previous_secret: previous } = found;
+      return { payload, secrets: previous === null ? [secret] : [secret, previous] };
     },
+    /** Ends every rotated secret whose window has passed by `now` (the retention pass, D130). */
+    expireSecrets: (now: Date) => q.get("webhook-expire-secrets").all(now.toISOString()),
     /** One process owns the table: a lease that survived a restart is an abandoned attempt. */
     recover() {
       q.get("delivery-recover").run(iso());
@@ -270,9 +306,7 @@ export function createWebhookStore(db: Database, clock: Clock) {
         at = now.toISOString(),
         claimed: Array<ClaimedDelivery> = [];
       for (const hook of q.get("webhook-targets").all() as Array<
-        WebhookTarget & {
-          enabled: bigint;
-        }
+        WebhookTarget & { enabled: bigint }
       >) {
         if (hook.enabled !== 1n) {
           const held = q.get("delivery-due").all(hook.id, at, HELD_BATCH) as Array<{
@@ -297,7 +331,7 @@ export function createWebhookStore(db: Database, clock: Clock) {
           Omit<ClaimedDelivery, "target">
         >;
         for (const row of rows) {
-          claimed.push({ ...row, target: { id: hook.id, url: hook.url, secret: hook.secret } });
+          claimed.push({ ...row, target: { id: hook.id, url: hook.url } });
         }
       }
       return claimed;

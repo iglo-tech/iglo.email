@@ -126,7 +126,7 @@ function build(operation: Operation) {
     ...(operation.body
       ? {
           requestBody: {
-            required: true,
+            required: !operation.bodyOptional,
             content: {
               [operation.bodyType ?? "application/json"]: { schema: operation.body },
             },

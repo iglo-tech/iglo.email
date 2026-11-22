@@ -32,6 +32,8 @@ export interface Operation {
   /** A JSON schema, or a named media type with its schema. */
   body?: Schema;
   bodyType?: string;
+  /** The body may be left out altogether; the route then uses its defaults. */
+  bodyOptional?: boolean;
   /** The `data` of a 200 envelope, unless `answer` replaces it. */
   data?: Schema;
   /** A whole 200 answer that has no envelope, by media type. */
@@ -1386,6 +1388,19 @@ const webhooks: Array<Operation> = [
     native: true,
     permissions: ["webhooks:manage"],
     body: ref("WebhookUpdate"),
+    data: ref("Webhook"),
+    errors: [404],
+  },
+  {
+    route: "POST /api/webhooks/{id}/rotate-secret",
+    id: "rotateWebhookSecret",
+    tag: "Webhooks",
+    summary:
+      "Rotate a webhook's secret. The new secret is in this answer only. The old one keeps signing for `overlap_hours` (default 24, 0 to 168; 0 drops it at once), and a rotation ends an earlier old secret still in its window.",
+    native: true,
+    permissions: ["webhooks:manage"],
+    body: ref("WebhookRotation"),
+    bodyOptional: true,
     data: ref("Webhook"),
     errors: [404],
   },
