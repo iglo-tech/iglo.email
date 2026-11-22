@@ -524,7 +524,7 @@ export function registerSequenceRoutes(
         subject: rendered.subject,
         body: rendered.body,
         // The exact context rendered, with integers beyond 2^53 kept exact.
-        context: JSON.parse(data, (_key, item, source?: { source?: string }) =>
+        context: JSON.parse(data, (_key: string, item: unknown, source?: { source?: string }) =>
           typeof item === "number" && !Number.isSafeInteger(item) && source?.source
             ? (JSON as typeof JSON & { rawJSON(text: string): object }).rawJSON(source.source)
             : item,

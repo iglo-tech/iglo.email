@@ -257,6 +257,7 @@ export default defineConfig({
         "quality/no-unsafe-dictionary-type": "off", // B134c: test/ still has the rule's findings.
         "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
         "typescript/no-unsafe-call": "off", // B134c: test/ still calls values typed any.
+        "typescript/no-unsafe-return": "off", // B134c: test/ still returns values typed any.
       },
     },
     // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
@@ -265,6 +266,13 @@ export default defineConfig({
     {
       files: ["src/messaging/payload.ts", "src/public/settings.ts", "src/settings/validate.ts"],
       rules: { "typescript/no-unsafe-call": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-return). `main.ts` returns single settings values
+    // (`Record<string, any>`, one type per key: D132's per-key schema is a separate design). `validate.ts` binds a
+    // settings value to its shape, which is `any` by design.
+    {
+      files: ["src/main.ts", "src/settings/validate.ts"],
+      rules: { "typescript/no-unsafe-return": "off" },
     },
     // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
     // test/ still has unawaited promises; src/ and scripts/ are fixed (B134b).
@@ -294,7 +302,6 @@ export default defineConfig({
     "typescript/no-unsafe-argument": "off", // B134e
     "typescript/no-unsafe-assignment": "off", // B134e
     "typescript/no-unsafe-member-access": "off", // B134e
-    "typescript/no-unsafe-return": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
 
     // B134c: findings remain only in test/.

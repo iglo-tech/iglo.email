@@ -128,13 +128,16 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
   }
   let document: unknown;
   try {
-    document = JSON.parse(body.toString("utf-8"), (_key, value, context?: { source?: string }) => {
-      if (typeof value !== "number") {
-        return value;
-      }
-      const source = context?.source ?? "";
-      return /^-?\d+$/.test(source) ? BigInt(source) : value;
-    });
+    document = JSON.parse(
+      body.toString("utf-8"),
+      (_key, value: unknown, context?: { source?: string }) => {
+        if (typeof value !== "number") {
+          return value;
+        }
+        const source = context?.source ?? "";
+        return /^-?\d+$/.test(source) ? BigInt(source) : value;
+      },
+    );
   } catch {
     throw new HttpError(400);
   }
