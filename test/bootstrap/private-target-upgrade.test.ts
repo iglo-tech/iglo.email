@@ -129,6 +129,9 @@ async function earlierRelease(): Promise<string> {
     // Schema 23 has neither the campaign delivery reason nor its index (migration 25, B116), nor the
     // rotated-secret columns (migration 26, D130), so the upgrade must add all of them.
     db.run("DROP INDEX idx_campaign_deliveries_skipped");
+    // Schema 23 has the send status index that migration 28 replaces, so it is put back here.
+    db.run("DROP INDEX idx_sends_status_id");
+    db.run("CREATE INDEX idx_sends_outbox ON sends(status, created_at)");
     db.run("ALTER TABLE campaign_deliveries DROP COLUMN reason");
     db.run("ALTER TABLE webhooks DROP COLUMN previous_secret_until");
     db.run("ALTER TABLE webhooks DROP COLUMN previous_secret");
@@ -167,7 +170,7 @@ test("an upgrade turns the stored false on, and every restart names the refused 
   ).toBe(true);
   // The public webhook, id 2, is never named.
   expect(await stopped(upgraded.child)).toEqual([refusedLine]);
-  expect(userVersion(dataDir)).toBe(27);
+  expect(userVersion(dataDir)).toBe(28);
 
   // A restart, with the target still refused: named again.
   const restarted = await up(dataDir);
