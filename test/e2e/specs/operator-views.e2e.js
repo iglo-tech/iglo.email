@@ -224,12 +224,20 @@ test("a send with no subject says why: a refused one was never prepared, a wiped
   const skipped = page.locator(`[data-testid="send-row"][data-id="${refusedRow}"]`);
   await expect(skipped).toContainText("Not sent: blocklisted");
   await expect(skipped).not.toContainText(tx.subject);
+  // A send that did not go out has no sent time: its Sent cell is a dash, never its creation time.
+  await expect(skipped.locator('td[data-label="Sent"]')).toHaveText("—");
   const wipedRow = sent.body.data.sends[0].id;
   const wiped = page.locator(`[data-testid="send-row"][data-id="${wipedRow}"]`);
   await expect(wiped).toContainText("Removed (data wiped)");
   await expect(wiped).not.toContainText(tx.subject);
   // The template still names the send, though its payload and address are gone.
   await expect(wiped).toContainText(tx.name);
+
+  // The subscriber's own sends tab shows the same dash for a send that never went out (B127 r2).
+  await page.goto(`/admin/subscribers/${id}/sends`);
+  await expect(page.getByTestId("send-row").first().locator('td[data-label="Sent"]')).toHaveText(
+    "—",
+  );
 });
 
 test.describe("on a phone", () => {

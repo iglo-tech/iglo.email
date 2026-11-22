@@ -713,10 +713,7 @@ function Sends({ t, id }: { t: Translation; id: string }) {
                     ></span>{" "}
                     <span class="text-light" x-text="skipText(row.skip_reason)"></span>
                   </td>
-                  <td
-                    data-label={t.T("subscribers.sentAt")}
-                    x-text="niceDate(row.sent_at || row.created_at, true)"
-                  ></td>
+                  <td data-label={t.T("subscribers.sentAt")} x-text="sentText(row)"></td>
                 </tr>
               </template>
               <EmptyRow when="!activity.length" colspan={7} t={t} />

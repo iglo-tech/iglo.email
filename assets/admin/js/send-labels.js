@@ -81,3 +81,9 @@ export function exitText(reason, at = null) {
 export function sequenceOrTemplateText(send) {
   return send.sequence_name ? sequenceStepText(send) : send.template_name || '-';
 }
+
+// The "Sent" column (B127 r2): when the send went out, or a dash for a send that did not (skipped,
+// failed, queued). A send's creation time is never shown under "Sent".
+export function sentText(send) {
+  return send.sent_at ? u.niceDate(send.sent_at, true) : '—';
+}

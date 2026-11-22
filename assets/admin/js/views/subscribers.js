@@ -8,7 +8,7 @@ import {
   api, urls, config, i18n, ListTag,
 } from '@/assets/admin/js/main.js';
 import {
-  exitText, sequenceOrTemplateText, skipLabel, skipText, statusText, statusVariant, subjectText,
+  exitText, sentText, sequenceOrTemplateText, skipLabel, skipText, statusText, statusVariant, subjectText,
 } from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
@@ -224,6 +224,7 @@ function component() {
     skipText,
     skipLabel,
     sequenceOrTemplateText,
+    sentText,
     subjectText,
     exitText,
 

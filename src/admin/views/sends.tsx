@@ -181,10 +181,7 @@ export const sendsView: AdminView = ({ context }) => {
                       ></span>{" "}
                       <span class="text-light" x-text="skipText(s.skip_reason)"></span>
                     </td>
-                    <td
-                      data-label={t.T("subscribers.sentAt")}
-                      x-text="niceDate(s.sent_at || s.created_at, true)"
-                    ></td>
+                    <td data-label={t.T("subscribers.sentAt")} x-text="sentText(s)"></td>
                   </tr>
                 </template>
                 <EmptyRow when="!loading && !error && !sends.length" colspan={7} t={t} />
