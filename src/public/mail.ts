@@ -14,7 +14,7 @@ import type { Translation } from "@/i18n/i18n";
 import { createLoop } from "@/loops/loop";
 import type { Sends } from "@/messaging/sends";
 import { safeLogo } from "@/messaging/test";
-import { defaultAccent, fontStack } from "@/public/brand";
+import { defaultAccent, fontStack, mailStack } from "@/public/brand";
 import { siteText } from "@/public/layout";
 import { createThrottle } from "@/public/rate-limit";
 import type { PublicSettings } from "@/public/settings";
@@ -49,7 +49,7 @@ function brand(settings: PublicSettings) {
     // B129 (D127): the accent and the font as inline styles. The default font keeps the mail's own
     // stack, and a web font is not loaded in mail (the public pages load it, see docs/operations.md).
     brand_accent: settings.accent || defaultAccent,
-    brand_font: settings.font === "system-sans" ? "" : fontStack(settings.font),
+    brand_font: settings.font === "system-sans" ? "" : fontStack(settings.font, mailStack),
   };
 }
 export function createSubscriberMail(deps: {

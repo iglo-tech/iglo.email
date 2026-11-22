@@ -78,10 +78,16 @@ test("an accent, a Google font and the site URL reach the page's style, header a
   });
   const html = await (await f.request("/subscription/form")).text();
   expect(html).toContain("--brand-accent: #ff0066;");
-  expect(html).toContain("--brand-font: &quot;Noto Sans JP&quot;, sans-serif;");
+  // The family is prepended to the page's own stack, so a missing web font falls back to it.
+  expect(html).toContain(
+    "--brand-font: &quot;Noto Sans JP&quot;, &quot;Inter&quot;, &quot;Open Sans&quot;, &quot;Helvetica Neue&quot;, sans-serif;",
+  );
   expect(html).toContain('class="branded"');
-  // The Google stylesheet loads only because a Google family is set; the URL carries the name.
-  expect(html).toContain('href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP');
+  // The Google stylesheet loads only because a Google family is set; the URL names the family and
+  // the 400, 600 and 700 weights, so headings and the site name are not faux-bold.
+  expect(html).toContain(
+    'href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700&amp;display=swap"',
+  );
   expect(html).toContain(`src="${logo}"`);
   expect(html).toContain('<span class="site-name">Brand Co</span>');
   expect(html).toContain(`<a href="${brandUrl}">`);
@@ -114,6 +120,23 @@ test("the focus ring is the accent when it has 3:1 against white, else near-blac
   const css = await (await (await open()).request("/public/static/style.css")).text();
   expect(css).toContain(":focus-visible {\n  outline: 2px solid var(--brand-focus, #0055d4);");
   expect(css).not.toContain("outline: none");
+});
+
+test("button text is black or white by the accent's contrast, and links and form controls take the brand", async () => {
+  for (const [accent, text] of [
+    ["", "#ffffff"],
+    ["#ffeb3b", "#111"],
+    ["#009688", "#111"],
+    ["#003366", "#ffffff"],
+  ] as const) {
+    const f = await open({ accent });
+    const html = await (await f.request("/subscription/form")).text();
+    expect(html).toContain(`--brand-on-accent: ${text};`);
+  }
+  const css = await (await (await open()).request("/public/static/style.css")).text();
+  expect(css).toContain("font-family: inherit;");
+  expect(css).toContain("text-decoration-color: currentColor;");
+  expect(css).not.toContain("#abcbfb");
 });
 
 test("with no logo URL, the logo and logo_and_name headers show the name and no image (no bundled logo)", async () => {
@@ -172,8 +195,9 @@ test("the data mail carries the accent and the font inline, and no credit in eit
   expect(message).toBeDefined();
   const mail = decoded(message!.data);
   expect(mail.body).toContain('style="color: #ff0066;"');
-  // Liquid escapes the quotes of the stack, and the mail's style attribute reads them back.
-  expect(mail.body).toContain("font-family: &#34;Lora&#34;, sans-serif;");
+  // Liquid escapes the quotes of the stack, and the mail's style attribute reads them back. The
+  // family comes first, then the mail's own stack, not a bare sans-serif (B129 adopter check).
+  expect(mail.body).toContain("font-family: &#34;Lora&#34;, system-ui, -apple-system,");
   for (const word of creditWords) {
     expect(mail.body).not.toContain(word);
   }

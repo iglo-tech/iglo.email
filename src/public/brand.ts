@@ -6,9 +6,14 @@
 /** The colour links and buttons had before the brand setting (listmonk's public blue). */
 export const defaultAccent = "#0055d4";
 
+/** The public pages' stack before the brand setting (the body's own stack). */
+const publicStack = `"Inter", "Open Sans", "Helvetica Neue", sans-serif`;
+/** The stack the mails' body has before the brand setting. */
+export const mailStack = `system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`;
+
 /** The fixed font choices, with the stack each one uses. Any other font is a Google Fonts family. */
 const systemFonts = new Map<string, string>([
-  ["system-sans", `"Inter", "Open Sans", "Helvetica Neue", sans-serif`],
+  ["system-sans", publicStack],
   ["system-serif", `Georgia, "Times New Roman", serif`],
   ["system-mono", `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`],
 ]);
@@ -50,21 +55,26 @@ export function onAccentText(accent: string): string {
   return contrast(colour, "#111") >= contrast(colour, "#ffffff") ? "#111" : "#ffffff";
 }
 
-/** The font stack a page or mail uses for a stored font value. */
-export function fontStack(font: string): string {
-  return systemFonts.get(font) ?? `"${font}", sans-serif`;
+/**
+ * The font stack for a stored font value. A Google family is prepended to the stack the surface
+ * already has (`fallback`), so a missing web font falls back to that stack, not a bare sans-serif.
+ */
+export function fontStack(font: string, fallback = publicStack): string {
+  return systemFonts.get(font) ?? `"${font}", ${fallback}`;
 }
 
 /**
- * The Google Fonts stylesheet for a family, or "" for a system font. Only the public pages load
- * it: a subscriber's browser then contacts Google (the privacy note is in docs/operations.md). Mail
- * never loads it, since mail clients do not fetch web fonts reliably.
+ * The Google Fonts stylesheet for a family, or "" for a system font. It asks for the 400, 600 and
+ * 700 weights, so headings and the site name are not faux-bold. Only the public pages load it: a
+ * subscriber's browser then contacts Google (the privacy note is in docs/operations.md). Mail never
+ * loads it, since mail clients do not fetch web fonts reliably.
  */
 export function googleFontUrl(font: string): string {
   if (systemFonts.has(font)) {
     return "";
   }
-  return `https://fonts.googleapis.com/css2?${new URLSearchParams({ family: font, display: "swap" })}`;
+  const family = new URLSearchParams({ family: font }).toString();
+  return `https://fonts.googleapis.com/css2?${family}:wght@400;600;700&display=swap`;
 }
 
 /**
