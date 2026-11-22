@@ -85,6 +85,28 @@ export default defineConfig({
     // Exception, for the lead to decide at review: the Nodemailer envelope in messaging/email.ts carries address
     // objects that @types/nodemailer 8 omits, so its SDK boundary cast can only be a chained one, never a checked type.
     { files: ["src/messaging/email.ts"], rules: { "quality/no-chained-type-assertions": "off" } },
+    // Exception, for the lead to decide at review (no-unknown-returns). Each file returns a value that is `unknown`
+    // until a boundary check: parsed JSON (request bodies, stored JSON, the reviver, the OpenAPI document), form
+    // fields, a stored summary, a method chosen by name at runtime, a Liquid operator, another module's JSON response,
+    // and the writeTransaction callback, whose type argument test/db pins. A named type would be `any` at JSON.parse.
+    {
+      files: [
+        "src/analytics/reader.ts", // runtime method dispatch, serialized as JSON
+        "src/analytics/summaries.ts", // stored summary JSON
+        "src/db/transaction.ts", // F extends () => unknown; test/db/typecheck.ts pins the explicit type argument
+        "src/events/input.ts", // parsed request JSON
+        "src/mcp/generated.ts", // OpenAPI schema JSON walk
+        "src/public/form.ts", // form or JSON field values
+        "src/sequences/routes.ts", // write callback result, passed to writeTransaction's F
+        "src/server/validation.ts", // parsed request JSON
+        "src/settings/json.ts", // ordered settings JSON
+        "src/settings/xml.ts", // settings values from XML
+        "src/subscribers/routes.ts", // activity and export JSON from other modules
+        "src/templates/renderer.ts", // Liquid operator signature
+        "src/users/handlers.ts", // JSON.parse reviver
+      ],
+      rules: { "quality/no-unknown-returns": "off" },
+    },
     // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
     // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
     {
@@ -114,6 +136,7 @@ export default defineConfig({
         "typescript/no-unnecessary-type-assertion": "off",
         "@nkzw/no-instanceof": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
+        "quality/no-unknown-returns": "off", // B134c: test/ still has the rule's findings.
       },
     },
     // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
@@ -150,7 +173,6 @@ export default defineConfig({
     "typescript/unbound-method": "off", // B134d
     "quality/no-conditional-empty-object-spread": "off", // B134d
     "quality/no-known-value-widening": "off", // B134d
-    "quality/no-unknown-returns": "off", // B134d
     "quality/no-unsafe-dictionary-type": "off", // B134d
     "unicorn/consistent-function-scoping": "off", // B134d
 
