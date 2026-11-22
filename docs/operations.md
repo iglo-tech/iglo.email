@@ -409,8 +409,9 @@ pages each step follows are listed under [References](#references); they were ch
    only once, so download the credentials then. Set SMTP servers in Settings > SMTP, then send a
    test from there. The defaults are placeholders. Add a server with host
    `email-smtp.<region>.amazonaws.com`, port 587 with STARTTLS (or 465 with TLS), and those
-   credentials. Change the default `app.from_email` (`listmonk <noreply@listmonk.yoursite.com>`,
-   in `src/settings/defaults.ts`) to an address on the verified domain, and use that domain for
+   credentials. Change the default `app.from_email` (`Newsletter <noreply@example.com>`, the
+   placeholder for a new install in `src/settings/defaults.ts`) to an address on the verified
+   domain, and use that domain for
    campaign From addresses too, because SES refuses mail from any other address.
 5. **Send through a configuration set (optional).** A configuration set carries the bounce,
    complaint and other event destinations for mail sent through SES. To assign one, add
