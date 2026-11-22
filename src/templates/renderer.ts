@@ -10,7 +10,7 @@ import {
   defaultOperators,
   toValueSync,
 } from "liquidjs";
-import type { Emitter, Filter, LiquidOptions, Template } from "liquidjs";
+import type { Emitter, Filter, FilterImplOptions, LiquidOptions, Template } from "liquidjs";
 import { must } from "@/invariant";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
@@ -18,6 +18,7 @@ import { parseTemplateData } from "@/templates/data";
 import type { TemplateData } from "@/templates/data";
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 import {
+  LOOP_PRINT,
   append,
   arithmetic,
   byteLength,
@@ -155,6 +156,7 @@ export type SaveCheck =
  * these and TextError and literal faults refuse a save: any other failure depends on a value.
  */
 const refusalReasons = new Map<string, string>([
+  [LOOP_PRINT, LOOP_PRINT],
   ["Invalid filter arguments", "a filter has the wrong number of arguments"],
   ["Invalid for arguments", "a for tag has an unsupported argument"],
   ["Invalid lookup", "a property name is not allowed"],
@@ -279,7 +281,7 @@ class BoundedEmitter implements Emitter {
     private readonly limit: number,
   ) {}
   write(value: unknown) {
-    const string = scalar(value, this.budget);
+    const string = scalar(plainValue(value), this.budget);
     const n = byteLength(string);
     if (this.bytes + n > this.limit) {
       throw new Error("Output limit");
@@ -579,9 +581,16 @@ function filterFault(filter: Filter): string | undefined {
  * decides it. An argument that reads data or a variable is not a literal, and the send judges it. The walk
  * is iterative, so a deeply nested template cannot exhaust the stack, and it visits each template once.
  */
+/** An output that prints a loop object on its own (`{{ forloop }}`): a template fault whatever the data is (B135 review B1). */
+const bareLoop = /^\{\{-?\s*(?:forloop|tablerowloop)\s*-?\}\}$/;
+
 function literalFault(templates: ReadonlyArray<Template>): string | undefined {
   const pending = [...templates].reverse();
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const printed = next instanceof Output ? next.token.getText() : "";
+    if (bareLoop.test(printed)) {
+      return LOOP_PRINT;
+    }
     for (const argument of next.arguments?.() ?? []) {
       if (argument instanceof Value) {
         for (const filter of argument.filters) {
@@ -617,6 +626,34 @@ function hasContent(templates: Array<Template>): boolean {
     }
   }
   return false;
+}
+/** A filter's handler as LiquidJS registers it: `this` carries the render context and the filter's token. */
+type FilterHandler = Extract<FilterImplOptions, (...args: Array<never>) => unknown>;
+/**
+ * The value a message prints, or a filter reads (B135 review B1). A literal `nil`, `empty` or `blank` is a LiquidJS
+ * Drop whose value is nil or empty, and it is nil. Any other Drop is a loop object (`forloop`): the template's own
+ * text, refused when it is printed or read by a filter.
+ */
+function plainValue(value: unknown) {
+  if (value instanceof Drop) {
+    const text: unknown = value.valueOf();
+    if (text === null || text === "") {
+      return null;
+    }
+    throw new Error(LOOP_PRINT);
+  }
+  return value;
+}
+/** A handler that reads its input and arguments with `plainValue`. The `raw` filter reads its own input. */
+function readsText(handler: FilterHandler): FilterHandler {
+  return function (
+    this: ThisParameterType<FilterHandler>,
+    value: unknown,
+    ...args: Array<unknown>
+  ) {
+    const result: unknown = handler.apply(this, [plainValue(value), ...args.map(plainValue)]);
+    return result;
+  };
 }
 /** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
 export function createRenderer(clock: Clock, translation: Translation) {
@@ -726,7 +763,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     if (html) {
       options.outputEscape = function outputEscape(this: { context: Context }, value: unknown) {
         const b = budget(this.context);
-        const input = scalar(value, b);
+        const input = scalar(plainValue(value), b);
         b.charge(escapedBytes(input));
         return escapeHtml(input);
       };
@@ -752,12 +789,17 @@ export function createRenderer(clock: Clock, translation: Translation) {
     for (const filter of Object.keys(liquid.filters)) {
       liquid.unregisterFilter(filter);
     }
+    // Every filter registered below reads its input and arguments with `plainValue` (B135 review B1).
+    const registerFilter = liquid.registerFilter.bind(liquid);
+    liquid.registerFilter = (name: string, filter: FilterImplOptions) => {
+      registerFilter(name, typeof filter === "function" ? readsText(filter) : filter);
+    };
     liquid.registerFilter("raw", {
       raw: true,
       handler(value) {
         const b = budget(this.context);
         b.step();
-        return scalar(value, b);
+        return scalar(plainValue(value), b);
       },
     });
     liquid.registerFilter("default", function (value, fallback) {
@@ -946,7 +988,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       handler(value) {
         const b = budget(this.context);
         b.step();
-        const text = scalar(value, b);
+        const text = scalar(plainValue(value), b);
         let breaks = 0;
         for (const c of text) {
           if (c === "\n") {

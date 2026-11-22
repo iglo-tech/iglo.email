@@ -97,3 +97,31 @@ test("a list or object printed through raw is not escaped", async () => {
   expect(sent.http).toBe(200);
   expect(sent.message).toContain('{"q":"a<b"}');
 });
+
+test("a literal nil, empty or blank prints as nothing and passes through a filter as nil does", async () => {
+  const f = await open();
+  // The review's reproductions (B135 review B1): each saved and failed every send before.
+  const sent = await render(
+    f,
+    "[{{ data.x | append: nil }}][{% assign v = nil %}{{ v }}]" +
+      "[{{ data.none | default: nil }}][{{ nil }}][{{ empty }}][{{ blank }}]" +
+      "[{{ nil | default: 'fallback' }}][{{ data.x | date: nil }}]",
+    { x: "a" },
+  );
+  expect(sent.http).toBe(200);
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[a][][][][][][fallback][a]");
+});
+
+test("a loop object printed on its own is a template fault: it is refused at save, and names forloop", async () => {
+  const f = await open();
+  const template = await f.json("/api/templates", "POST", {
+    name: "loop-print",
+    type: "tx",
+    subject: "s",
+    body: "<p>{% for i in (1..2) %}{{ forloop }}{% endfor %}</p>",
+  });
+  expect(template.status).toBe(400);
+  expect(template.body.message).toContain("forloop");
+  expect(template.body.message).toContain("cannot be printed");
+});

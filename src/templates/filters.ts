@@ -19,6 +19,13 @@ export interface FilterBudget {
  */
 export class ValueError extends Error {}
 
+/**
+ * Printing a loop object (`forloop`, `tablerowloop`) is the template's own text, so a save refuses it with
+ * this message (B135 review B1). Data never carries a loop object, so the send would fail the same way.
+ */
+export const LOOP_PRINT =
+  "a loop object (forloop or tablerowloop) cannot be printed; print one of its properties, such as forloop.index";
+
 export const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
 
 /** The kind of a value, as an error names it (D134): never the value itself. */
