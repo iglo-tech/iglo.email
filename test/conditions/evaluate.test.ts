@@ -1,11 +1,11 @@
 // Evaluation of sequence conditions against a synthetic database
 // (docs/design/05-sequences.md#conditions).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
 import { compile } from "@/conditions/compile";
 import { createConditionEvaluator } from "@/conditions/evaluate";
 import type { ConditionContext } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
+import { childPids } from "@/test/host-processes";
 import { conditionsFixture } from "@/test/conditions/fixture";
 import type { ConditionsFixture, ModelSubscriber } from "@/test/conditions/fixture";
 
@@ -34,27 +34,6 @@ const failure = async (condition: unknown, ctx: ConditionContext) => {
   }
   return result.error;
 };
-
-function children(): number {
-  let count = 0;
-  for (const entry of readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) {
-      continue;
-    }
-    try {
-      if (
-        new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(
-          readFileSync(`/proc/${entry}/status`, "utf-8"),
-        )
-      ) {
-        count++;
-      }
-    } catch {
-      /* exited meanwhile */
-    }
-  }
-  return count;
-}
 
 beforeAll(async () => {
   f = await conditionsFixture({ timeoutMs: 1500, memoryBytes: 128 * 1024 * 1024 });
@@ -641,8 +620,8 @@ describe("the sql escape hatch", () => {
     );
   });
 
-  test("time and memory limits are safe errors and leave no child running", async () => {
-    const before = children();
+  test("the time limit is a safe error and leaves no child running", async () => {
+    const before = childPids().length;
     const spin =
       "(WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c) > 0";
     const started = performance.now();
@@ -653,12 +632,21 @@ describe("the sql escape hatch", () => {
       message: "query timed out",
     });
     expect(performance.now() - started).toBeLessThan(5000);
-    expect(await failure({ sql: "length(randomblob(1000000000)) > 0" }, context(rich))).toEqual({
-      kind: "memory",
-      message: "query exceeded the memory limit",
-    });
-    expect(children()).toBe(before);
+    expect(childPids().length).toBe(before);
   });
+
+  // The memory cap reads the child's resident size from /proc, which only Linux has.
+  test.skipIf(process.platform !== "linux")(
+    "the memory limit is a safe error and leaves no child running",
+    async () => {
+      const before = childPids().length;
+      expect(await failure({ sql: "length(randomblob(1000000000)) > 0" }, context(rich))).toEqual({
+        kind: "memory",
+        message: "query exceeded the memory limit",
+      });
+      expect(childPids().length).toBe(before);
+    },
+  );
 
   test("busy slots are a safe error", async () => {
     const spin =
