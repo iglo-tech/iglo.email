@@ -112,7 +112,11 @@ export function registerImportRoutes(
     } catch (error) {
       throw new HttpError(
         400,
-        i18n.Ts("globals.messages.invalidParams", "error", (error as Error).message),
+        i18n.Ts(
+          "globals.messages.invalidParams",
+          "error",
+          error instanceof Error ? error.message : String(error),
+        ),
       );
     }
     const { mode } = params;

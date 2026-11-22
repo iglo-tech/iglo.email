@@ -40,6 +40,7 @@ function parseArguments(args: Array<string>): BackupArguments {
     acknowledged: false,
   };
   const valued = { "--output": "output", "--verify": "verify", "--data-dir": "dataDir" } as const;
+  const isValuedFlag = (name: string): name is keyof typeof valued => Object.hasOwn(valued, name);
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (arg === "--help") {
@@ -53,14 +54,14 @@ function parseArguments(args: Array<string>): BackupArguments {
     } else {
       const equals = arg.indexOf("=");
       const name = equals === -1 ? arg : arg.slice(0, equals);
-      if (!Object.hasOwn(valued, name)) {
+      if (!isValuedFlag(name)) {
         throw new Error(`Unknown flag: ${name}`);
       }
       const value = equals === -1 ? args[++i] : arg.slice(equals + 1);
       if (value === undefined || value.trim() === "" || value.includes("\0")) {
         throw new Error(`${name} requires a value`);
       }
-      parsed[valued[name as keyof typeof valued]] = value;
+      parsed[valued[name]] = value;
     }
   }
   if (parsed.verify !== undefined && (parsed.output !== undefined || parsed.force)) {

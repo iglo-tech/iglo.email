@@ -75,6 +75,14 @@ export interface Inspection {
   hold: HoldRecord | null;
 }
 
+// The fs error code of a caught value: the code a property read gives, or undefined when there is none.
+function errorCode(error: unknown): string | undefined {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    return typeof error.code === "string" ? error.code : undefined;
+  }
+  return undefined;
+}
+
 function single<T>(db: Database, pragma: string): T {
   return (db.query(`PRAGMA ${pragma}`).get() as Record<string, T>)[pragma]!;
 }
@@ -85,7 +93,7 @@ function uploadedFiles(directory: string): Array<{ name: string; size: number }>
   try {
     entries = readdirSync(directory, { withFileTypes: true });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (errorCode(error) === "ENOENT") {
       return [];
     }
     throw error;
@@ -255,7 +263,7 @@ function standing(path: string): "missing" | "folder" {
   try {
     stats = lstatSync(path, { throwIfNoEntry: false });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") {
+    if (errorCode(error) !== "ENOTDIR") {
       throw error;
     }
     throw new Error(`${path} is below something that is not a folder`, { cause: error });
@@ -291,7 +299,7 @@ function followed(path: string): Stats | undefined {
   try {
     return statSync(path, { throwIfNoEntry: false });
   } catch (error) {
-    const { code } = error as NodeJS.ErrnoException;
+    const code = errorCode(error);
     if (code === "ENOTDIR") {
       throw new Error(`${path} is a symlink to a path below a file, not a folder`, {
         cause: error,
@@ -319,7 +327,7 @@ function currentAt(path: string): Stats | undefined {
   try {
     return lstatSync(path, { throwIfNoEntry: false });
   } catch (error) {
-    const { code } = error as NodeJS.ErrnoException;
+    const code = errorCode(error);
     if (code === "ENOTDIR" || code === "ELOOP") {
       return undefined;
     }
@@ -387,7 +395,7 @@ function createFolders(folders: Array<string>, made: Array<MadeFolder>): void {
       mkdirSync(folder, { mode: 0o700 });
       made.push(madeAt(folder));
     } catch (error) {
-      const { code } = error as NodeJS.ErrnoException;
+      const code = errorCode(error);
       if (code === "ENOENT") {
         throw error;
       }
@@ -438,7 +446,7 @@ function removeCreated(made: Array<MadeFolder>, warn: (message: string) => void)
       }
       rmdirSync(folder.path);
     } catch (error) {
-      const { code } = error as NodeJS.ErrnoException;
+      const code = errorCode(error);
       if (code === "ENOENT" || code === "ENOTEMPTY" || code === "EEXIST") {
         continue;
       }
@@ -461,7 +469,7 @@ function removePartial(partial: MadeFolder, warn: (message: string) => void): vo
     }
     rmSync(partial.path, { recursive: true, force: true });
   } catch (error) {
-    const { code } = error as NodeJS.ErrnoException;
+    const code = errorCode(error);
     warn(`${partial.path} is an interrupted backup and could not be removed: ${code}`);
   }
 }
@@ -540,7 +548,7 @@ function stepAside(output: string, live: Stats): string | undefined {
   try {
     renameSync(output, aside);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (errorCode(error) === "ENOENT") {
       return undefined;
     }
     throw error;
@@ -579,7 +587,7 @@ function publish(
     if (aside) {
       putBack(aside, output);
     }
-    const { code } = error as NodeJS.ErrnoException;
+    const code = errorCode(error);
     if (code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR") {
       throw new Error(`${output} already exists; pass --force to replace it`, { cause: error });
     }
@@ -631,7 +639,7 @@ function openPartial(
       // The directory is 0700 from mkdtemp: see the database file in createBackup.
       return madeAt(mkdtempSync(join(parent, PARTIAL)));
     } catch (error) {
-      const { code } = error as NodeJS.ErrnoException;
+      const code = errorCode(error);
       if (code !== "ENOENT" && code !== "ENOTDIR") {
         throw error;
       }
@@ -746,7 +754,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
           // A file the live server deleted after it was listed is skipped. Anything else missing is
           // the backup's own path, which whileMade names.
           const gone = !lstatSync(join(source, name), { throwIfNoEntry: false });
-          if ((error as NodeJS.ErrnoException).code === "ENOENT" && gone) {
+          if (errorCode(error) === "ENOENT" && gone) {
             continue;
           }
           throw error;
@@ -775,7 +783,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       sync(dirname(output));
     } catch (error) {
       // The replaced backup is kept: the new one may not be durable, so it is the one to fall back on.
-      const { code } = error as NodeJS.ErrnoException;
+      const code = errorCode(error);
       throw new Error(
         `${output} is in place, but its folder could not be synced (${code}), so it may not survive a crash; ` +
           (aside ? `the backup it replaced is kept at ${aside}; ` : "") +
@@ -787,7 +795,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       try {
         rmSync(aside, { recursive: true, force: true });
       } catch (error) {
-        const { code } = error as NodeJS.ErrnoException;
+        const code = errorCode(error);
         warn(
           `${aside} is the backup that ${output} replaced, and it could not be removed: ${code}`,
         );

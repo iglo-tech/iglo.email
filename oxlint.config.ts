@@ -258,6 +258,7 @@ export default defineConfig({
         "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
         "typescript/no-unsafe-call": "off", // B134c: test/ still calls values typed any.
         "typescript/no-unsafe-return": "off", // B134c: test/ still returns values typed any.
+        "typescript/no-unsafe-type-assertion": "off", // B134c: test/ still asserts from any and unknown.
       },
     },
     // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
@@ -354,6 +355,99 @@ export default defineConfig({
       ],
       rules: { "typescript/no-unsafe-assignment": "off" },
     },
+    // Exceptions, for the lead to decide at review (no-unsafe-type-assertion). Each file below asserts SQL result rows
+    // (`get()` and `all()` return unknown, and the row type is the query's column list: a per-query row check is a
+    // design change), request or stored JSON that its handler or validator checks, or one boundary named beside it.
+    {
+      files: [
+        "src/analytics/purge.ts", // SQL rows
+        "src/analytics/store.ts", // SQL rows
+        "src/analytics/subscriber.ts", // SQL rows
+        "src/analytics/summaries.ts", // stored summary JSON and SQL rows
+        "src/bounces/store.ts", // SQL rows
+        "src/campaigns/runner/store.ts", // SQL rows
+        "src/campaigns/store.ts", // SQL rows
+        "src/events/store.ts", // SQL rows
+        "src/lists/references.ts", // SQL rows
+        "src/lists/store.ts", // SQL rows and stored tags JSON
+        "src/media/store.ts", // SQL rows
+        "src/roles/roles.ts", // SQL rows
+        "src/sequences/enrollments.ts", // SQL rows
+        "src/sequences/store.ts", // SQL rows
+        "src/settings/store.ts", // SQL rows
+        "src/settings/stored.ts", // SQL row
+        "src/subscribers/campaign-recipients.ts", // SQL rows
+        "src/subscribers/condition-sql.ts", // SQL rows
+        "src/subscribers/list-counts.ts", // SQL rows
+        "src/subscribers/query-filter.ts", // SQL rows (EXPLAIN and schema rows)
+        "src/subscribers/query-runner.ts", // SQL rows
+        "src/subscribers/query.ts", // SQL rows
+        "src/subscribers/store.ts", // SQL rows and stored attributes JSON
+        "src/templates/store.ts", // SQL rows
+        "src/unsubscribe/tracking.ts", // SQL rows
+        "src/users/store.ts", // SQL rows
+        "src/webhooks/store.ts", // SQL rows
+      ],
+      rules: { "typescript/no-unsafe-type-assertion": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-type-assertion). Each file below asserts a request body,
+    // a stored column or a parsed payload, whose handler, validator or check reads the value before its type is used.
+    {
+      files: [
+        "src/bounces/routes.ts", // request body and bounce metadata JSON
+        "src/bounces/ses.ts", // SNS message JSON
+        "src/campaigns/input.ts", // request body JSON
+        "src/campaigns/render.ts", // stored archive metadata JSON
+        "src/campaigns/routes.ts", // request body JSON and stored JSON columns
+        "src/events/aggregate.ts", // aggregate result from a row
+        "src/events/input.ts", // event request body JSON
+        "src/events/routes.ts", // the result of an event, a union whose 200 member has no literal discriminant here
+        "src/lists/input.ts", // parsed form body JSON
+        "src/mcp/generated.ts", // MCP tool schema JSON
+        "src/mcp/tools.ts", // MCP tool arguments
+        "src/media/routes.ts", // upload body bytes and stored media meta JSON
+        "src/messaging/test.ts", // SMTP test request JSON
+        "src/openapi/document.ts", // route strings from the generated operations (the API output)
+        "src/public/form.ts", // form and JSON field values
+        "src/roles/routes.ts", // request body JSON
+        "src/sequences/input.ts", // request and stored step definition JSON
+        "src/sequences/routes.ts", // request body JSON
+        "src/settings/hold.ts", // stored hold JSON
+        "src/subscribers/export.ts", // subscriber attributes JSON
+        "src/subscribers/import/routes.ts", // request body and import JSON
+        "src/subscribers/input.ts", // subscriber request JSON
+        "src/subscribers/routes.ts", // request body JSON
+        "src/templates/data.ts", // template data JSON
+        "src/templates/input.ts", // parsed form body JSON
+        "src/templates/routes.ts", // request body JSON
+        "src/templates/sample.ts", // sample data JSON
+        "src/users/handlers.ts", // request fields checked above (type and status), and the request body
+        "src/webhooks/routes.ts", // request body JSON
+      ],
+      rules: { "typescript/no-unsafe-type-assertion": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-type-assertion). One boundary per file, named beside it.
+    {
+      files: [
+        "scripts/assets-build.ts", // a package manifest read by the build
+        "scripts/release.ts", // the JSON response of the server the release script just started
+        "src/analytics/reader.ts", // method dispatch by a name checked against a list, and a child request from the parent
+        "src/backup/snapshot.ts", // a PRAGMA row and a backup manifest read from disk
+        "src/campaigns/runner/runner.ts", // a rejected Promise.allSettled result, checked for its settlement
+        "src/captcha/captcha.ts", // captcha token parameters, checked field by field before the assertion
+        "src/conditions/compile.ts", // condition values, validated before compile
+        "src/db/instance-lock.ts", // the shape of a thrown SQLite error (code and message)
+        "src/db/transaction.ts", // the callback's result type F, pinned by test/db/typecheck.ts
+        "src/loops/loop.ts", // the claim callback's result, checked for length before use
+        "src/main.ts", // a settings value (any per key, D132)
+        "src/messaging/email.ts", // the Nodemailer envelope boundary (see the no-chained-type-assertions exception)
+        "src/public/routes.tsx", // the layout's children, typed as never by the JSX runtime (D132)
+        "src/settings/json.ts", // ordered settings JSON
+        "src/settings/validate.ts", // settings record and shapes (D132)
+        "src/templates/renderer.ts", // the Liquid context with the pinned patch's budget hooks, and a dictionary of options
+      ],
+      rules: { "typescript/no-unsafe-type-assertion": "off" },
+    },
     // Exceptions, for the lead to decide at review (no-unsafe-return). `main.ts` returns single settings values
     // (`Record<string, any>`, one type per key: D132's per-key schema is a separate design). `validate.ts` binds a
     // settings value to its shape, which is `any` by design.
@@ -383,10 +477,8 @@ export default defineConfig({
     "react/rules-of-hooks": "off", // no hooks in the in-house runtime
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
-    // B134d/B134e: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed:
-    // B134e takes the typescript/no-unsafe-* rules, B134d takes the rest.
-    "typescript/no-non-null-assertion": "off", // B134d
-    "typescript/no-unsafe-type-assertion": "off", // B134e
+    // B134f: non-null assertions remain in src/ (386 findings). The rule returns to the preset when they are replaced.
+    "typescript/no-non-null-assertion": "off", // B134f
 
     // B134c: findings remain only in test/.
     "typescript/no-require-imports": "off", // B134c

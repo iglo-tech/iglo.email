@@ -10,6 +10,9 @@ import { validPassword } from "@/users/password";
 import type { UserStore } from "@/users/store";
 import { newSecret, verifyTOTP } from "@/users/totp";
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
 function self(context: RequestContext): Identity {
   const identity = context.identity;
   if (
@@ -37,10 +40,10 @@ async function fields(request: Request): Promise<Record<string, unknown>> {
   } catch {
     throw new HttpError(400);
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new HttpError(400);
   }
-  return value as Record<string, unknown>;
+  return value;
 }
 export function createFactorHandlers(store: UserStore, auth: Authentication) {
   const generate: Handler = async (context) => {

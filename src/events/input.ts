@@ -145,14 +145,10 @@ export function parseOccurredAt(value: string): string | undefined {
   if (!m) {
     return;
   }
-  const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number) as [
-    number,
-    number,
-    number,
-    number,
-    number,
-    number,
-  ];
+  // The pattern always captures the six fields, so the defaults never apply.
+  const [year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0] = m
+    .slice(1, 7)
+    .map(Number);
   const ms = Number((m[7] ?? "").padEnd(3, "0").slice(0, 3));
   if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) {
     return;

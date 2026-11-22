@@ -34,8 +34,9 @@ function field(text: string, index: number): Set<number> | null {
   };
   const out = new Set<number>();
   for (const option of text.split(",").filter(Boolean)) {
-    const [range, step] = option.split("/") as [string, string | undefined];
-    const [first, last] = range.split("-") as [string, string | undefined];
+    // split always returns at least one part, so the empty defaults never apply.
+    const [range = "", step] = option.split("/");
+    const [first = "", last] = range.split("-");
     if (/[LW#]/.test(first) && !names.includes(first.toLowerCase())) {
       return null;
     }

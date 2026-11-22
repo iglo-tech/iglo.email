@@ -21,7 +21,9 @@ type BootstrapResult =
   | { help: false; version: false; config: BootstrapConfig };
 
 const removedFlags = new Set(["--install", "--upgrade", "--config", "--new-config"]);
-const optionNames = new Set<string>(["--port", "--host", "--data-dir", "--root-url"]);
+const optionNames: ReadonlyArray<OptionName> = ["--port", "--host", "--data-dir", "--root-url"];
+const isOptionName = (name: string): name is OptionName =>
+  optionNames.some((option) => option === name);
 
 // Bun inlines package.json at build time, so the compiled executable carries this value.
 export const versionText = `${version}\n`;
@@ -71,7 +73,7 @@ export function parseBootstrap(args: Array<string>, env: Environment): Bootstrap
       printVersion = true;
       continue;
     }
-    if (!optionNames.has(name)) {
+    if (!isOptionName(name)) {
       throw new Error(`Unknown flag: ${name}`);
     }
 
@@ -86,7 +88,7 @@ export function parseBootstrap(args: Array<string>, env: Environment): Bootstrap
       value = next;
       i++;
     }
-    options[name as OptionName] = value;
+    options[name] = value;
   }
 
   if (help) {

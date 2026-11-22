@@ -14,13 +14,9 @@ export function parseDuration(text: string): number | undefined {
   if (!m || text === "P" || text.endsWith("T")) {
     return undefined;
   }
-  const [weeks, days, hours, minutes, seconds] = m.slice(1).map((part) => Number(part ?? 0)) as [
-    number,
-    number,
-    number,
-    number,
-    number,
-  ];
+  const [weeks = 0, days = 0, hours = 0, minutes = 0, seconds = 0] = m
+    .slice(1)
+    .map((part) => Number(part ?? 0));
   const ms = ((((weeks * 7 + days) * 24 + hours) * 60 + minutes) * 60 + seconds) * 1000;
   return ms <= limits.durationDays * 86_400_000 ? ms : undefined;
 }

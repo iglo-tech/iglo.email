@@ -4,7 +4,7 @@
 import { parseDuration } from "@/conditions/duration";
 import { validPath } from "@/conditions/json";
 import { limits } from "@/conditions/types";
-import type { Condition, FieldError, Scalar, ValidationResult } from "@/conditions/types";
+import type { AttrOp, Condition, FieldError, Scalar, ValidationResult } from "@/conditions/types";
 import { checkFragment, formatSQLExp } from "@/subscribers/query-filter";
 
 const kinds = ["all", "any", "not", "event", "attr", "list", "sql"] as const;
@@ -17,7 +17,8 @@ const fieldsOf: Record<(typeof kinds)[number], ReadonlyArray<string>> = {
   list: ["list", "status"],
   sql: ["sql"],
 };
-const ops = new Set(["eq", "ne", "gt", "gte", "lt", "lte", "in", "exists"]);
+const attrOps: ReadonlyArray<AttrOp> = ["eq", "ne", "gt", "gte", "lt", "lte", "in", "exists"];
+const isAttrOp = (value: string): value is AttrOp => attrOps.some((name) => name === value);
 const subscriberStatuses = new Set(["enabled", "disabled", "blocklisted"]);
 const listStatuses = ["unconfirmed", "confirmed", "unsubscribed"];
 // Control characters are refused on purpose: the range is the check.
@@ -169,13 +170,16 @@ export function validate(
         return void fail(`${field}.status`, "must be a non-empty array of subscription statuses");
       }
       let valid = true;
+      const names: Array<string> = [];
       for (const [i, s] of status.entries()) {
-        if (typeof s !== "string" || !listStatuses.includes(s)) {
+        if (typeof s === "string" && listStatuses.includes(s)) {
+          names.push(s);
+        } else {
           fail(`${field}.status.${i}`, "unknown subscription status");
           valid = false;
         }
       }
-      return valid ? { list, status: [...(status as Array<string>)] } : undefined;
+      return valid ? { list, status: names } : undefined;
     }
     if (kind === "attr") {
       return attr(value, field);
@@ -189,7 +193,7 @@ export function validate(
     if (typeof path !== "string" || (path !== "status" && !validPath(path))) {
       return void fail(`${field}.attr`, "must be an attribute name or dotted path");
     }
-    if (typeof op !== "string" || !ops.has(op)) {
+    if (typeof op !== "string" || !isAttrOp(op)) {
       return void fail(`${field}.op`, "unknown operator");
     }
     const status = path === "status";
@@ -230,7 +234,7 @@ export function validate(
     }
     const ordered = op !== "eq" && op !== "ne";
     const v = checkStatus(scalar(value.value, `${field}.value`, ordered), `${field}.value`);
-    return v === undefined ? undefined : { attr: path, op: op as "eq", value: v };
+    return v === undefined ? undefined : { attr: path, op, value: v };
   };
 
   const event = (value: Record<string, unknown>, field: string): Condition | undefined => {
@@ -262,13 +266,13 @@ export function validate(
     const where = value.where;
     if (where !== undefined) {
       const keys = isObject(where) ? boundedKeys(where, limits.whereFields) : [];
-      if (!keys?.length) {
+      if (!isObject(where) || !keys?.length) {
         fail(`${field}.where`, `must be an object of 1 to ${limits.whereFields} data fields`);
         valid = false;
       } else {
         const copy: Record<string, Scalar> = {};
         for (const key of keys) {
-          const v = (where as Record<string, unknown>)[key];
+          const v = where[key];
           if (!key.startsWith("data.") || !validPath(key.slice(5))) {
             fail(`${field}.where`, "fields must be data.* paths");
             valid = false;
@@ -287,13 +291,13 @@ export function validate(
     const count = value.count;
     if (count !== undefined) {
       const keys = isObject(count) ? boundedKeys(count, 3) : [];
-      if (!keys?.length) {
+      if (!isObject(count) || !keys?.length) {
         fail(`${field}.count`, "must be an object with gte, lte or eq");
         valid = false;
       } else {
         const copy: Record<string, number> = {};
         for (const key of keys) {
-          const n = (count as Record<string, unknown>)[key];
+          const n = count[key];
           if (!["gte", "lte", "eq"].includes(key)) {
             fail(
               safeKey.test(key) ? `${field}.count.${key}` : `${field}.count`,

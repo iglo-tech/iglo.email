@@ -14,9 +14,19 @@ import type { Router } from "@/server/router";
 import { strHasLen } from "@/server/validation";
 import type { Authentication } from "@/users/auth";
 
-const intervals = new Set(["hour", "day", "week", "month"]);
-const campaignTypes = ["views", "clicks", "total_views", "total_clicks", "bounces"];
-const listTypes = [...campaignTypes, "subscriptions", "unsubscriptions"];
+const intervals: ReadonlyArray<Interval> = ["hour", "day", "week", "month"];
+const campaignTypes: ReadonlyArray<CountType> = [
+  "views",
+  "clicks",
+  "total_views",
+  "total_clicks",
+  "bounces",
+];
+const listTypes: ReadonlyArray<CountType> = [...campaignTypes, "subscriptions", "unsubscriptions"];
+/** Whether a query or path value is one of the names, which narrows it to them. */
+function oneOf<T extends string>(names: ReadonlyArray<T>, value: string): value is T {
+  return names.some((name) => name === value);
+}
 /** A page of the sequence list. */
 const MAX_SEQUENCE_IDS = 100;
 
@@ -78,11 +88,12 @@ const parseRange = (context: RequestContext): Range => {
   if (!strHasLen(from, 10, 30) || !strHasLen(to, 10, 30)) {
     throw invalidDates(context);
   }
-  const range = { from: parseBound(from, "up"), to: parseBound(to, "down") };
-  if (range.from === null || range.to === null) {
+  const fromBound = parseBound(from, "up");
+  const toBound = parseBound(to, "down");
+  if (fromBound === null || toBound === null) {
     throw invalidDates(context);
   }
-  return range as Range;
+  return { from: fromBound, to: toBound };
 };
 export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   const { reader, summaries, campaigns, roles, auth, settings } = deps;
@@ -187,16 +198,16 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
           counted = "total_clicks";
         }
       }
-      if (!(resource === "list" ? listTypes : campaignTypes).includes(counted)) {
+      if (!oneOf(resource === "list" ? listTypes : campaignTypes, counted)) {
         throw invalidData(context);
       }
-      if (!intervals.has(interval)) {
+      if (!oneOf(intervals, interval)) {
         throw invalidData(context);
       }
       return served(context, (signal) =>
         reader.respond(
           resource === "list" ? "listCounts" : "campaignCounts",
-          [counted as CountType, text, range, interval as Interval],
+          [counted, text, range, interval],
           signal,
         ),
       );
