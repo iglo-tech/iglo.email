@@ -699,7 +699,7 @@ async function compareBody(
   actual: string,
   expected: ExpectedBody,
   bindings: Map<string, Binding>,
-  reply: { readonly status: number; readonly mode: Mode },
+  reply: { readonly status: number; readonly mode: Mode; readonly contentType: string | null },
 ): Promise<void> {
   if (expected.kind === "public-404") {
     return comparePublic404(actual, expected);
@@ -711,12 +711,13 @@ async function compareBody(
     return;
   }
   if (expected.kind === "wire") {
-    // Only an error body may lose its `code`, and only when the expected body names none; every
-    // other byte stays, including the trailing newline and the escaping.
+    // Only a JSON error body may lose its `code`, and only when the expected body names none. A
+    // HEAD answer has no body, and a plain-text or HTML error is listmonk's own bytes (no code).
+    // Every other byte stays, including the trailing newline and the escaping.
+    const jsonError =
+      reply.status >= 400 && reply.contentType === "application/json" && actual !== "";
     const comparable =
-      expected.value.includes('"code"') || reply.status < 400
-        ? actual
-        : withoutCode(actual, reply.mode);
+      expected.value.includes('"code"') || !jsonError ? actual : withoutCode(actual, reply.mode);
     if (comparable !== expected.value) {
       throw new Error(`body ${JSON.stringify(actual)}; expected ${JSON.stringify(expected.value)}`);
     }
@@ -846,6 +847,7 @@ export async function runContract(
       await compareBody(actual.body, endpoint.expect.body, caseBindings, {
         status: actual.status,
         mode: target.mode,
+        contentType: actual.contentType,
       });
       bindings.clear();
       for (const [name, binding] of caseBindings) {

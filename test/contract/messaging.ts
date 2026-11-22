@@ -183,8 +183,9 @@ export async function runMessagingContract(target: {
       );
       assert.equal(response.status, reverse ? 200 : 500);
       if (target.mode === "normal") {
+        const body = await response.json();
         assert.deepEqual(
-          listmonkEnvelope(await response.json(), target.mode),
+          reverse ? body : listmonkEnvelope(body, target.mode),
           reverse ? { data: [] } : { message: "SMTP test failed." },
         );
       }

@@ -894,10 +894,12 @@ export async function runListsContract(target: {
           : method === "DELETE"
             ? { data: true }
             : { message: "List not found" };
+      const answer = await response.json();
       check(
         response.status === (target.mode === "reference" ? 500 : method === "DELETE" ? 200 : 400) &&
-          JSON.stringify(listmonkEnvelope(await response.json(), target.mode)) ===
-            JSON.stringify(expected),
+          JSON.stringify(
+            response.status >= 400 ? listmonkEnvelope(answer, target.mode) : answer,
+          ) === JSON.stringify(expected),
         `D34-list-int32-limit-${action}-${path.includes("?") ? "query" : "path"}`,
       );
     }
