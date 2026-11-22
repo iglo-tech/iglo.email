@@ -51,7 +51,7 @@ const cases = [
   {
     name: "plain-text",
     compile: {
-      body: "Hello {{ subscriber.name }}: {% for item in data.items %}{{ item.name | truncate: 12 }};{% endfor %}",
+      body: "Hello {{ subscriber.name }}: {% for item in data.items %}{{ item.name | upcase }};{% endfor %}",
       mode: "plain" as const,
     },
   },
