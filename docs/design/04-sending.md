@@ -179,7 +179,7 @@ Signed `POST` requests to URLs configured in settings.
 
 | Event                     | When                                                                                    |
 | ------------------------- | --------------------------------------------------------------------------------------- |
-| `subscriber.unsubscribed` | Unsubscribed from one or more lists                                                     |
+| `subscriber.unsubscribed` | Unsubscribed from one or more lists. `data.list_ids` names them; `data.suppressed` is `true` only for the public all-lists option (B130, D128), and otherwise absent |
 | `subscriber.blocklisted`  | Blocklisted by an admin, a bounce rule or the preferences page                          |
 | `subscriber.deleted`      | Deleted (including by bounce rule or data wipe)                                         |
 | `bounce.recorded`         | A bounce was stored                                                                     |

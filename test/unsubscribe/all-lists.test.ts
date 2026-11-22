@@ -80,8 +80,53 @@ test("the option unsubscribes from every list, keeps the status, and queues the 
 
   const [delivery] = await receiver.waitFor(1);
   expect(delivery!.body.event).toBe("subscriber.unsubscribed");
+  // The payload names both lists and says the option wrote a marketing suppression (D128).
+  expect([...delivery!.body.data.list_ids].sort()).toEqual([s.news, s.other].sort());
+  expect(delivery!.body.data.suppressed).toBe(true);
   const events = receiver.received.map((r) => asBody<{ event: string }>(r.body).event);
   expect(events).not.toContain("subscriber.blocklisted");
+});
+
+test("a single-list unsubscribe's webhook names that list and carries no suppressed flag", async () => {
+  const receiver = startReceiver();
+  cleanups.push(() => receiver.close());
+  const f = await open();
+  expect(
+    (
+      await f.json("/api/webhooks", "POST", {
+        url: receiver.url(),
+        events: ["subscriber.unsubscribed"],
+      })
+    ).status,
+  ).toBe(200);
+  const s = await setup(f);
+  const sent = await f.tx({
+    subscriber_id: s.id,
+    template_id: s.template,
+    kind: "marketing",
+    list_id: s.news,
+    data: { n: "1" },
+  });
+  const send = asBody<string>(sent.body.data.sends[0].uuid);
+  // The mail's link without the option: one list, the form's plain unsubscribe.
+  const response = await f.request(`/m/${send}/unsubscribe/${s.uuid}`, {
+    method: "POST",
+    headers: form,
+    body: "List-Unsubscribe=One-Click",
+  });
+  expect(response.status).toBe(200);
+  const statuses = new Map(
+    asBody<Array<{ id: number; subscription_status: string }>>(
+      (await f.json(`/api/subscribers/${s.id}`)).body.data.lists,
+    ).map((l) => [l.id, l.subscription_status]),
+  );
+  expect(statuses.get(s.news)).toBe("unsubscribed");
+  expect(statuses.get(s.other)).not.toBe("unsubscribed");
+
+  const [delivery] = await receiver.waitFor(1);
+  expect(delivery!.body.event).toBe("subscriber.unsubscribed");
+  expect(delivery!.body.data.list_ids).toEqual([s.news]);
+  expect(delivery!.body.data).not.toHaveProperty("suppressed");
 });
 
 test("after the option, a marketing send is skipped, and a transactional send still goes out", async () => {

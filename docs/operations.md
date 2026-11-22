@@ -1240,7 +1240,7 @@ The first two are what a reader can do on a public page; the last is an operator
 | A marketing sequence starting from a new event | Unchanged | Does not start (`suppressed`), and neither does a sequence with any marketing step | Does not start (`subscriber_blocklisted`) |
 | Transactional mail and transactional sequence steps | Continue | Continue. A sequence with a marketing step does not start for a later event, so its transactional steps do not send either | Stop |
 | The subscriber's status | Unchanged (`enabled`) | Unchanged (`enabled`) | `blocklisted` |
-| Webhook | `subscriber.unsubscribed`, with the list IDs | `subscriber.unsubscribed`, with the list IDs | `subscriber.blocklisted` |
+| Webhook | `subscriber.unsubscribed`, with `data.list_ids`; no `suppressed` field | `subscriber.unsubscribed`, with `data.list_ids` and `data.suppressed: true` | `subscriber.blocklisted` |
 
 - **Unsubscribe from all mailing lists** is the page's option for a person who wants no marketing at all. It is not a
   blocklist: a person who ticks it still receives receipts, payment reminders and password resets. It writes the same

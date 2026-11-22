@@ -66,9 +66,16 @@ export interface SubscriberEffects {
   /**
    * Consent that really changed, after the write: `blocklisted` when the subscriber was not
    * blocklisted before, `listIds` for memberships that were not unsubscribed before. Unlike the
-   * effects above it stays silent on repeats, so a replayed request queues no webhook.
+   * effects above it stays silent on repeats, so a replayed request queues no webhook. `suppressed`
+   * is true when the change is the public all-lists option, which also wrote a marketing suppression
+   * (B130, D128); the webhook then says so.
    */
-  changed?(change: { id: bigint; blocklisted: boolean; listIds: Array<bigint> }): void;
+  changed?(change: {
+    id: bigint;
+    blocklisted: boolean;
+    listIds: Array<bigint>;
+    suppressed?: boolean;
+  }): void;
   /** Set-based `changed` for these subscribers, called before the write it reports. */
   blocklisting?(ids: Array<bigint>): void;
   unsubscribing?(ids: Array<bigint>, listIds: Array<bigint>): void;
@@ -212,9 +219,14 @@ export function createSubscriberStore(
     memberships(id)
       .filter((m) => m.status !== "unsubscribed")
       .map((m) => m.list_id);
-  const consentChanged = (id: bigint, blocklisted: boolean, listIds: Array<bigint>) => {
+  const consentChanged = (
+    id: bigint,
+    blocklisted: boolean,
+    listIds: Array<bigint>,
+    suppressed = false,
+  ) => {
     if (blocklisted || listIds.length) {
-      effects.changed?.({ id, blocklisted, listIds });
+      effects.changed?.({ id, blocklisted, listIds, suppressed });
     }
   };
   const webhookData = (name: string, ...args: Array<string | number | null>) =>
@@ -830,7 +842,7 @@ export function createSubscriberStore(
           list_id: bigint;
         }>
       ).map((membership) => membership.list_id);
-      consentChanged(id, false, changed);
+      consentChanged(id, false, changed, true);
     },
     /**
      * record-bounce's block1. Unlike upstream it also unsubscribes every membership (D81), so
