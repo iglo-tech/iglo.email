@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Max. berichten",
     "settings.performance.slidingWindowRateHelp": "Maximum aantal berichten om te versturen binnen de periode.",
     "settings.privacy.allowBlocklist": "Afmelden van alle lijsten aanbieden",
-    "settings.privacy.allowBlocklistHelp": "Toont abonnees de optie “Meld u af voor alle mailinglijsten”. Marketingmails stoppen, terwijl transactionele mails (bonnetjes, wachtwoord resetten) blijven komen. Abonnees worden niet geblokkeerd.",
+    "settings.privacy.allowBlocklistHelp": "Toont abonnees de optie “Afmelden voor alle mailinglijsten”. Marketingmails stoppen, terwijl transactionele mails (bonnetjes, wachtwoord resetten) blijven komen. Abonnees worden niet geblokkeerd.",
     "settings.privacy.allowExport": "Exporteren toelaten",
     "settings.privacy.allowExportHelp": "Abonnees toelaten om data die over hen is verzameld te exporteren?",
     "settings.privacy.allowPrefs": "Sta voorkeur wijzigingen toe",

@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Tối đa tin nhắn",
     "settings.performance.slidingWindowRateHelp": "Số lượng tin nhắn tối đa để gửi trong khoảng thời gian cửa sổ.",
     "settings.privacy.allowBlocklist": "Cho phép hủy đăng ký khỏi tất cả danh sách",
-    "settings.privacy.allowBlocklistHelp": "Hiển thị cho người đăng ký tùy chọn “Hủy đăng ký khỏi tất cả danh sách gửi thư”. Tùy chọn này dừng thư tiếp thị, còn thư giao dịch (biên lai, đặt lại mật khẩu) vẫn được gửi. Nó không chặn người đăng ký.",
+    "settings.privacy.allowBlocklistHelp": "Hiển thị cho người đăng ký tùy chọn “Hủy đăng ký khỏi tất cả danh sách email”. Tùy chọn này dừng thư tiếp thị, còn thư giao dịch (biên lai, đặt lại mật khẩu) vẫn được gửi. Nó không chặn người đăng ký.",
     "settings.privacy.allowExport": "Cho phép xuất",
     "settings.privacy.allowExportHelp": "Cho phép người đăng ký xuất dữ liệu được thu thập trên chúng?",
     "settings.privacy.allowPrefs": "Cho phép thay đổi tùy chọn",

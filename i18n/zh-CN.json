@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "最大消息数",
     "settings.performance.slidingWindowRateHelp": "在窗口持续时间内发送的最大消息数。",
     "settings.privacy.allowBlocklist": "允许退订所有邮件列表",
-    "settings.privacy.allowBlocklistHelp": "向订阅者显示“退订所有邮件列表”选项。它会停止营销邮件，但事务性邮件（收据、密码重置）仍会照常送达。它不会将订阅者列入黑名单。",
+    "settings.privacy.allowBlocklistHelp": "向订阅者显示“从所有邮件列表中退订”选项。它会停止营销邮件，但事务性邮件（收据、密码重置）仍会照常送达。它不会将订阅者列入黑名单。",
     "settings.privacy.allowExport": "允许导出",
     "settings.privacy.allowExportHelp": "允许订阅者导出收集到的数据？",
     "settings.privacy.allowPrefs": "允许更改偏好",

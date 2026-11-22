@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Maks. meldinger",
     "settings.performance.slidingWindowRateHelp": "Maksimalt antall meldinger som kan sendes innenfor vindusperioden.",
     "settings.privacy.allowBlocklist": "Tilby avmelding fra alle lister",
-    "settings.privacy.allowBlocklistHelp": "Viser abonnenter alternativet “Meld meg av alle e-postlister”. Det stopper markedsføringsepost, mens transaksjonsepost (kvitteringer, tilbakestilling av passord) fortsatt sendes. Abonnentene blokkeres ikke.",
+    "settings.privacy.allowBlocklistHelp": "Viser abonnenter alternativet “Meld deg av alle e-postlister”. Det stopper markedsføringsepost, mens transaksjonsepost (kvitteringer, tilbakestilling av passord) fortsatt sendes. Abonnentene blokkeres ikke.",
     "settings.privacy.allowExport": "Tillat eksport",
     "settings.privacy.allowExportHelp": "Tillat abonnenter å eksportere data som er samlet inn om dem?",
     "settings.privacy.allowPrefs": "Tillat preferanseendringer",

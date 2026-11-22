@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Maks. pesan",
     "settings.performance.slidingWindowRateHelp": "Jumlah maksimal pesan untuk dikirim dalam durasi waktu bergulir.",
     "settings.privacy.allowBlocklist": "Tawarkan berhenti berlangganan dari semua daftar",
-    "settings.privacy.allowBlocklistHelp": "Menampilkan opsi “Berhenti berlangganan dari semua daftar surel” kepada pelanggan. Opsi ini menghentikan surel pemasaran mereka, sementara surel transaksional (kuitansi, atur ulang kata sandi) tetap terkirim. Opsi ini tidak memblokir mereka.",
+    "settings.privacy.allowBlocklistHelp": "Menampilkan opsi “Berhenti berlangganan dari semua daftar email” kepada pelanggan. Opsi ini menghentikan surel pemasaran mereka, sementara surel transaksional (kuitansi, atur ulang kata sandi) tetap terkirim. Opsi ini tidak memblokir mereka.",
     "settings.privacy.allowExport": "Izinkan ekspor",
     "settings.privacy.allowExportHelp": "Izinkan pelanggan mengekspor data yang dikumpulkan pada mereka?",
     "settings.privacy.allowPrefs": "Izinkan perubahan preferensi",

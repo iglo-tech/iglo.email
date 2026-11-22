@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "最大訊息數",
     "settings.performance.slidingWindowRateHelp": "在視窗持續時間內發送的最大訊息數。",
     "settings.privacy.allowBlocklist": "允許取消訂閱所有郵件清單",
-    "settings.privacy.allowBlocklistHelp": "向訂閱者顯示「取消訂閱所有郵件清單」選項。它會停止行銷郵件，但交易性郵件（收據、密碼重設）仍會照常送達。它不會把訂閱者加入封鎖名單。",
+    "settings.privacy.allowBlocklistHelp": "向訂閱者顯示「從所有郵件清單取消訂閱」選項。它會停止行銷郵件，但交易性郵件（收據、密碼重設）仍會照常送達。它不會把訂閱者加入封鎖名單。",
     "settings.privacy.allowExport": "允許匯出",
     "settings.privacy.allowExportHelp": "允許訂閱者匯出所收集的個人資料？",
     "settings.privacy.allowPrefs": "允許更改偏好",

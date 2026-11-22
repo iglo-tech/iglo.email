@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Maks. broj poruka",
     "settings.performance.slidingWindowRateHelp": "Maksimalan broj poruka koje se mogu poslati tijekom trajanja prozora.",
     "settings.privacy.allowBlocklist": "Ponudi odjavu sa svih popisa",
-    "settings.privacy.allowBlocklistHelp": "Pretplatnicima prikazuje opciju „Odjavi se sa svih mailing popisa“. Zaustavlja marketinške poruke, dok transakcijske (potvrde, poništavanje lozinke) i dalje stižu. Ne blokira pretplatnike.",
+    "settings.privacy.allowBlocklistHelp": "Pretplatnicima prikazuje opciju „Odjavi se sa svih popisa za e-poštu“. Zaustavlja marketinške poruke, dok transakcijske (potvrde, poništavanje lozinke) i dalje stižu. Ne blokira pretplatnike.",
     "settings.privacy.allowExport": "Dopusti izvoz",
     "settings.privacy.allowExportHelp": "Dopusti pretplatnicima izvoz podataka prikupljenih o njima?",
     "settings.privacy.allowPrefs": "Dopusti promjenu postavki",

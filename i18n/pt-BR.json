@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Max. mensagens",
     "settings.performance.slidingWindowRateHelp": "Número máximo de mensagens a serem enviadas dentro da duração da janela.",
     "settings.privacy.allowBlocklist": "Oferecer cancelamento de todas as listas",
-    "settings.privacy.allowBlocklistHelp": "Mostra aos inscritos a opção “Cancelar inscrição de todas as listas de e-mail”. Ela interrompe os e-mails de marketing, enquanto os transacionais (recibos, redefinição de senha) continuam sendo enviados. Não bloqueia os inscritos.",
+    "settings.privacy.allowBlocklistHelp": "Mostra aos inscritos a opção “Cancelar a inscrição em todas as listas de e-mail”. Ela interrompe os e-mails de marketing, enquanto os transacionais (recibos, redefinição de senha) continuam sendo enviados. Não bloqueia os inscritos.",
     "settings.privacy.allowExport": "Permitir exportação",
     "settings.privacy.allowExportHelp": "Permitir que os assinantes exportem os dados coletados neles?",
     "settings.privacy.allowPrefs": "Permitir mudanças de preferências",

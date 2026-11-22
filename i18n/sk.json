@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Maximálny počet správ",
     "settings.performance.slidingWindowRateHelp": "Maximálny počet správ na odoslanie v okne.",
     "settings.privacy.allowBlocklist": "Ponúknuť odhlásenie zo všetkých zoznamov",
-    "settings.privacy.allowBlocklistHelp": "Zobrazí odberateľom možnosť „Odhlásiť sa zo všetkých zoznamov“. Zastaví ich marketingové správy, transakčné správy (potvrdenia, obnovenie hesla) naďalej chodia. Neblokuje ich.",
+    "settings.privacy.allowBlocklistHelp": "Zobrazí odberateľom možnosť „Odhlásiť sa zo všetkých e-mailových zoznamov“. Zastaví ich marketingové správy, transakčné správy (potvrdenia, obnovenie hesla) naďalej chodia. Neblokuje ich.",
     "settings.privacy.allowExport": "Umožniť export",
     "settings.privacy.allowExportHelp": "Umožniť odberateľom exportovať svoje údaje?",
     "settings.privacy.allowPrefs": "Povoliť zmenu predvolieb",

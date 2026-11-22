@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Maximální počet zpráv",
     "settings.performance.slidingWindowRateHelp": "Maximální počet zpráv k odeslání v rámci doby trvání okna.",
     "settings.privacy.allowBlocklist": "Nabídnout odhlášení ze všech seznamů",
-    "settings.privacy.allowBlocklistHelp": "Odběratelům zobrazí možnost „Odhlásit se ze všech seznamů“. Zastaví jejich marketingové e-maily, transakční (potvrzení, obnovení hesla) dál chodí. Neblokuje je.",
+    "settings.privacy.allowBlocklistHelp": "Odběratelům zobrazí možnost „Odhlásit se ze všech e-mailových seznamů“. Zastaví jejich marketingové e-maily, transakční (potvrzení, obnovení hesla) dál chodí. Neblokuje je.",
     "settings.privacy.allowExport": "Umožnit export",
     "settings.privacy.allowExportHelp": "Umožnit odběratelům exportovat shromážděná data?",
     "settings.privacy.allowPrefs": "Povolit změnu předvoleb",

@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "מספר כותרות מקסימלי",
     "settings.performance.slidingWindowRateHelp": "הגבלת מספר ההודעות שנשלחות בתאוריה בזמן מינון התקופה.",
     "settings.privacy.allowBlocklist": "הצעת הסרה מכל הרשימות",
-    "settings.privacy.allowBlocklistHelp": "מציג למנויים את האפשרות „הסרה מכל רשימות התפוצה“. היא עוצרת את דיוור השיווק שלהם, בעוד שהודעות טרנזקציוניות (קבלות, איפוס סיסמה) ממשיכות להגיע. היא אינה חוסמת אותם.",
+    "settings.privacy.allowBlocklistHelp": "מציג למנויים את האפשרות „להסיר את המנוי מכל רשימות התפוצה“. היא עוצרת את דיוור השיווק שלהם, בעוד שהודעות טרנזקציוניות (קבלות, איפוס סיסמה) ממשיכות להגיע. היא אינה חוסמת אותם.",
     "settings.privacy.allowExport": "אישור בחידוש",
     "settings.privacy.allowExportHelp": "ניתן למנויים ליצור ייצוא של הנתונים שנאספו עליהם?",
     "settings.privacy.allowPrefs": "אישור שינויים של בחירות",

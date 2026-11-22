@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "최대 메시지 수",
     "settings.performance.slidingWindowRateHelp": "윈도우 기간 내 전송할 수 있는 최대 메시지 수입니다.",
     "settings.privacy.allowBlocklist": "모든 리스트에서 구독 취소 옵션 제공",
-    "settings.privacy.allowBlocklistHelp": "구독자에게 “모든 메일링 리스트에서 구독 취소” 옵션을 보여 줍니다. 마케팅 메일은 중단되지만 트랜잭션 메일(영수증, 비밀번호 재설정)은 계속 발송됩니다. 구독자를 차단하지 않습니다.",
+    "settings.privacy.allowBlocklistHelp": "구독자에게 “모든 메일링 리스트에서 구독을 취소합니다” 옵션을 보여 줍니다. 마케팅 메일은 중단되지만 트랜잭션 메일(영수증, 비밀번호 재설정)은 계속 발송됩니다. 구독자를 차단하지 않습니다.",
     "settings.privacy.allowExport": "데이터 내보내기 허용",
     "settings.privacy.allowExportHelp": "구독자가 본인에 대한 데이터를 내보낼 수 있도록 허용",
     "settings.privacy.allowPrefs": "환경설정 변경 허용",

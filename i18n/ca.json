@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Missatges màxims",
     "settings.performance.slidingWindowRateHelp": "Nombre màxim de missatges per enviar dins de la durada de la finestra.",
     "settings.privacy.allowBlocklist": "Ofereix la desubscripció de totes les llistes",
-    "settings.privacy.allowBlocklistHelp": "Mostra als subscriptors l’opció “Dona’t de baixa de totes les llistes de correu”. Atura el correu de màrqueting, però el correu transaccional (rebuts, recuperació de contrasenyes) continua arribant. No els bloqueja.",
+    "settings.privacy.allowBlocklistHelp": "Mostra als subscriptors l’opció “Dona't de baixa de totes les llistes de correu”. Atura el correu de màrqueting, però el correu transaccional (rebuts, recuperació de contrasenyes) continua arribant. No els bloqueja.",
     "settings.privacy.allowExport": "Permet l'exportació",
     "settings.privacy.allowExportHelp": "Vols permetre als subscriptors exportar les dades recollides sobre ells?",
     "settings.privacy.allowPrefs": "Permet fer canvis de les preferències",

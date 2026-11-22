@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Maks. sporočil",
     "settings.performance.slidingWindowRateHelp": "Največje število sporočil za pošiljanje znotraj trajanja okna.",
     "settings.privacy.allowBlocklist": "Ponudi odjavo iz vseh seznamov",
-    "settings.privacy.allowBlocklistHelp": "Naročnikom prikaže možnost „Odjavi se iz vseh poštnih seznamov“. Ustavi marketinška sporočila, transakcijska (potrdila, ponastavitev gesla) pa še naprej prihajajo. Naročnikov ne blokira.",
+    "settings.privacy.allowBlocklistHelp": "Naročnikom prikaže možnost „Odjavi se od vseh poštnih seznamov“. Ustavi marketinška sporočila, transakcijska (potrdila, ponastavitev gesla) pa še naprej prihajajo. Naročnikov ne blokira.",
     "settings.privacy.allowExport": "Dovoli izvoz",
     "settings.privacy.allowExportHelp": "Želite naročnikom omogočiti izvoz podatkov, zbranih na njih?",
     "settings.privacy.allowPrefs": "Dovoli spremembe nastavitev",

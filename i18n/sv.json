@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "Max. meddelanden",
     "settings.performance.slidingWindowRateHelp": "Det maximala antalet meddelanden som ska skickas inom fönsterintervallen.",
     "settings.privacy.allowBlocklist": "Erbjud avregistrering från alla listor",
-    "settings.privacy.allowBlocklistHelp": "Visar för prenumeranter alternativet “Avregistrera mig från alla e-postlistor”. Det stoppar marknadsföringsmejl, medan transaktionsmejl (kvitton, återställning av lösenord) fortsätter att skickas. Prenumeranter blockeras inte.",
+    "settings.privacy.allowBlocklistHelp": "Visar för prenumeranter alternativet “Avsluta prenumerationen på alla e-postlistor”. Det stoppar marknadsföringsmejl, medan transaktionsmejl (kvitton, återställning av lösenord) fortsätter att skickas. Prenumeranter blockeras inte.",
     "settings.privacy.allowExport": "Tillåt export",
     "settings.privacy.allowExportHelp": "Ska prenumeranter kunna exportera data som samlats in om dem?",
     "settings.privacy.allowPrefs": "Tillåt ändra preferenser",

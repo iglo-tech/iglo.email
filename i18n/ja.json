@@ -559,7 +559,7 @@
     "settings.performance.slidingWindowRate": "メッセージ最大数",
     "settings.performance.slidingWindowRateHelp": "ウィンドウ持続時間内に送信するメッセージの最大数",
     "settings.privacy.allowBlocklist": "全てのメーリングリストからの登録解除を許可",
-    "settings.privacy.allowBlocklistHelp": "購読者に「全てのメーリングリストから登録解除」の選択肢を表示します。マーケティングメールは停止されますが、トランザクションメール（領収書、パスワードの再設定など）は引き続き届きます。購読者をブロックするものではありません。",
+    "settings.privacy.allowBlocklistHelp": "購読者に「すべてのメーリングリストの配信を停止する」の選択肢を表示します。マーケティングメールは停止されますが、トランザクションメール（領収書、パスワードの再設定など）は引き続き届きます。購読者をブロックするものではありません。",
     "settings.privacy.allowExport": "エクスポートを許可する",
     "settings.privacy.allowExportHelp": "加入者が自分自身について収集されたデータをエクスポートすることを許可しますか？",
     "settings.privacy.allowPrefs": "設定変更許可をする",
