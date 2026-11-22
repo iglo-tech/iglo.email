@@ -294,6 +294,19 @@ export default defineConfig({
       ],
       rules: { "typescript/no-unsafe-argument": "off" },
     },
+    // Exceptions, for the lead to decide at review (no-unsafe-member-access). The settings record is `any` per key
+    // (D132), and the settings validator reads it field by field. The journal payload is parsed JSON that check()
+    // validates before the message is returned, and the SMTP test body is checked where it is read.
+    {
+      files: [
+        "src/main.ts",
+        "src/messaging/payload.ts",
+        "src/messaging/test.ts",
+        "src/public/settings.ts",
+        "src/settings/validate.ts",
+      ],
+      rules: { "typescript/no-unsafe-member-access": "off" },
+    },
     // Exceptions, for the lead to decide at review (no-unsafe-return). `main.ts` returns single settings values
     // (`Record<string, any>`, one type per key: D132's per-key schema is a separate design). `validate.ts` binds a
     // settings value to its shape, which is `any` by design.
@@ -327,7 +340,6 @@ export default defineConfig({
     // B134e takes the typescript/no-unsafe-* rules, B134d takes the rest.
     "typescript/no-non-null-assertion": "off", // B134d
     "typescript/no-unsafe-assignment": "off", // B134e
-    "typescript/no-unsafe-member-access": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
 
     // B134c: findings remain only in test/.
