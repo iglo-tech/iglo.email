@@ -1,5 +1,6 @@
 // D38 production-only contract: external IDs do not exist in the reference.
 import { createConnection } from "node:net";
+import { ascending } from "@/test/order";
 import type { Credentials } from "@/test/contract/types";
 
 export async function runExternalContract(target: {
@@ -234,7 +235,7 @@ export async function runExternalContract(target: {
     check(
       outcomes
         .map((o) => o.status)
-        .sort()
+        .sort(ascending)
         .join(",") === "200,409",
       "D38-external-concurrent-claim",
     );

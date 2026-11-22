@@ -1,5 +1,6 @@
 // Test-only campaign owner supplies references through HTTP; template operations use production routes.
 import { expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { provisionApiUser } from "@/test/contract/owned";
 import { startTemplateFixture } from "@/test/templates/fixture";
 
@@ -315,7 +316,7 @@ test("concurrent omitted-field updates and default/delete retain valid state", a
       call(`/api/templates/${campaign.id}/default`, "PUT"),
       call(`/api/templates/${campaign.id}`, "DELETE"),
     ]);
-    expect([set.status, del.status].sort()).toEqual([200, 400]);
+    expect([set.status, del.status].sort(ascending)).toEqual([200, 400]);
     const rows = (await (await call("/api/templates")).json()).data as Array<{
       id: number;
       is_default: boolean;

@@ -1,6 +1,7 @@
 // Behavior of GET /api/subscribers, export and query-selected actions through the HTTP API.
 // Reference: listmonk cmd/subscribers.go and queries/subscribers.sql at 6fcd95f.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { readdirSync, readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { openReadOnly } from "@/subscribers/query-runner";
@@ -407,7 +408,7 @@ describe("query-selected actions", () => {
     ).toEqual({ data: true });
     const b = await f.json(`/api/subscribers?list_id=${listB}&subscription_status=confirmed`);
     // Existing memberships are kept as they are (upstream's DO NOTHING).
-    expect(emails(b.body).sort()).toEqual(["alice", "carol"]);
+    expect(emails(b.body).sort(ascending)).toEqual(["alice", "carol"]);
     await f.json("/api/subscribers/query/lists", "PUT", {
       search: "carol",
       action: "unsubscribe",

@@ -3,6 +3,7 @@
 // scheduler, the pre-migration snapshot keeps the v4 data, and a second startup changes nothing.
 // Data is generated and arranged in the v4 shape with SQL; mail goes to a loopback sink only.
 import { Database } from "bun:sqlite";
+import { ascending } from "@/test/order";
 import { expect, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -146,7 +147,7 @@ test("migration 5 converts populated v4 tombstones once and waiting enrollments 
       await runtime.close();
     }
     const received = sink.messages.map((m) => [m.to[0], /^Subject: (.*)$/m.exec(m.data)?.[1]]);
-    expect(received.sort()).toEqual(
+    expect(received.sort(ascending)).toEqual(
       [
         ["one-b@m5.test", "one D"],
         ["one-c@m5.test", "one D"],
@@ -154,7 +155,7 @@ test("migration 5 converts populated v4 tombstones once and waiting enrollments 
         ["two-a@m5.test", "two D"],
         ["two-b@m5.test", "two D"],
         ["two-c@m5.test", "two D"],
-      ].sort(),
+      ].sort(ascending),
     );
     const snapshots = await backups(directory);
     expect(snapshots).toHaveLength(1);

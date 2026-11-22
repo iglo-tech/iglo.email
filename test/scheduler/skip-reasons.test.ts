@@ -2,6 +2,7 @@
 // carries a machine-readable reason, visible through the events, sends and subscriber APIs.
 // Observed over HTTP with the injected clock; no table is read.
 import { afterEach, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
@@ -100,8 +101,10 @@ test("a suppressed person's marketing start is named suppressed, and their trans
   // The grant adds consent, so the marketing sequence starts and its mail goes out.
   const first = await order();
   expect(
-    first.body.data.enrollments.started.map((s: { sequence_id: number }) => s.sequence_id).sort(),
-  ).toEqual([marketing.id, receipt.id].sort());
+    first.body.data.enrollments.started
+      .map((s: { sequence_id: number }) => s.sequence_id)
+      .sort(ascending),
+  ).toEqual([marketing.id, receipt.id].sort(ascending));
   const subscriber = first.body.data.subscriber_id as number;
   await f.until(async () => (await f.sendLog("&kind=marketing&status=sent")).length === 1);
 

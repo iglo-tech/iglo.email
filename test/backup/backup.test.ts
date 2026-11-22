@@ -1,5 +1,6 @@
 // `backup` through the compiled executable: snapshots of a live server, in temporary directories.
 import { Database } from "bun:sqlite";
+import { ascending } from "@/test/order";
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
@@ -78,7 +79,7 @@ const subscriberTotal = async (client: Client) => {
   const response = await client("/api/subscribers?per_page=1");
   return ((await response.json()) as { data: { total: number } }).data.total;
 };
-const names = (directory: string) => readdirSync(directory).sort();
+const names = (directory: string) => readdirSync(directory).sort(ascending);
 
 test("a backup under write load restores, opens and holds what was committed", async () => {
   const client = await live();
@@ -237,7 +238,7 @@ test("a file with no row is harmless, and a row with no file is reported and sta
   const media = await restored("/api/media");
   const rows = ((await media.json()) as { data: { results: Array<{ filename: string }> } }).data
     .results;
-  expect(rows.map(({ filename }) => filename).sort()).toEqual(["gone.txt", "kept.txt"]);
+  expect(rows.map(({ filename }) => filename).sort(ascending)).toEqual(["gone.txt", "kept.txt"]);
 });
 
 test("an upload directory named by the settings is backed up at its place", async () => {
@@ -342,7 +343,7 @@ test("overlapping backups to one path: one wins, and neither replaces the other"
   const output = join(base, "backup");
   const args = ["--data-dir", dataDir, "--output", output];
   const results = await Promise.all([runBackup(executable, args), runBackup(executable, args)]);
-  expect(results.map(({ exitCode }) => exitCode).sort()).toEqual([0, 1]);
+  expect(results.map(({ exitCode }) => exitCode).sort(ascending)).toEqual([0, 1]);
   expect(results.find(({ exitCode }) => exitCode === 1)!.stderr).toContain("--force");
   expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);

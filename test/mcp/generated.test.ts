@@ -1,5 +1,6 @@
 // B78 / D98: every authenticated API operation is an MCP tool, except the explicit exclusions.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
 import type { Production, Mailbox } from "@/test/worked-example/harness";
@@ -151,7 +152,7 @@ describe("B78 MCP covers every operation (D98)", () => {
     const names = (await listTools()).map((tool) => tool.name);
     expect(new Set(names).size).toBe(names.length);
     const expected = [...HANDWRITTEN_TOOLS, ...GENERATED.map((entry) => entry.name)];
-    expect([...names].sort()).toEqual([...expected].sort());
+    expect([...names].sort(ascending)).toEqual([...expected].sort(ascending));
     for (const hand of Object.values(HANDWRITTEN_COVERAGE)) {
       expect(names).toContain(hand);
     }

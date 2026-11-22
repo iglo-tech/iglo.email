@@ -3,6 +3,7 @@
 // POST /api/subscriber-events, /api/enrollments, the subscriber API and the public
 // unsubscribe endpoint.
 import { afterEach, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { SequencesFixture } from "@/test/sequences/fixture";
 
@@ -232,7 +233,9 @@ test("exit_on events end enrollments of paused and draft sequences too, clearing
     subscriber: { email: "y@example.test" },
     name: "refund",
   });
-  expect(refund.body.data.enrollments.ended.map((e: any) => e.id).sort()).toEqual([...ids].sort());
+  expect(refund.body.data.enrollments.ended.map((e: any) => e.id).sort(ascending)).toEqual(
+    [...ids].sort(ascending),
+  );
   // Resuming does not bring them back.
   await f.json(`/api/sequences/${exits.id}/status`, "PUT", {
     status: "active",
@@ -336,9 +339,10 @@ test("reentry never, after_exit and always", async () => {
   const always = await sequence(f, { reentry: "always" });
   const send = async (name = "order_paid") =>
     (await f.event({ subscriber: { email: "r@example.test" }, name })).body.data.enrollments;
-  const ids = (list: Array<{ sequence_id: number }>) => list.map((e) => e.sequence_id).sort();
+  const ids = (list: Array<{ sequence_id: number }>) =>
+    list.map((e) => e.sequence_id).sort(ascending);
   const first = await send();
-  expect(ids(first.started)).toEqual([never.id, afterExit.id, always.id].sort());
+  expect(ids(first.started)).toEqual([never.id, afterExit.id, always.id].sort(ascending));
   // While running: never and after_exit do nothing; always replaces the running one.
   const second = await send();
   expect(ids(second.started)).toEqual([always.id]);
@@ -353,14 +357,14 @@ test("reentry never, after_exit and always", async () => {
   // After an exit: never stays out forever, after_exit starts again.
   await send("subscription_created");
   const third = await send();
-  expect(ids(third.started)).toEqual([afterExit.id, always.id].sort());
+  expect(ids(third.started)).toEqual([afterExit.id, always.id].sort(ascending));
   const all = await enrollments(f, "?per_page=100");
   expect(
     all
       .filter((e) => e.status === "active")
       .map((e) => e.sequence_id)
-      .sort(),
-  ).toEqual([afterExit.id, always.id].sort());
+      .sort(ascending),
+  ).toEqual([afterExit.id, always.id].sort(ascending));
   expect(all.filter((e) => e.sequence_id === never.id)).toHaveLength(1);
 });
 
@@ -405,11 +409,11 @@ test("blocklisted subscribers are never enrolled; blocklisting exits every activ
   expect(await enrollments(f, "?status=active")).toHaveLength(3);
   expect((await f.json(`/api/subscribers/${id}/blocklist`, "PUT")).status).toBe(200);
   const exited = await enrollments(f, `?subscriber_id=${id}`);
-  expect(exited.map((e) => [e.sequence_id, e.status, e.exit_reason]).sort()).toEqual(
+  expect(exited.map((e) => [e.sequence_id, e.status, e.exit_reason]).sort(ascending)).toEqual(
     [
       [a.id, "exited", "blocklisted"],
       [b.id, "exited", "blocklisted"],
-    ].sort(),
+    ].sort(ascending),
   );
   expect(await enrollments(f, `?subscriber_id=${other}&status=active`)).toHaveLength(1);
   // Blocklisted subscribers are not enrolled by events or manually.
@@ -594,7 +598,9 @@ test("a repeated public unsubscribe exits enrollments started after the first on
   const restarted = (await go()).body.data.enrollments.started as Array<{
     id: number;
   }>;
-  expect(restarted.map((e: any) => e.sequence_id).sort()).toEqual([afterExit.id, always.id].sort());
+  expect(restarted.map((e: any) => e.sequence_id).sort(ascending)).toEqual(
+    [afterExit.id, always.id].sort(ascending),
+  );
   // The membership is already unsubscribed; the repeated POST still exits the new ones.
   expect((await unsubscribe()).status).toBe(200);
   for (const started of restarted) {
@@ -769,8 +775,10 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
   expect((await f.json("/api/enrollments/9999", "DELETE")).status).toBe(404);
   expect((await f.json("/api/enrollments/x")).status).toBe(400);
   expect(
-    (await enrollments(f, `?subscriber_id=${id}&status=active`)).map((e) => e.sequence_id).sort(),
-  ).toEqual([never.id, always.id].sort());
+    (await enrollments(f, `?subscriber_id=${id}&status=active`))
+      .map((e) => e.sequence_id)
+      .sort(ascending),
+  ).toEqual([never.id, always.id].sort(ascending));
 });
 
 test("enrollment list filters, paging and permissions", async () => {
@@ -834,7 +842,9 @@ test("concurrent triggers and manual enrolls never create two active enrollments
   const statuses = (await Promise.all(work)).map((r) => r.status);
   expect(statuses.filter((s) => s !== 200 && s !== 409)).toEqual([]);
   const active = await enrollments(f, `?subscriber_id=${id}&status=active&per_page=100`);
-  expect(active.map((e) => e.sequence_id).sort()).toEqual([always.id, afterExit.id].sort());
+  expect(active.map((e) => e.sequence_id).sort(ascending)).toEqual(
+    [always.id, afterExit.id].sort(ascending),
+  );
 });
 
 test("archiving exits active enrollments; archived sequences no longer trigger", async () => {

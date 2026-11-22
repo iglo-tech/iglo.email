@@ -2,6 +2,7 @@
 // Reference: listmonk queries/subscribers.sql (`~* ('***=' || search)`) and
 // internal/core/subscribers.go allowedSubQueryTables at 6fcd95f.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
 
@@ -50,7 +51,7 @@ describe("accented search", () => {
       }),
     ).toEqual({ status: 200, body: { data: true } });
     const left = await f.json("/api/subscribers?per_page=all");
-    expect(emails(left.body).sort()).toEqual(["plain", "upper"]);
+    expect(emails(left.body).sort(ascending)).toEqual(["plain", "upper"]);
   });
 });
 
@@ -73,7 +74,10 @@ describe("sharp S search", () => {
   test("ß matches capital ẞ but not SS, in the list, export and bulk actions", async () => {
     for (const search of ["Gro\u00DF", "GRO\u1E9E"]) {
       const response = await f.json(`/api/subscribers?search=${q(search)}`);
-      expect([search, emails(response.body).sort()]).toEqual([search, ["capital", "small"]]);
+      expect([search, emails(response.body).sort(ascending)]).toEqual([
+        search,
+        ["capital", "small"],
+      ]);
     }
     const csv = await (await get(f, `/api/subscribers/export?search=${q("Gro\u00DF")}`)).text();
     expect(csv).toContain("capital-s@example.test");

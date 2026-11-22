@@ -1,5 +1,6 @@
 // POST /api/tx behavior through the HTTP boundary and a loopback SMTP sink.
 import { afterEach, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { imagePng } from "@/test/media/images";
@@ -111,7 +112,10 @@ test("async returns queued rows and the outbox delivers them", async () => {
     "queued",
   ]);
   await until(() => f.sink.messages.length >= 2, f);
-  expect(f.sink.messages.map((m) => m.to[0]).sort()).toEqual(["a@example.test", "b@example.test"]);
+  expect(f.sink.messages.map((m) => m.to[0]).sort(ascending)).toEqual([
+    "a@example.test",
+    "b@example.test",
+  ]);
 });
 
 test("idempotency returns the first rows under concurrency and rejects a different request", async () => {
@@ -814,7 +818,7 @@ test("a multipart request that waits is served when room frees", async () => {
   // Wait, bounded, for both deliveries; the exact list below still rejects a duplicate.
   const delivered = (to: string) => f.sink.messages.some((m) => m.to[0] === to);
   await until(() => delivered("first@example.test") && delivered("second@example.test"), f);
-  expect(f.sink.messages.map((m) => m.to[0]).sort()).toEqual([
+  expect(f.sink.messages.map((m) => m.to[0]).sort(ascending)).toEqual([
     "first@example.test",
     "second@example.test",
   ]);

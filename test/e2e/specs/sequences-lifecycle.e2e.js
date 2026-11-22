@@ -4,6 +4,7 @@
 // time and two ticks. Each test makes its own uniquely named sequences, templates and subscribers,
 // and asserts on the sink, the API or the explorer. `sequences.e2e.js` covers the screens.
 import { expect } from "@playwright/test";
+import { ascending } from "../../order.ts";
 import { startSink } from "../../tx/sink.ts";
 import { api, mailFor, ok, requestAdmin, signIn, test, unique } from "../helpers.js";
 
@@ -362,7 +363,9 @@ test("a step whose condition is false is skipped when on_false is skip, and the 
   // `completed` is committed before the last mail is handed to the outbox, so wait for both mails.
   await arrived(who.email, first.subject);
   await arrived(who.email, last.subject);
-  expect((await subjectsTo(who.email)).sort()).toEqual([first.subject, last.subject].sort());
+  expect((await subjectsTo(who.email)).sort(ascending)).toEqual(
+    [first.subject, last.subject].sort(ascending),
+  );
 });
 
 test("a step whose condition is false exits the enrollment when on_false is exit, and nothing after it sends", async ({
