@@ -1,5 +1,6 @@
 // Request binding adapted from listmonk cmd/tx.go (SendTxMessage) and
 // models/messages.go (TxMessage) at 6fcd95f, with Go encoding/json field rules.
+import { must } from "@/invariant";
 import { HttpError } from "@/server/response";
 
 /** Matches the M2.2 prepared-payload attachment bound plus room for the data field. */
@@ -274,7 +275,7 @@ export async function readTxMessage(request: Request): Promise<TxMessage> {
     if (data.length !== 1) {
       throw new TxInputError("data");
     }
-    bindJSON(data[0]!, out);
+    bindJSON(must(data[0], "JSON data"), out);
     let total = 0;
     for (const file of form.getAll("file")) {
       // Go's form.File contains only parts with a file name.
@@ -300,7 +301,7 @@ export async function readTxMessage(request: Request): Promise<TxMessage> {
   if (!body.length) {
     return out;
   }
-  const type = header.split(";", 1)[0]!.trim().toLowerCase();
+  const type = must(header.split(";", 1)[0], "content type").trim().toLowerCase();
   if (type === "application/json") {
     let text: string;
     try {

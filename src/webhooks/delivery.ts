@@ -2,6 +2,7 @@
 // At-least-once: a row is claimed with a lease and settled after the request, outside any
 // transaction, so a crash or a lost response repeats the same `id`.
 import type { Database } from "bun:sqlite";
+import { must } from "@/invariant";
 import { createHmac } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -62,7 +63,7 @@ async function pinned(url: URL, transport: WebhookTransport) {
   if (!addresses.length || addresses.some(blocked)) {
     throw new Refused();
   }
-  const address = addresses[0]!;
+  const address = must(addresses[0], "resolved address");
   const target = new URL(url);
   target.hostname = isIP(address) === 6 ? `[${address}]` : address;
   return {
@@ -299,7 +300,7 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
           }
         })
         .finally(() => {
-          const left = active.get(id)! - 1;
+          const left = must(active.get(id), "active delivery") - 1;
           if (left) {
             active.set(id, left);
           } else {

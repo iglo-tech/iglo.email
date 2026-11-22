@@ -1,5 +1,6 @@
 // MCP tools definitions and in-process execution handlers.
 import type { App } from "@/app";
+import { must } from "@/invariant";
 import type { Router } from "@/server/router";
 import { TEMPLATE_REFERENCE } from "@/mcp/reference";
 import { DESTRUCTIVE, OPEN_WORLD, READ_ONLY, WRITE } from "@/mcp/annotations";
@@ -1215,10 +1216,10 @@ async function runTool(
         max_late: step.max_late,
       }));
       if (args.subject !== undefined) {
-        steps[index]!.subject = args.subject;
+        must(steps[index], "step").subject = args.subject;
       }
       if (args.template_id !== undefined) {
-        steps[index]!.template_id = args.template_id;
+        must(steps[index], "step").template_id = args.template_id;
       }
       // status is left out: the endpoint keeps the stored status, so a status change made since the read is not reverted.
       return invoke("PUT", `/api/sequences/${id}`, {

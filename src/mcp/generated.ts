@@ -1,6 +1,7 @@
 // MCP tools generated from the API document's operations (D98). Every documented operation that
 // no hand-written tool covers and coverage.ts does not exclude becomes one tool, so a new endpoint
 // in src/openapi/operations.ts is a tool without code here.
+import { must } from "@/invariant";
 import { operations } from "@/openapi/operations";
 import type { Operation } from "@/openapi/operations";
 import { schemas } from "@/openapi/schemas";
@@ -99,7 +100,7 @@ function inline(value: unknown, stack: Array<string> = []): unknown {
 }
 
 const pathNames = (route: string): Array<string> =>
-  [...route.matchAll(/\{(\w+)\}/g)].map(([, n]) => n!);
+  [...route.matchAll(/\{(\w+)\}/g)].map(([, n]) => must(n, "path parameter name"));
 
 /** The same defaults the document gives a path parameter (document.ts). */
 const pathSchema = (op: Operation, name: string): Schema =>
@@ -143,8 +144,8 @@ function pathArgumentError(name: string, schema: Schema, value: unknown): string
  * segment. The URL parser rewrites dot segments, so a path it changes is not the route it was built for.
  */
 function pathMatchesRoute(route: string, url: string): boolean {
-  const template = route.split(" ")[1]!;
-  const pathname = url.split("?", 1)[0]!;
+  const template = must(route.split(" ")[1], "route template");
+  const pathname = must(url.split("?", 1)[0], "URL path");
   if (new URL(pathname, "http://127.0.0.1").pathname !== pathname) {
     return false;
   }
@@ -153,7 +154,9 @@ function pathMatchesRoute(route: string, url: string): boolean {
   return (
     want.length === got.length &&
     want.every((segment, i) =>
-      segment.startsWith("{") ? got[i] !== "" && !dotSegment(got[i]!) : segment === got[i],
+      segment.startsWith("{")
+        ? got[i] !== "" && !dotSegment(must(got[i], "path segment"))
+        : segment === got[i],
     )
   );
 }
@@ -191,7 +194,7 @@ function annotationsFor(op: Operation): ToolAnnotations {
 }
 
 export function toolFor(name: string, op: Operation): ToolDefinition {
-  const route = op.route.split(" ")[1]!;
+  const route = must(op.route.split(" ")[1], "route template");
   const properties: Record<string, unknown> = {};
   const required: Array<string> = [];
 
@@ -262,7 +265,7 @@ const names = toolNames(candidates);
 
 /** One entry per generated tool, in the document's order. */
 export const GENERATED: Array<GeneratedOperation> = candidates.map((operation) => {
-  const name = names.get(operation.id)!;
+  const name = must(names.get(operation.id), "operation name");
   return { name, operation, tool: toolFor(name, operation) };
 });
 

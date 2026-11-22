@@ -3,6 +3,7 @@
 // async and the response body follow docs/design/04-sending.md; marketing unsubscribe
 // links, headers and tracking come from src/unsubscribe (M2.4).
 import { refuseWhileHeld } from "@/settings/hold";
+import { must } from "@/invariant";
 import { createHash } from "node:crypto";
 import type { Message } from "@/messaging/email";
 import type { RequestedSend, Sends } from "@/messaging/sends";
@@ -482,7 +483,9 @@ export function registerTxRoutes(
         inline.length = 0;
         m.attachments = [];
         await deps.outbox.dispatch(result.queued);
-        const current = result.ids.map((id, i) => deps.sends.summary(id) ?? result.sends[i]!);
+        const current = result.ids.map(
+          (id, i) => deps.sends.summary(id) ?? must(result.sends[i], "send summary"),
+        );
         return ok({ sends: current });
       }
       return ok({ sends: result.sends });
@@ -535,7 +538,7 @@ function validate(
     throw invalid("subscriber_emails");
   }
   for (let i = 0; i < emails.length; i++) {
-    const email = sanitizeEmail(emails[i]!);
+    const email = sanitizeEmail(must(emails[i], "email"));
     if (email === undefined || /[\r\n\0]/.test(email)) {
       throw new HttpError(400, messages.invalidEmail);
     }

@@ -1,5 +1,6 @@
 // Native: the state changes that queue outbound webhooks, called inside their own write
 // transactions (docs/design/04-sending.md#outbound-webhooks).
+import { must } from "@/invariant";
 import { HttpError } from "@/server/response";
 import type { BulkAction, BulkSpend, SubscriberStore } from "@/subscribers/store";
 import { webhookID } from "@/webhooks/store";
@@ -71,7 +72,7 @@ export function createWebhookEffects(
     subscriberEffects: {
       /** Consent that really changed; a repeated request queues nothing. */
       changed(change: { id: bigint; blocklisted: boolean; listIds: Array<bigint> }) {
-        const row = () => subscribers().get(change.id)!;
+        const row = () => must(subscribers().get(change.id), "subscriber row");
         if (change.listIds.length) {
           webhooks.queueWebhook("subscriber.unsubscribed", () => ({
             subscriber: subject(row()),
