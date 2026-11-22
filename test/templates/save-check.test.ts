@@ -27,13 +27,70 @@ test("a template whose text cannot render is refused at save, with its cause", a
     ["{{ 'x' | upcase: 'y' }}", "a filter has the wrong number of arguments"],
     ["{{ data.x | slice: 1, 2, 3 }}", "a filter has the wrong number of arguments"],
     ["{{ 'x' | date: '%q' }}", "a date format has an unsupported directive"],
+    ["{{ data.when | date: '%q' }}", "a date format has an unsupported directive"],
     ["{% for i in (1..2000) %}x{% endfor %}", "a range or loop is out of bounds"],
   ];
   for (const [body, cause] of cases) {
     const refused = await saveTx(f, body);
     expect(refused.status, body).toBe(400);
-    expect(refused.body.message, body).toContain(`it fails to render: ${cause}`);
+    expect(refused.body.message, body).toContain("it fails to render: ");
+    expect(refused.body.message, body).toContain(cause);
   }
+});
+
+test("a dynamic lookup whose key comes from data saves, and sends with the key's value", async () => {
+  const f = await open();
+  const saved = await saveTx(f, "<p>{{ data[data.which] }}</p>");
+  expect(saved.status).toBe(200);
+  const attribs = await saveTx(f, "<p>{{ subscriber.attribs[data.k] }}</p>");
+  expect(attribs.status).toBe(200);
+  const id = await f.template("<p>{{ data[data.which] }}</p>");
+  const email = `k-${crypto.randomUUID().slice(0, 12)}@example.test`;
+  const sent = await f.tx({
+    subscriber_emails: [email],
+    template_id: id,
+    data: { which: "order_id", order_id: "77" },
+  });
+  expect(sent.status).toBe(200);
+});
+
+test("a range whose bound comes from data saves; a bound that is too large fails at send", async () => {
+  const f = await open();
+  // The sample's order_id is text, and a range is not built from text: a value failure, so it saves.
+  const id = await f.template("<p>{% for i in (1..data.order_id) %}x{% endfor %}</p>");
+  expect(id).toBeGreaterThan(0);
+  const email = `r-${crypto.randomUUID().slice(0, 12)}@example.test`;
+  const big = await f.tx({
+    subscriber_emails: [email],
+    template_id: id,
+    data: { order_id: 1_000_000 },
+  });
+  expect(big.status).toBe(400);
+  expect(big.body.message).toContain("data.order_id");
+  expect(big.body.message).toContain("a range or loop is out of bounds");
+});
+
+test("a forbidden name written in the template is refused at save", async () => {
+  const f = await open();
+  const refused = await saveTx(f, '<p>{{ data["constructor"] }}</p>');
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain("a property name is not allowed");
+});
+
+test("a failure of a value names the expression and the kind of value at send", async () => {
+  const f = await open();
+  const id = await f.template("<p>{{ data.n | slice: data.k }}</p>");
+  const email = `v-${crypto.randomUUID().slice(0, 12)}@example.test`;
+  const sent = await f.tx({
+    subscriber_emails: [email],
+    template_id: id,
+    data: { n: "abc", k: "x" },
+  });
+  expect(sent.status).toBe(400);
+  expect(sent.body.message).toContain(
+    "data.n | slice: data.k: needs a whole-number argument, got text",
+  );
+  expect(sent.body.message).not.toContain("invalid template");
 });
 
 test("an update is checked the same way, and a template that saves keeps its id", async () => {

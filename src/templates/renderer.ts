@@ -15,6 +15,7 @@ import {
   downcase,
   join,
   json,
+  kindOf,
   prepend,
   replace,
   replaceFirst,
@@ -89,16 +90,37 @@ export class RenderCapacityError extends Error {
   }
 }
 /**
+ * A failure of a message's render, with the expression that failed and what was wrong (D134). `detail`
+ * names the expression and the kind of value, with no value itself, and is what a send or a preview
+ * shows. `refused` is set when the template's own text causes the failure: a save refuses it with that
+ * reason, and it is undefined for a failure that depends on a value.
+ */
+export class RenderFaultError extends Error {
+  constructor(
+    readonly detail: string,
+    readonly refused?: string,
+  ) {
+    super(detail);
+  }
+}
+/**
+ * A failure the template's own text causes, whatever data a message carries, such as a date format with
+ * an unsupported directive. Its message is the reason a save gives.
+ */
+export class TextError extends Error {}
+/**
  * The outcome of a save-time render (D134). `refused` names the cause of a template's own text in
- * words, with no template text or data; `busy` is the render capacity, not a template fault.
+ * words, with the expression that causes it; `busy` is the render capacity, not a template fault.
  */
 export type SaveCheck =
   | { readonly outcome: "ok" }
   | { readonly outcome: "refused"; readonly reason: string }
   | { readonly outcome: "busy" };
-/** The renderer's messages for the template text that causes them, and the reason a save names. */
+/**
+ * The renderer's messages for the template text that causes them, and the reason a save names. Only
+ * these and TextError and literal faults refuse a save: any other failure depends on a value.
+ */
 const refusalReasons = new Map<string, string>([
-  ["Invalid date format", "a date format has an unsupported directive"],
   ["Invalid filter arguments", "a filter has the wrong number of arguments"],
   ["Invalid for arguments", "a for tag has an unsupported argument"],
   ["Invalid lookup", "a property name is not allowed"],
@@ -106,13 +128,37 @@ const refusalReasons = new Map<string, string>([
   ["Invalid collection", "a loop collection is not supported"],
   ["Invalid translation", "a translation call is invalid"],
   ["Nesting limit", "the template nests too deeply"],
-  ["Range limit", "a range or loop is out of bounds"],
-  ["range limit exceeded", "a range or loop is out of bounds"],
   ["Render limit", "the template exceeds a render limit"],
   ["Output limit", "the template exceeds a render limit"],
   ["Work limit", "the template exceeds a render limit"],
 ]);
-/** The error under LiquidJS's wrappers, which keep the thrown one as `originalError`. */
+/**
+ * The reason a save refuses a render fault, or undefined when the failure depends on the values a
+ * message carries: those are refused, if at all, at send (D134).
+ */
+function refusal(error: unknown): string | undefined {
+  if (error instanceof RenderFaultError) {
+    return error.refused;
+  }
+  if (error instanceof TextError) {
+    return error.message;
+  }
+  const message = error instanceof Error ? error.message : "";
+  return refusalReasons.get(message);
+}
+/** The expression a template holds, without its delimiters, shortened: the author's own text, no data. */
+function expressionOf(template: Template): string {
+  const text = template.token
+    .getText()
+    .replace(/^\{[{%]-?\s*/, "")
+    .replace(/\s*-?[}%]\}$/, "")
+    .trim();
+  return text.length > 120 ? `${text.slice(0, 120)}...` : text;
+}
+/**
+ * The error under LiquidJS's wrappers, which keep the thrown one as `originalError`. A wrapper adds the
+ * position of the template to its message, so the thrown message is the one that names the failure.
+ */
 function rootError(error: unknown): unknown {
   let current = error;
   for (
@@ -125,22 +171,45 @@ function rootError(error: unknown): unknown {
   return current;
 }
 /**
- * The reason a save refuses a render error, or undefined when the failure depends on the values a
- * message carries: those are refused, if at all, at send (D134).
+ * LiquidJS's own range guard: a range whose bounds are not whole numbers, or span more than 1,024
+ * values. Its bounds come from the template or from data, so it is classified as a value failure.
  */
-function refusal(error: unknown): string | undefined {
-  const root = rootError(error);
-  if (root instanceof ValueError) {
-    return undefined;
+const RANGE_LIMIT = "range limit exceeded";
+/**
+ * The fault a template's failure becomes (D134). A value failure of an expression that read no data is a
+ * literal failure, which the template's own text causes: its detail is the reason a save refuses it.
+ * Any other failure names its expression and what was wrong, and a text cause keeps its refusal.
+ */
+function faultOf(error: unknown, template: Template, literal: boolean): RenderFaultError {
+  if (error instanceof RenderFaultError) {
+    return error;
   }
-  const message = root instanceof Error ? root.message : "";
-  return refusalReasons.get(message) ?? "the template cannot be rendered";
+  const root = rootError(error);
+  const raw = root instanceof Error ? root.message : "";
+  const message = raw === RANGE_LIMIT ? "a range or loop is out of bounds" : raw;
+  const at = expressionOf(template);
+  const detail = message === "" ? at : `${at}: ${message}`;
+  const value = root instanceof ValueError || raw === RANGE_LIMIT;
+  if (value && literal) {
+    return new RenderFaultError(detail, detail);
+  }
+  if (root instanceof TextError) {
+    return new RenderFaultError(detail, message);
+  }
+  return new RenderFaultError(detail, value ? undefined : refusalReasons.get(message));
 }
 
 class Budget {
   bytes = 0;
   work = 0;
   depth = 0;
+  /** Property reads so far, and the count when the template being rendered started (D134). */
+  reads = 0;
+  start = 0;
+  /** True while the template being rendered has read no data: its text alone decides its result. */
+  literal(): boolean {
+    return this.reads === this.start;
+  }
   charge(n: number) {
     if (!Number.isSafeInteger(n) || n < 0 || this.bytes + n > TOTAL_LIMIT) {
       throw new Error("Render limit");
@@ -454,7 +523,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       // Left to right: a percent sign is either the pair `%%` (a literal %) or one of the directives,
       // so the second percent of `%%` is not a directive of its own.
       if (byteLength(fmt) > 256 || !/^(?:[^%]|%[%YmdHMS])*$/.test(fmt)) {
-        throw new Error("Invalid date format");
+        throw new TextError("a date format has an unsupported directive");
       }
       if (
         text !== "now" &&
@@ -572,7 +641,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
       try {
         for (const template of templates) {
           b.step();
-          const value: unknown = yield template.render(ctx, out);
+          const start = b.reads;
+          b.start = start;
+          let value: unknown;
+          try {
+            value = yield template.render(ctx, out);
+          } catch (error) {
+            throw faultOf(error, template, b.reads === start);
+          }
           if (value) {
             out.write(value);
           }
@@ -750,12 +826,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
       };
       const read = ctx.readProperty.bind(ctx);
       ctx.readProperty = (object, key) => {
-        if (
-          (typeof key !== "string" && typeof key !== "number") ||
-          (typeof key === "number" && !Number.isFinite(key)) ||
-          (typeof key === "string" && dangerous.has(key))
-        ) {
+        // Every read counts, so a failure whose expression reads nothing is a literal one (D134).
+        b.reads++;
+        if (typeof key === "string" && dangerous.has(key)) {
           throw new Error("Invalid lookup");
+        }
+        // A key from data that is nil, a list or an object is a value failure, not a template fault.
+        if (typeof key !== "string" && (typeof key !== "number" || !Number.isFinite(key))) {
+          throw new ValueError(`a property name must be text or a number, got ${kindOf(key)}`);
         }
         if (object instanceof Drop && (typeof key !== "string" || !loopProperties.has(key))) {
           throw new Error("Invalid loop property");
@@ -763,11 +841,13 @@ export function createRenderer(clock: Clock, translation: Translation) {
         const value: unknown = read(object, key);
         return value;
       };
-      // Only the range evaluator uses the built-in memory limiter in our supported subset.
+      // Only the range evaluator uses the built-in memory limiter in our supported subset. Its bounds
+      // come from the template's text or from data: a literal one is refused at save, a data one fails
+      // at send (D134).
       const use = ctx.memoryLimit.use.bind(ctx.memoryLimit);
       ctx.memoryLimit.use = (n: number) => {
         if (!Number.isInteger(n) || n < 0 || n > 1024) {
-          throw new Error("Range limit");
+          throw new ValueError("a range or loop is out of bounds");
         }
         use(n);
       };

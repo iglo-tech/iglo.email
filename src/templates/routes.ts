@@ -9,7 +9,7 @@ import type { Authentication } from "@/users/auth";
 import { readTemplateBody, templateInput } from "@/templates/input";
 import { TemplateError } from "@/templates/store";
 import type { TemplateRow, TemplateStore, TemplateType } from "@/templates/store";
-import { RenderCapacityError, TemplateSourceError } from "@/templates/renderer";
+import { RenderCapacityError, RenderFaultError, TemplateSourceError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
 import {
   parseSample,
@@ -196,9 +196,14 @@ export function registerTemplateRoutes(
       if (error instanceof RenderCapacityError) {
         throw new HttpError(429, "Too many template renders in progress.");
       }
+      // A failed render names its expression and what was wrong (D134).
       throw new HttpError(
         400,
-        context.app.i18n.Ts("templates.errorRendering", "error", "invalid template"),
+        context.app.i18n.Ts(
+          "templates.errorRendering",
+          "error",
+          error instanceof RenderFaultError ? error.detail : "invalid template",
+        ),
       );
     }
   };
