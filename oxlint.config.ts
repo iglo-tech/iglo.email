@@ -131,6 +131,47 @@ export default defineConfig({
       ],
       rules: { "quality/no-known-value-widening": "off" },
     },
+    // Exceptions, for the lead to decide at review (no-conditional-empty-object-spread). Each object below reaches an
+    // API response, a webhook payload, stored JSON, an email or a rendered page, where key order is observable, so the
+    // spread stays. A separate-statement build is not used because it would move keys. Internal option objects of the
+    // SQL builders (conditions/compile, events/aggregate) would need the builders' generic parameter spelled out.
+    {
+      files: [
+        "src/admin/layout/sidebar.ts", // rendered navigation
+        "src/admin/page.tsx", // rendered page config
+        "src/admin/password-reset.tsx", // email message
+        "src/admin/system.ts", // system JSON for the admin page and API
+        "src/admin/views/user.tsx", // rendered page links
+        "src/bounces/store.ts", // bounce JSON in the API response
+        "src/campaigns/routes.ts", // email message and preview
+        "src/campaigns/runner/runner.ts", // email message (wire format) and render context
+        "src/conditions/compile.ts", // internal SQL builder options, generic parameter
+        "src/events/aggregate.ts", // internal SQL builder options, generic parameter
+        "src/mcp/generated.ts", // MCP tool JSON schema
+        "src/media/attachments.ts", // email attachment (wire format)
+        "src/messaging/email.ts", // SMTP transport and email message (wire format)
+        "src/messaging/notify.ts", // admin notification email
+        "src/messaging/payload.ts", // stored message payload JSON
+        "src/messaging/test.ts", // test email
+        "src/openapi/document.ts", // OpenAPI document (API output)
+        "src/openapi/operations.ts", // OpenAPI operations (API output)
+        "src/openapi/schemas.ts", // OpenAPI schemas (API output)
+        "src/public/mail.ts", // email and public page output
+        "src/scheduler/scheduler.ts", // email message (wire format)
+        "src/sequences/enrollments.ts", // stored enrollment JSON
+        "src/sequences/input.ts", // stored step definitions JSON
+        "src/sequences/routes.ts", // API response
+        "src/subscribers/query-routes.ts", // HTTP response headers
+        "src/subscribers/store.ts", // stored subscriber attributes JSON
+        "src/templates/renderer.ts", // template snapshot and its stored form
+        "src/templates/routes.ts", // API response
+        "src/tx/routes.ts", // API response and transactional email
+        "src/users/auth.ts", // session cookie and API response
+        "src/users/models.ts", // user API response
+        "src/webhooks/effects.ts", // webhook payload
+      ],
+      rules: { "quality/no-conditional-empty-object-spread": "off" },
+    },
     // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
     // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
     {
@@ -162,6 +203,7 @@ export default defineConfig({
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
         "quality/no-unknown-returns": "off", // B134c: test/ still has the rule's findings.
         "quality/no-known-value-widening": "off", // B134c: test/ still has the rule's findings.
+        "quality/no-conditional-empty-object-spread": "off", // B134c: test/ still has the rule's findings.
       },
     },
     // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
@@ -195,7 +237,6 @@ export default defineConfig({
     "typescript/no-unsafe-member-access": "off", // B134e
     "typescript/no-unsafe-return": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
-    "quality/no-conditional-empty-object-spread": "off", // B134d
     "quality/no-unsafe-dictionary-type": "off", // B134d
     "unicorn/consistent-function-scoping": "off", // B134d
 

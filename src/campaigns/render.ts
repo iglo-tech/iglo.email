@@ -4,7 +4,7 @@
 import type { ContentType, WritableCampaign } from "@/campaigns/store";
 import { hasTemplate } from "@/campaigns/input";
 import { createMessageBudget } from "@/templates/renderer";
-import type { RenderTracking, TemplateRenderer } from "@/templates/renderer";
+import type { RenderRequest, RenderTracking, TemplateRenderer } from "@/templates/renderer";
 
 export const dummyUUID = "00000000-0000-0000-0000-000000000000";
 /**
@@ -75,14 +75,17 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
     }
   };
   fields("subject", () => renderer.compile({ body: "", subject: c.subject, mode: "plain" }));
-  const main = fields("body", () =>
-    renderer.compile({
+  const main = fields("body", () => {
+    const request: Omit<RenderRequest, "data"> = {
       body: c.body,
       subject: c.subject,
       mode: mode(c.content_type),
-      ...(layout === undefined ? {} : { layout }),
-    }),
-  );
+    };
+    if (layout !== undefined) {
+      request.layout = layout;
+    }
+    return renderer.compile(request);
+  });
   const text = (field: "from" | "altbody" | "header", value: string) =>
     hasTemplate(value)
       ? fields(field, () => renderer.compile({ body: value, mode: "plain" }))
