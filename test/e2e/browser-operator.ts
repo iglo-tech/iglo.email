@@ -2,6 +2,8 @@
 // events, enrollments and sends, the subscriber list's exact external-ID search, an enrollment's
 // timeline, and the dashboard, at 1280 and 390 px. It prints what each screen said, and
 // E2E_SHOTS=<directory> keeps a screenshot per screen and width. `bun run e2e:browser:operator`.
+// Every agent-browser step is awaited (B127 r2): the SMTP sink runs in this process, so a blocking
+// call would stop the sink from greeting, and the server's sends would settle as unknown.
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -10,17 +12,28 @@ import { admin } from "@/test/worked-example/harness";
 
 const session = `b127-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
-function browser(...args: Array<string>): string {
-  const run = Bun.spawnSync(
+async function browser(...args: Array<string>): Promise<string> {
+  const run = Bun.spawn(
     ["agent-browser", "--session", session, "--allowed-domains", "127.0.0.1", ...args],
-    { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
+    { stdout: "pipe", stderr: "pipe" },
   );
-  if (run.exitCode !== 0) {
-    throw new Error(`agent-browser ${args[0]}: ${run.stdout} ${run.stderr.toString()}`);
+  const limit = setTimeout(() => run.kill(), 30_000);
+  try {
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(run.stdout).text(),
+      new Response(run.stderr).text(),
+      run.exited,
+    ]);
+    if (exitCode !== 0) {
+      throw new Error(`agent-browser ${args[0]}: ${stdout} ${stderr}`);
+    }
+    return stdout.trim();
+  } finally {
+    clearTimeout(limit);
   }
-  return run.stdout.toString().trim();
 }
-const value = (expression: string): unknown => JSON.parse(browser("eval", expression));
+const value = async (expression: string): Promise<unknown> =>
+  JSON.parse(await browser("eval", expression));
 const see = (label: string, observed: unknown) =>
   console.log(`${label}: ${JSON.stringify(observed)}`);
 const text = (selector: string) =>
@@ -87,30 +100,30 @@ const seed = `(async () => {
 
 process.exitCode = await withStack(async ({ origin, dataDir, errors }) => {
   // Each screen at a width; the layout must not scroll sideways at 390 px.
-  const visit = (path: string, name: string, width: number) => {
-    browser("set", "viewport", String(width), width === 390 ? "844" : "900");
-    browser("open", `${origin}${path}`);
-    settle();
-    browser("wait", "800");
-    see(`${name} ${width}px horizontal overflow`, value(sideways));
+  const visit = async (path: string, name: string, width: number) => {
+    await browser("set", "viewport", String(width), width === 390 ? "844" : "900");
+    await browser("open", `${origin}${path}`);
+    await settle();
+    await browser("wait", "800");
+    see(`${name} ${width}px horizontal overflow`, await value(sideways));
     if (shots) {
-      browser("screenshot", `${shots}/${name}-${width}.png`);
+      await browser("screenshot", `${shots}/${name}-${width}.png`);
     }
   };
-  const both = (path: string, name: string, then: () => void) => {
-    visit(path, name, 1280);
-    then();
-    visit(path, name, 390);
-    then();
+  const both = async (path: string, name: string, then: () => Promise<void>) => {
+    await visit(path, name, 1280);
+    await then();
+    await visit(path, name, 390);
+    await then();
   };
   try {
-    browser("open", `${origin}/admin/login`);
-    browser("fill", "#username", admin.user);
-    browser("fill", "#password", admin.password);
-    browser("click", "button[type=submit]");
-    settle();
+    await browser("open", `${origin}/admin/login`);
+    await browser("fill", "#username", admin.user);
+    await browser("fill", "#password", admin.password);
+    await browser("click", "button[type=submit]");
+    await settle();
 
-    const made = String(value(seed));
+    const made = String(await value(seed));
     const {
       subscriber,
       enrollment,
@@ -135,73 +148,77 @@ process.exitCode = await withStack(async ({ origin, dataDir, errors }) => {
       journal.close();
     }
 
-    both("/admin/sends", "send-log", () => {
-      see("send log rows", text('[data-testid="send-row"]'));
+    await both("/admin/sends", "send-log", async () => {
+      see("send log rows", await text('[data-testid="send-row"]'));
     });
     see(
       "server log",
-      value(`fetch("/api/logs?per_page=5").then((r) => r.text()).then((t) => t.slice(0, 1200))`),
+      await value(`fetch("/api/logs?per_page=5").then((r) => r.text()).then((t) => t.slice(0, 1200))`),
     );
     see(
       "journal (status, error, payload kept)",
-      value(`fetch("/api/sends?per_page=10").then((r) => r.json()).then((d) =>
+      await value(`fetch("/api/sends?per_page=10").then((r) => r.json()).then((d) =>
         d.data.results.map((s) => [s.id, s.status, s.error, s.skip_reason, s.subject !== null])
       )`),
     );
-    both("/admin/sends?status=sent&source=sequence", "send-log-filtered", () => {
+    await both("/admin/sends?status=sent&source=sequence", "send-log-filtered", async () => {
       see(
         "filtered rows",
-        value(`[...document.querySelectorAll('[data-testid="send-row"]')]
+        await value(`[...document.querySelectorAll('[data-testid="send-row"]')]
         .map((row) => row.innerText.replace(/\\s+/g, " "))`),
       );
     });
 
-    both(`/admin/subscribers?search=${external}`, "subscriber-search", () => {
+    await both(`/admin/subscribers?search=${external}`, "subscriber-search", async () => {
       see(
         "exact external id finds",
-        value(`[...document.querySelectorAll("table tbody tr")]
+        await value(`[...document.querySelectorAll("table tbody tr")]
         .map((row) => row.innerText.replace(/\\s+/g, " ").slice(0, 80))`),
       );
     });
 
-    both(`/admin/subscribers/${subscriber}`, "subscriber-counts", () => {
+    await both(`/admin/subscribers/${subscriber}`, "subscriber-counts", async () => {
       see(
         "stats",
-        value(`[...document.querySelectorAll(".stat-card")]
+        await value(`[...document.querySelectorAll(".stat-card")]
         .map((card) => card.innerText.replace(/\\s+/g, " "))`),
       );
     });
-    both(`/admin/subscribers/${subscriber}/events`, "subscriber-events", () => {
-      see("events", text('[data-testid="event-row"]'));
+    await both(`/admin/subscribers/${subscriber}/events`, "subscriber-events", async () => {
+      see("events", await text('[data-testid="event-row"]'));
     });
-    both(`/admin/subscribers/${subscriber}/sends`, "subscriber-sends", () => {
-      see("sends tab", text('[data-testid="send-row"]'));
+    await both(`/admin/subscribers/${subscriber}/sends`, "subscriber-sends", async () => {
+      see("sends tab", await text('[data-testid="send-row"]'));
     });
-    both(`/admin/subscribers/${blocked}/events`, "blocked-events", () => {
-      see("blocked events", text('[data-testid="event-row"]'));
+    await both(`/admin/subscribers/${blocked}/events`, "blocked-events", async () => {
+      see("blocked events", await text('[data-testid="event-row"]'));
     });
-    both(`/admin/sequences/enrollments/${enrollment}`, "timeline", () => {
-      see("timeline", text('[data-testid="timeline"]'));
+    await both(`/admin/sequences/enrollments/${enrollment}`, "timeline", async () => {
+      see("timeline", await text('[data-testid="timeline"]'));
     });
-    both(`/admin/subscribers/${subscriber}/enrollments`, "subscriber-enrollments", () => {
-      see("enrollments tab", text('[data-testid="enrollment-row"]'));
+    await both(`/admin/subscribers/${subscriber}/enrollments`, "subscriber-enrollments", async () => {
+      see("enrollments tab", await text('[data-testid="enrollment-row"]'));
     });
-    both(`/admin/sequences/enrollments/${exitedEnrollment}`, "exited-timeline", () => {
-      see("exited timeline", text('[data-testid="timeline"]'));
+    await both(`/admin/sequences/enrollments/${exitedEnrollment}`, "exited-timeline", async () => {
+      see("exited timeline", await text('[data-testid="timeline"]'));
     });
-    both(`/admin/sequences/enrollments/${heldEnrollment}`, "held-timeline", () => {
-      see("held timeline", text('[data-testid="timeline"]'));
+    await both(`/admin/sequences/enrollments/${heldEnrollment}`, "held-timeline", async () => {
+      see("held timeline", await text('[data-testid="timeline"]'));
     });
-    both(`/admin/subscribers/${blocked}/sends`, "blocked-sends", () => {
-      see("refused send", text('[data-testid="send-row"]'));
+    await both(`/admin/subscribers/${blocked}/sends`, "blocked-sends", async () => {
+      see("refused send", await text('[data-testid="send-row"]'));
     });
-    both("/admin", "dashboard", () => {
-      see("dashboard stats", text(".stat-card"));
+    await both("/admin", "dashboard", async () => {
+      see("dashboard stats", await text(".stat-card"));
     });
-    see("hostile text ran", value("window.pwned === undefined ? 'no' : 'YES'"));
+    see("hostile text ran", await value("window.pwned === undefined ? 'no' : 'YES'"));
     see("server stderr", errors());
     return 0;
   } finally {
-    Bun.spawnSync(["agent-browser", "--session", session, "close"], { timeout: 15_000 });
+    const close = Bun.spawn(["agent-browser", "--session", session, "close"], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    await close.exited;
   }
 });
