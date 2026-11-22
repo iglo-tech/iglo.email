@@ -5,12 +5,15 @@
 // every page and mail (HTML and text part) is free of a credit. Through HTTP and the SMTP sink, on
 // the public fixture; the brand values are set as the page settings the fixture reads.
 import { afterEach, expect, test } from "bun:test";
+import { initialTemplates } from "@/templates/builtins";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
 
 const brandUrl = "https://brand.example.test/";
 const logo = "https://brand.example.test/logo.png";
 const creditWords = ["Powered by", "poweredBy", "Based on", "listmonk", "iglo.email"];
+/** The same words as a pattern, for a rendered page and its archive. */
+const credit = /Powered by|poweredBy|Based on|listmonk|iglo\.email/i;
 
 const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
@@ -183,6 +186,40 @@ test("the public pages and the 404 carry no product credit", async () => {
       expect(html).not.toContain(word);
     }
   }
+});
+
+test("the archive index, an archived campaign's page and the opt-in page carry no credit; the page is branded", async () => {
+  const f = await open({
+    accent: "#ff0066",
+    font: "Lora",
+    header: "logo_and_name",
+    logoUrl: logo,
+    archive: true,
+  });
+  // The built-in archive layout, as a fresh install seeds it, on an archived and sent campaign.
+  const layout = initialTemplates.find((item) => item.name === "Default archive template");
+  const archiveTemplate = await f.template(layout!.body, "Archive");
+  const list = await f.list("Archive readers", "public");
+  const uuid = f.deliveredCampaign([], [list.id]);
+  f.db.run(
+    "UPDATE campaigns SET archive = 1, archive_slug = 'brand-check', archive_template_id = ?, status = 'finished' WHERE uuid = ?",
+    [archiveTemplate, uuid],
+  );
+  const index = await (await f.request("/archive")).text();
+  expect(index).not.toMatch(credit);
+  const page = await (await f.request("/archive/brand-check")).text();
+  expect(page).not.toMatch(credit);
+  // The archive layout shows the logo beside the name, in the accent (B129, D127).
+  expect(page).toContain(`<img src="${logo}" alt="" style=`);
+  expect(page).toContain('<span style="font-size: 18px;');
+  expect(page).toContain("#ff0066");
+
+  const double = await f.list("Double opt-in", "public", "double");
+  const id = await f.subscriber("optin@example.test", "Opt", { lists: [double.id] });
+  const { uuid: subscriber } = (await f.json(`/api/subscribers/${id}`)).body.data;
+  const optin = await (await f.request(`/subscription/optin/${subscriber}`)).text();
+  expect(optin).not.toMatch(credit);
+  expect(optin).toContain('<div class="logo logo-lockup">');
 });
 
 test("the data mail carries the accent and the font inline, and no credit in either part", async () => {

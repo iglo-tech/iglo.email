@@ -31,6 +31,11 @@ test("the brand is the built-in blue, the system sans font and the automatic hea
   expect(await setting("appearance.brand.header")).toBe("auto");
 });
 
+test("a new install's sender and SMTP bounce address name no product (B129 review N1)", async () => {
+  expect(JSON.stringify(await setting("app.from_email"))).not.toMatch(/listmonk/i);
+  expect(JSON.stringify(await setting("smtp"))).not.toMatch(/listmonk/i);
+});
+
 test("a hex accent is saved in either length, in any case, and an empty one is the default", async () => {
   for (const value of ["#0AF", "#0055D4", "#abcdef"]) {
     expect((await put("appearance.brand.accent", value)).status).toBe(200);
