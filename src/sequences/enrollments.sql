@@ -38,9 +38,13 @@ SELECT id, position, kind, status FROM sequence_steps WHERE sequence_id = ? ORDE
 UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active';
 -- name: exit-by-lists
+-- B130 (D128, r1): leaving a list ends only the enrollments whose next step is marketing, as the all-lists
+-- option does. A transactional step keeps running, even in a sequence tied to the list; a mixed sequence
+-- delivers its transactional step and ends at its marketing step.
 UPDATE enrollments SET status = 'exited', exit_reason = 'unsubscribed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE status = 'active' AND subscriber_id IN (SELECT value FROM json_each(?))
-    AND sequence_id IN (SELECT id FROM sequences WHERE list_id IN (SELECT value FROM json_each(?)));
+    AND sequence_id IN (SELECT id FROM sequences WHERE list_id IN (SELECT value FROM json_each(?)))
+    AND step_id IN (SELECT id FROM sequence_steps WHERE kind = 'marketing');
 -- name: exit-by-subscribers
 UPDATE enrollments SET status = 'exited', exit_reason = 'blocklisted', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE status = 'active' AND subscriber_id IN (SELECT value FROM json_each(?));
