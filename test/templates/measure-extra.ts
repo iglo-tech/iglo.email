@@ -43,6 +43,6 @@ function run(kind: keyof typeof compiled, count: number, rep: number) {
 for (const kind of ["context", "markdown"] as const) {
   run(kind, 200, 0);
   for (let rep = 1; rep <= 3; rep++) {
-    console.log(JSON.stringify(run(kind, 10000, rep)));
+    console.log(JSON.stringify(run(kind, 10_000, rep)));
   }
 }

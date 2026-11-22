@@ -99,7 +99,7 @@ const records = [];
 for (const kind of ["control", "owner"] as const) {
   run(kind, 200, 0);
   for (let n = 1; n <= 3; n++) {
-    records.push(run(kind, 10000, n));
+    records.push(run(kind, 10_000, n));
   }
 }
 for (const row of records) {

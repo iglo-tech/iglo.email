@@ -496,7 +496,7 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
     await Promise.all(pending);
     // Let tx and sequence sends queued near the end arrive, for their delivery latency.
     if (sequences) {
-      await Bun.sleep(5_000);
+      await Bun.sleep(5000);
     }
 
     const inWindow = (d: { accepted: number }) => d.accepted >= start && d.accepted < end;

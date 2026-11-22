@@ -182,7 +182,7 @@ for (const operation of ["save", "preview"] as const) {
       } finally {
         await f.close();
       }
-    }, 30000);
+    }, 30_000);
 }
 
 for (const operation of ["save", "preview"] as const) {
@@ -271,7 +271,7 @@ for (const operation of ["save", "preview"] as const) {
     } finally {
       await f.close();
     }
-  }, 30000);
+  }, 30_000);
 }
 
 test("concurrent omitted-field updates and default/delete retain valid state", async () => {
@@ -403,7 +403,7 @@ for (const change of ["role", "disabled", "deleted"] as const) {
       f.releasePreview();
       await f.close();
     }
-  }, 30000);
+  }, 30_000);
 }
 
 test("preview revalidates a logged-out session after a held real render", async () => {

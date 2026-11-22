@@ -11,7 +11,7 @@ for (const [kind, executable] of executables) {
   for (let rep = 1; rep <= 3; rep++) {
     await withProduction(
       executable,
-      AbortSignal.timeout(120000),
+      AbortSignal.timeout(120_000),
       async (origin, _signal, restart) => {
         const credentials = await provisionApiUser(origin, admin);
         const headers = {
@@ -89,7 +89,7 @@ for (const [kind, executable] of executables) {
         console.log(JSON.stringify(result));
       },
       admin,
-      120000,
+      120_000,
     );
   }
 }
