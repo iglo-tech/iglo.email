@@ -10,28 +10,34 @@ export interface FilterBudget {
 }
 
 /**
- * A failure that depends on the value a message carries, such as a nil or non-date for `date`, or
- * an object printed as text. The save-time check (D134) does not refuse a template for it, because
- * its sample does not carry the message's values; the send still refuses that message.
+ * A failure that depends on the value a message carries, such as a non-integer filter argument or a
+ * list over its item limit. The save-time check (D134) does not refuse a template for it, unless the
+ * failing expression reads no data at all, because its sample does not carry the message's values;
+ * the send still refuses that message, and names the expression and the kind of value.
  */
 export class ValueError extends Error {}
 
 export const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
 
-/** A value printed as text. Objects and arrays are refused: they have no text form here (D23). */
-export function scalar(value: unknown): string {
+/** The kind of a value, as an error names it (D134): never the value itself. */
+export function kindOf(value: unknown): string {
   if (value === null || value === undefined) {
-    return "";
+    return "nil";
   }
   if (typeof value === "string") {
-    return value;
+    return "text";
   }
-  if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
-    return String(value);
+  if (typeof value === "number") {
+    return "number";
   }
-  throw new ValueError("Invalid value");
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+  return Array.isArray(value) ? "list" : "object";
 }
 
+/** A list holds at most this many items (D54), so printing or walking one is bounded. */
+const LIST_LIMIT = 1024;
 const JSON_DEPTH = 32;
 
 /** The UTF-8 bytes of a string as JSON.stringify writes it, counted without building the text. */
@@ -84,7 +90,7 @@ function jsonBytes(value: unknown, depth: number, walk: { nodes: number }): numb
   }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw new Error("Invalid value");
+      throw new ValueError("a number is not finite, so it has no JSON form");
     }
     // The text of a finite number is ASCII, so its length is its byte count.
     return String(value).length;
@@ -96,7 +102,7 @@ function jsonBytes(value: unknown, depth: number, walk: { nodes: number }): numb
     let bytes = 2 + Math.max(0, value.length - 1);
     for (let i = 0; i < value.length; i++) {
       if (!(i in value)) {
-        throw new Error("Invalid value");
+        throw new ValueError("a list has a hole, so it has no JSON form");
       }
       bytes += jsonBytes(value[i], depth + 1, walk);
     }
@@ -111,7 +117,83 @@ function jsonBytes(value: unknown, depth: number, walk: { nodes: number }): numb
     }
     return bytes;
   }
-  throw new Error("Invalid value");
+  throw new ValueError("an object of this kind has no JSON form");
+}
+
+/**
+ * The UTF-8 bytes of the text a list or object prints as (see `scalar`), counted before the text
+ * exists: a list's items joined with nothing, an object's JSON. Nesting is bounded by JSON_DEPTH.
+ */
+function printBytes(value: unknown, depth: number, walk: { nodes: number }): number {
+  if (depth > JSON_DEPTH) {
+    throw new Error("Nesting limit");
+  }
+  walk.nodes++;
+  if (value === null || value === undefined) {
+    return 0;
+  }
+  if (typeof value === "string") {
+    return byteLength(value);
+  }
+  if (typeof value === "boolean" || typeof value === "number") {
+    return jsonBytes(value, depth, walk);
+  }
+  if (Array.isArray(value)) {
+    if (value.length > LIST_LIMIT) {
+      throw new ValueError(`a list has ${value.length} items, over the limit of 1,024`);
+    }
+    let bytes = 0;
+    for (let i = 0; i < value.length; i++) {
+      bytes += printBytes(value[i], depth + 1, walk);
+    }
+    return bytes;
+  }
+  return jsonBytes(value, 0, walk);
+}
+
+/** The text a value prints as, after `printBytes` has counted it. */
+function printText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "boolean" || typeof value === "number") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    let out = "";
+    for (const item of value) {
+      out += printText(item);
+    }
+    return out;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * A value printed as text. A text, a number and a boolean print as themselves, and nil is empty.
+ * A list prints as LiquidJS prints it, its items' text joined with nothing (so `[1, "two", null]`
+ * is `1two`), and an object prints as its `json` text. A list or object is counted and charged to
+ * the budget before its text is built, so its output cannot exceed the limit by being built first
+ * (D54). A number that is not finite has no text here and is a value failure.
+ */
+export function scalar(value: unknown, b: FilterBudget): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
+    return String(value);
+  }
+  const walk = { nodes: 0 };
+  const bytes = printBytes(value, 0, walk);
+  b.step(walk.nodes);
+  b.charge(bytes);
+  return printText(value);
 }
 
 /**
@@ -156,7 +238,7 @@ function separators(text: string, pattern: string): number {
 /** `downcase`: the text in lower case. Its bytes are counted per character before it is built. */
 export function downcase(value: unknown, b: FilterBudget): string {
   b.step();
-  const input = scalar(value);
+  const input = scalar(value, b);
   b.charge(mappedBytes(input, (c) => c.toLowerCase()));
   return input.toLowerCase();
 }
@@ -164,7 +246,7 @@ export function downcase(value: unknown, b: FilterBudget): string {
 /** `capitalize`: the first character in upper case and the rest in lower case, as LiquidJS does. */
 export function capitalize(value: unknown, b: FilterBudget): string {
   b.step();
-  const input = scalar(value);
+  const input = scalar(value, b);
   const head = input.charAt(0).toUpperCase();
   const tail = input.slice(1);
   b.charge(byteLength(head) + mappedBytes(tail, (c) => c.toLowerCase()));
@@ -174,16 +256,16 @@ export function capitalize(value: unknown, b: FilterBudget): string {
 /** `prepend` and `append` join a literal string to the text; both are charged before the join. */
 export function prepend(value: unknown, argument: unknown, b: FilterBudget): string {
   b.step();
-  const input = scalar(value);
-  const added = scalar(argument);
+  const input = scalar(value, b);
+  const added = scalar(argument, b);
   b.charge(byteLength(input) + byteLength(added));
   return added + input;
 }
 
 export function append(value: unknown, argument: unknown, b: FilterBudget): string {
   b.step();
-  const input = scalar(value);
-  const added = scalar(argument);
+  const input = scalar(value, b);
+  const added = scalar(argument, b);
   b.charge(byteLength(input) + byteLength(added));
   return input + added;
 }
@@ -200,9 +282,9 @@ export function replace(
   b: FilterBudget,
 ): string {
   b.step();
-  const input = scalar(value);
-  const find = scalar(pattern);
-  const withText = scalar(replacement);
+  const input = scalar(value, b);
+  const find = scalar(pattern, b);
+  const withText = scalar(replacement, b);
   const count = separators(input, find);
   b.step(count);
   b.charge(byteLength(input) - count * byteLength(find) + count * byteLength(withText));
@@ -217,9 +299,9 @@ export function replaceFirst(
   b: FilterBudget,
 ): string {
   b.step();
-  const input = scalar(value);
-  const find = scalar(pattern);
-  const withText = scalar(replacement);
+  const input = scalar(value, b);
+  const find = scalar(pattern, b);
+  const withText = scalar(replacement, b);
   const at = input.indexOf(find);
   if (at === -1) {
     b.charge(byteLength(input));
@@ -237,7 +319,7 @@ function integer(value: unknown): number {
   if (typeof value === "string" && /^-?\d{1,15}$/.test(value)) {
     return Number(value);
   }
-  throw new ValueError("Invalid filter arguments");
+  throw new ValueError(`needs a whole-number argument, got ${kindOf(value)}`);
 }
 
 /**
@@ -247,11 +329,11 @@ function integer(value: unknown): number {
  */
 export function split(value: unknown, separator: unknown, b: FilterBudget): Array<string> {
   b.step();
-  const input = scalar(value);
-  const find = scalar(separator);
+  const input = scalar(value, b);
+  const find = scalar(separator, b);
   const count = separators(input, find) + 1;
   if (count > 1024) {
-    throw new ValueError("Array limit");
+    throw new ValueError(`split would make ${count} parts, over the limit of 1,024`);
   }
   b.step(count);
   b.charge(byteLength(input));
@@ -269,14 +351,14 @@ export function split(value: unknown, separator: unknown, b: FilterBudget): Arra
  */
 export function join(value: unknown, separator: unknown, b: FilterBudget): string {
   b.step();
-  const find = separator === undefined ? " " : scalar(separator);
+  const find = separator === undefined ? " " : scalar(separator, b);
   if (!Array.isArray(value)) {
-    return scalar(value);
+    return scalar(value, b);
   }
   if (value.length > 1024) {
-    throw new ValueError("Array limit");
+    throw new ValueError(`join needs at most 1,024 items, got ${value.length}`);
   }
-  const items = value.map((item: unknown) => scalar(item));
+  const items = value.map((item: unknown) => scalar(item, b));
   let bytes = Math.max(0, items.length - 1) * byteLength(find);
   for (const item of items) {
     bytes += byteLength(item);
@@ -311,7 +393,7 @@ export function slice(
     b.step(items.length);
     return items;
   }
-  const text = scalar(value);
+  const text = scalar(value, b);
   const start = from < 0 ? text.length + from : from;
   if (start < 0 || take < 0) {
     return "";
@@ -332,9 +414,9 @@ export function truncate(
   b: FilterBudget,
 ): string {
   b.step();
-  const input = scalar(value);
+  const input = scalar(value, b);
   const max = limit === undefined ? 50 : integer(limit);
-  const dots = ellipsis === undefined ? "..." : scalar(ellipsis);
+  const dots = ellipsis === undefined ? "..." : scalar(ellipsis, b);
   b.charge(byteLength(input) + byteLength(dots));
   if (input.length <= max) {
     return input;
@@ -354,9 +436,9 @@ export function truncatewords(
   b: FilterBudget,
 ): string {
   b.step();
-  const input = scalar(value);
+  const input = scalar(value, b);
   const keep = Math.max(1, count === undefined ? 15 : integer(count));
-  const dots = ellipsis === undefined ? "..." : scalar(ellipsis);
+  const dots = ellipsis === undefined ? "..." : scalar(ellipsis, b);
   b.charge(byteLength(input) + byteLength(dots));
   const words: Array<string> = [];
   let more = false;
@@ -385,7 +467,7 @@ const TAG_BLOCKS: ReadonlyArray<readonly [string, string]> = [
  */
 export function stripHtml(value: unknown, b: FilterBudget): string {
   b.step();
-  const input = scalar(value);
+  const input = scalar(value, b);
   b.step(Math.ceil(byteLength(input) / 1024));
   b.charge(byteLength(input));
   const blocks = new Map(TAG_BLOCKS);
@@ -432,7 +514,7 @@ export function sizeOf(value: unknown, b: FilterBudget): number {
   if (value !== null && typeof value === "object") {
     // A loop record or another class instance is not message data; it has no size here.
     if (Object.getPrototypeOf(value) !== null) {
-      throw new Error("Invalid value");
+      throw new ValueError("an object of this kind has no size");
     }
     const keys = Object.keys(value).length;
     b.step(keys);

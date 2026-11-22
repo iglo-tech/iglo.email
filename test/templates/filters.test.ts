@@ -237,10 +237,11 @@ test("join prints an array's items with a separator, a space by default, and nil
   expect(sent.message).toContain("[a, 1, true, ] [p q] [] [xy]");
 });
 
-test("join refuses an item that has no text form", async () => {
+test("join prints a nested list's items as text, joined with its separator", async () => {
   const f = await open();
-  const sent = await render(f, "{{ data.nested | join: ',' }}", { nested: [[1, 2]] });
-  expect(sent.http).toBe(400);
+  const sent = await render(f, "{{ data.nested | join: ',' }}", { nested: [[1, 2], "x"] });
+  expect(sent.http).toBe(200);
+  expect(sent.message).toContain("12,x");
 });
 
 test("slice takes characters with a negative start, or items of an array, and nil is empty", async () => {

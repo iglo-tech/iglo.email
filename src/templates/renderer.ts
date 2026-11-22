@@ -27,6 +27,7 @@ import {
   truncatewords,
   ValueError,
 } from "@/templates/filters";
+import type { FilterBudget } from "@/templates/filters";
 
 const SOURCE_LIMIT = 64 * 1024;
 const OUTPUT_LIMIT = 1024 * 1024;
@@ -175,7 +176,7 @@ class BoundedEmitter implements Emitter {
     private readonly limit: number,
   ) {}
   write(value: unknown) {
-    const string = scalar(value);
+    const string = scalar(value, this.budget);
     const n = byteLength(string);
     if (this.bytes + n > this.limit) {
       throw new Error("Output limit");
@@ -185,8 +186,8 @@ class BoundedEmitter implements Emitter {
     this.buffer += string;
   }
 }
-function url(value: unknown): string {
-  const text = scalar(value);
+function url(value: unknown, b: FilterBudget): string {
+  const text = scalar(value, b);
   if (!text) {
     return "";
   }
@@ -333,7 +334,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     // The HTML engine escapes output; the plain-text engine has no escape option at all.
     if (html) {
       options.outputEscape = function outputEscape(this: { context: Context }, value: unknown) {
-        const input = scalar(value);
+        const input = scalar(value, budget(this.context));
         let size = 0;
         for (const c of input) {
           size +=
@@ -369,8 +370,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("raw", {
       raw: true,
       handler(value) {
-        budget(this.context).step();
-        return scalar(value);
+        const b = budget(this.context);
+        b.step();
+        return scalar(value, b);
       },
     });
     liquid.registerFilter("default", function (value, fallback) {
@@ -378,22 +380,22 @@ export function createRenderer(clock: Clock, translation: Translation) {
       b.step();
       const out =
         value === null || value === undefined || value === false || value === ""
-          ? scalar(fallback)
-          : scalar(value);
+          ? scalar(fallback, b)
+          : scalar(value, b);
       b.charge(byteLength(out));
       return out;
     });
     liquid.registerFilter("strip", function (value) {
       const b = budget(this.context);
       b.step();
-      const input = scalar(value);
+      const input = scalar(value, b);
       b.charge(byteLength(input));
       return input.trim();
     });
     liquid.registerFilter("upcase", function (value) {
       const b = budget(this.context);
       b.step();
-      const input = scalar(value);
+      const input = scalar(value, b);
       let size = 0;
       for (const c of input) {
         size += byteLength(c.toUpperCase());
@@ -407,15 +409,15 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("t", function (value, ...args) {
       const b = budget(this.context);
       b.step();
-      const key = scalar(value);
+      const key = scalar(value, b);
       if (byteLength(key) > 256 || args.length > 8 || args.length % 2) {
         throw new Error("Invalid translation");
       }
       let out = translation.T(key);
       b.charge(byteLength(out));
       for (let i = 0; i < args.length; i += 2) {
-        const name = scalar(args[i]);
-        const value = scalar(args[i + 1]);
+        const name = scalar(args[i], b);
+        const value = scalar(args[i + 1], b);
         if (!/^[a-z0-9_.-]{1,128}$/i.test(name) || byteLength(value) > 1024) {
           throw new Error("Invalid translation");
         }
@@ -435,7 +437,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("track_link", function (value) {
       const b = budget(this.context);
       b.step();
-      let out = url(value);
+      let out = url(value, b);
       // listmonk trackLink: unescape &amp; and register the URL for this message.
       const link = trackers.get(this.context)?.link;
       if (out && link) {
@@ -447,8 +449,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("date", function (value, format) {
       const b = budget(this.context);
       b.step();
-      const text = scalar(value);
-      const fmt = scalar(format);
+      const text = scalar(value, b);
+      const fmt = scalar(format, b);
       // Left to right: a percent sign is either the pair `%%` (a literal %) or one of the directives,
       // so the second percent of `%%` is not a directive of its own.
       if (byteLength(fmt) > 256 || !/^(?:[^%]|%[%YmdHMS])*$/.test(fmt)) {
@@ -625,6 +627,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     if (request.mode !== "html" && request.mode !== "plain" && request.mode !== "markdown") {
       throw new Error("Invalid render mode");
     }
+    const b = budget ?? new Budget();
     for (const key of [
       "unsubscribe_url",
       "manage_url",
@@ -636,7 +639,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       "root_url",
     ]) {
       if (data[key] !== null && data[key] !== undefined) {
-        data[key] = url(data[key]);
+        data[key] = url(data[key], b);
       }
     }
     if (request.transactional) {
@@ -646,7 +649,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
     // markup replaces it after the whole message is rendered.
     const viewMarker = tracking?.view ? `igloview${crypto.randomUUID().replaceAll("-", "")}` : "";
     data.track_view = viewMarker;
-    const b = budget ?? new Budget();
     const run = (source: string, html: boolean, limit: number, ready?: Array<Template>): string => {
       const e = html ? htmlEngine : plainEngine;
       const parsed =
