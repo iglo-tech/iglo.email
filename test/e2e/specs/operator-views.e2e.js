@@ -250,6 +250,22 @@ test("a send with no subject says why: a refused one was never prepared, a wiped
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
+  // B127 r2: the send log's card names the column the table's header names.
+  test("the send log's card for a sequence send is labelled Sequence / template", async ({
+    page,
+  }) => {
+    await signIn(page);
+    const list = await audience(page);
+    const email = `${unique("op")}@example.com`;
+    const { sequence } = await started(page, list, email);
+    await page.goto("/admin/sends");
+    const row = page.getByTestId("send-row").filter({ hasText: email });
+    await expect(row).toHaveCount(1);
+    const cell = row.locator("td").filter({ hasText: `${sequence.name}, step 1` });
+    const label = await cell.evaluate((td) => getComputedStyle(td, "::before").content);
+    expect(label).toBe('"Sequence / template"');
+  });
+
   test("the subscriber's tabs wrap onto a second row, and the page does not scroll sideways", async ({
     page,
   }) => {

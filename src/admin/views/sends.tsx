@@ -169,7 +169,7 @@ export const sendsView: AdminView = ({ context }) => {
                     <td data-label={t.T("sends.source")}>
                       <span class="text-light" x-text="sourceText(s.source)"></span>
                     </td>
-                    <td data-label={t.T("sequences.sequence")}>
+                    <td data-label={t.T("sends.sequenceOrTemplate")}>
                       <span x-text="sequenceText(s)"></span>
                     </td>
                     <td data-label={t.T("globals.fields.status")}>
