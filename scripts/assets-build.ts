@@ -1,5 +1,6 @@
 // Adapted from listmonk static/admin/build.mjs at 6fcd95f; only v1 assets are built.
 import { createHash } from "node:crypto";
+import { must } from "@/invariant";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { extname, join, relative, resolve } from "node:path";
 
@@ -77,7 +78,7 @@ await cp(
   join(licenseDir, "unicode-17.0.0-3.0.txt"),
 );
 for (let index = 0; index < packages.length; index++) {
-  const name = packages[index]!;
+  const name = must(packages[index], "package name");
   if (seen.has(name)) {
     continue;
   }
@@ -132,7 +133,7 @@ const version = createHash("sha256");
 const imports: Array<string> = [];
 const entries: Array<string> = [];
 for (let index = 0; index < paths.length; index++) {
-  const path = paths[index]!;
+  const path = must(paths[index], "asset path");
   const name = relative(destination, path).replaceAll("\\", "/");
   const type = mime.get(extname(name));
   if (!type) {

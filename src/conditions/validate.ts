@@ -1,6 +1,7 @@
 // Validation of the sequence condition language (docs/design/05-sequences.md#conditions);
 // no upstream source. The walk checks bounds before it descends or iterates, so hostile
 // nesting and huge arrays cost no more than the limits allow.
+import { must } from "@/invariant";
 import { parseDuration } from "@/conditions/duration";
 import { validPath } from "@/conditions/json";
 import { limits } from "@/conditions/types";
@@ -108,7 +109,7 @@ export function validate(
     if (present.length !== 1) {
       return void fail(field, "must have exactly one of all, any, not, event, attr, list or sql");
     }
-    const kind = present[0]!;
+    const kind = must(present[0], "condition kind");
     // Stops at the first unknown key, so a wide object is never walked further.
     for (const key in value) {
       if (Object.hasOwn(value, key) && !fieldsOf[kind].includes(key)) {

@@ -1,5 +1,6 @@
 // Adapted from listmonk internal/core/lists.go, internal/core/core.go and queries/lists.sql at 6fcd95f.
 import type { Database } from "bun:sqlite";
+import { must } from "@/invariant";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
@@ -161,7 +162,7 @@ export function createListStore(
           now,
           now,
         ) as { id: bigint };
-      return get(row.id)!;
+      return must(get(row.id), "list row");
     },
     update(id: bigint, input: ListInput) {
       return writeTransaction(db, () => {

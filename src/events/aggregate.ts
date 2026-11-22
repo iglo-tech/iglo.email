@@ -5,6 +5,7 @@
 // its `where` come from the condition language's own SQL pieces, so an aggregate matches exactly
 // the events a condition with the same predicate would count.
 import type { Database, Statement } from "bun:sqlite";
+import { must } from "@/invariant";
 import { jsonPath } from "@/conditions/json";
 import type { Param } from "@/conditions/json";
 import { ContextError, instant, sinceBound, subscriberID } from "@/conditions/since";
@@ -102,7 +103,7 @@ export function createEventAggregates(db: Database) {
     }
     statements.set(sql, stmt);
     if (statements.size > CACHE) {
-      const [oldest, old] = statements.entries().next().value!;
+      const [oldest, old] = must(statements.entries().next().value, "oldest statement");
       statements.delete(oldest);
       old.finalize();
     }

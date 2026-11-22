@@ -1,5 +1,6 @@
 // Adapted from listmonk static/admin/views/base.html and partials/sidebar.html at 6fcd95f.
 import { Icon } from "@/admin/layout/icon";
+import { must } from "@/invariant";
 import type { Translation } from "@/i18n/i18n";
 import { raw, render } from "@/jsx/render";
 import type { Child } from "@/jsx/render";
@@ -98,7 +99,8 @@ function initials(name: string): string {
     return "?";
   }
   const [first, second] = words.map((word) => Array.from(word));
-  return (first![0]! + (second?.[0] ?? first![1] ?? "")).toUpperCase();
+  const head = must(first, "name word");
+  return (must(head[0], "name initial") + (second?.[0] ?? head[1] ?? "")).toUpperCase();
 }
 function Link({ item, icon }: { item: NavigationLink; icon?: string }) {
   return (

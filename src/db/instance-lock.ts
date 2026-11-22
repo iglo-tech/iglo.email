@@ -5,6 +5,7 @@
 // and it belongs to the file, so every path to one directory meets the same lock. The main database
 // cannot carry it, since the read-only helpers (D62) and `backup` must keep reading that file.
 import { Database } from "bun:sqlite";
+import { must } from "@/invariant";
 import { mkdirSync, truncateSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -30,9 +31,10 @@ function takeLock(path: string): Database {
   const lock = new Database(path, { create: true, strict: true });
   try {
     lock.run("PRAGMA busy_timeout = 0");
-    const { journal_mode: journal } = lock
-      .query<{ journal_mode: string }, []>("PRAGMA journal_mode = MEMORY")
-      .get()!;
+    const { journal_mode: journal } = must(
+      lock.query<{ journal_mode: string }, []>("PRAGMA journal_mode = MEMORY").get(),
+      "journal mode row",
+    );
     if (journal !== "memory") {
       throw new Error(`journal mode is ${journal}`);
     }

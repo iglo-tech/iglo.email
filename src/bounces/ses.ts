@@ -4,6 +4,7 @@
 // docs/design/04-sending.md#bounces: signature versions 1 and 2, bounded fetches, a bounded
 // certificate cache, up to 50 recipients, a topic allowlist, and no stored headers or addresses in `meta`.
 import { X509Certificate, createVerify } from "node:crypto";
+import { must } from "@/invariant";
 import type { BounceEvent, BounceType } from "@/bounces/store";
 import type { Clock } from "@/clock";
 import { sanitizeEmail } from "@/subscribers/email";
@@ -208,7 +209,7 @@ export function createSnsClient(deps: {
           pending.delete(url);
           certs.set(url, cert);
           while (certs.size > size) {
-            certs.delete(certs.keys().next().value!);
+            certs.delete(must(certs.keys().next().value, "oldest certificate"));
           }
         },
         () => pending.delete(url),

@@ -1,5 +1,6 @@
 // The `backup` command. Not ported: listmonk has no backup command.
 import { createRealClock } from "@/clock";
+import { must } from "@/invariant";
 import { createBackup, inspectBackup, releaseHold } from "@/backup/snapshot";
 import type { BackupOptions, Inspection } from "@/backup/snapshot";
 import { productionMigrations } from "@/db/migrations";
@@ -42,7 +43,7 @@ function parseArguments(args: Array<string>): BackupArguments {
   const valued = { "--output": "output", "--verify": "verify", "--data-dir": "dataDir" } as const;
   const isValuedFlag = (name: string): name is keyof typeof valued => Object.hasOwn(valued, name);
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
+    const arg = must(args[i], "argument");
     if (arg === "--help") {
       parsed.help = true;
     } else if (arg === "--force") {

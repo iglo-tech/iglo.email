@@ -3,6 +3,7 @@
 // owned by src/sequences, send rows and marketing admission by src/messaging, and delivery by
 // the outbox: this loop only decides, renders and commits each decision in one short write.
 import type { Database } from "bun:sqlite";
+import { must } from "@/invariant";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import type { ConditionEvaluator } from "@/conditions/evaluate";
@@ -116,7 +117,7 @@ export function createScheduler(options: SchedulerOptions) {
     }
     compiled.set(key, template);
     if (compiled.size > COMPILED) {
-      compiled.delete(compiled.keys().next().value!);
+      compiled.delete(must(compiled.keys().next().value, "oldest compiled template"));
     }
     return template;
   }

@@ -2,6 +2,8 @@
 // The header is read without decoding pixels, so no image library is needed. A file it cannot
 // read still uploads, without dimensions.
 
+import { must } from "@/invariant";
+
 function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let at = 2;
@@ -9,7 +11,7 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
     if (bytes[at] !== 0xff) {
       return null;
     }
-    const marker = bytes[at + 1]!;
+    const marker = must(bytes[at + 1], "JPEG marker");
     // Fill bytes before a marker, and standalone markers without a length.
     if (marker === 0xff) {
       at++;

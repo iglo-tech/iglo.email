@@ -1,5 +1,6 @@
 // Native retention loop over the owner modules' purges (D70); no upstream source.
 import type { Database } from "bun:sqlite";
+import { must } from "@/invariant";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { createLoop } from "@/loops/loop";
@@ -49,7 +50,7 @@ export function createPurge(options: PurgeOptions): PendingLoop {
     batchSize: options.batchSize ?? BATCH,
     claim(now, _lease, batchSize) {
       for (let tried = 0; tried < purges.length; tried++) {
-        const purge = purges[next]!;
+        const purge = must(purges[next], "purge");
         next = (next + 1) % purges.length;
         const taken = purge(now, batchSize);
         if (taken.length) {
