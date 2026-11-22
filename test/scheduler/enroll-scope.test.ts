@@ -16,7 +16,7 @@ async function open() {
   fixtures.push(f);
   return f;
 }
-const absent = { status: 404, body: { message: "Subscriber not found" } };
+const absent = { status: 404, body: { message: "Subscriber not found", code: "not_found" } };
 
 /** An API user that manages sequences and reads subscribers on one list. Returns its requests. */
 async function scopedCaller(f: SchedulerFixture, list: number) {
