@@ -1,6 +1,7 @@
 // Labels of a send and of a skipped step (B127), shared by the send log, a subscriber's sends tab
 // and an enrollment's timeline, so one status and one reason read the same on every screen.
 import { i18n } from '@/assets/admin/js/main.js';
+import { subjectKey } from '@/assets/admin/js/send-subject.js';
 
 export function statusText(status) {
   return i18n.t(`sends.status.${status}`);
@@ -34,6 +35,18 @@ export function statusVariant(status) {
 // "(late)" beside a skipped status, or nothing when the send has no reason.
 export function skipText(reason) {
   return reason ? `(${skipLabel(reason)})` : '';
+}
+
+// A send's subject, or the reason it has none (B127 r1): a skipped send was never prepared, a wiped
+// one has no address, and a sent one past the thirty-day retention lost its message.
+export function subjectText(send) {
+  const key = subjectKey(send);
+  if (key === null) {
+    return send.subject;
+  }
+  return key === 'sends.subjectSkipped'
+    ? i18n.ts(key, { reason: skipLabel(send.skip_reason) })
+    : i18n.t(key);
 }
 
 // A sequence send's sequence and step, or nothing for a transactional send or a removed step. The

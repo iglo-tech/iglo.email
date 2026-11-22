@@ -25,12 +25,19 @@ export const skipReasonKeys = [
   "skipReasons.template_unavailable",
   "skipReasons.unsubscribed",
 ];
+/** Why a send has no subject (B127 r1), in the words the send log and a subscriber's tab show. */
+export const subjectKeys = [
+  "sends.subjectExpired",
+  "sends.subjectNotSent",
+  "sends.subjectSkipped",
+  "sends.subjectWiped",
+];
 /** Every key the browser reads for a send's labels, on the send log and on a subscriber's tab. */
 export const sendKeys = [
   ...sendStatusKeys,
   ...sendSourceKeys,
   ...skipReasonKeys,
-  "sends.noSubject",
+  ...subjectKeys,
   "sends.sequenceStep",
 ];
 

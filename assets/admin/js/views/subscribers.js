@@ -8,7 +8,7 @@ import {
   api, urls, config, i18n, ListTag,
 } from '@/assets/admin/js/main.js';
 import {
-  sequenceStepText, skipLabel, skipText, sourceText, statusText, statusVariant,
+  sequenceStepText, skipLabel, skipText, sourceText, statusText, statusVariant, subjectText,
 } from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
@@ -239,10 +239,7 @@ function component() {
     skipLabel,
     sourceText,
     sequenceStepText,
-
-    subjectText(send) {
-      return send.subject ?? i18n.t('sends.noSubject');
-    },
+    subjectText,
 
     // A sequence send names its sequence and step; a transactional one, or a removed step, names its source.
     sequenceCell(send) {

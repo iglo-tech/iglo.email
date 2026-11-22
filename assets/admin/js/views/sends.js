@@ -2,9 +2,8 @@
 // rewrites. Labels come from send-labels.js, so a status or reason reads as on the other screens.
 import Alpine from '@alpinejs/csp';
 import { pageLinks, pageQuery, read, subscriberID } from '@/assets/admin/js/listing.js';
-import { i18n } from '@/assets/admin/js/main.js';
 import {
-  sequenceStepText, skipText, sourceText, statusText, statusVariant,
+  sequenceStepText, skipText, sourceText, statusText, statusVariant, subjectText,
 } from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
@@ -72,10 +71,7 @@ function sendsView() {
     statusText,
     statusVariant,
     skipText,
-
-    subjectText(send) {
-      return send.subject ?? i18n.t('sends.noSubject');
-    },
+    subjectText,
 
     sourceText,
 

@@ -1,7 +1,10 @@
 {
     "dashboard.campaignMessagesSent": "Campaign messages sent",
     "dashboard.sendsSent": "Sequence and tx sent",
-    "sends.noSubject": "Subject not kept",
+    "sends.subjectExpired": "Subject no longer kept (30-day retention)",
+    "sends.subjectNotSent": "Not sent",
+    "sends.subjectSkipped": "Not sent: {reason}",
+    "sends.subjectWiped": "Removed (data wiped)",
     "sends.sequenceStep": "{name}, step {position}",
     "sends.source": "Source",
     "sends.sourceSequence": "Sequence",

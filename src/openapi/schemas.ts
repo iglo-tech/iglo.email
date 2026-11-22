@@ -602,6 +602,11 @@ export const schemas = {
       description:
         "The message's subject (B127), read from the prepared message the journal keeps. Null once that payload is dropped: thirty days after the send (D70), or when its address is anonymized (D135).",
     },
+    subject_missing: {
+      anyOf: [choice("skipped", "wiped", "retention"), { type: "null" }],
+      description:
+        "Why `subject` is null (B127, D135): `skipped` when the send was refused before any message was prepared, `wiped` when its address was anonymized, `retention` when its message was dropped after thirty days. Null when there is a subject.",
+    },
     sequence_id: {
       ...nullable(integer),
       description:

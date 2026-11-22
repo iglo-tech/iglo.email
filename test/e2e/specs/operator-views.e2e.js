@@ -140,6 +140,54 @@ test("a refused sequence start is named by its sequence and its reason on the ev
   await expect(note).toContainText("blocklisted");
 });
 
+test("a send with no subject says why: a refused one was never prepared, a wiped one lost its address", async ({
+  page,
+}) => {
+  await signIn(page);
+  const tx = await template(page);
+  const refusedSubscriber = await api(page, "/api/subscribers", "POST", {
+    email: `${unique("op")}@example.com`,
+    name: "Refused",
+    status: "enabled",
+    lists: [],
+  });
+  expect(refusedSubscriber.status).toBe(200);
+  const id = refusedSubscriber.body.data.id;
+  expect((await api(page, `/api/subscribers/${id}/blocklist`, "PUT", {})).status).toBe(200);
+  const refused = await api(page, "/api/tx", "POST", {
+    subscriber_id: id,
+    template_id: tx.id,
+    data: {},
+  });
+  expect(refused.status).toBe(200);
+
+  const wipedSubscriber = await api(page, "/api/subscribers", "POST", {
+    email: `${unique("op")}@example.com`,
+    name: "Wiped",
+    status: "enabled",
+    lists: [],
+  });
+  expect(wipedSubscriber.status).toBe(200);
+  const sent = await api(page, "/api/tx", "POST", {
+    subscriber_id: wipedSubscriber.body.data.id,
+    template_id: tx.id,
+    data: {},
+  });
+  expect(sent.status).toBe(200);
+  const wipedID = wipedSubscriber.body.data.id;
+  expect((await api(page, `/api/subscribers/${wipedID}`, "DELETE")).status).toBe(200);
+
+  await page.goto("/admin/sends");
+  const refusedRow = refused.body.data.sends[0].id;
+  const skipped = page.locator(`[data-testid="send-row"][data-id="${refusedRow}"]`);
+  await expect(skipped).toContainText("Not sent: blocklisted");
+  await expect(skipped).not.toContainText(tx.subject);
+  const wipedRow = sent.body.data.sends[0].id;
+  const wiped = page.locator(`[data-testid="send-row"][data-id="${wipedRow}"]`);
+  await expect(wiped).toContainText("Removed (data wiped)");
+  await expect(wiped).not.toContainText(tx.subject);
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 

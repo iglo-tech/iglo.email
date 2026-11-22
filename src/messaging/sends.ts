@@ -64,8 +64,24 @@ interface PublicRow {
   next_attempt_at: string | null;
   created_at: string;
   sent_at: string | null;
-  /** From the prepared message; null once the send is anonymized (its payload is cleared). */
+  /** From the prepared message; null once the payload is dropped (retention, or anonymization). */
   subject: string | null;
+}
+/** Why a send has no subject (B127 r1): a skipped send never had a payload, a wiped one has no address. */
+export type SubjectMissing = "skipped" | "wiped" | "retention";
+/**
+ * The cause of a send's missing subject, or null when it has one. A wiped send has an empty address,
+ * since the anonymizer clears it with the payload (D135); a skipped one never had a payload; any other
+ * one lost its payload to the thirty-day retention (D70) and keeps its address.
+ */
+export function subjectMissing(row: { subject: string | null; to_email: string; status: string }) {
+  if (row.subject !== null) {
+    return null;
+  }
+  if (row.to_email === "") {
+    return "wiped" as const;
+  }
+  return row.status === "skipped" ? ("skipped" as const) : ("retention" as const);
 }
 /** The sequence and position a step sits at, for a send's label (B127). From the sequences module. */
 export interface StepLabel {
@@ -144,6 +160,7 @@ function project(row: PublicRow, label?: StepLabel) {
     step_id: jsonID(row.step_id),
     list_id: jsonID(row.list_id),
     subject: row.subject,
+    subject_missing: subjectMissing(row),
     // A sequence send names its sequence and the step's position now (null for a removed step).
     sequence_id: label ? jsonID(label.sequence_id) : null,
     sequence_name: label?.sequence_name ?? null,
