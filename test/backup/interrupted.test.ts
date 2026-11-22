@@ -79,8 +79,9 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const) {
           return false;
         }
       });
-    for (const deadline = Date.now() + 5000; helperRunning() && Date.now() < deadline;)
+    for (const deadline = Date.now() + 5000; helperRunning() && Date.now() < deadline;) {
       await Bun.sleep(25);
+    }
     expect(helperRunning()).toBe(false);
 
     expect(existsSync(output)).toBe(false);

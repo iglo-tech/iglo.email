@@ -1599,15 +1599,18 @@ export async function runPublicContract(target: {
       }
     }
     for (const id of owned.lists) {
-      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const email of owned.addresses) {
-      for (const found of await mails(email).catch(() => []))
+      for (const found of await mails(email).catch(() => [])) {
         await mailpit("/api/v1/messages", {
           method: "DELETE",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ IDs: [found.ID] }),
         }).catch(() => {});
+      }
     }
   }
   if (cleanupFailures > 0) {

@@ -846,7 +846,9 @@ export async function runAnalyticsContract(target: {
       await call(`/api/campaigns/${id}`, "DELETE");
     }
     for (const id of owned.users) {
-      if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) failed = true;
+      if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) {
+        failed = true;
+      }
     }
     for (const id of owned.roles.reverse()) {
       await call(`/api/roles/${id}`, "DELETE");

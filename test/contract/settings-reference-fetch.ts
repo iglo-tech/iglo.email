@@ -9,7 +9,9 @@ function upstreamLogTail(): string {
   try {
     let text = readFileSync(path, "utf-8").slice(-600);
     for (const secret of [process.env.REFERENCE_API_TOKEN, process.env.REFERENCE_API_USER]) {
-      if (secret) text = text.split(secret).join("[redacted]");
+      if (secret) {
+        text = text.split(secret).join("[redacted]");
+      }
     }
     const lines = text.split("\n").filter(Boolean).slice(-4);
     return ` log=${lines

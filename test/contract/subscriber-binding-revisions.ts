@@ -416,7 +416,9 @@ export async function runSubscriberBindingRevisions(target: {
     );
   } finally {
     for (const { path, id } of owned.reverse()) {
-      if ((await request(`/api/${path}/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await request(`/api/${path}/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
   }
   if (cleanupFailures > 0) {

@@ -58,7 +58,9 @@ test("a preview frame allows nothing, and an editor comes only from the embedded
     expect(html).not.toContain("allow-scripts");
     expect(html).not.toContain("allow-same-origin");
     for (const [, src] of html.matchAll(/<script[^>]* src="([^"]+)"/g)) {
-      if (!src!.startsWith("/admin/custom.js?")) expect(src).toStartWith("/admin/static/");
+      if (!src!.startsWith("/admin/custom.js?")) {
+        expect(src).toStartWith("/admin/static/");
+      }
     }
   }
 });

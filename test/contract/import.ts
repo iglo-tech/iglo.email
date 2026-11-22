@@ -482,7 +482,9 @@ export async function runImportContract(target: {
     const temporary = join(target.dataDir!, ".iglo-email-import");
     const drained = async () => {
       for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20)) {
-        if (!existsSync(temporary) || readdirSync(temporary).length === 0) return true;
+        if (!existsSync(temporary) || readdirSync(temporary).length === 0) {
+          return true;
+        }
       }
       return false;
     };

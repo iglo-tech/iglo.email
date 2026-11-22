@@ -67,7 +67,9 @@ test("BEGIN IMMEDIATE serializes writers in separate processes", async () => {
     expect(((await response.json()) as { result: { value: string } }).result.value).toBe("second");
   } finally {
     for (const child of children) {
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+      }
     }
     await Promise.allSettled(children.map((child) => child.exited));
     await fixture.close();

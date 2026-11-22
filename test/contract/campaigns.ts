@@ -1198,19 +1198,29 @@ export async function runCampaignsContract(target: {
       }
     }
     for (const id of owned.users) {
-      if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.roles.reverse()) {
-      if ((await call(`/api/roles/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await call(`/api/roles/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.templates) {
-      if ((await call(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await call(`/api/templates/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.subscribers) {
-      if ((await call(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await call(`/api/subscribers/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.lists) {
-      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     await mailpit.removeOwned();
   }

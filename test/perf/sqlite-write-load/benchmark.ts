@@ -12,7 +12,9 @@ import type { Mode } from "@/test/perf/sqlite-write-load/workload";
 
 const args = new Set(process.argv.slice(2));
 for (const arg of args) {
-  if (!["--control-only", "--smoke"].includes(arg)) throw new Error(`Unknown argument: ${arg}`);
+  if (!["--control-only", "--smoke"].includes(arg)) {
+    throw new Error(`Unknown argument: ${arg}`);
+  }
 }
 const smoke = args.has("--smoke");
 const durationMs = smoke ? 2000 : 60_000;

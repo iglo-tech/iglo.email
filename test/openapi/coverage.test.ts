@@ -161,7 +161,9 @@ describe("deliberate differences", () => {
       ),
     );
     for (const { area, applies } of differences) {
-      if (applies.length) expect([area, named.has(area)]).toEqual([area, true]);
+      if (applies.length) {
+        expect([area, named.has(area)]).toEqual([area, true]);
+      }
     }
   });
 });

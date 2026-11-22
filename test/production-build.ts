@@ -77,7 +77,9 @@ async function acquire(): Promise<void> {
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "EEXIST") {
-        if (stale() && takeOver()) continue;
+        if (stale() && takeOver()) {
+          continue;
+        }
         if (Date.now() - start > holdLimitMs) {
           throw new Error(`Production build lock ${lock} is still held by a live process`, {
             cause: error,

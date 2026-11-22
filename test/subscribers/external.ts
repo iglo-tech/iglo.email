@@ -229,8 +229,9 @@ export async function runExternalContract(target: {
       claims.map(async (r) => ({ status: r.status, body: await r.json() })),
     );
     for (const outcome of outcomes) {
-      if (outcome.status === 200 && typeof outcome.body.data?.id === "number")
+      if (outcome.status === 200 && typeof outcome.body.data?.id === "number") {
         owned.push(outcome.body.data.id);
+      }
     }
     check(
       outcomes

@@ -120,7 +120,9 @@ test("concurrency and the per-worker message rate bound sends", async () => {
   await f.drive(async () => {
     // Each held message is accepted after 20 ms of SMTP time.
     for (const push of f.pushes) {
-      if (f.clock.now().getTime() - push.at >= 20) push.settle();
+      if (f.clock.now().getTime() - push.at >= 20) {
+        push.settle();
+      }
     }
     return (await f.read(c.id)).status === "finished";
   }, 10);
@@ -549,7 +551,9 @@ test("a batch still in flight holds the cap for messages sent late in the batch"
     // Each message takes 30 s of SMTP time: b goes out at about 60 s, c is still in flight.
     await f.drive(() => {
       for (const push of f.pushes) {
-        if (f.clock.now().getTime() - push.at >= 30_000) push.settle();
+        if (f.clock.now().getTime() - push.at >= 30_000) {
+          push.settle();
+        }
       }
       return f.clock.now().getTime() - t0 >= 64_000;
     }, 1000);

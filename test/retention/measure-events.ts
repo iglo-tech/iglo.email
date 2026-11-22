@@ -72,8 +72,9 @@ async function run(variant: "idle" | "before" | "after") {
   );
   for (let i = 0; i < events; i += 20_000) {
     writeTransaction(db, () => {
-      for (let j = i; j < Math.min(events, i + 20_000); j++)
+      for (let j = i; j < Math.min(events, i + 20_000); j++) {
         insert.run(subscriber.id, `event-${j % 50}`, old, old);
+      }
     });
   }
   insert.finalize();
@@ -155,5 +156,7 @@ async function run(variant: "idle" | "before" | "after") {
 // One variant per process (argv[4]), so one run's heap and page cache do not shape the next.
 const only = process.argv[4];
 for (const variant of ["idle", "before", "after"] as const) {
-  if (!only || only === variant) await run(variant);
+  if (!only || only === variant) {
+    await run(variant);
+  }
 }

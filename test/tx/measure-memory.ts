@@ -121,7 +121,9 @@ const begin = performance.now();
 // body is built when it is sent, so its build time is in `seconds`.
 const statuses: Array<number> = [];
 if (gating === "serial") {
-  for (let i = 0; i < requests; i++) statuses.push(await send(build(i)));
+  for (let i = 0; i < requests; i++) {
+    statuses.push(await send(build(i)));
+  }
 } else {
   statuses.push(...(await Promise.all(Array.from({ length: requests }, (_, i) => send(build(i))))));
 }

@@ -1233,13 +1233,19 @@ export async function runListsContract(target: {
     check((await request(`/api/lists/${second.id}`)).status === 400, "list-deleted");
   } finally {
     for (const id of users.reverse()) {
-      if ((await request(`/api/users/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await request(`/api/users/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of roles.reverse()) {
-      if ((await request(`/api/roles/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await request(`/api/roles/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.reverse()) {
-      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
   }
   if (cleanupFailures > 0) {

@@ -87,9 +87,13 @@ function parts(raw: string) {
   for (const boundary of boundaries) {
     for (const section of raw.split(`--${boundary}`)) {
       const split = section.indexOf("\r\n\r\n");
-      if (split < 0) continue;
+      if (split < 0) {
+        continue;
+      }
       const headers = section.slice(0, split);
-      if (!/^Content-Transfer-Encoding:\s*base64/im.test(headers)) continue;
+      if (!/^Content-Transfer-Encoding:\s*base64/im.test(headers)) {
+        continue;
+      }
       const body = Buffer.from(section.slice(split + 4).replaceAll(/\s+/g, ""), "base64");
       found.push({ headers, body });
     }

@@ -108,7 +108,7 @@ test("a tx template referencing unsubscribe_url saves without an attention diagn
 }, 30_000);
 
 for (const operation of ["save", "preview"] as const) {
-  for (const change of ["role", "disabled", "deleted"] as const)
+  for (const change of ["role", "disabled", "deleted"] as const) {
     test(`held ${operation} input cannot outlive ${change} revocation`, async () => {
       const { createConnection } = await import("node:net");
       const f = await startTemplateFixture();
@@ -184,6 +184,7 @@ for (const operation of ["save", "preview"] as const) {
         await f.close();
       }
     }, 30_000);
+  }
 }
 
 for (const operation of ["save", "preview"] as const) {

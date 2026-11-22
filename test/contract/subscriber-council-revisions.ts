@@ -162,8 +162,9 @@ export async function runSubscriberCouncilRevisions(target: {
     check(JSON.stringify(reset.attribs) === '{"safe":1}', "D43-bound-reset");
   } finally {
     for (const item of owned.reverse()) {
-      if ((await request(`/api/${item.path}/${item.id}`, "DELETE")).status !== 200)
+      if ((await request(`/api/${item.path}/${item.id}`, "DELETE")).status !== 200) {
         cleanupFailures += 1;
+      }
     }
   }
   if (cleanupFailures > 0) {

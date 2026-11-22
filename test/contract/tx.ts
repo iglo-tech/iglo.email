@@ -473,13 +473,19 @@ export async function runTxContract(target: {
     }
   } finally {
     for (const id of owned.subscribers) {
-      if ((await api(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await api(`/api/subscribers/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.lists) {
-      if ((await api(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await api(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.templates) {
-      if ((await api(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await api(`/api/templates/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     await mailpit.removeOwned();
   }

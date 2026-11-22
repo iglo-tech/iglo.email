@@ -87,11 +87,14 @@ async function stateFile(path: string, runner: ReturnType<typeof startRunner>): 
     try {
       return JSON.parse(await readFile(path, "utf-8")) as State;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      if (runner.child.exitCode !== null || runner.child.signalCode !== null)
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      if (runner.child.exitCode !== null || runner.child.signalCode !== null) {
         throw new Error(`Reference command exited before its child was ready: ${runner.output()}`, {
           cause: error,
         });
+      }
       return undefined;
     }
   }, "reference command readiness");
@@ -391,9 +394,12 @@ try {
     try {
       return Number(await readFile(startupMarker, "utf-8"));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      if (startup.child.exitCode !== null || startup.child.signalCode !== null)
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      if (startup.child.exitCode !== null || startup.child.signalCode !== null) {
         throw new Error(`Startup exited before signal: ${startup.output()}`, { cause: error });
+      }
       return undefined;
     }
   }, "the owned startup operation");

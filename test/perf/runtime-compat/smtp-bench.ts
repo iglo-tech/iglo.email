@@ -11,7 +11,9 @@ import { processCheck } from "@/test/perf/runtime-compat/process-check";
 
 const args = new Set(process.argv.slice(2));
 for (const arg of args) {
-  if (!["--smoke", "--control-only"].includes(arg)) throw new Error(`Unknown option: ${arg}`);
+  if (!["--smoke", "--control-only"].includes(arg)) {
+    throw new Error(`Unknown option: ${arg}`);
+  }
 }
 const smoke = args.has("--smoke");
 const count = smoke ? 20 : 1000;

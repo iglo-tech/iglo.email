@@ -293,7 +293,9 @@ test("live stats update while a campaign runs and stop when nothing runs or the 
     const response = await route.fetch();
     const out = await response.json();
     for (const row of out.data.results) {
-      if (row.id === c.id) row.status = statuses;
+      if (row.id === c.id) {
+        row.status = statuses;
+      }
     }
     await route.fulfill({ response, json: out });
   });

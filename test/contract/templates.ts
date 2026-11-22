@@ -550,7 +550,9 @@ export async function runTemplatesContract(target: {
       cleanupFailures += 1;
     }
     for (const id of owned) {
-      if ((await request(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await request(`/api/templates/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
   }
   if (cleanupFailures > 0) {

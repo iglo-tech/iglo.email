@@ -478,7 +478,9 @@ describe("one server", () => {
     abort.abort();
     await first;
     for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20)) {
-      if (!leftovers().length) break;
+      if (!leftovers().length) {
+        break;
+      }
     }
     expect(leftovers()).toEqual([]);
     expect((await c.run(subscribe(), "email\nafter-abort@example.test\n")).imported).toBe(1);

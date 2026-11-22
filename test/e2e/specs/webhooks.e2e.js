@@ -56,7 +56,9 @@ test.afterEach(async ({ request }) => {
   for (const id of webhooks.splice(0)) {
     await step(`deleting webhook ${id}`, async () => {
       const response = await call(`/api/webhooks/${id}`, "DELETE");
-      if (response.status !== 200) throw new Error(`answered ${response.status}`);
+      if (response.status !== 200) {
+        throw new Error(`answered ${response.status}`);
+      }
     });
   }
   const pending = changed;
@@ -64,7 +66,9 @@ test.afterEach(async ({ request }) => {
   for (const [key, value] of Object.entries(pending)) {
     await step(`restoring ${key}`, async () => {
       const response = await call(`/api/settings/${key}`, "PUT", value);
-      if (response.status !== 200) throw new Error(`answered ${response.status}`);
+      if (response.status !== 200) {
+        throw new Error(`answered ${response.status}`);
+      }
     });
   }
   if (failures.length) {

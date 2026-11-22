@@ -557,10 +557,14 @@ export async function runSubscribersContract(target: {
     }
   } finally {
     for (const id of subscribers.reverse()) {
-      if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of lists.reverse()) {
-      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
   }
   if (cleanupFailures > 0) {

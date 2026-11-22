@@ -232,7 +232,9 @@ try {
       );
       let lines = 0;
       for await (const chunk of response.body!) {
-        for (let at = -1; (at = (chunk as Buffer).indexOf(10, at + 1)) >= 0;) lines++;
+        for (let at = -1; (at = (chunk as Buffer).indexOf(10, at + 1)) >= 0;) {
+          lines++;
+        }
       }
       return lines - 1;
     };

@@ -118,7 +118,9 @@ export async function runDKIMSettings(target: {
     for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
       for (const item of full[key]) {
         item.password = "";
-        if (item.dkim) item.dkim.private_key = "";
+        if (item.dkim) {
+          item.dkim.private_key = "";
+        }
       }
     }
     for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {

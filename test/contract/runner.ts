@@ -136,7 +136,9 @@ function validateCorpus(items: ReadonlyArray<ContractCase>, complete: boolean): 
   if (complete) {
     for (const metadata of Object.values(differences)) {
       for (const id of metadata.cases) {
-        if (!ids.has(id)) throw new Error("Orphaned deliberate-difference metadata");
+        if (!ids.has(id)) {
+          throw new Error("Orphaned deliberate-difference metadata");
+        }
       }
     }
   }
@@ -175,8 +177,9 @@ function redact(message: string, credentials?: Credentials): string {
         value,
         encodeURIComponent(value),
         JSON.stringify(value).slice(1, -1),
-      ])
+      ]) {
         result = result.replaceAll(representation, "[redacted]");
+      }
     }
   }
   return result;

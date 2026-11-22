@@ -756,10 +756,12 @@ if (mode === "limits" || mode === "all") {
   await limits();
 }
 if (mode === "crash" || mode === "all") {
-  for (const point of ["after-commit", "mid-batch", "batch-end", "unheld"] as const)
+  for (const point of ["after-commit", "mid-batch", "batch-end", "unheld"] as const) {
     await crash(point);
+  }
 }
 if (mode === "mixed" || mode === "all") {
-  for (const name of (process.env.M32_SCENARIOS ?? "events,campaign,mixed").split(","))
+  for (const name of (process.env.M32_SCENARIOS ?? "events,campaign,mixed").split(",")) {
     await mixed(name as "events" | "campaign" | "mixed");
+  }
 }

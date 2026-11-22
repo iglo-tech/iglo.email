@@ -544,7 +544,9 @@ export async function runSubscriberQuery(target: {
     }
   } finally {
     for (const { kind, id } of resources.reverse()) {
-      if ((await request(`/api/${kind}/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
+      if ((await request(`/api/${kind}/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
   }
   if (cleanupFailures > 0) {

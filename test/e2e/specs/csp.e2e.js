@@ -20,8 +20,9 @@ function directives() {
   const walk = (root) => {
     for (const el of root.querySelectorAll("*")) {
       for (const { name, value } of el.attributes) {
-        if (/^(x-[a-z]|@|:)/.test(name) && !/^x-(cloak|ignore|transition)/.test(name))
+        if (/^(x-[a-z]|@|:)/.test(name) && !/^x-(cloak|ignore|transition)/.test(name)) {
           found.push([name, value]);
+        }
       }
       if (el instanceof HTMLTemplateElement) {
         walk(el.content);

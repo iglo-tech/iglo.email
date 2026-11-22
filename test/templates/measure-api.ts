@@ -24,8 +24,9 @@ for (const [kind, executable] of executables) {
             headers,
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           });
-          if (response.status !== 200)
+          if (response.status !== 200) {
             throw new Error(`HTTP ${response.status} in ${method} ${path.split("?")[0]}`);
+          }
           return ((await response.json()) as { data: any }).data;
         }
         const samples: Array<number> = [];
@@ -48,14 +49,17 @@ for (const [kind, executable] of executables) {
           await request(`/api/subscribers/${sub.id}`, "PUT", { email, name: "Synthetic" });
           await request(`/api/subscribers/${sub.id}`, "DELETE");
           await request(`/api/lists/${list.id}`, "DELETE");
-          if (i >= 5) samples.push(performance.now() - start);
+          if (i >= 5) {
+            samples.push(performance.now() - start);
+          }
         }
         const start = performance.now();
         await restart();
         restartSamples.push(performance.now() - start);
         const settings = await request("/api/settings");
-        if (settings["app.site_name"] !== "Synthetic 24")
+        if (settings["app.site_name"] !== "Synthetic 24") {
           throw new Error("Restart did not preserve settings");
+        }
         const result: Record<string, unknown> = {
           kind,
           rep,
@@ -77,11 +81,14 @@ for (const [kind, executable] of executables) {
             const preview = await fetch(`${origin}/api/templates/${item.id}/preview`, {
               headers: { authorization: headers.authorization },
             });
-            if (preview.status !== 200 || !(await preview.text()).includes("John Doe"))
+            if (preview.status !== 200 || !(await preview.text()).includes("John Doe")) {
               throw new Error("Preview failed");
+            }
             await request(`/api/templates/${item.id}`, "PUT", { name: `renamed-${i}` });
             await request(`/api/templates/${item.id}`, "DELETE");
-            if (i >= 5) times.push(performance.now() - begin);
+            if (i >= 5) {
+              times.push(performance.now() - begin);
+            }
           }
           result.templateCycleMeanMs = mean(times);
           result.templateSamples = times.length;

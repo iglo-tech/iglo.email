@@ -295,8 +295,9 @@ async function run(name: string, events: boolean, sends: boolean) {
         const end = start + WINDOW_MS;
         const plan: Array<{ at: number; kind: "event" | "tx" | "marketing"; i: number }> = [];
         if (events) {
-          for (let i = 0; i * EVENT_MS < WINDOW_MS; i++)
+          for (let i = 0; i * EVENT_MS < WINDOW_MS; i++) {
             plan.push({ at: start + i * EVENT_MS, kind: "event", i });
+          }
         }
         if (sends) {
           for (let i = 0; i * TX_MS < WINDOW_MS; i++) {

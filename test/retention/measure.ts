@@ -104,7 +104,9 @@ function seed() {
   const batches = (count: number, size: number, one: (i: number) => void) => {
     for (let i = 0; i < count; i += size) {
       writeTransaction(db, () => {
-        for (let j = i; j < Math.min(count, i + size); j++) one(j);
+        for (let j = i; j < Math.min(count, i + size); j++) {
+          one(j);
+        }
       });
     }
   };
