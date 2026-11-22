@@ -145,6 +145,25 @@ input[disabled] {
   font-size: 1.25em;
   font-weight: 600;
 }
+/* Logo and name together (B129, D127): one centred row with a gap and a smaller logo. The name
+   wraps inside its own box, never under the logo. */
+.header .logo-lockup {
+  text-align: center;
+}
+.header .lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+}
+.header .lockup img {
+  max-width: 120px;
+  max-height: 40px;
+}
+.header .lockup .site-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 /* A brand accent (B129, D127) adds a rule above the card; without one the page is unchanged. */
 .branded .wrap {
   border-top: 4px solid var(--brand-accent, #0055d4);

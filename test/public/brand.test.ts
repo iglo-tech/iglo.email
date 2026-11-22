@@ -104,6 +104,8 @@ test("each header mode shows the logo, the name, or both, and the logo links onl
     const html = await (await f.request("/subscription/form")).text();
     expect(html.includes(`src="${logo}"`)).toBe(logoShown);
     expect(html.includes('<span class="site-name">Brand Co</span>')).toBe(nameShown);
+    // Both together are one lockup row, centred in the header (the CSS is served, not read here).
+    expect(html.includes('<div class="logo logo-lockup">')).toBe(header === "logo_and_name");
   }
 });
 

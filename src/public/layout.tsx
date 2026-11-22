@@ -86,6 +86,10 @@ export function PublicShell({
       {mode !== "logo" ? <span class="site-name">{siteName}</span> : null}
     </>
   );
+  // Both together form one centred row, the logo beside the name (B129 adopter check): the name never
+  // drops under the logo, whatever the width.
+  const lockup = mode === "logo_and_name";
+  const content = lockup ? <span class="lockup">{brand}</span> : brand;
   const href = logoHref(site);
   return (
     <html
@@ -124,7 +128,9 @@ export function PublicShell({
       <body>
         <div class="container wrap">
           <header class="header">
-            <div class="logo">{href ? <a href={href}>{brand}</a> : brand}</div>
+            <div class={lockup ? "logo logo-lockup" : "logo"}>
+              {href ? <a href={href}>{content}</a> : content}
+            </div>
           </header>
           {children}
         </div>
