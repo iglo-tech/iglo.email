@@ -57,12 +57,12 @@ export interface CampaignRow {
   lists: string;
   media: string;
 }
-/** The writable campaign fields after request binding and validation. */
 /** One page of campaigns, and how many match the filter in all. */
 export interface CampaignPage {
   rows: Array<CampaignRow>;
   total: number;
 }
+/** The writable campaign fields after request binding and validation. */
 export interface WritableCampaign {
   type: "regular" | "optin";
   name: string;

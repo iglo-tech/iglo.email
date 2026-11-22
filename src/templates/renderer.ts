@@ -140,7 +140,6 @@ export interface RenderTracking {
 }
 const attribute = (value: string) => value.replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
 const pad = (n: number) => String(n).padStart(2, "0");
 function hasContent(templates: Array<Template>): boolean {
   for (const tpl of templates) {
@@ -161,6 +160,7 @@ function hasContent(templates: Array<Template>): boolean {
   }
   return false;
 }
+/** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
 export function createRenderer(clock: Clock, translation: Translation) {
   // en-US only (D102). Negative zero and values that round to zero render as 0, not -0.
   const numberFormat = new Intl.NumberFormat("en-US", { signDisplay: "negative" });

@@ -36,6 +36,10 @@ const signupIntervalMs = 1000;
 const exportRows = 1000;
 const exportEventBytes = 2 * 1024 * 1024;
 
+/**
+ * The branding a subscriber's mail shows, the same inputs the public pages use (B126, D123): the
+ * logo, the site name and the operator's site. Liquid escapes each in the template.
+ */
 function brand(settings: PublicSettings) {
   return {
     logo_url: safeLogo(settings.logoUrl),
@@ -148,10 +152,6 @@ export function createSubscriberMail(deps: {
         });
       })
       .catch((error: unknown) => deps.logger.error(error));
-  /**
-   * The branding a subscriber's mail shows, the same inputs the public pages use (B126, D123): the
-   * logo, the site name and the operator's site. Liquid escapes each in the template.
-   */
   /** makeOptinNotifyHook: returns the number of double opt-in lists awaiting confirmation. */
   function optin(sub: Subscriber, listIds: Array<bigint> = []): number {
     const wanted = new Set(listIds.map(Number));

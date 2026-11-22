@@ -162,9 +162,9 @@ export function startCampaignRunner(deps: RunnerDeps) {
   return runner;
 }
 
-/** Creates the runner without starting it: no orphan is recovered and nothing is claimed yet. */
 const iso = (ms: number) => new Date(ms).toISOString();
 const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
+/** Creates the runner without starting it: no orphan is recovered and nothing is claimed yet. */
 export function createCampaignRunner(deps: RunnerDeps) {
   const { db, clock, store } = deps;
   const leaseMs = deps.leaseMs ?? defaultLease;

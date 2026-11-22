@@ -110,6 +110,7 @@ async function readUpload(request: Request): Promise<Uint8Array> {
 }
 
 const notFound = () => new HttpError(404, "not found");
+/** The file of a form, as Go's FormFile: the first part of the name that has a filename. */
 const formFile = async (c: RequestContext, body: Uint8Array) => {
   const invalid = (error: string) =>
     new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFile", "error", error));
@@ -169,7 +170,6 @@ export function registerMediaRoutes(
       );
     }
   };
-  /** The file of a form, as Go's FormFile: the first part of the name that has a filename. */
   const upload: Handler = async (c) => {
     filesystemOnly(c);
     if (uploading >= MAX_UPLOADS) {

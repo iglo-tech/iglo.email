@@ -32,7 +32,6 @@ interface Params {
   overwrite_userinfo?: unknown;
   overwrite_subscription_status?: unknown;
 }
-/** Upstream's SessionOpt: wrong types are errors and absent or null fields are empty. */
 const text = (item: unknown) => {
   if (item === undefined || item === null) {
     return "";
@@ -51,6 +50,7 @@ const flag = (item: unknown) => {
   }
   return item;
 };
+/** Upstream's SessionOpt: wrong types are errors and absent or null fields are empty. */
 function parseParams(raw: string) {
   const value = JSON.parse(raw) as unknown;
   if (typeof value !== "object" || value === null || Array.isArray(value)) {

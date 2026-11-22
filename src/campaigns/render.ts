@@ -140,8 +140,8 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
     },
   };
 }
-/** compileArchiveCampaigns: `archive_meta` is the sample subscriber. */
 const text = (value: unknown) => (typeof value === "string" ? value : "");
+/** compileArchiveCampaigns: `archive_meta` is the sample subscriber. */
 export function archiveSubscriber(meta: Record<string, unknown>): CampaignSubscriber {
   return {
     uuid: text(meta.uuid),
