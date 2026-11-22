@@ -11,7 +11,13 @@ import { TemplateError } from "@/templates/store";
 import type { TemplateRow, TemplateStore, TemplateType } from "@/templates/store";
 import { RenderCapacityError, TemplateSourceError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
-import { parseSample, previewContext, SampleError } from "@/templates/sample";
+import {
+  parseSample,
+  previewBody,
+  previewContext,
+  previewDummy,
+  SampleError,
+} from "@/templates/sample";
 import type { Sample } from "@/templates/sample";
 
 const idValue = (id: bigint) =>
@@ -87,6 +93,12 @@ function translateError(context: RequestContext, error: unknown): never {
             "a for loop cannot take a filter; assign the filtered value first",
           ),
         );
+      case "render":
+        // The cause in words, from the renderer's fixed list; it names no template text or data.
+        throw new HttpError(
+          400,
+          t.Ts("templates.errorCompiling", "error", `it fails to render: ${error.detail}`),
+        );
       case "capacity":
         throw new HttpError(429, "Too many template renders in progress.");
     }
@@ -102,34 +114,6 @@ function guarded(handler: Handler): Handler {
     }
   };
 }
-/** The context a template preview renders with. `aggregates` is empty: a template has no step. */
-const dummy = {
-  subscriber: {
-    name: "John Doe",
-    first_name: "John",
-    last_name: "Doe",
-    email: "dummy@example.invalid",
-    uuid: "00000000-0000-0000-0000-000000000000",
-    attribs: {},
-    external_id: "",
-  },
-  campaign: {
-    name: "Dummy campaign",
-    subject: "Dummy subject",
-    uuid: "00000000-0000-0000-0000-000000000000",
-  },
-  data: { order_id: "12345", shipping_date: "2026-01-02" },
-  trigger: { data: {} },
-  aggregates: {},
-  sequence: { name: "Example" },
-  step: { position: 1 },
-  unsubscribe_url: "",
-  manage_url: "",
-  optin_url: "",
-  message_url: "",
-  archive_url: "",
-};
-const sampleBody = "<p>Hi there</p><p>Lorem ipsum dolor sit amet.</p>";
 function html(body: string) {
   return new Response(body, {
     headers: {
@@ -180,7 +164,7 @@ export function registerTemplateRoutes(
     }
     // The dummy context with the brand read now, so a layout shows the accent, font and header it
     // would send with. A sample replaces only the parts it names (D105).
-    const dummyData = { ...dummy, ...mailBrand(brand()) };
+    const dummyData = { ...previewDummy, ...mailBrand(brand()) };
     const rendered = JSON.stringify(
       sample === undefined ? dummyData : previewContext(dummyData, sample),
     );
@@ -190,7 +174,7 @@ export function registerTemplateRoutes(
       }
       const result = await renderer.render(
         type === "campaign"
-          ? { body: sampleBody, layout: body, mode: "html", data: rendered }
+          ? { body: previewBody, layout: body, mode: "html", data: rendered }
           : { body, mode: "html", data: rendered, transactional: true },
       );
       auth.revalidate(context, "templates:get");

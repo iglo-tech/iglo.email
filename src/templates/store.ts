@@ -8,6 +8,7 @@ import type { CampaignTemplateReferences } from "@/campaigns/template-references
 import { TemplateSourceError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
 import { initialTemplates } from "@/templates/builtins";
+import { previewBody, previewData } from "@/templates/sample";
 import sql from "@/templates/store.sql" with { type: "text" };
 
 export type TemplateType = "campaign" | "campaign_visual" | "tx";
@@ -41,6 +42,7 @@ export class TemplateError extends Error {
       | "slot"
       | "body"
       | "loop"
+      | "render"
       | "missing"
       | "default"
       | "delete"
@@ -125,6 +127,20 @@ export function createTemplateStore(
         throw new TemplateError("body", error.detail);
       }
       throw new TemplateError("body");
+    }
+    // The save-time render (D134): as a send renders it, against the preview's sample.
+    const check =
+      value.type === "campaign"
+        ? renderer.check({ body: previewBody, layout: value.body, mode: "html" }, previewData)
+        : renderer.check(
+            { body: value.body, subject: value.subject, mode: "html", transactional: true },
+            previewData,
+          );
+    if (check.outcome === "busy") {
+      throw new TemplateError("capacity");
+    }
+    if (check.outcome === "refused") {
+      throw new TemplateError("render", check.reason);
     }
   }
   function initialize() {

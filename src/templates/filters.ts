@@ -251,7 +251,7 @@ export function split(value: unknown, separator: unknown, b: FilterBudget): Arra
   const find = scalar(separator);
   const count = separators(input, find) + 1;
   if (count > 1024) {
-    throw new Error("Array limit");
+    throw new ValueError("Array limit");
   }
   b.step(count);
   b.charge(byteLength(input));
@@ -274,7 +274,7 @@ export function join(value: unknown, separator: unknown, b: FilterBudget): strin
     return scalar(value);
   }
   if (value.length > 1024) {
-    throw new Error("Array limit");
+    throw new ValueError("Array limit");
   }
   const items = value.map((item: unknown) => scalar(item));
   let bytes = Math.max(0, items.length - 1) * byteLength(find);

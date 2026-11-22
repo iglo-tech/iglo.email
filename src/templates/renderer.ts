@@ -25,6 +25,7 @@ import {
   stripHtml,
   truncate,
   truncatewords,
+  ValueError,
 } from "@/templates/filters";
 
 const SOURCE_LIMIT = 64 * 1024;
@@ -86,6 +87,54 @@ export class RenderCapacityError extends Error {
     super("Render capacity");
   }
 }
+/**
+ * The outcome of a save-time render (D134). `refused` names the cause of a template's own text in
+ * words, with no template text or data; `busy` is the render capacity, not a template fault.
+ */
+export type SaveCheck =
+  | { readonly outcome: "ok" }
+  | { readonly outcome: "refused"; readonly reason: string }
+  | { readonly outcome: "busy" };
+/** The renderer's messages for the template text that causes them, and the reason a save names. */
+const refusalReasons = new Map<string, string>([
+  ["Invalid date format", "a date format has an unsupported directive"],
+  ["Invalid filter arguments", "a filter has the wrong number of arguments"],
+  ["Invalid for arguments", "a for tag has an unsupported argument"],
+  ["Invalid lookup", "a property name is not allowed"],
+  ["Invalid loop property", "a loop property is not available"],
+  ["Invalid collection", "a loop collection is not supported"],
+  ["Invalid translation", "a translation call is invalid"],
+  ["Nesting limit", "the template nests too deeply"],
+  ["Range limit", "a range or loop is out of bounds"],
+  ["range limit exceeded", "a range or loop is out of bounds"],
+  ["Render limit", "the template exceeds a render limit"],
+  ["Output limit", "the template exceeds a render limit"],
+  ["Work limit", "the template exceeds a render limit"],
+]);
+/** The error under LiquidJS's wrappers, which keep the thrown one as `originalError`. */
+function rootError(error: unknown): unknown {
+  let current = error;
+  for (
+    let depth = 0;
+    depth < 4 && current instanceof Error && "originalError" in current;
+    depth++
+  ) {
+    current = current.originalError;
+  }
+  return current;
+}
+/**
+ * The reason a save refuses a render error, or undefined when the failure depends on the values a
+ * message carries: those are refused, if at all, at send (D134).
+ */
+function refusal(error: unknown): string | undefined {
+  const root = rootError(error);
+  if (root instanceof ValueError) {
+    return undefined;
+  }
+  const message = root instanceof Error ? root.message : "";
+  return refusalReasons.get(message) ?? "the template cannot be rendered";
+}
 
 class Budget {
   bytes = 0;
@@ -144,11 +193,11 @@ function url(value: unknown): string {
   try {
     const parsed = new URL(text);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error("Invalid URL");
+      throw new ValueError("Invalid URL");
     }
     return text;
   } catch {
-    throw new Error("Invalid URL");
+    throw new ValueError("Invalid URL");
   }
 }
 function checkSource(value: string, limit: number) {
@@ -220,12 +269,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
         cost += textCost;
       } else if (Array.isArray(value)) {
         if (value.length > 1024) {
-          throw new Error("Array limit");
+          throw new ValueError("Array limit");
         }
         for (let i = 0; i < value.length; i++) {
           const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
           if (descriptor && !("value" in descriptor)) {
-            throw new Error("Invalid value");
+            throw new ValueError("Invalid value");
           }
           cost += chargeComparison(descriptor?.value, b);
         }
@@ -408,11 +457,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
         text !== "today" &&
         !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)?$/.test(text)
       ) {
-        throw new Error("Invalid date");
+        throw new ValueError("Invalid date");
       }
       const date = text === "now" || text === "today" ? clock.now() : new Date(text);
       if (!Number.isFinite(date.getTime())) {
-        throw new Error("Invalid date");
+        throw new ValueError("Invalid date");
       }
       const values = new Map([
         ["%", "%"],
@@ -653,7 +702,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
             typeof value !== "boolean" &&
             !(typeof value === "number" && Number.isFinite(value))
           ) {
-            throw new Error("Invalid for argument value");
+            throw new ValueError("Invalid for argument value");
           }
         }
       };
@@ -667,7 +716,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       bounded.igloBudgetCollection = (value) => {
         if (Array.isArray(value)) {
           if (value.length > 1024) {
-            throw new Error("Array limit");
+            throw new ValueError("Array limit");
           }
           b.step(value.length);
           return;
@@ -679,7 +728,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
           let count = 0;
           for (const _key in value) {
             if (++count > 1024) {
-              throw new Error("Array limit");
+              throw new ValueError("Array limit");
             }
             b.step(3);
           }
@@ -744,6 +793,27 @@ export function createRenderer(clock: Clock, translation: Translation) {
     return { body, subject };
   }
 
+  /**
+   * The save-time render (D134): the parts render once, as a send renders them, against `data`.
+   * It refuses a failure the template's own text causes (`refused`). A failure of a value
+   * `data` does not carry is not refused: the sample cannot tell a missing value from a present one,
+   * so that message is refused, if at all, when it is sent.
+   */
+  function check(request: Omit<RenderRequest, "data">, data: string): SaveCheck {
+    if (active >= 4) {
+      return { outcome: "busy" };
+    }
+    active++;
+    try {
+      runMessage({ ...request, data }, parseTemplateData(data));
+      return { outcome: "ok" };
+    } catch (error) {
+      const reason = refusal(error);
+      return reason === undefined ? { outcome: "ok" } : { outcome: "refused", reason };
+    } finally {
+      active--;
+    }
+  }
   function renderSync(request: RenderRequest, budget?: MessageBudget) {
     if (active >= 4) {
       throw new RenderCapacityError();
@@ -820,6 +890,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
       },
     });
   }
-  return { validate, compile, render, renderSync };
+  return { validate, check, compile, render, renderSync };
 }
 export type TemplateRenderer = ReturnType<typeof createRenderer>;

@@ -103,11 +103,17 @@ test("objects and arrays fail exactly as they do without the filter", async () =
   expect(plain.status).not.toBe("sent");
 });
 
-test("the filter takes no argument: preview and a send refuse one", async () => {
+test("the filter takes no argument: a save and a preview refuse one (D134)", async () => {
   const f = await open();
-  const sent = await render(f, "[{{ data.n | number: 2 }}]", { n: 5 });
-  expect(sent.status).not.toBe("sent");
-  expect(sent.message).not.toContain("[5]");
+  // A template that always fails to render is refused at save, so it is never sent.
+  const saved = await f.json("/api/templates", "POST", {
+    name: "number-argument",
+    type: "tx",
+    subject: "s",
+    body: "[{{ data.n | number: 2 }}]",
+  });
+  expect(saved.status).toBe(400);
+  expect(saved.body.message).toContain("a filter has the wrong number of arguments");
   const preview = await f.request("/api/templates/preview", {
     method: "POST",
     headers: {
