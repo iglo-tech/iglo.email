@@ -8,7 +8,18 @@ import type { Translation } from "@/i18n/i18n";
 import { parseTemplateData } from "@/templates/data";
 import type { TemplateData } from "@/templates/data";
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
-import { byteLength, json, scalar, sizeOf } from "@/templates/filters";
+import {
+  append,
+  byteLength,
+  capitalize,
+  downcase,
+  json,
+  prepend,
+  replace,
+  replaceFirst,
+  scalar,
+  sizeOf,
+} from "@/templates/filters";
 
 const SOURCE_LIMIT = 64 * 1024;
 const OUTPUT_LIMIT = 1024 * 1024;
@@ -29,6 +40,12 @@ const filterArguments = new Map([
   ["number", 0],
   ["size", 0],
   ["json", 0],
+  ["downcase", 0],
+  ["capitalize", 0],
+  ["prepend", 1],
+  ["append", 1],
+  ["replace", 2],
+  ["replace_first", 2],
 ]);
 /** The filters the renderer registers, in the order of its arity table (the documented allow-list). */
 export const registeredFilters: ReadonlyArray<string> = [...filterArguments.keys()];
@@ -391,6 +408,30 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("json", function (value: unknown) {
       return json(value, budget(this.context));
     });
+    liquid.registerFilter("downcase", function (value: unknown) {
+      return downcase(value, budget(this.context));
+    });
+    liquid.registerFilter("capitalize", function (value: unknown) {
+      return capitalize(value, budget(this.context));
+    });
+    liquid.registerFilter("prepend", function (value: unknown, argument: unknown) {
+      return prepend(value, argument, budget(this.context));
+    });
+    liquid.registerFilter("append", function (value: unknown, argument: unknown) {
+      return append(value, argument, budget(this.context));
+    });
+    liquid.registerFilter(
+      "replace",
+      function (value: unknown, pattern: unknown, replacement: unknown) {
+        return replace(value, pattern, replacement, budget(this.context));
+      },
+    );
+    liquid.registerFilter(
+      "replace_first",
+      function (value: unknown, pattern: unknown, replacement: unknown) {
+        return replaceFirst(value, pattern, replacement, budget(this.context));
+      },
+    );
     liquid.registerFilter("number", function (value: unknown) {
       const b = budget(this.context);
       b.step();

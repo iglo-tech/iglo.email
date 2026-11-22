@@ -132,6 +132,103 @@ export function json(value: unknown, b: FilterBudget): string {
   return JSON.stringify(value);
 }
 
+/** The UTF-8 bytes of `text` after `map` has run on each of its characters, counted first. */
+function mappedBytes(text: string, map: (character: string) => string): number {
+  let bytes = 0;
+  for (const character of text) {
+    bytes += byteLength(map(character));
+  }
+  return bytes;
+}
+
+/** The occurrences `replace` substitutes: a split on the pattern, so an empty pattern splits between characters. */
+function separators(text: string, pattern: string): number {
+  if (pattern === "") {
+    return Math.max(0, text.length - 1);
+  }
+  let count = 0;
+  for (let at = text.indexOf(pattern); at !== -1; at = text.indexOf(pattern, at + pattern.length)) {
+    count++;
+  }
+  return count;
+}
+
+/** `downcase`: the text in lower case. Its bytes are counted per character before it is built. */
+export function downcase(value: unknown, b: FilterBudget): string {
+  b.step();
+  const input = scalar(value);
+  b.charge(mappedBytes(input, (c) => c.toLowerCase()));
+  return input.toLowerCase();
+}
+
+/** `capitalize`: the first character in upper case and the rest in lower case, as LiquidJS does. */
+export function capitalize(value: unknown, b: FilterBudget): string {
+  b.step();
+  const input = scalar(value);
+  const head = input.charAt(0).toUpperCase();
+  const tail = input.slice(1);
+  b.charge(byteLength(head) + mappedBytes(tail, (c) => c.toLowerCase()));
+  return head + tail.toLowerCase();
+}
+
+/** `prepend` and `append` join a literal string to the text; both are charged before the join. */
+export function prepend(value: unknown, argument: unknown, b: FilterBudget): string {
+  b.step();
+  const input = scalar(value);
+  const added = scalar(argument);
+  b.charge(byteLength(input) + byteLength(added));
+  return added + input;
+}
+
+export function append(value: unknown, argument: unknown, b: FilterBudget): string {
+  b.step();
+  const input = scalar(value);
+  const added = scalar(argument);
+  b.charge(byteLength(input) + byteLength(added));
+  return input + added;
+}
+
+/**
+ * `replace`: every occurrence of a literal pattern replaced by a literal string (no regular
+ * expression, and no `$` patterns in the replacement). The occurrences are counted first, so an
+ * empty pattern or a long text is refused by the work or emission budget before the split.
+ */
+export function replace(
+  value: unknown,
+  pattern: unknown,
+  replacement: unknown,
+  b: FilterBudget,
+): string {
+  b.step();
+  const input = scalar(value);
+  const find = scalar(pattern);
+  const withText = scalar(replacement);
+  const count = separators(input, find);
+  b.step(count);
+  b.charge(byteLength(input) - count * byteLength(find) + count * byteLength(withText));
+  return input.split(find).join(withText);
+}
+
+/** `replace_first`: the first occurrence of a literal pattern replaced by a literal string. */
+export function replaceFirst(
+  value: unknown,
+  pattern: unknown,
+  replacement: unknown,
+  b: FilterBudget,
+): string {
+  b.step();
+  const input = scalar(value);
+  const find = scalar(pattern);
+  const withText = scalar(replacement);
+  const at = input.indexOf(find);
+  if (at === -1) {
+    b.charge(byteLength(input));
+    return input;
+  }
+  b.charge(byteLength(input) - byteLength(find) + byteLength(withText));
+  return input.slice(0, at) + withText + input.slice(at + find.length);
+}
+
 /**
  * `size`: the length of a string in characters (JavaScript's `length`, so a character outside the
  * Basic Multilingual Plane counts as two), the items of an array, or the own keys of a plain

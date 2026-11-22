@@ -111,10 +111,13 @@ test("json prints a loop's pair as its JSON array", async () => {
 
 test("json charges the emission budget before it builds the text", async () => {
   const f = await open();
-  // 100 texts of 60 KB are 6 MB, over the 4 MiB emission budget (D54): refused, not built.
-  const sent = await render(f, "{% for i in (1..100) %}{{ data.big | json | raw }}{% endfor %}", {
-    big: "x".repeat(60_000),
-  });
+  // 80 texts of 60 KB are 4.8 MB, over the 4 MiB emission budget (D54). `assign` keeps them out of
+  // the output, so the budget, not the 1 MiB output limit, is what refuses the 70th.
+  const sent = await render(
+    f,
+    "{% for i in (1..80) %}{% assign t = data.big | json %}{% endfor %}ok",
+    { big: "x".repeat(60_000) },
+  );
   expect(sent.http).toBe(400);
 });
 
@@ -125,6 +128,73 @@ test("json walks its value within the work budget", async () => {
     obj,
   });
   // 20 walks of 1,001 nodes are 20,020 steps, over the 10,000-step work budget (D54).
+  expect(sent.http).toBe(400);
+});
+
+test("downcase and capitalize change case as LiquidJS does, and nil is empty", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ data.s | downcase }}] [{{ data.t | capitalize }}] [{{ data.n | downcase }}] " +
+      "[{{ data.missing | capitalize }}] [{{ data.e | capitalize }}] [{{ 'élan' | capitalize }}]",
+    { s: "ÀB Ω", t: "hELLO wORLD", n: 12 },
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[àb ω] [Hello world] [12] [] [] [Élan]");
+});
+
+test("prepend and append join a literal string, and a nil argument adds nothing", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ 'b' | prepend: 'a' }}] [{{ 'a' | append: 'b' }}] [{{ 'x' | append: data.missing }}] " +
+      "[{{ data.missing | prepend: 'y' }}]",
+    {},
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[ab] [ab] [x] [y]");
+});
+
+test("replace and replace_first are literal: no regular expression, no $ patterns", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ 'a.b.c' | replace: '.', '$&/' }}] [{{ 'a.b.a' | replace_first: 'a', 'X' }}] " +
+      "[{{ 'xyz' | replace: 'q', 'r' }}] [{{ 'xyz' | replace_first: 'q', 'r' }}] " +
+      "[{{ 'a(b)' | replace: '(b)', '$1' }}] [{{ data.missing | replace: 'a', 'b' }}]",
+    {},
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[a$&/b$&/c] [X.b.a] [xyz] [xyz] [a$1] []");
+});
+
+test("replace of an empty pattern goes between the characters, as split and join do", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ 'abc' | replace: '', '-' }}] [{{ '' | replace: '', '-' }}]",
+    {},
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[a-b-c] []");
+});
+
+test("the text a replacement puts in is escaped in HTML, as any value is", async () => {
+  const f = await open();
+  const sent = await render(f, "{{ 'a<b' | replace: '<', '&lt;' }}", {});
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("a&amp;lt;b");
+});
+
+test("replace charges its output to the emission budget before it builds the text", async () => {
+  const f = await open();
+  // A 60 KB text with one X and a 60 KB replacement makes about 120 KB per call. `assign` stores
+  // the text without emitting it, so only the budget (4 MiB, D54) stops 36 calls.
+  const sent = await render(
+    f,
+    "{% for i in (1..36) %}{% assign t = data.text | replace: 'X', data.rep %}{% endfor %}ok",
+    { text: `X${"a".repeat(59_999)}`, rep: "b".repeat(60_000) },
+  );
   expect(sent.http).toBe(400);
 });
 
