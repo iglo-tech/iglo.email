@@ -1,5 +1,6 @@
 // In-process production owners for POST /api/tx, with a loopback SMTP sink.
 import { fixturePageSite } from "@/test/public/site";
+import type { JsonObject } from "@/test/json-object";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -458,7 +459,7 @@ export async function txFixture(
     }
     return created.body.data.id as number;
   };
-  const subscriber = async (email: string, name = "Fixture Person", extra: object = {}) => {
+  const subscriber = async (email: string, name = "Fixture Person", extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", { email, name, ...extra });
     if (created.status !== 200) {
       throw new Error(`subscriber ${created.status}`);

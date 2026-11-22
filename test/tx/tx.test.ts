@@ -5,6 +5,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { imagePng } from "@/test/media/images";
 import { txFixture } from "@/test/tx/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { TxFixture } from "@/test/tx/fixture";
 
 const fixtures: Array<TxFixture> = [];
@@ -625,7 +626,7 @@ test("manual resend rechecks the blocklist for unlinked recipients", async () =>
 
 test("an idempotent retry replays after its template or subscriber changes", async () => {
   const f = await open();
-  const retry = async (body: object, mutate: () => Promise<number>) => {
+  const retry = async (body: JsonObject, mutate: () => Promise<number>) => {
     const first = await f.tx(body);
     expect(first.status).toBe(200);
     expect(first.body.data.sends[0].status).toBe("sent");

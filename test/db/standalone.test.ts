@@ -32,7 +32,7 @@ test("compiled fixture embeds migration and named SQL outside the checkout with 
       }),
     ]).finally(() => clearTimeout(timer));
     const origin = new TextDecoder().decode(chunk.value).trim();
-    async function request(input: object) {
+    async function request(input: unknown) {
       const response = await fetch(origin, {
         method: "POST",
         body: JSON.stringify(input),

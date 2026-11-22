@@ -9,6 +9,7 @@ import { MAX_BULK_DELIVERIES } from "@/webhooks/effects";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { signatureTime, signatureValid, startReceiver } from "@/test/webhooks/receiver";
+import type { JsonObject } from "@/test/json-object";
 import type { Receiver } from "@/test/webhooks/receiver";
 
 const cleanups: Array<() => unknown> = [];
@@ -35,7 +36,7 @@ const all = [
   "send.failed",
   "bounce.recorded",
 ];
-const hook = async (f: TxFixture, r: Receiver, events = all, extra: object = {}) => {
+const hook = async (f: TxFixture, r: Receiver, events = all, extra: JsonObject = {}) => {
   const created = await f.json("/api/webhooks", "POST", { url: r.url(), events, ...extra });
   expect(created.status).toBe(200);
   return created.body.data as { id: number; secret: string };
@@ -181,7 +182,7 @@ test("every listed event reaches the receiver correctly signed", async () => {
   const { secret } = await hook(f, r);
   const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
     .body.data.id as number;
-  const email = (name: string, extra: object = {}) =>
+  const email = (name: string, extra: JsonObject = {}) =>
     f.subscriber(`${name}@example.test`, name, { lists: [list], ...extra });
 
   const unsub = await email("unsub", { external_id: "app-1" });
@@ -1015,7 +1016,7 @@ test("bulk actions queue the bytes a single action would, each with its own id",
   const r = receiver();
   const { secret } = await hook(f, r);
   const [list, other] = [await newList(f), await newList(f)];
-  const email = (name: string, extra: object = {}) =>
+  const email = (name: string, extra: JsonObject = {}) =>
     f.subscriber(`${name}@example.test`, name, { lists: [list, other], ...extra });
   const a = await email("a", { external_id: 'app "é" a' });
   const b = await email("b");
@@ -1090,7 +1091,7 @@ test("bulk unsubscribing queues only memberships that really ended", async () =>
   const a = await f.subscriber("a@example.test", "A", { lists: [list, other] });
   const b = await f.subscriber("b@example.test", "B", { lists: [other] });
   const c = await f.subscriber("c@example.test", "C", { lists: [list, other] });
-  const unsubscribe = (body: object, path = "/api/subscribers/query/lists") =>
+  const unsubscribe = (body: JsonObject, path = "/api/subscribers/query/lists") =>
     f.json(path, "PUT", { action: "unsubscribe", target_list_ids: [list], ...body });
   expect((await unsubscribe({ all: true })).status).toBe(200);
   await r.waitFor(2);

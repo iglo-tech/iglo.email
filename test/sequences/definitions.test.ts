@@ -2,6 +2,7 @@
 // 07-api-and-ui.md, through /api/sequences and the permission model.
 import { afterEach, expect, test } from "bun:test";
 import { sequencesFixture } from "@/test/sequences/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SequencesFixture } from "@/test/sequences/fixture";
 
 const fixtures: Array<SequencesFixture> = [];
@@ -174,11 +175,11 @@ test("every definition field is validated and a rejection writes nothing", async
   const { tx, news, definition } = await base(f);
   const campaign = await f.template("campaign");
   const step = definition.steps[0]!;
-  const withStep = (extra: object) => ({
+  const withStep = (extra: JsonObject) => ({
     ...definition,
     steps: [{ ...step, ...extra }],
   });
-  const deep = (n: number): object => (n ? { not: deep(n - 1) } : { attr: "a", op: "exists" });
+  const deep = (n: number): JsonObject => (n ? { not: deep(n - 1) } : { attr: "a", op: "exists" });
   const cases: Array<[string, unknown]> = [
     ["no name", { ...definition, name: "" }],
     ["blank name", { ...definition, name: "   " }],
@@ -439,7 +440,7 @@ test("aggregates are validated on save like conditions, and a rejection writes n
     ...definition,
     steps: [{ ...step, aggregates }],
   });
-  const one = (spec: object) => ({ n: { event: "e", ...spec } });
+  const one = (spec: JsonObject) => ({ n: { event: "e", ...spec } });
   // Each refused shape names the field that is wrong, the way conditions do.
   const cases: Array<[string, unknown, string]> = [
     ["not an object", "sum", "steps.0.aggregates"],

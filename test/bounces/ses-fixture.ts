@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SnsFetch } from "@/bounces/ses";
+import type { JsonObject } from "@/test/json-object";
 import type { TxFixture } from "@/test/tx/fixture";
 
 export const CERT = "https://sns.eu-west-1.amazonaws.com/SimpleNotificationService-abc123.pem";
@@ -179,7 +180,7 @@ export const post = (f: TxFixture, body: unknown, type = "Notification", raw?: s
 export const bounceMessage = (
   f: Clocked,
   recipients: Array<string>,
-  extra: object = {},
+  extra: JsonObject = {},
   headers: Array<object> = [],
 ) =>
   JSON.stringify({

@@ -87,7 +87,7 @@ export function stats(values: Array<number>) {
   };
 }
 
-export function record(entry: object, compiled: boolean) {
+export function record<T extends object>(entry: T, compiled: boolean) {
   const line = { at: new Date().toISOString(), ...provenance(compiled), ...entry };
   appendFileSync(resultsFile, JSON.stringify(line) + "\n");
   console.log(JSON.stringify(line, null, 2));

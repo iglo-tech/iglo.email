@@ -707,14 +707,19 @@ async function compareBody(
     const parse = JSON.parse as (
       text: string,
       reviver: (
-        this: object,
+        this: unknown,
         key: string,
         entry: unknown,
         context?: { source?: string },
       ) => unknown,
     ) => unknown;
     value = parse(actual, function (key, entry, context) {
-      if (typeof entry === "number" && context?.source) {
+      if (
+        typeof entry === "number" &&
+        context?.source &&
+        typeof this === "object" &&
+        this !== null
+      ) {
         let tokens = numericTokens.get(this);
         if (!tokens) {
           tokens = new Map();

@@ -2,6 +2,7 @@
 // into the loopback SMTP sink, the template save and preview APIs.
 import { afterEach, expect, test } from "bun:test";
 import { txFixture } from "@/test/tx/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { TxFixture } from "@/test/tx/fixture";
 
 const fixtures: Array<TxFixture> = [];
@@ -17,7 +18,7 @@ async function open() {
 }
 
 /** Send `body` to a fresh address; the message text is decoded from quoted-printable. */
-async function render(f: TxFixture, body: string, data: object = {}) {
+async function render(f: TxFixture, body: string, data: JsonObject = {}) {
   const template = await f.template(`<p>${body}</p>`);
   const email = `n-${crypto.randomUUID().slice(0, 12)}@example.test`;
   const response = await f.tx({ subscriber_emails: [email], template_id: template, data });

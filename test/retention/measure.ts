@@ -34,7 +34,7 @@ const day = 86_400_000;
 const real = createRealClock();
 const started = Date.now();
 const iso = (ms: number) => new Date(ms).toISOString();
-const record = (entry: object) => {
+const record = <T extends object>(entry: T) => {
   const line = JSON.stringify({ at: new Date().toISOString(), ...entry }, (_key, value) =>
     typeof value === "bigint" ? Number(value) : value,
   );

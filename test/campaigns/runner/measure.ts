@@ -11,6 +11,7 @@ import { createServer } from "node:net";
 import type { Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import type { JsonObject } from "@/test/json-object";
 
 const repository = resolve(import.meta.dir, "../../..");
 const executable = join(repository, "dist/iglo.email");
@@ -34,7 +35,7 @@ const free = () =>
 const head = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: repository })
   .stdout.toString()
   .trim();
-function record(entry: object) {
+function record<T extends object>(entry: T) {
   appendFileSync(results, JSON.stringify({ at: new Date().toISOString(), head, ...entry }) + "\n");
   console.log(JSON.stringify(entry, null, 2));
 }
@@ -296,7 +297,7 @@ async function seed(
   prefix: string,
   count: number,
   lists: Array<number>,
-  extra: object = { preconfirm_subscriptions: true },
+  extra: JsonObject = { preconfirm_subscriptions: true },
   parallel = 8,
 ) {
   const ids: Array<number> = Array.from({ length: count }, () => 0);

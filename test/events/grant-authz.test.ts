@@ -3,6 +3,7 @@
 // Through POST /api/subscriber-events and the role APIs, observed through the stored rows.
 import { afterEach, expect, test } from "bun:test";
 import { eventsFixture } from "@/test/events/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { EventsFixture } from "@/test/events/fixture";
 
 const fixtures: Array<EventsFixture> = [];
@@ -16,7 +17,7 @@ async function open() {
   fixtures.push(f);
   return f;
 }
-const order = (subscriber: object, extra: object = {}) => ({
+const order = (subscriber: JsonObject, extra: JsonObject = {}) => ({
   subscriber,
   name: "order_paid",
   ...extra,
@@ -53,7 +54,7 @@ async function grantUser(f: EventsFixture, name: string, lists: Array<number>) {
  */
 async function heldPost(
   f: EventsFixture,
-  body: object,
+  body: JsonObject,
   headers: Record<string, string>,
   between: () => Promise<void>,
 ) {

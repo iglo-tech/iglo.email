@@ -55,7 +55,7 @@ export async function runTemplatesContract(target: {
     ((await (await request(`/api/templates${query}`)).json()) as { data: Array<Row> }).data;
   const get = async (id: number) =>
     ((await (await request(`/api/templates/${id}`)).json()) as { data: Row }).data;
-  const create = async (input: object) => {
+  const create = async (input: unknown) => {
     const response = await request("/api/templates", "POST", input);
     const item = ((await response.json()) as { data: Row }).data;
     if (response.status === 200 && item?.id) {

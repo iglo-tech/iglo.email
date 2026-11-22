@@ -10,6 +10,7 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials, Mode } from "@/test/contract/types";
+import type { JsonObject } from "@/test/json-object";
 
 type Campaign = Record<string, any> & { id: number; uuid: string };
 const fields = [
@@ -133,7 +134,7 @@ export async function runCampaignsContract(target: {
     templates: [] as Array<number>,
   };
   let cleanupFailures = 0;
-  const create = async (input: object, label: string, auth = authorization) => {
+  const create = async (input: unknown, label: string, auth = authorization) => {
     const response = await call("/api/campaigns", "POST", input, auth);
     check(response.status === 200, `${label}-status`);
     owned.campaigns.push(response.body.data.id);
@@ -279,7 +280,7 @@ export async function runCampaignsContract(target: {
     );
     check(unknownType.content_type === "richtext", "create-content-type-default");
 
-    const invalid = async (input: object, expected: string, label: string) => {
+    const invalid = async (input: unknown, expected: string, label: string) => {
       const response = await call("/api/campaigns", "POST", input);
       if (response.status === 200) {
         owned.campaigns.push(response.body.data.id);
@@ -845,7 +846,7 @@ export async function runCampaignsContract(target: {
       plainMessage.HTML === "" && plainMessage.Text.includes("Plain Bob Other <b>"),
       "test-plain-message",
     );
-    const testFailure = async (input: object, expected: string, label: string) => {
+    const testFailure = async (input: JsonObject, expected: string, label: string) => {
       const response = await call(`/api/campaigns/${testCampaign.id}/test`, "POST", {
         name: "t",
         subject: "t",

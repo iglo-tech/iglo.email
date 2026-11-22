@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite";
 import { createHmac, generateKeyPairSync } from "node:crypto";
 import { join } from "node:path";
 import { validate } from "@/test/openapi/schema";
-import type { Document } from "@/test/openapi/schema";
+import type { Document, Schema } from "@/test/openapi/schema";
 import type { Credentials } from "@/test/contract/types";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { startReceiver } from "@/test/webhooks/receiver";
@@ -228,7 +228,7 @@ export async function runOpenApiContract(target: {
     const response = declared.$ref
       ? document.components.responses[declared.$ref.split("/").pop()]
       : declared;
-    const content = response.content as Record<string, { schema?: object }> | undefined;
+    const content = response.content as Record<string, { schema?: Schema }> | undefined;
     if (!content) {
       if (reply.text !== "") {
         throw new Error(`FAIL openapi-body ${key}: documented as empty`);

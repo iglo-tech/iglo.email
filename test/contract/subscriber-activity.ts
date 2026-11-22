@@ -2,6 +2,7 @@
 // ExportSubscriberData), cmd/handlers.go, internal/core/subscribers.go and queries/subscribers.sql
 // at 6fcd95f. Views and clicks go through the real pixel and redirect routes.
 import type { Credentials, Mode } from "@/test/contract/types";
+import type { JsonObject } from "@/test/json-object";
 
 export async function runSubscriberActivity(target: {
   mode: Mode;
@@ -112,7 +113,7 @@ export async function runSubscriberActivity(target: {
       },
     });
     try {
-      const smtp = before.smtp.map((server: object) => ({
+      const smtp = before.smtp.map((server: JsonObject) => ({
         ...server,
         enabled: true,
         host: "127.0.0.1",

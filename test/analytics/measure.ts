@@ -70,7 +70,7 @@ try {
     ["sends by template year", () => store.sends("template", year)],
     ["sends by step year", () => store.sends("step", year)],
   ];
-  const report = (values: object) => process.stdout.write(`${JSON.stringify(values)}\n`);
+  const report = (values: unknown) => process.stdout.write(`${JSON.stringify(values)}\n`);
   const stats = (times: Array<number>) => {
     const sorted = [...times].sort((a, b) => a - b);
     return {

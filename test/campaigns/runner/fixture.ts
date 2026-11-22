@@ -1,6 +1,7 @@
 // The campaign runner wired over the M3.1 campaigns fixture as src/main.ts wires it, with a
 // controllable emailer that records each push on the injected clock.
 import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { JsonObject } from "@/test/json-object";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { createCampaignRunnerRegistry, startCampaignRunner } from "@/campaigns/runner/runner";
 import type { RunnerSettings } from "@/campaigns/runner/runner";
@@ -103,7 +104,7 @@ export async function runnerFixture(
   };
   /** Campaigns this fixture created, so a stuck wait can report their state. */
   const campaignIds: Array<number> = [];
-  const campaign = async (input: object) => {
+  const campaign = async (input: JsonObject) => {
     const created = await f.campaign(input);
     campaignIds.push(created.id);
     return created;
@@ -172,7 +173,7 @@ export async function runnerFixture(
     email: string,
     lists: Array<number>,
     listStatus: "unconfirmed" | "confirmed" | "unsubscribed" = "confirmed",
-    extra: object = {},
+    extra: JsonObject = {},
   ) => {
     const sub = await f.subscriber(email, lists, {
       preconfirm_subscriptions: listStatus === "confirmed",

@@ -8,6 +8,7 @@ import { imagePng } from "@/test/media/images";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
 import { TestClock } from "@/test/server/fixture";
+import type { JsonObject } from "@/test/json-object";
 
 const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
@@ -683,7 +684,7 @@ test("tx templates get manage_url for subscribers, and it opens preferences", as
     preconfirm_subscriptions: true,
   });
   const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
-  const send = async (body: object) => (await f.tx({ template_id: template, ...body })).status;
+  const send = async (body: JsonObject) => (await f.tx({ template_id: template, ...body })).status;
   const url = async (to: string) => {
     await f.drain();
     const text = f.mailTo(to).at(-1)!.data.replaceAll("=\r\n", "").replaceAll("=3D", "=");

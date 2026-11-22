@@ -4,6 +4,7 @@
 // advanced on the injected clock.
 import { afterEach, expect, test } from "bun:test";
 import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
 const fixtures: Array<SchedulerFixture> = [];
@@ -31,13 +32,13 @@ function decoded(data: string) {
     new RegExp(`^${name}: (.*)$`, "mi").exec(headers)?.[1]?.trim() ?? null;
   return { headers, body, header };
 }
-const tx = (template: number, extra: object = {}) => ({
+const tx = (template: number, extra: JsonObject = {}) => ({
   wait: "PT0S",
   kind: "transactional",
   template_id: template,
   ...extra,
 });
-const mk = (template: number, extra: object = {}) => ({
+const mk = (template: number, extra: JsonObject = {}) => ({
   wait: "PT0S",
   kind: "marketing",
   template_id: template,
@@ -583,7 +584,7 @@ test("a scheduler loop failure surfaces instead of leaving a dead loop", async (
 // Races with the condition: `f.onCondition` acts while the scheduler awaits the evaluation,
 // as an admin request arriving during a slow query would.
 const always = { not: { event: "never_happens", since: "trigger" } };
-const save = (f: SchedulerFixture, id: number, steps: Array<object>, extra: object = {}) =>
+const save = (f: SchedulerFixture, id: number, steps: Array<JsonObject>, extra: JsonObject = {}) =>
   f.json(`/api/sequences/${id}`, "PUT", {
     name: "Onboarding",
     status: "active",

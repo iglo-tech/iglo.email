@@ -9,6 +9,7 @@ import { createSendCompaction } from "@/messaging/retention";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
+import type { JsonObject } from "@/test/json-object";
 
 const day = 86_400_000;
 const cleanups: Array<() => unknown> = [];
@@ -103,7 +104,7 @@ async function compactAll(f: TxFixture) {
   await pace.idle();
   await loop.stop();
 }
-function addSession(f: TxFixture, id: string, data: object, createdAt = f.clock.now()) {
+function addSession(f: TxFixture, id: string, data: JsonObject, createdAt = f.clock.now()) {
   f.db.run("INSERT INTO sessions(id, data, created_at) VALUES (?, ?, ?)", [
     id,
     JSON.stringify(data),
