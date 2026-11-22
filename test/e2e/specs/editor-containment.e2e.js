@@ -6,6 +6,7 @@ import { expect } from "@playwright/test";
 import { corpus, audit } from "../hostile-html.js";
 import { api, ORIGIN, test, unique, signIn } from "../helpers.js";
 
+// One click selects an image for Squire's resizer; a drag on the corner handle resizes it.
 const afterDrag = async (page, stored) => {
   await signIn(page);
   const c = await campaign(page, `<p>text ${stored} more</p>`);
@@ -27,6 +28,8 @@ const saved = async (page, id) => {
   expect((await save).status()).toBe(200);
   return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
 };
+// CSS order matters: a shorthand resets the longhands before it, so a held declaration stays
+// where it was and saving without a style edit stores the same declarations in the same order.
 const orderCells = (r) => [
   `background: url('${r}/hero.gif') center/cover no-repeat; background-color: #1a1a1a`,
   `background: url('${r}/size.gif'); background-size: cover`,
@@ -408,9 +411,6 @@ test.describe("remote images load on request", () => {
     expect(tag).not.toContain("data-rte-");
   });
 
-  // CSS order matters: a shorthand resets the longhands before it, so a held declaration stays
-  // where it was and saving without a style edit stores the same declarations in the same order.
-
   test("saving held background cells unedited keeps declaration order and values (B10)", async ({
     page,
     context,
@@ -736,8 +736,6 @@ test.describe("remote images load on request", () => {
   });
 
   test.describe("the resize handles", () => {
-    // One click selects an image for Squire's resizer; a drag on the corner handle resizes it.
-
     for (const [label, stored] of [
       ["with a stored size", `<img src="REMOTE/sized.gif" alt="b" width="600" height="400">`],
       ["with no stored size", `<img src="REMOTE/plain.gif" alt="b">`],
