@@ -75,7 +75,7 @@ export interface Inspection {
   hold: HoldRecord | null;
 }
 
-// The fs error code of a caught value: the code a property read gives, or undefined when there is none.
+// The fs error code of a caught value: its `code` when that is a string, otherwise undefined.
 function errorCode(error: unknown): string | undefined {
   if (typeof error === "object" && error !== null && "code" in error) {
     return typeof error.code === "string" ? error.code : undefined;
