@@ -9,6 +9,7 @@ let longest = 0;
 let stopped = false;
 (async () => {
   for await (const _ of Bun.stdin.stream()) {
+    // Only the end of stdin matters: the parent closes it to stop the probe.
   }
   stopped = true;
 })();

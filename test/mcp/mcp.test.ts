@@ -1125,7 +1125,9 @@ describe("B34 MCP endpoint tests", () => {
     let json: any;
     try {
       json = JSON.parse(text);
-    } catch {}
+    } catch {
+      // Not JSON: the caller compares the text.
+    }
     return { status: res.status, text, json };
   }
 

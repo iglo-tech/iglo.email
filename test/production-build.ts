@@ -35,7 +35,9 @@ function stale(dir = lock): boolean {
     if (Number.isInteger(pid) && pid > 0) {
       return !alive(pid);
     }
-  } catch {}
+  } catch {
+    // No readable owner yet: the age of the lock decides below.
+  }
   try {
     return Date.now() - statSync(dir).mtimeMs > 10_000;
   } catch {
@@ -56,7 +58,9 @@ function takeOver(): boolean {
   if (!stale(moved)) {
     try {
       renameSync(moved, lock);
-    } catch {}
+    } catch {
+      // Best effort: if another process has taken the lock path, that process owns it now.
+    }
     return false;
   }
   rmSync(moved, { recursive: true, force: true });

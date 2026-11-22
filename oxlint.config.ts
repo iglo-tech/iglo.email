@@ -236,7 +236,6 @@ export default defineConfig({
         "typescript/require-array-sort-compare": "off",
         "typescript/await-thenable": "off",
         "unicorn/prefer-string-replace-all": "off",
-        "no-empty": "off",
         "no-promise-executor-return": "off",
         "quality/no-object-parameters": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.

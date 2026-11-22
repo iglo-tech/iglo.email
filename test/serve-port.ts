@@ -102,7 +102,9 @@ export function listensOn(pid: number, port: number): boolean {
       let text = "";
       try {
         text = readFileSync(table, "utf8");
-      } catch {}
+      } catch {
+        // A table this host does not have (no IPv6) lists no sockets.
+      }
       for (const line of text.split("\n").slice(1)) {
         const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
         if (state === "0A" && local?.endsWith(`:${hex}`) && inode) {
@@ -119,9 +121,13 @@ export function listensOn(pid: number, port: number): boolean {
         if (match && inodes.has(match[1]!)) {
           return true;
         }
-      } catch {}
+      } catch {
+        // A descriptor that is not a socket, or that closed after the listing, is skipped.
+      }
     }
-  } catch {}
+  } catch {
+    // No descriptor table for this pid: it cannot be listening here.
+  }
   return false;
 }
 
