@@ -91,8 +91,17 @@ export class TemplateSourceError extends Error {
     super(field);
   }
 }
-/** A `for` tag with a `|` in it: LiquidJS reads only the collection's value and ignores the rest. */
-const forWithFilter = /\{%-?\s*for\s[^%]*\|/;
+/**
+ * A `for` tag whose collection has a filter: LiquidJS reads only the value and ignores the filter. A `|`
+ * inside a quoted string is not a filter, and the tag ends at its `%}`, so the pattern steps over quotes.
+ */
+const forWithFilter = /\{%-?\s*for\s(?:"[^"]*"|'[^']*'|[^%"'])*?\|/;
+/** The contents of `raw` and `comment` blocks: their text is never parsed as a tag (D134). */
+const literalBlocks = /\{%-?\s*(raw|comment)\s*-?%\}[\s\S]*?\{%-?\s*end\1\s*-?%\}/g;
+/** Whether a template has a `for` tag with a filter outside its literal blocks. */
+function hasForWithFilter(source: string): boolean {
+  return forWithFilter.test(source.replaceAll(literalBlocks, ""));
+}
 /** The name of an unknown filter in a parse error, or "" (the library's text is not shown). */
 function unknownFilter(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
@@ -826,7 +835,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     } catch (error) {
       throw new TemplateSourceError("subject", unknownFilter(error));
     }
-    if (forWithFilter.test(body) || forWithFilter.test(subject)) {
+    if (hasForWithFilter(body) || hasForWithFilter(subject)) {
       throw new TemplateSourceError("loop");
     }
     if (campaign && !hasContent(compiled)) {

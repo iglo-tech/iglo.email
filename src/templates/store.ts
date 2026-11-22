@@ -115,7 +115,7 @@ export function createTemplateStore(
       renderer.validate(value.body, value.subject, value.type === "campaign");
     } catch (error) {
       if (error instanceof TemplateSourceError && error.field === "subject") {
-        throw new TemplateError("subject-syntax");
+        throw new TemplateError("subject-syntax", error.detail);
       }
       if (error instanceof TemplateSourceError && error.field === "slot") {
         throw new TemplateError("slot");

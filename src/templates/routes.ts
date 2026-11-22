@@ -56,7 +56,16 @@ function translateError(context: RequestContext, error: unknown): never {
       case "subject":
         throw new HttpError(400, t.Ts("globals.messages.missingFields", "name", "subject"));
       case "subject-syntax":
-        throw new HttpError(400, t.Ts("templates.errorCompiling", "error", "invalid subject"));
+        throw new HttpError(
+          400,
+          t.Ts(
+            "templates.errorCompiling",
+            "error",
+            error.detail
+              ? `unknown filter "${error.detail}" (see template_reference)`
+              : "invalid subject",
+          ),
+        );
       case "slot":
         throw new HttpError(
           400,

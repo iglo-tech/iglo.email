@@ -161,3 +161,32 @@ test("a date of a text the sample carries as a name is a value failure, so it sa
   const saved = await saveTx(f, '<p>{{ subscriber.name | date: "%Y" }}</p>');
   expect(saved.status).toBe(200);
 });
+
+test("an unknown filter in the subject is named, as one in the body is", async () => {
+  const f = await open();
+  const refused = await f.json("/api/templates", "POST", {
+    name: "subject",
+    type: "tx",
+    subject: "Hi {{ subscriber.name | sort }}",
+    body: "<p>x</p>",
+  });
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain('unknown filter "sort" (see template_reference)');
+});
+
+test("a for tag inside raw or comment is not a filtered loop, and a pipe in a quoted collection is not a filter", async () => {
+  const f = await open();
+  const raw = await saveTx(f, "<p>{% raw %}{% for x in data.a | slice: 1 %}{% endraw %}</p>");
+  expect(raw.status).toBe(200);
+  const comment = await saveTx(f, "<p>{% comment %}{% for x in y | z %}{% endcomment %}</p>");
+  expect(comment.status).toBe(200);
+  const quoted = await saveTx(f, '<p>{% for x in data["a|b"] %}{{ x }}{% endfor %}</p>');
+  expect(quoted.status).toBe(200);
+  // A real filtered collection outside those blocks is still refused.
+  const real = await saveTx(
+    f,
+    "<p>{% raw %}x{% endraw %}{% for x in data.a | slice: 1 %}{% endfor %}</p>",
+  );
+  expect(real.status).toBe(400);
+  expect(real.body.message).toContain("a for loop cannot take a filter");
+});
