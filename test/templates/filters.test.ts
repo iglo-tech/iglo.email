@@ -360,3 +360,15 @@ test("plus, minus, times, divided_by and round print nothing for an empty text, 
   expect(sent.status).toBe("sent");
   expect(sent.message).toContain("[][][][][][5]");
 });
+
+test("a divisor written with a decimal point divides as a float; an integer divisor keeps integer division (B135)", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ 10 | divided_by: 4.0 }}][{{ 10 | divided_by: 4 }}][{{ data.n | divided_by: 4.5 }}]" +
+      "[{{ data.n | divided_by: data.d }}][{{ 7 | divided_by: 2.0 }}]",
+    { n: 10, d: 4 },
+  );
+  expect(sent.http).toBe(200);
+  expect(sent.message).toContain("[2.5][2][2.2222222222222223][2][3.5]");
+});

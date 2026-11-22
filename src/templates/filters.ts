@@ -614,7 +614,8 @@ const finite = (result: number): number | "" => (Number.isFinite(result) ? resul
  * `plus`, `minus`, `times` and `divided_by` (D134): the input and the argument, read as numbers. A nil or empty
  * input is empty (B135 review N6: an optional number that arrives as `""` must not fail the message). An input
  * that is not a number is a value failure, and so is an argument that is not one, or a division by zero: a
- * literal one of these is refused at save. An integer divided by an integer rounds down, as LiquidJS does.
+ * literal one of these is refused at save. An integer divided by an integer rounds down, as LiquidJS does, unless
+ * the divisor is a literal written with a decimal point (`floatDivisor`), which divides as a float (B135 review).
  * A result that is not finite is empty.
  */
 export function arithmetic(
@@ -622,6 +623,7 @@ export function arithmetic(
   value: unknown,
   argument: unknown,
   b: FilterBudget,
+  floatDivisor = false,
 ): number | "" {
   b.step();
   const right = numberOf(argument);
@@ -647,9 +649,8 @@ export function arithmetic(
   if (right === 0) {
     throw new ValueError("divided_by cannot divide by zero");
   }
-  return finite(
-    Number.isInteger(left) && Number.isInteger(right) ? Math.floor(left / right) : left / right,
-  );
+  const whole = Number.isInteger(left) && Number.isInteger(right) && !floatDivisor;
+  return finite(whole ? Math.floor(left / right) : left / right);
 }
 
 /**

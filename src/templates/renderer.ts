@@ -967,7 +967,10 @@ export function createRenderer(clock: Clock, translation: Translation) {
       return arithmetic("times", value, argument, budget(this.context));
     });
     liquid.registerFilter("divided_by", function (value: unknown, argument: unknown) {
-      return arithmetic("divided_by", value, argument, budget(this.context));
+      // A divisor written with a decimal point (`4.0`) divides as a float, as Liquid's Ruby reference does (B135).
+      const written: unknown = this.token.args[0];
+      const floatDivisor = TypeGuards.isNumberToken(written) && written.getText().includes(".");
+      return arithmetic("divided_by", value, argument, budget(this.context), floatDivisor);
     });
     liquid.registerFilter("round", function (value: unknown, digits: unknown) {
       return round(value, digits, budget(this.context));
