@@ -38,6 +38,26 @@ test("a template whose text cannot render is refused at save, with its cause", a
   }
 });
 
+test("a literal failure in the template's own text is refused at save, whatever data arrives", async () => {
+  const f = await open();
+  // Each expression reads no data, so the template's text alone makes it fail (D134).
+  const literal = [
+    ['{{ "abc" | truncate: "x" }}', "needs a whole-number argument, got text"],
+    ['{{ "2026-02-30" | date: "%Y-%m-%d" }}', "needs a valid date"],
+    [`{{ "${"a,".repeat(1100)}" | split: "," }}`, "split would make 1101 parts"],
+  ];
+  for (const [body, cause] of literal) {
+    const refused = await saveTx(f, body);
+    const label = body.slice(0, 40);
+    expect(refused.status, label).toBe(400);
+    expect(refused.body.message, label).toContain("it fails to render: ");
+    expect(refused.body.message, label).toContain(cause);
+  }
+  // The same expression with a value from data is a value failure, so it saves.
+  const saved = await saveTx(f, '{{ data.s | truncate: "x" }}');
+  expect(saved.status).toBe(200);
+});
+
 test("a dynamic lookup whose key comes from data saves, and sends with the key's value", async () => {
   const f = await open();
   const saved = await saveTx(f, "<p>{{ data[data.which] }}</p>");
