@@ -151,21 +151,17 @@ export function buildDocument(): string {
     const [method = "", path = ""] = operation.route.split(" ");
     (paths[path] ??= {})[method.toLowerCase()] = build(operation);
   }
-  // One named response and envelope per status, shared by every operation that documents it (B131).
+  // One named response per status, shared by every operation that documents it (B131). Its
+  // envelope is inline: the codes a status can send are its own, not a schema of their own.
   const documented = [...new Set(operations.flatMap(statusesOf))].sort((a, b) => a - b);
   const statusResponses = Object.fromEntries(
     documented.map((status) => [
       `Error${status}`,
       {
         description: refused.get(status) ?? "Failed.",
-        content: {
-          "application/json": { schema: { $ref: `#/components/schemas/Error${status}` } },
-        },
+        content: { "application/json": { schema: errorSchema(status) } },
       },
     ]),
-  );
-  const statusSchemas = Object.fromEntries(
-    documented.map((status) => [`Error${status}`, errorSchema(status)]),
   );
   return JSON.stringify({
     openapi: "3.1.0",
@@ -195,7 +191,7 @@ export function buildDocument(): string {
         Error: { description: retryGuidance, content: errorContent },
         ...statusResponses,
       },
-      schemas: { ...schemas, ...statusSchemas },
+      schemas,
     },
     "x-deliberate-differences": differences.map(({ area, summary }) => ({ area, summary })),
     "x-excluded-routes": excluded,
