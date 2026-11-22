@@ -1,6 +1,9 @@
 // Adapted from listmonk static/public/templates/index.html at 6fcd95f. B126 (D123): the shell
-// carries no product credit, and its logo links to the operator's own site when one is set.
+// carries no product credit, and its logo links to the operator's own site when one is set. B129
+// (D127): the brand (accent, font, header) is set on the document element as custom properties.
 import type { Child } from "@/jsx/render";
+import { defaultAccent, fontStack, googleFontUrl, headerMode } from "@/public/brand";
+import type { BrandHeader } from "@/public/brand";
 
 /** The site settings the shell links to. */
 export interface ShellSite {
@@ -11,6 +14,10 @@ export interface ShellSite {
   readonly archive: boolean;
   /** The operator's own site (`app.site_url`, B126), or empty. */
   readonly siteUrl: string;
+  /** The brand (B129): the accent colour (hex, or empty for the built-in blue), the font and the header. */
+  readonly accent: string;
+  readonly font: string;
+  readonly header: BrandHeader;
 }
 /**
  * What every page shows of the site: its name and the shell settings above. Public, sign-in and
@@ -58,12 +65,24 @@ export function PublicShell({
     throw new TypeError("Invalid asset version");
   }
   const siteName = site.siteName;
-  const logo = (
-    <img src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`} alt={siteName} />
+  // The brand values are validated when saved (D127), so they go into the style attribute as they are.
+  const accent = site.accent || defaultAccent;
+  const fontUrl = googleFontUrl(site.font);
+  const mode = headerMode(site.header, site.logoUrl !== "");
+  const brand = (
+    <>
+      {mode !== "name" ? (
+        <img src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`} alt={siteName} />
+      ) : null}
+      {mode !== "logo" ? <span class="site-name">{siteName}</span> : null}
+    </>
   );
   const href = logoHref(site);
   return (
-    <html>
+    <html
+      class={site.accent ? "branded" : undefined}
+      style={`--brand-accent: ${accent}; --brand-font: ${fontStack(site.font)};`}
+    >
       <head>
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
         <title>
@@ -79,6 +98,7 @@ export function PublicShell({
             href={`${site.rootUrl}/archive.xml`}
           />
         ) : null}
+        {fontUrl ? <link rel="stylesheet" href={fontUrl} /> : null}
         <link
           href={`/public/static/style.css?v=${assetVersion}`}
           rel="stylesheet"
@@ -95,7 +115,7 @@ export function PublicShell({
       <body>
         <div class="container wrap">
           <header class="header">
-            <div class="logo">{href ? <a href={href}>{logo}</a> : logo}</div>
+            <div class="logo">{href ? <a href={href}>{brand}</a> : brand}</div>
           </header>
           {children}
         </div>

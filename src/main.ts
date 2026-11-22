@@ -81,6 +81,7 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import { createCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import { registerArchiveRoutes } from "@/public/archive";
+import { googleFontUrl } from "@/public/brand";
 import { createSubscriberMail, createSignupMail } from "@/public/mail";
 import type { SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
@@ -808,6 +809,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           siteName: current.siteName,
           faviconUrl: current.faviconUrl,
           rootUrl: current.rootUrl,
+          googleFonts: googleFontUrl(current.font) !== "",
           cacheSlowQueries: wired(settings, "settings").read()["app.cache_slow_queries"],
           disableTracking: wired(settings, "settings").read()["privacy.disable_tracking"],
           individualTracking: wired(settings, "settings").read()["privacy.individual_tracking"],

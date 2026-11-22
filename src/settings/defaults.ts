@@ -182,6 +182,11 @@ export const defaults = {
       tls_skip_verify: false,
     },
   ],
+  // Native (B129, D127): the operator's brand. An empty accent is the built-in blue; the font is a
+  // system stack or a validated Google Fonts family; `auto` is the logo when one is set, else the name.
+  "appearance.brand.accent": "",
+  "appearance.brand.font": "system-sans",
+  "appearance.brand.header": "auto",
   "appearance.admin.custom_css": "",
   "appearance.admin.custom_js": "",
   "appearance.public.custom_css": "",

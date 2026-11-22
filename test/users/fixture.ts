@@ -27,6 +27,7 @@ import { createEmailer } from "@/messaging/email";
 import { createSMTPTest } from "@/messaging/test";
 import { createRenderer } from "@/templates/renderer";
 import { registerAdminRoutes } from "@/admin/routes";
+import { googleFontUrl } from "@/public/brand";
 import { publicSettings } from "@/public/settings";
 import type { Message } from "@/messaging/email";
 
@@ -97,7 +98,13 @@ export async function startUserFixture(
       logger: { error: () => {}, attention: () => {} },
     });
     const router = createRouter();
-    registerUserRoutes(router, users, roles, auth, fixturePageSite);
+    // The sign-in pages read the brand the settings hold (B129), as the production site does.
+    registerUserRoutes(router, users, roles, auth, () => ({
+      ...fixturePageSite(),
+      accent: settings.read()["appearance.brand.accent"],
+      font: settings.read()["appearance.brand.font"],
+      header: settings.read()["appearance.brand.header"],
+    }));
     const emailer = smtp
       ? createEmailer({
           clock,
@@ -137,6 +144,7 @@ export async function startUserFixture(
         captcha: publicSettings(settings.read()).captcha,
         customCss: settings.read()["appearance.admin.custom_css"],
         customJs: settings.read()["appearance.admin.custom_js"],
+        googleFonts: googleFontUrl(settings.read()["appearance.brand.font"]) !== "",
       }),
       settings: () => ({
         siteName: settings.read()["app.site_name"],
@@ -147,6 +155,9 @@ export async function startUserFixture(
         subscriptionPage: false,
         archive: false,
         siteUrl: "",
+        accent: settings.read()["appearance.brand.accent"],
+        font: settings.read()["appearance.brand.font"],
+        header: settings.read()["appearance.brand.header"],
       }),
     });
     router.route("GET", "/fixture/mail", () =>

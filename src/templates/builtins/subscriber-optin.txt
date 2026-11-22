@@ -79,7 +79,7 @@
             }
         </style>
     </head>
-<body style="background-color: #f4f4f5;">
+<body style="background-color: #f4f4f5;{% if brand_font != "" %} font-family: {{ brand_font }};{% endif %}">
     <div class="wrap">
         <div class="header">
             {% if logo_url != "" %}
@@ -103,14 +103,14 @@
 </ul>
 <p>{{ "email.optin.confirmSubHelp" | t }}</p>
 <p>
-    <a href="{{ optin_url }}" class="button">{{ "globals.buttons.confirmSubscription" | t }}</a>
+    <a href="{{ optin_url }}" class="button" style="background: {{ brand_accent }};">{{ "globals.buttons.confirmSubscription" | t }}</a>
 </p>
 <a href="{{ manage_url }}">{{ "globals.buttons.unsubscribe" | t }}</a>
 
     </div>
 
     <div class="footer">
-        <p>{% if site_url != "" %}<a href="{{ site_url }}">{{ site_name }}</a>{% else %}{{ site_name }}{% endif %}</p>
+        <p>{% if site_url != "" %}<a href="{{ site_url }}" style="color: {{ brand_accent }};">{{ site_name }}</a>{% else %}{{ site_name }}{% endif %}</p>
     </div>
 </body>
 </html>

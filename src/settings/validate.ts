@@ -15,6 +15,12 @@ import { HttpError } from "@/server/response";
 import type { Roles } from "@/roles/roles";
 
 export type Settings = Record<string, any>;
+
+// The brand settings (B129, D127): the fixed font choices, the header modes, and the shape of a
+// Google Fonts family name (letters and digits, single spaces, at most 60 characters).
+const systemFontNames = new Set(["system-sans", "system-serif", "system-mono"]);
+const brandHeaders = new Set(["auto", "logo", "name", "logo_and_name"]);
+const googleFamily = /^[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*$/;
 const fail = (message = "Invalid data."): never => {
   throw new HttpError(400, message);
 };
@@ -366,6 +372,26 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     } catch (error) {
       return fail(`Invalid data: ${(error as Error).message}`);
     }
+  }
+  // B129 (D127): the brand. A colour is hex only, so nothing can inject CSS; a font is a fixed system
+  // stack or a Google Fonts family name, which holds letters, digits and single spaces only.
+  next["appearance.brand.accent"] = trimSpace(next["appearance.brand.accent"] ?? "");
+  if (
+    next["appearance.brand.accent"] &&
+    !/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(next["appearance.brand.accent"])
+  ) {
+    return fail("brand accent colour must be a hex colour, #rgb or #rrggbb");
+  }
+  next["appearance.brand.font"] = trimSpace(next["appearance.brand.font"] ?? "") || "system-sans";
+  const font = next["appearance.brand.font"];
+  if (!systemFontNames.has(font) && !(googleFamily.test(font) && Array.from(font).length <= 60)) {
+    return fail(
+      "brand font must be system-sans, system-serif, system-mono or a Google Fonts family name",
+    );
+  }
+  next["appearance.brand.header"] = trimSpace(next["appearance.brand.header"] ?? "") || "auto";
+  if (!brandHeaders.has(next["appearance.brand.header"])) {
+    return fail("brand header must be auto, logo, name or logo_and_name");
   }
   const names = new Set(["email"]);
   let hasDefault = false;

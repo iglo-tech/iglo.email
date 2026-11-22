@@ -98,7 +98,30 @@ function TextField(props: {
     </label>
   );
 }
-function General({ t }: { t: Translation }) {
+/**
+ * Upload or remove a logo or favicon (B129, D127). The file goes to media, and its URL is set in the
+ * form; Save stores it. Needs media:manage, so it is shown only to a user who has it.
+ */
+function ImageUpload({ name, t, canUpload }: { name: string; t: Translation; canUpload: boolean }) {
+  if (!canUpload) {
+    return null;
+  }
+  return (
+    <div class="hstack gap-3 mb-4">
+      <input
+        type="file"
+        accept="image/*"
+        aria-label={t.T("settings.general.uploadImage")}
+        name={`${name}.upload`}
+        x-on:change={`uploadImage('${name}', $event)`}
+      />
+      <button type="button" class="small" x-on:click={`clearImage('${name}')`}>
+        {t.T("globals.buttons.remove")}
+      </button>
+    </div>
+  );
+}
+function General({ t, canUpload }: { t: Translation; canUpload: boolean }) {
   return (
     <div class="settings-items">
       <fieldset class="card" data-keywords="site name root url logo favicon branding domain title">
@@ -123,6 +146,7 @@ function General({ t }: { t: Translation }) {
           maxlength="300"
           placeholder="https://mail.yoursite.com/logo.png"
         />
+        <ImageUpload name="app.logo_url" t={t} canUpload={canUpload} />
         <TextField
           model="form['app.favicon_url']"
           name="app.favicon_url"
@@ -132,6 +156,7 @@ function General({ t }: { t: Translation }) {
           maxlength="300"
           placeholder="https://mail.yoursite.com/favicon.png"
         />
+        <ImageUpload name="app.favicon_url" t={t} canUpload={canUpload} />
         <TextField
           model="form['app.site_url']"
           name="app.site_url"
@@ -943,6 +968,43 @@ const editor = (key: string, lang: string, legend: string, keywords: string) => 
     ></code-editor>
   </fieldset>
 );
+/** The brand of the public pages and the subscriber mail (B129, D127), validated when saved. */
+function Brand({ t }: { t: Translation }) {
+  return (
+    <fieldset
+      class="card"
+      data-keywords="brand accent colour color font header logo name public pages mail"
+    >
+      <legend>{t.T("settings.brand.title")}</legend>
+      <TextField
+        model="form['appearance.brand.accent']"
+        name="appearance.brand.accent"
+        label={t.T("settings.brand.accent")}
+        hint={t.T("settings.brand.accentHelp")}
+        maxlength="7"
+        placeholder="#0055d4"
+      />
+      <TextField
+        model="form['appearance.brand.font']"
+        name="appearance.brand.font"
+        label={t.T("settings.brand.font")}
+        hint={t.T("settings.brand.fontHelp")}
+        maxlength="60"
+        placeholder="system-sans"
+      />
+      <label data-field="">
+        {t.T("settings.brand.header")}
+        <select name="appearance.brand.header" x-model="form['appearance.brand.header']">
+          <option value="auto">{t.T("settings.brand.headerAuto")}</option>
+          <option value="logo">{t.T("settings.brand.headerLogo")}</option>
+          <option value="name">{t.T("settings.brand.headerName")}</option>
+          <option value="logo_and_name">{t.T("settings.brand.headerLogoName")}</option>
+        </select>
+        <Hint>{t.T("settings.brand.headerHelp")}</Hint>
+      </label>
+    </fieldset>
+  );
+}
 function Appearance({ t }: { t: Translation }) {
   const css = t.T("settings.appearance.customCSS");
   const js = t.T("settings.appearance.customJS");
@@ -972,6 +1034,7 @@ function Appearance({ t }: { t: Translation }) {
         </div>
         <div role="tabpanel">
           <p class="text-light">{t.T("settings.appearance.publicHelp")}</p>
+          <Brand t={t} />
           {editor(
             "public.custom_css",
             "css",
@@ -994,7 +1057,7 @@ export const settingsView: AdminView = ({ context, can }) => {
   const t = context.app.i18n;
   const canManage = can("settings:manage");
   const tabs = [
-    ["general", t.T("globals.terms.general"), <General t={t} />],
+    ["general", t.T("globals.terms.general"), <General t={t} canUpload={can("media:manage")} />],
     ["performance", t.T("globals.terms.performance"), <Performance t={t} />],
     ["privacy", t.T("globals.terms.privacy"), <Privacy t={t} />],
     ["security", t.T("globals.terms.security"), <Security t={t} />],

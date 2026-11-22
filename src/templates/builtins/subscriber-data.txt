@@ -68,7 +68,7 @@
             }
         </style>
     </head>
-<body style="background-color: #f4f4f5;">
+<body style="background-color: #f4f4f5;{% if brand_font != "" %} font-family: {{ brand_font }};{% endif %}">
     <div class="wrap">
         <div class="header">
             {% if logo_url != "" %}
@@ -86,7 +86,7 @@
     </div>
 
     <div class="footer">
-        <p>{% if site_url != "" %}<a href="{{ site_url }}">{{ site_name }}</a>{% else %}{{ site_name }}{% endif %}</p>
+        <p>{% if site_url != "" %}<a href="{{ site_url }}" style="color: {{ brand_accent }};">{{ site_name }}</a>{% else %}{{ site_name }}{% endif %}</p>
     </div>
 </body>
 </html>

@@ -1006,6 +1006,36 @@ subscription page when that page is on, and to nothing otherwise.
 - **What it is not.** It is not the root URL. The root URL is the address of this installation,
   which the links in mail and in the admin are built from.
 
+## Brand, fonts and the source offer
+
+The public pages and the subscriber mail take the operator's brand ([D127](design/09-decisions.md#d127-the-operators-brand-replaces-the-credit-and-the-source-offer-stays-in-the-admin-lead-2026-11-20)).
+In the admin, under Settings > Appearance > Public, the Brand card sets three things. Settings >
+General has the logo and favicon, each with Upload and Remove; Save stores the result.
+
+- **Accent colour.** A hex colour, `#rgb` or `#rrggbb`, for the links and buttons of the public
+  pages and the accent of the subscriber mail. Empty keeps the built-in blue. A set accent also
+  draws a rule above the page's card.
+- **Font.** `system-sans` (the default), `system-serif`, `system-mono`, or the name of a Google
+  Fonts family such as `Lora`: letters and digits, with single spaces between words, at most 60
+  characters. The subscriber mail takes the font as an inline style but does not load a web font.
+- **Header.** `auto` shows the logo when one is set and the site name otherwise. `logo`, `name` and
+  `logo_and_name` show what their names say. The header links to the site URL when it is set (see
+  above).
+
+A value outside these rules is refused with a 400, and the stored value stays as it was.
+
+**Privacy of a Google font.** When a Google Fonts family is set, every public page and the admin
+sign-in page make the subscriber's or operator's browser load its stylesheet from
+`fonts.googleapis.com` and its files from `fonts.gstatic.com`, so Google receives the address and
+the time of each page view. A system font makes no such request. Choose a system font if the
+subscribers' privacy rules out that request.
+
+**Source offer.** iglo.email is licensed under AGPL-3.0. Section 13 asks that a modified version
+which users interact with over a network offers those users its source. The admin's sidebar links
+the upstream repository, `https://github.com/iglo-tech/iglo.email`. An operator who modifies
+iglo.email must keep offering its source to those users: link their modified source from the admin
+sidebar, or from another page that every admin user sees.
+
 ## Privacy: wipes and suppressions
 
 A person who wipes their data through a link in mail or a campaign (the paired paths of

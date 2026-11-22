@@ -175,6 +175,49 @@ test("a logo or favicon path the API accepts saves, from any tab", async ({ page
   });
 });
 
+// A 1x1 PNG: the media upload accepts it, and the settings take its URL.
+const PIXEL = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+test("uploads a logo and a favicon to media, saves their URLs, replaces and removes them", async ({
+  page,
+}) => {
+  await tab(page, "General").click();
+  for (const key of ["app.logo_url", "app.favicon_url"]) {
+    const input = page.locator(`input[type="file"][name="${key}.upload"]`);
+    const [upload] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().endsWith("/api/media") && r.request().method() === "POST",
+      ),
+      input.setInputFiles({ name: `${unique("brand")}.png`, mimeType: "image/png", buffer: PIXEL }),
+    ]);
+    expect(upload.status()).toBe(200);
+    const url = (await upload.json()).data.url;
+    expect(url).toBeTruthy();
+    await expect(page.locator(`[name="${key}"]`)).toHaveValue(url);
+    await save(page);
+    expect((await settings(page))[key]).toBe(url);
+
+    // Replacing the image sets a new URL; Remove empties the field, and Save stores that.
+    const [again] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().endsWith("/api/media") && r.request().method() === "POST",
+      ),
+      input.setInputFiles({ name: `${unique("brand")}.png`, mimeType: "image/png", buffer: PIXEL }),
+    ]);
+    expect(again.status()).toBe(200);
+    const replaced = (await again.json()).data.url;
+    expect(replaced).not.toBe(url);
+    await expect(page.locator(`[name="${key}"]`)).toHaveValue(replaced);
+    await input.locator("xpath=..").getByRole("button", { name: "Remove", exact: true }).click();
+    await expect(page.locator(`[name="${key}"]`)).toHaveValue("");
+    await save(page);
+    expect((await settings(page))[key]).toBe("");
+  }
+});
+
 test("searches across tabs using all terms", async ({ page }) => {
   const search = page.getByRole("searchbox", { name: "Search" });
   await expect(page.locator('[name="app.from_email"]')).toBeVisible();

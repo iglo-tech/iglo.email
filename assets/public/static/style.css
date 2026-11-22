@@ -9,13 +9,13 @@ html, body {
 }
 body {
   background: #f9f9f9;
-  font-family: "Inter", "Open Sans", "Helvetica Neue", sans-serif;
+  font-family: var(--brand-font, "Inter", "Open Sans", "Helvetica Neue", sans-serif);
   font-size: 16px;
   line-height: 26px;
   color: #111;
 }
 a {
-  color: #0055d4;
+  color: var(--brand-accent, #0055d4);
   text-decoration-color: #abcbfb;
 }
 a:hover {
@@ -50,7 +50,7 @@ input[type="text"], input[type="email"], input[type="password"], select {
   font-size: 1em;
 }
   input:focus {
-    border-color: #0055d4;
+    border-color: var(--brand-accent, #0055d4);
   }
 
 input:focus::placeholder {
@@ -74,7 +74,7 @@ input[disabled] {
   color: #FF5722;
 }
 .button {
-  background: #0055d4;
+  background: var(--brand-accent, #0055d4);
   padding: 15px 30px;
   border-radius: 3px;
   border: 0;
@@ -92,8 +92,8 @@ input[disabled] {
 }
 .button.button-outline {
   background: #fff;
-  border: 1px solid #0055d4;
-  color: #0055d4;
+  border: 1px solid var(--brand-accent, #0055d4);
+  color: var(--brand-accent, #0055d4);
 }
 .button.button-outline:hover {
   border-color: #333;
@@ -121,6 +121,15 @@ input[disabled] {
 .header .logo img {
   width: auto;
   max-width: 150px;
+}
+.header .logo .site-name {
+  color: #111;
+  font-size: 1.25em;
+  font-weight: 600;
+}
+/* A brand accent (B129, D127) adds a rule above the card; without one the page is unchanged. */
+.branded .wrap {
+  border-top: 4px solid var(--brand-accent, #0055d4);
 }
 
 .unsub-all {
