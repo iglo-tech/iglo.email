@@ -58,8 +58,9 @@ export interface ExistingSubscriber {
 /**
  * The authorization of one event: called once the subscriber it names is known, inside the
  * event's write transaction, before anything is written. A refusal (HttpError) fails the event
- * alone and writes nothing. It returns the caller's list manage scope, which decides only whether a
- * conflict may name the holder's external ID (D129).
+ * alone and writes nothing. It returns the caller's list manage scope, which decides whether an event
+ * may claim a subscriber on lists the caller does not manage, and whether a conflict may name the
+ * holder's external ID (D129).
  */
 export type Authorize = (existing: ExistingSubscriber | null) => Scope;
 /** An item without an authorization has no list scope: a conflict names no holder. */

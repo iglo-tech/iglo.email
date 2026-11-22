@@ -91,7 +91,9 @@ test("the events-only role claims the subscriber its e-mail-only event created, 
   expect(f.count("events")).toBe(2);
 });
 
-test("a list-scoped caller claims a holder on none of its lists, and a refused claim writes nothing", async () => {
+test("a claim of a holder on lists needs one the caller manages; the refusal names nothing and writes nothing", async () => {
+  // The one place a claim differs from main (D129): main links any holder, this refuses a caller
+  // that manages none of the holder's lists. A holder on no list is claimed by any caller.
   const f = await open();
   const news = await f.list("news");
   const other = await f.list("other");
@@ -101,24 +103,18 @@ test("a list-scoped caller claims a holder on none of its lists, and a refused c
     [{ id: news, permissions: ["list:manage"] }],
   );
   const outside = await make(f, { email: "out@example.com", name: "Out", lists: [other] });
-  // The claim needs no list scope: the holder's list is not the caller's, and the claim still works.
-  const claimed = await f.post(event({ external_id: "u_2", email: "out@example.com" }), scoped);
-  expect(claimed).toMatchObject({ status: 200, body: { data: { subscriber_id: outside } } });
-  expect(await f.subscriber(outside)).toMatchObject({
-    external_id: "u_2",
-    lists: [{ id: other }],
-  });
-  expect(f.count("events")).toBe(1);
-
-  // An external ID held by another subscriber refuses the claim for every caller, and writes nothing.
-  const inside = await make(f, { email: "in@example.com", name: "In", lists: [news] });
-  await make(f, { email: "taken@example.com", name: "T", external_id: "u_9" });
-  const refused = await f.post(event({ external_id: "u_9", email: "in@example.com" }), scoped);
+  const refused = await f.post(event({ external_id: "u_2", email: "out@example.com" }), scoped);
   expect(refused).toEqual({
     status: 409,
     body: { message: "E-mail already exists.", code: "email_conflict" },
   });
-  expect(await f.subscriber(inside)).toMatchObject({ external_id: null, lists: [{ id: news }] });
+  expect(await f.subscriber(outside)).toMatchObject({ external_id: null, lists: [{ id: other }] });
+  expect(f.count("events")).toBe(0);
+
+  const inside = await make(f, { email: "in@example.com", name: "In", lists: [news] });
+  const claimed = await f.post(event({ external_id: "u_3", email: "in@example.com" }), scoped);
+  expect(claimed).toMatchObject({ status: 200, body: { data: { subscriber_id: inside } } });
+  expect((await f.subscriber(inside)).external_id).toBe("u_3");
   expect(f.count("events")).toBe(1);
 });
 

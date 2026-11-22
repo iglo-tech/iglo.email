@@ -530,10 +530,11 @@ export function createSubscriberStore(
      * The 409 that refuses an event before it writes, when its address belongs to another subscriber
      * (D129); null when the event may write. `found` is what `resolveForEvent` returned. The event
      * may write when it names no address, the address is free, or it is `found`'s own with the
-     * event's external ID. When `found` holds the address and has no external ID, the event claims
-     * it: `upsertForEvent` links the external ID, and no scope is needed, as an e-mail-only event
-     * needs none. Any other holder is a conflict, and a conflict names the holder only to a caller
-     * that manages it.
+     * event's external ID. When `found` holds the address with no external ID, the event claims it,
+     * and `upsertForEvent` links the external ID. The claim is allowed when the holder is on no list
+     * (an e-mail-only event creates such a holder, so the events-only role can claim it), or when the
+     * caller manages one of its lists. Any other holder is a conflict, which names the holder only to
+     * a caller that manages it.
      */
     eventConflict(input: EventSubscriber, found: Row | null, scope: Scope): HttpError | null {
       if (input.email === undefined || input.external_id === undefined) {
@@ -546,8 +547,15 @@ export function createSubscriberStore(
       if (found?.id !== holder.id) {
         return addressConflict(holder, scope, "E-mail already exists.");
       }
-      if (found.external_id === input.external_id || found.external_id === null) {
+      if (found.external_id === input.external_id) {
         return null;
+      }
+      if (found.external_id === null) {
+        const lists = memberships(holder.id).map((m) => m.list_id);
+        if (lists.length === 0 || managesHolder(lists, scope)) {
+          return null;
+        }
+        return addressConflict(holder, scope, "E-mail already exists.");
       }
       return addressConflict(
         holder,
