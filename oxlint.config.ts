@@ -227,6 +227,7 @@ export default defineConfig({
     {
       files: ["test/**"],
       rules: {
+        // Permanent: test runners, measure and reference scripts print their own command output, which AGENTS.md allows.
         "no-console": "off",
         "prefer-const": "off",
         curly: "off",
@@ -251,14 +252,14 @@ export default defineConfig({
         "typescript/no-unnecessary-type-assertion": "off",
         "@nkzw/no-instanceof": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
-        "quality/no-unknown-returns": "off", // B134c: test/ still has the rule's findings.
-        "quality/no-known-value-widening": "off", // B134c: test/ still has the rule's findings.
-        "quality/no-conditional-empty-object-spread": "off", // B134c: test/ still has the rule's findings.
-        "quality/no-unsafe-dictionary-type": "off", // B134c: test/ still has the rule's findings.
+        "quality/no-unknown-returns": "off", // B134g: test/ still has the rule's findings.
+        "quality/no-known-value-widening": "off", // B134g: test/ still has the rule's findings.
+        "quality/no-conditional-empty-object-spread": "off", // B134g: test/ still has the rule's findings.
+        "quality/no-unsafe-dictionary-type": "off", // B134g: test/ still has the rule's findings.
         "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
-        "typescript/no-unsafe-call": "off", // B134c: test/ still calls values typed any.
-        "typescript/no-unsafe-return": "off", // B134c: test/ still returns values typed any.
-        "typescript/no-unsafe-type-assertion": "off", // B134c: test/ still asserts from any and unknown.
+        "typescript/no-unsafe-call": "off", // B134g: test/ still calls values typed any.
+        "typescript/no-unsafe-return": "off", // B134g: test/ still returns values typed any.
+        "typescript/no-unsafe-type-assertion": "off", // B134g: test/ still asserts from any and unknown.
       },
     },
     // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
