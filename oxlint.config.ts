@@ -406,7 +406,6 @@ export default defineConfig({
         "src/mcp/tools.ts", // MCP tool arguments
         "src/media/routes.ts", // upload body bytes and stored media meta JSON
         "src/messaging/test.ts", // SMTP test request JSON
-        "src/openapi/document.ts", // route strings from the generated operations (the API output)
         "src/public/form.ts", // form and JSON field values
         "src/roles/routes.ts", // request body JSON
         "src/sequences/input.ts", // request and stored step definition JSON
