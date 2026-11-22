@@ -222,20 +222,24 @@ export default defineConfig({
       ],
       rules: { "quality/no-conditional-empty-object-spread": "off" },
     },
-    // Test code (test/, JavaScript specs included): the rules still off here are B134c's unfinished work (the
-    // B134c markers) or B134g's type rules; no-console is permanent for test/ (see the comment below).
+    // Test code (test/, JavaScript specs included). Each rule off here is a directory-wide exception with its reason
+    // beside it. The three no-unsafe rules are B134h's: typed boundary helpers under test/ replace these casts.
     {
       files: ["test/**"],
       rules: {
         // Permanent: test runners, measure and reference scripts print their own command output, which AGENTS.md allows.
         "no-console": "off",
-        "quality/no-unknown-returns": "off", // B134g: test/ still has the rule's findings.
-        "quality/no-known-value-widening": "off", // B134g: test/ still has the rule's findings.
-        "quality/no-conditional-empty-object-spread": "off", // B134g: test/ still has the rule's findings.
-        "quality/no-unsafe-dictionary-type": "off", // B134g: test/ still has the rule's findings.
-        "typescript/no-unsafe-call": "off", // B134g: test/ still calls values typed any.
-        "typescript/no-unsafe-return": "off", // B134g: test/ still returns values typed any.
-        "typescript/no-unsafe-type-assertion": "off", // B134g: test/ still asserts from any and unknown.
+        // Tests read HTTP JSON, mail and webhook bodies that are `unknown` until the assertion reads them.
+        "quality/no-unknown-returns": "off",
+        // The same boundary: a literal or narrowed type on a value that is `unknown` until a test reads it would be a lie.
+        "quality/no-known-value-widening": "off",
+        // Fixtures and response bags are dictionaries whose values a test checks field by field, not a schema per payload.
+        "quality/no-unsafe-dictionary-type": "off",
+        // Fixtures and request bodies built in tests never reach production output; a test that sends a key or leaves it out relies on each key's exact presence, which the spread states.
+        "quality/no-conditional-empty-object-spread": "off",
+        "typescript/no-unsafe-call": "off", // B134h
+        "typescript/no-unsafe-return": "off", // B134h
+        "typescript/no-unsafe-type-assertion": "off", // B134h
       },
     },
     // Exception, for the lead to decide at review (no-floating-promises). The m14 browser scripts are evaluated as an
