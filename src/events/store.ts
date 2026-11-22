@@ -11,7 +11,6 @@ import type { Translation } from "@/i18n/i18n";
 import type { ErrorCode } from "@/server/error-codes";
 import { HttpError } from "@/server/response";
 import type { ErrorDetails } from "@/server/response";
-import { addressConflict, managesHolder } from "@/subscribers/store";
 import type { Scope, SubscriberStore } from "@/subscribers/store";
 import sql from "@/events/store.sql" with { type: "text" };
 
@@ -59,11 +58,11 @@ export interface ExistingSubscriber {
 /**
  * The authorization of one event: called once the subscriber it names is known, inside the
  * event's write transaction, before anything is written. A refusal (HttpError) fails the event
- * alone and writes nothing. It returns the caller's list manage scope, which decides whether the
- * event may claim or name a subscriber that holds its address (D129).
+ * alone and writes nothing. It returns the caller's list manage scope, which decides only whether a
+ * conflict may name the holder's external ID (D129).
  */
 export type Authorize = (existing: ExistingSubscriber | null) => Scope;
-/** An item without an authorization has no list scope: it claims and names no subscriber. */
+/** An item without an authorization has no list scope: a conflict names no holder. */
 const NO_SCOPE: Scope = { all: false, ids: [] };
 /**
  * What a grant did to one list (D99): `added` is a new confirmed membership. `suppressed` (B124,
@@ -224,16 +223,9 @@ export function createEventStore(
       }
     }
     // D129: an address another subscriber holds is claimed or refused before anything is written.
-    // A claim needs the caller's manage scope on the holder's lists, as a grant does.
-    const holder = subscribers.eventHolder(input.subscriber, found);
-    if (holder && (!holder.claim || !managesHolder(holder, scope))) {
-      throw addressConflict(
-        holder,
-        scope,
-        found?.id === holder.id && !holder.claim
-          ? "External ID and e-mail belong to different subscribers."
-          : "E-mail already exists.",
-      );
+    const conflict = subscribers.eventConflict(input.subscriber, found, scope);
+    if (conflict) {
+      throw conflict;
     }
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
     // B124 (D125): read once, after the upsert, so the address and ID the event leaves are the ones checked.

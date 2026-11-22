@@ -3,6 +3,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { eventsFixture } from "@/test/events/fixture";
 import type { EventsFixture } from "@/test/events/fixture";
+import type { JsonObject } from "@/test/json-object";
 
 const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
@@ -15,7 +16,7 @@ async function open() {
   fixtures.push(f);
   return f;
 }
-const event = (subscriber: object, extra: object = {}) => ({
+const event = (subscriber: JsonObject, extra: JsonObject = {}) => ({
   subscriber,
   name: "order_paid",
   ...extra,
@@ -63,7 +64,34 @@ test("an address held by a subscriber with no external_id is claimed, keeping li
   expect(again.body.data.subscriber_id).toBe(holder);
 });
 
-test("a scoped caller claims only a holder on one of its lists, and the refusal writes nothing", async () => {
+test("the events-only role claims the subscriber its e-mail-only event created, as on main", async () => {
+  // The documented "Events and grants" role (docs/operations.md): no list permission at all.
+  const f = await open();
+  const eventsOnly = await f.apiUser("events-only", ["subscriber_events:create"]);
+  const created = await f.post(event({ email: "ana@example.com" }), eventsOnly);
+  expect(created.status).toBe(200);
+  const id = created.body.data.subscriber_id;
+  const claimed = await f.post(
+    event({
+      external_id: "u_1",
+      email: "ana@example.com",
+      name: "Ana Lee",
+      attribs: { plan: "pro" },
+    }),
+    eventsOnly,
+  );
+  expect(claimed).toMatchObject({ status: 200, body: { data: { subscriber_id: id } } });
+  expect(await f.subscriber(id)).toMatchObject({
+    external_id: "u_1",
+    name: "Ana Lee",
+    attribs: { plan: "pro" },
+    lists: [],
+  });
+  expect(f.count("subscribers")).toBe(1);
+  expect(f.count("events")).toBe(2);
+});
+
+test("a list-scoped caller claims a holder on none of its lists, and a refused claim writes nothing", async () => {
   const f = await open();
   const news = await f.list("news");
   const other = await f.list("other");
@@ -73,20 +101,25 @@ test("a scoped caller claims only a holder on one of its lists, and the refusal 
     [{ id: news, permissions: ["list:manage"] }],
   );
   const outside = await make(f, { email: "out@example.com", name: "Out", lists: [other] });
-  const refused = await f.post(event({ external_id: "u_2", email: "out@example.com" }), scoped);
-  // The holder is not on the caller's lists, so neither the claim nor the holder is revealed.
+  // The claim needs no list scope: the holder's list is not the caller's, and the claim still works.
+  const claimed = await f.post(event({ external_id: "u_2", email: "out@example.com" }), scoped);
+  expect(claimed).toMatchObject({ status: 200, body: { data: { subscriber_id: outside } } });
+  expect(await f.subscriber(outside)).toMatchObject({
+    external_id: "u_2",
+    lists: [{ id: other }],
+  });
+  expect(f.count("events")).toBe(1);
+
+  // An external ID held by another subscriber refuses the claim for every caller, and writes nothing.
+  const inside = await make(f, { email: "in@example.com", name: "In", lists: [news] });
+  await make(f, { email: "taken@example.com", name: "T", external_id: "u_9" });
+  const refused = await f.post(event({ external_id: "u_9", email: "in@example.com" }), scoped);
   expect(refused).toEqual({
     status: 409,
     body: { message: "E-mail already exists.", code: "email_conflict" },
   });
-  expect(await f.subscriber(outside)).toMatchObject({ external_id: null, lists: [{ id: other }] });
-  expect(f.count("events")).toBe(0);
-
-  const inside = await make(f, { email: "in@example.com", name: "In", lists: [news] });
-  const allowed = await f.post(event({ external_id: "u_3", email: "in@example.com" }), scoped);
-  expect(allowed.status).toBe(200);
-  expect(allowed.body.data.subscriber_id).toBe(inside);
-  expect((await f.subscriber(inside)).external_id).toBe("u_3");
+  expect(await f.subscriber(inside)).toMatchObject({ external_id: null, lists: [{ id: news }] });
+  expect(f.count("events")).toBe(1);
 });
 
 test("an external_id held by another subscriber refuses the claim: the address is not taken from it", async () => {

@@ -130,35 +130,13 @@ export interface Scope {
   all: boolean;
   ids: Array<bigint>;
 }
-/** A subscriber that holds an address another write names (D129). */
-export interface AddressHolder {
-  id: bigint;
-  external_id: string | null;
-  /** Every list the holder has a membership on, of any status. */
-  lists: Array<bigint>;
-}
 /**
- * Whether a caller with `scope` may manage the holder: one of the holder's lists is in its scope,
- * as an event's grant and PUT's check require (D99). A holder on no list is out of reach unless the
- * scope covers every list.
+ * Whether a caller with `scope` may manage a subscriber on these lists: one of them is in its scope,
+ * as an event's grant and PUT's check require (D99). A subscriber on no list is out of reach unless
+ * the scope covers every list.
  */
-export const managesHolder = (holder: AddressHolder, scope: Scope) =>
-  scope.all || holder.lists.some((list) => scope.ids.includes(list));
-/**
- * The 409 for an address another subscriber holds (D129). It names the holder's external ID only
- * where the caller manages the holder, so a scoped caller learns nothing of a subscriber it cannot
- * see; a holder without an external ID is never named.
- */
-export const addressConflict = (holder: AddressHolder, scope: Scope, message: string) =>
-  new HttpError(
-    409,
-    message,
-    {},
-    "email_conflict",
-    holder.external_id !== null && managesHolder(holder, scope)
-      ? { conflict: { external_id: holder.external_id } }
-      : {},
-  );
+const managesHolder = (lists: Array<bigint>, scope: Scope) =>
+  scope.all || lists.some((list) => scope.ids.includes(list));
 const externalTaken = () =>
   new HttpError(409, "External ID already exists", {}, "external_id_conflict");
 const numberID = (id: bigint) =>
@@ -243,18 +221,25 @@ export function createSubscriberStore(
     (q.get(name).get(...args) as { data: string }).data;
   const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
   const byEmail = (email: string) => q.get("subscriber-by-email").get(email) as Row | null;
-  /** The subscriber other than `except` that holds `email`, if any (D129). */
-  const holderOf = (email: string, except: bigint | null): AddressHolder | null => {
-    const row = byEmail(email);
-    if (!row || row.id === except) {
-      return null;
-    }
-    return {
-      id: row.id,
-      external_id: row.external_id,
-      lists: memberships(row.id).map((m) => m.list_id),
-    };
-  };
+  /**
+   * The 409 for an address another subscriber holds (D129). It names the holder's external ID only
+   * where the caller manages the holder, so a scoped caller learns nothing of a subscriber it cannot
+   * see; a holder without an external ID is never named. The lists are read only for this error.
+   */
+  const addressConflict = (holder: Row, scope: Scope, message: string) =>
+    new HttpError(
+      409,
+      message,
+      {},
+      "email_conflict",
+      holder.external_id !== null &&
+        managesHolder(
+          memberships(holder.id).map((m) => m.list_id),
+          scope,
+        )
+        ? { conflict: { external_id: holder.external_id } }
+        : {},
+    );
   // B124 (D125): suppressions are matched and written with the database's own secret.
   const secret = () => (q.get("suppression-secret").get() as { secret: Uint8Array }).secret;
   const suppressionKeys = (subscriber: { email: string; external_id: string | null }) => {
@@ -376,7 +361,7 @@ export function createSubscriberStore(
       ) {
         throw externalTaken();
       }
-      const holder = holderOf(input.email, null);
+      const holder = byEmail(input.email);
       if (holder) {
         throw addressConflict(holder, scope, "E-mail already exists.");
       }
@@ -433,8 +418,8 @@ export function createSubscriberStore(
           throw externalTaken();
         }
       }
-      const holder = holderOf(email, row.id);
-      if (holder) {
+      const holder = byEmail(email);
+      if (holder && holder.id !== row.id) {
         throw addressConflict(holder, scope, "E-mail already exists.");
       }
       const subscribed = subscribedLists(row.id);
@@ -542,30 +527,33 @@ export function createSubscriberStore(
       );
     },
     /**
-     * The other subscriber an event's address belongs to, decided before the event writes (D129).
-     * `found` is what `resolveForEvent` returned. Null when the event names no address, the address
-     * is free, or it is the subscriber's own with its external ID. `claim` is true when the event may
-     * take the address's subscriber: it has no external ID, and the event's external ID is not held by
-     * anyone else (found by e-mail). Otherwise the address is another subscriber's: a conflict.
+     * The 409 that refuses an event before it writes, when its address belongs to another subscriber
+     * (D129); null when the event may write. `found` is what `resolveForEvent` returned. The event
+     * may write when it names no address, the address is free, or it is `found`'s own with the
+     * event's external ID. When `found` holds the address and has no external ID, the event claims
+     * it: `upsertForEvent` links the external ID, and no scope is needed, as an e-mail-only event
+     * needs none. Any other holder is a conflict, and a conflict names the holder only to a caller
+     * that manages it.
      */
-    eventHolder(
-      input: EventSubscriber,
-      found: Row | null,
-    ): (AddressHolder & { claim: boolean }) | null {
+    eventConflict(input: EventSubscriber, found: Row | null, scope: Scope): HttpError | null {
       if (input.email === undefined || input.external_id === undefined) {
         return null;
       }
-      const holder = holderOf(input.email, null);
+      const holder = byEmail(input.email);
       if (!holder) {
         return null;
       }
       if (found?.id !== holder.id) {
-        return { ...holder, claim: false };
+        return addressConflict(holder, scope, "E-mail already exists.");
       }
-      if (found.external_id === input.external_id) {
+      if (found.external_id === input.external_id || found.external_id === null) {
         return null;
       }
-      return { ...holder, claim: found.external_id === null };
+      return addressConflict(
+        holder,
+        scope,
+        "External ID and e-mail belong to different subscribers.",
+      );
     },
     /**
      * Create or update the subscriber an event names, inside the caller's write transaction.
