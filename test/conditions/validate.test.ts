@@ -3,6 +3,27 @@ import { describe, expect, test } from "bun:test";
 import { limits } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
 
+const wide = (base: Record<string, unknown>, prefix: string) => {
+  const values = new Map<string | symbol, unknown>(Object.entries(base));
+  for (let i = 0; i < 100_000; i++) {
+    values.set(`${prefix}${i}`, 1);
+  }
+  const keys = [...values.keys()];
+  const seen = { count: 0 };
+  const proxy = new Proxy(base, {
+    ownKeys: () => keys,
+    getOwnPropertyDescriptor: (_target, key) => {
+      seen.count++;
+      return values.has(key)
+        ? { value: values.get(key), enumerable: true, configurable: true, writable: true }
+        : undefined;
+    },
+    has: (_target, key) => values.has(key),
+    get: (_target, key) => values.get(key),
+  });
+  return { proxy, seen };
+};
+
 const ok = (condition: unknown, canUseSql = false) => {
   const result = validate(condition, { canUseSql });
   if (!result.ok) {
@@ -327,26 +348,6 @@ describe("hostile input stays bounded", () => {
   test("wide objects are counted with a bounded walk, not materialized", () => {
     // A proxy reports each property it is asked about; Object.keys or Object.entries would
     // ask about every one of its 100,000 keys.
-    const wide = (base: Record<string, unknown>, prefix: string) => {
-      const values = new Map<string | symbol, unknown>(Object.entries(base));
-      for (let i = 0; i < 100_000; i++) {
-        values.set(`${prefix}${i}`, 1);
-      }
-      const keys = [...values.keys()];
-      const seen = { count: 0 };
-      const proxy = new Proxy(base, {
-        ownKeys: () => keys,
-        getOwnPropertyDescriptor: (_target, key) => {
-          seen.count++;
-          return values.has(key)
-            ? { value: values.get(key), enumerable: true, configurable: true, writable: true }
-            : undefined;
-        },
-        has: (_target, key) => values.has(key),
-        get: (_target, key) => values.get(key),
-      });
-      return { proxy, seen };
-    };
     const node = wide({ attr: "a", op: "exists" }, "extra");
     const nodeFields = fields(node.proxy);
     expect(node.seen.count).toBeLessThan(50);

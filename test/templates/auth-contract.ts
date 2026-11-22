@@ -1,6 +1,12 @@
 // Production-only D26/D54 authorization checks for the template routes.
 import type { Credentials } from "@/test/contract/types";
 
+const check = (value: unknown, label: string) => {
+  if (!value) {
+    throw new Error(`FAIL template-auth-${label}`);
+  }
+};
+
 export async function runTemplateAuthorization(
   baseUrl: string,
   credentials: Credentials,
@@ -25,11 +31,6 @@ export async function runTemplateAuthorization(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  const check = (value: unknown, label: string) => {
-    if (!value) {
-      throw new Error(`FAIL template-auth-${label}`);
-    }
-  };
   async function token(permissions: Array<string>) {
     const name = `m18-${crypto.randomUUID()}`;
     const roleResponse = await request("/api/roles/users", "POST", { name, permissions });

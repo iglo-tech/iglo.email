@@ -9,7 +9,18 @@ import { MAX_BULK_DELIVERIES } from "@/webhooks/effects";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { signatureTime, signatureValid, startReceiver } from "@/test/webhooks/receiver";
+import type { JsonObject } from "@/test/json-object";
 import type { Receiver } from "@/test/webhooks/receiver";
+
+const noop = () => {};
+const refused = async (result: Promise<{ status: number; body: any }>) => {
+  const response = await result;
+  expect(response.status).toBe(400);
+  expect(response.body.message).toContain("Narrow the selection");
+  expect(response.body.message).toContain("50,000");
+};
+const line = (id: number, host: string) =>
+  `Webhook ${id} target ${host} is refused by webhooks.block_private_addresses (D122)`;
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -35,7 +46,7 @@ const all = [
   "send.failed",
   "bounce.recorded",
 ];
-const hook = async (f: TxFixture, r: Receiver, events = all, extra: object = {}) => {
+const hook = async (f: TxFixture, r: Receiver, events = all, extra: JsonObject = {}) => {
   const created = await f.json("/api/webhooks", "POST", { url: r.url(), events, ...extra });
   expect(created.status).toBe(200);
   return created.body.data as { id: number; secret: string };
@@ -181,7 +192,7 @@ test("every listed event reaches the receiver correctly signed", async () => {
   const { secret } = await hook(f, r);
   const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
     .body.data.id as number;
-  const email = (name: string, extra: object = {}) =>
+  const email = (name: string, extra: JsonObject = {}) =>
     f.subscriber(`${name}@example.test`, name, { lists: [list], ...extra });
 
   const unsub = await email("unsub", { external_id: "app-1" });
@@ -500,8 +511,10 @@ test("redirects are not followed and count as failures", async () => {
 
 test("a hung receiver times out on the injected clock and starves no other receiver", async () => {
   const f = await open();
-  let release = () => {};
-  const held = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   cleanups.push(() => release());
   const hung = receiver(async () => {
     await held;
@@ -587,8 +600,10 @@ test("a disabled webhook holds its deliveries, resumes when enabled, and fails a
 
 test("deleting a webhook removes its deliveries and an in-flight attempt settles harmlessly", async () => {
   const f = await open();
-  let release = () => {};
-  const held = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   cleanups.push(() => release());
   const r = receiver(async () => {
     await held;
@@ -606,8 +621,10 @@ test("deleting a webhook removes its deliveries and an in-flight attempt settles
 
 test("a restart resumes queued and in-flight deliveries from durable state", async () => {
   const f = await open();
-  let release = () => {};
-  const held = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   cleanups.push(() => release());
   const r = receiver(async () => {
     await held;
@@ -907,13 +924,15 @@ test("a public wipe's own deleted event carries the external ID and lists (B124,
 });
 
 test("a delivery held at DNS goes out cleared when its subscriber is deleted meanwhile", async () => {
-  let release = () => {};
+  let release = noop;
   let held = true;
   const f = await open({
     webhooks: {
       lookup: async () => {
         if (held) {
-          await new Promise<void>((resolve) => (release = resolve));
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
         }
         return ["127.0.0.1"];
       },
@@ -951,11 +970,13 @@ test("a delivery held at DNS goes out cleared when its subscriber is deleted mea
 });
 
 test("a delivery held at DNS sends nothing when its row is gone", async () => {
-  let release = () => {};
+  let release = noop;
   const f = await open({
     webhooks: {
       lookup: async () => {
-        await new Promise<void>((resolve) => (release = resolve));
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
         return ["127.0.0.1"];
       },
       blocked: () => false,
@@ -1015,7 +1036,7 @@ test("bulk actions queue the bytes a single action would, each with its own id",
   const r = receiver();
   const { secret } = await hook(f, r);
   const [list, other] = [await newList(f), await newList(f)];
-  const email = (name: string, extra: object = {}) =>
+  const email = (name: string, extra: JsonObject = {}) =>
     f.subscriber(`${name}@example.test`, name, { lists: [list, other], ...extra });
   const a = await email("a", { external_id: 'app "é" a' });
   const b = await email("b");
@@ -1090,7 +1111,7 @@ test("bulk unsubscribing queues only memberships that really ended", async () =>
   const a = await f.subscriber("a@example.test", "A", { lists: [list, other] });
   const b = await f.subscriber("b@example.test", "B", { lists: [other] });
   const c = await f.subscriber("c@example.test", "C", { lists: [list, other] });
-  const unsubscribe = (body: object, path = "/api/subscribers/query/lists") =>
+  const unsubscribe = (body: JsonObject, path = "/api/subscribers/query/lists") =>
     f.json(path, "PUT", { action: "unsubscribe", target_list_ids: [list], ...body });
   expect((await unsubscribe({ all: true })).status).toBe(200);
   await r.waitFor(2);
@@ -1141,12 +1162,6 @@ test("a bulk action over the delivery budget is refused before any write", async
   const ids = (
     f.db.query("SELECT id FROM subscribers ORDER BY id").all() as Array<{ id: bigint }>
   ).map(({ id }) => Number(id));
-  const refused = async (result: Promise<{ status: number; body: any }>) => {
-    const response = await result;
-    expect(response.status).toBe(400);
-    expect(response.body.message).toContain("Narrow the selection");
-    expect(response.body.message).toContain("50,000");
-  };
   const unsubscribe = { action: "unsubscribe", target_list_ids: [list] };
   const half = Math.ceil(MAX_BULK_DELIVERIES / 38);
   const blocklistBudget = { query: `subscribers.id <= ${ids[half - 1]}` };
@@ -1200,8 +1215,15 @@ test("pinned HTTPS checks the configured name, sends it as SNI and refuses a bad
     request.resume();
     response.end("ok");
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  cleanups.push(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  cleanups.push(
+    () =>
+      new Promise((resolve) => {
+        server.close(resolve);
+      }),
+  );
   server.unref();
   const { port } = server.address() as AddressInfo;
   let trust: string | undefined = cert;
@@ -1310,8 +1332,6 @@ test("every start names each enabled webhook the block refuses, one line each, a
   await created("http://public.test/hook");
   const notices = () =>
     f.errors.map((error) => (error as Error).message).filter((line) => line.startsWith("Webhook "));
-  const line = (id: number, host: string) =>
-    `Webhook ${id} target ${host} is refused by webhooks.block_private_addresses (D122)`;
   // The check's promise is returned inside an object: an async function would adopt it, and wait.
   const restart = async () => {
     await f.crashWebhooks();

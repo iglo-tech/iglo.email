@@ -63,7 +63,9 @@ async function startSink() {
       }
     });
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  await new Promise<void>((done) => {
+    server.listen(0, "127.0.0.1", done);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("sink address");
@@ -75,7 +77,9 @@ async function startSink() {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((done) => server.close(() => done()));
+      await new Promise<void>((done) => {
+        server.close(() => done());
+      });
     },
   };
 }

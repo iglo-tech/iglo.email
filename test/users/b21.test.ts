@@ -5,6 +5,7 @@ import { recoverTotp } from "@/users/cli";
 import { productionMigrations } from "@/db/migrations";
 import { TestClock } from "@/test/server/fixture";
 import { startUserFixture } from "@/test/users/fixture";
+import type { JsonObject } from "@/test/json-object";
 
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
 const fixtures: Array<Fixture> = [];
@@ -102,7 +103,7 @@ test("TOTP does not revive after password login is turned off and on, or after a
     (u: any) => u.username === "fixture-totp",
   );
   expect(totp.twofa_type).toBe("totp");
-  const update = (extra: object) =>
+  const update = (extra: JsonObject) =>
     call(f, s, `/api/users/${totp.id}`, "PUT", {
       username: totp.username,
       email: totp.email,

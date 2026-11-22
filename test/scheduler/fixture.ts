@@ -2,6 +2,7 @@
 // clock and a loopback SMTP sink. The scheduler's injected clock is observed so a test can wait
 // for one complete pass (an idle sleep) without sleeping in real time.
 import { fixturePageSite } from "@/test/public/site";
+import type { JsonObject } from "@/test/json-object";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -386,7 +387,9 @@ export async function schedulerFixture(
         throw new Error(`timed out waiting for ${label}`);
       }
       clock.advance(0);
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
     }
   }
   /** Advance the clock (or wake the scheduler when 0) and wait for one complete pass. */
@@ -415,7 +418,7 @@ export async function schedulerFixture(
   };
   const list = async (name: string, optin = "single") =>
     (await json("/api/lists", "POST", { name, type: "public", optin })).body.data.id as number;
-  const subscriber = async (email: string, extra: object = {}) => {
+  const subscriber = async (email: string, extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", {
       email,
       name: "Fixture",
@@ -426,7 +429,7 @@ export async function schedulerFixture(
     }
     return created.body.data.id as number;
   };
-  const sequence = async (definition: object) => {
+  const sequence = async (definition: JsonObject) => {
     const created = await json("/api/sequences", "POST", {
       name: "Onboarding",
       status: "active",
@@ -442,7 +445,7 @@ export async function schedulerFixture(
       steps: Array<{ id: number }>;
     } & Record<string, any>;
   };
-  const event = async (email: string, name = "order_paid", extra: object = {}) => {
+  const event = async (email: string, name = "order_paid", extra: JsonObject = {}) => {
     const r = await json("/api/subscriber-events", "POST", {
       subscriber: { email, name: "Ana" },
       name,

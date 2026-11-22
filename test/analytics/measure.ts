@@ -12,6 +12,15 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createListCounts } from "@/subscribers/list-counts";
 import { seed } from "@/test/analytics/seed";
 
+const report = (values: unknown) => process.stdout.write(`${JSON.stringify(values)}\n`);
+const stats = (times: Array<number>) => {
+  const sorted = [...times].sort((a, b) => a - b);
+  return {
+    median_ms: +sorted[sorted.length >> 1]!.toFixed(1),
+    max_ms: +sorted.at(-1)!.toFixed(1),
+  };
+};
+
 const directory = resolve(process.env.ANALYTICS_MEASURE_DIR ?? "dist/analytics-measure");
 const size = {
   subscribers: Number(process.env.ANALYTICS_SUBSCRIBERS ?? 1_000_000),
@@ -70,14 +79,6 @@ try {
     ["sends by template year", () => store.sends("template", year)],
     ["sends by step year", () => store.sends("step", year)],
   ];
-  const report = (values: object) => process.stdout.write(`${JSON.stringify(values)}\n`);
-  const stats = (times: Array<number>) => {
-    const sorted = [...times].sort((a, b) => a - b);
-    return {
-      median_ms: +sorted[sorted.length >> 1]!.toFixed(1),
-      max_ms: +sorted.at(-1)!.toFixed(1),
-    };
-  };
   for (const [name, read] of cases) {
     const times: Array<number> = [];
     for (let run = 0; run < runs; run++) {

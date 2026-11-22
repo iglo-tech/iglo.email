@@ -10,7 +10,7 @@ async function withRenderer(run: (origin: string) => Promise<void>) {
     await fixture.close();
   }
 }
-async function render(origin: string, input: object) {
+async function render(origin: string, input: unknown) {
   const response = await fetch(`${origin}/render`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

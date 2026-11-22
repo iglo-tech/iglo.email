@@ -25,7 +25,12 @@ export async function stderrDrained(child: ChildProcess): Promise<void> {
   if (!stream || stream.readableEnded || stream.destroyed) {
     return;
   }
-  await Promise.race([new Promise((done) => stream.once("end", done)), Bun.sleep(1000)]);
+  await Promise.race([
+    new Promise((done) => {
+      stream.once("end", done);
+    }),
+    Bun.sleep(1000),
+  ]);
 }
 
 async function freeLoopbackPort(): Promise<number> {
@@ -38,9 +43,9 @@ async function freeLoopbackPort(): Promise<number> {
   if (!address || typeof address === "string") {
     throw new Error("Unable to reserve a loopback port");
   }
-  await new Promise<void>((resolve, reject) =>
-    socket.close((error) => (error ? reject(error) : resolve())),
-  );
+  await new Promise<void>((resolve, reject) => {
+    socket.close((error) => (error ? reject(error) : resolve()));
+  });
   return address.port;
 }
 

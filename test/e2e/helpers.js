@@ -267,7 +267,9 @@ export async function settledMail(addresses, { settle = 1500, timeout = 30_000 }
     if (Date.now() > deadline) {
       throw new Error(`mail counts kept changing for ${timeout} ms: ${counts.join(", ")}`);
     }
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
     const next = await mailCounts(addresses);
     if (next.some((count, i) => count !== counts[i])) {
       counts = next;
@@ -317,7 +319,9 @@ export async function receiver({ statuses = [204] } = {}) {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise((resolve) => server.close(resolve));
+      await new Promise((resolve) => {
+        server.close(resolve);
+      });
     },
   };
 }

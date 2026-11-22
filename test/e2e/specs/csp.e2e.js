@@ -7,6 +7,22 @@ import { generateRuntimeFunction } from "@alpinejs/csp/src/parser.js";
 import { expect } from "@playwright/test";
 import { api, ORIGIN, test, unique, signIn } from "../helpers.js";
 
+// Loads each address as a classic script on an admin page, as injected markup would.
+const asScript = (page, paths) =>
+  page.evaluate(async (list) => {
+    const outcomes = {};
+    for (const path of list) {
+      outcomes[path] = await new Promise((resolve) => {
+        const script = document.createElement("script");
+        script.onload = () => resolve("ran");
+        script.onerror = () => resolve("refused");
+        script.src = path;
+        document.head.append(script);
+      });
+    }
+    return { outcomes, ran: window.__authored ?? null };
+  }, paths);
+
 async function ok(page, path, method, body) {
   const response = await api(page, path, method, body);
   expect(response.status, JSON.stringify(response.body)).toBe(200);
@@ -126,22 +142,6 @@ test("every screen works under the policy", async ({ page }) => {
 });
 
 test.describe("responses that hold authored text", () => {
-  // Loads each address as a classic script on an admin page, as injected markup would.
-  const asScript = (page, paths) =>
-    page.evaluate(async (list) => {
-      const outcomes = {};
-      for (const path of list) {
-        outcomes[path] = await new Promise((resolve) => {
-          const script = document.createElement("script");
-          script.onload = () => resolve("ran");
-          script.onerror = () => resolve("refused");
-          script.src = path;
-          document.head.append(script);
-        });
-      }
-      return { outcomes, ran: window.__authored ?? null };
-    }, paths);
-
   test("do not run as same-origin script", async ({ page }) => {
     await signIn(page);
     const list = await ok(page, "/api/lists", "POST", {
@@ -257,10 +257,17 @@ test.describe("script that reached the page", () => {
       response.setHeader("Access-Control-Allow-Origin", "*");
       response.end("ok");
     });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
     remote = `http://127.0.0.1:${server.address().port}`;
   });
-  test.afterAll(() => new Promise((resolve) => server.close(resolve)));
+  test.afterAll(
+    () =>
+      new Promise((resolve) => {
+        server.close(resolve);
+      }),
+  );
 
   test("does not run, and cannot send anything out", async ({ page }) => {
     await signIn(page);
@@ -309,7 +316,9 @@ test.describe("script that reached the page", () => {
       form.action = `${target}/form`;
       document.body.append(form);
       form.submit();
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
       // After a task: Playwright's own evaluation is exempt from the page's eval rule.
       let evaluated = "refused";
       try {

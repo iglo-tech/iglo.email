@@ -46,7 +46,10 @@ const message = (to = "recipient@example.test") => ({
   body: Buffer.from("synthetic body"),
   headers: {},
 });
-const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 25));
+const tick = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 25);
+  });
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "iglo-lease-"));

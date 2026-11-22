@@ -7,6 +7,18 @@ import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { listensOn, startOnFreePort } from "@/test/serve-port";
 
+const subscribe = (lists: number) => ({ mode: "subscribe", delim: ",", lists: [lists] });
+const running = async (dataDir: string) => {
+  const { child, origin } = await serve(dataDir);
+  const c = await client(origin);
+  const lists = await c.list("lifecycle");
+  expect((await c.post(subscribe(lists), rows("life", 30_000))).status).toBe(200);
+  for (let current = await c.status(); current.imported < 100; current = await c.status()) {
+    await Bun.sleep(1);
+  }
+  return { child, c };
+};
+
 const repository = resolve(import.meta.dir, "../..");
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const TEMPORARY = ".iglo-email-import";
@@ -148,6 +160,14 @@ describe("one server", () => {
     ...extra,
   });
   const leftovers = () => readdirSync(join(dataDir, TEMPORARY));
+  const set = (value: Array<string>) =>
+    c.call("/api/settings/privacy.domain_blocklist", "PUT", value);
+  const gone = async () => {
+    for (let i = 0; i < 400 && leftovers().length; i++) {
+      await Bun.sleep(5);
+    }
+    expect(leftovers()).toEqual([]);
+  };
   beforeAll(async () => {
     dataDir = temporary();
     ({ origin } = await serve(dataDir));
@@ -338,8 +358,6 @@ describe("one server", () => {
   });
 
   test("the domain settings apply to each row", async () => {
-    const set = (value: Array<string>) =>
-      c.call("/api/settings/privacy.domain_blocklist", "PUT", value);
     expect((await set(["blocked.test"])).status).toBe(200);
     try {
       const done = await c.run(subscribe(), "email\nno@blocked.test\nyes@allowed.test\n");
@@ -488,12 +506,6 @@ describe("one server", () => {
 
   test("the temporary file goes on finish, stop and failure", async () => {
     // The status is published just before the file goes.
-    const gone = async () => {
-      for (let i = 0; i < 400 && leftovers().length; i++) {
-        await Bun.sleep(5);
-      }
-      expect(leftovers()).toEqual([]);
-    };
     await c.run(subscribe(), "email\ntemp1@example.test\n");
     await gone();
     await c.run(subscribe(), "name\nA\n");
@@ -522,18 +534,6 @@ describe("one server", () => {
 });
 
 describe("process lifecycle", () => {
-  const subscribe = (lists: number) => ({ mode: "subscribe", delim: ",", lists: [lists] });
-  const running = async (dataDir: string) => {
-    const { child, origin } = await serve(dataDir);
-    const c = await client(origin);
-    const lists = await c.list("lifecycle");
-    expect((await c.post(subscribe(lists), rows("life", 30_000))).status).toBe(200);
-    for (let current = await c.status(); current.imported < 100; current = await c.status()) {
-      await Bun.sleep(1);
-    }
-    return { child, c };
-  };
-
   test("SIGTERM stops an import between batches and the next start is clean", async () => {
     const dataDir = temporary();
     const { child, c } = await running(dataDir);

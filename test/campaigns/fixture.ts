@@ -2,6 +2,7 @@
 // tracking and emailer seams, with a fake clock and a loopback SMTP sink, wired as
 // src/main.ts does.
 import { fixturePageSite } from "@/test/public/site";
+import type { JsonObject } from "@/test/json-object";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -267,7 +268,7 @@ export async function campaignsFixture(
   };
   const list = async (name: string, optin = "single") =>
     (await json("/api/lists", "POST", { name, type: "public", optin })).body.data.id as number;
-  const subscriber = async (email: string, listIds: Array<number>, extra: object = {}) => {
+  const subscriber = async (email: string, listIds: Array<number>, extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", {
       email,
       name: "Ada Lovelace",
@@ -279,7 +280,7 @@ export async function campaignsFixture(
     }
     return created.body.data as { id: number; uuid: string; email: string };
   };
-  const campaign = async (input: object) => {
+  const campaign = async (input: JsonObject) => {
     const created = await json("/api/campaigns", "POST", input);
     if (created.status !== 200) {
       throw new Error(`campaign ${created.status} ${JSON.stringify(created.body)}`);

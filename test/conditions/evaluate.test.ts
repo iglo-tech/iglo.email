@@ -9,6 +9,9 @@ import { childPids } from "@/test/host-processes";
 import { conditionsFixture } from "@/test/conditions/fixture";
 import type { ConditionsFixture, ModelSubscriber } from "@/test/conditions/fixture";
 
+const attr = (path: string, op: string, v?: unknown) =>
+  v === undefined ? { attr: path, op } : { attr: path, op, value: v };
+
 let f: ConditionsFixture;
 let rich: ModelSubscriber, bare: ModelSubscriber, disabled: ModelSubscriber;
 let listA: number, listB: number;
@@ -88,8 +91,6 @@ afterAll(async () => {
 });
 
 describe("attribute comparisons and type rules", () => {
-  const attr = (path: string, op: string, v?: unknown) =>
-    v === undefined ? { attr: path, op } : { attr: path, op, value: v };
   const cases: Array<[unknown, boolean]> = [
     [attr("plan", "eq", "subscription"), true],
     [attr("plan", "eq", "Subscription"), false],

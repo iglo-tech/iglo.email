@@ -19,6 +19,10 @@ import { createSettings } from "@/settings/store";
 import { txFixture } from "@/test/tx/fixture";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 
+const unsetSettings = (): PublicSettings => {
+  throw new Error("unset");
+};
+
 const form = { "content-type": "application/x-www-form-urlencoded" };
 
 export async function publicFixture() {
@@ -33,9 +37,7 @@ export async function publicFixture() {
     },
   };
   const overrides: Partial<PublicSettings> = {};
-  let settings = (): PublicSettings => {
-    throw new Error("unset");
-  };
+  let settings = unsetSettings;
   // The tx fixture mounts the `/m/` routes, so they take this fixture's subscriber mail (B123).
   const f = await txFixture({ effects, page: () => settings(), mail: () => mail });
   const { router, lists, subscribers, tracking, renderer, templates, media, files } = f.owners;

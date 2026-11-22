@@ -19,6 +19,8 @@ import {
   unique,
 } from "../helpers.js";
 
+const sum = (days) => days.reduce((running, day) => running + day.count, 0);
+
 const FINISH = { timeout: 30_000 };
 // The whole past and future, for the counts a test makes; the daily buckets are the default.
 const RANGE = "from=2020-01-01&to=2099-01-01";
@@ -369,7 +371,6 @@ test("the dashboard's counts and charts move after a real view and click", async
     counts: (await api(page, "/api/dashboard/counts")).body.data,
     charts: (await api(page, "/api/dashboard/charts")).body.data,
   });
-  const sum = (days) => days.reduce((running, day) => running + day.count, 0);
   const before = await dashboard();
 
   const { list, person } = await audience(page);

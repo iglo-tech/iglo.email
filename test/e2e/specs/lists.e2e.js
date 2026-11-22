@@ -4,6 +4,9 @@
 import { expect } from "@playwright/test";
 import { api, confirm, openMenu, test, unique, signIn } from "../helpers.js";
 
+const removeFilter = (page, text) =>
+  page.locator(".filter-tag").filter({ hasText: text }).getByTestId("btn-remove-filter").click();
+
 const LISTS = "/admin/lists";
 
 function listRow(page, name) {
@@ -257,9 +260,6 @@ test.describe("Lists: filters and sorting", () => {
     await expect(listRow(page)).toHaveCount(1);
     await expect(listRow(page)).toContainText(name("public", "single", 2));
   });
-
-  const removeFilter = (page, text) =>
-    page.locator(".filter-tag").filter({ hasText: text }).getByTestId("btn-remove-filter").click();
 
   test("filters lists by type", async ({ page }) => {
     await page.goto(here);

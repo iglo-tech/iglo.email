@@ -1,6 +1,12 @@
 // Reference: listmonk subscriber/importer handlers at 6fcd95f; D43 validation.
 import type { Credentials, Mode } from "@/test/contract/types";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL council-${label}`);
+  }
+}
+
 export async function runSubscriberCouncilRevisions(target: {
   mode: Mode;
   baseUrl: string;
@@ -15,11 +21,6 @@ export async function runSubscriberCouncilRevisions(target: {
       headers: { Authorization: authorization, "Content-Type": "application/json" },
       ...(body === undefined ? {} : { body: raw ? String(body) : JSON.stringify(body) }),
     });
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL council-${label}`);
-    }
-  }
   async function create(path: string, body: unknown, raw = false) {
     const response = await request(`/api/${path}`, "POST", body, raw);
     const result = await response.json();

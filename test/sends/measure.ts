@@ -48,7 +48,9 @@ const relay = createServer((client) => {
     client.destroy();
   });
 });
-await new Promise<void>((done) => relay.listen(0, "127.0.0.1", done));
+await new Promise<void>((done) => {
+  relay.listen(0, "127.0.0.1", done);
+});
 const relayAddress = relay.address();
 if (!relayAddress || typeof relayAddress === "string") {
   throw new Error("Missing relay port");
@@ -133,7 +135,9 @@ try {
           const begin = performance.now();
           const entry = sends.enqueue({ source: "tx", kind: "transactional", message });
           enqueue.push(performance.now() - begin);
-          const accepted = new Promise<boolean>((done) => pending.set(entry.smtp_message_id, done));
+          const accepted = new Promise<boolean>((done) => {
+            pending.set(entry.smtp_message_id, done);
+          });
           assert.equal(await accepted, true);
           ids.push(entry.smtp_message_id.replaceAll(/[<>]/g, ""));
         }
@@ -163,7 +167,9 @@ try {
   for (const socket of sockets) {
     socket.destroy();
   }
-  await new Promise<void>((done, fail) => relay.close((error) => (error ? fail(error) : done())));
+  await new Promise<void>((done, fail) => {
+    relay.close((error) => (error ? fail(error) : done()));
+  });
   await mailpit.removeOwned();
   await rm(directory, { recursive: true, force: true });
 }

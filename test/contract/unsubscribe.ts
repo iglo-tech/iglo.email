@@ -12,6 +12,14 @@ import type { Credentials } from "@/test/contract/types";
 
 type SendRow = { id: number; uuid: string; status: string };
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL unsubscribe-${label}`);
+  }
+};
+const visit = (url: string, init: RequestInit = {}) =>
+  fetch(url, { redirect: "manual", ...init, signal: AbortSignal.timeout(20_000) });
+
 export async function runUnsubscribeContract(target: {
   baseUrl: string;
   credentials: Credentials;
@@ -22,11 +30,6 @@ export async function runUnsubscribeContract(target: {
   const marker = `m08${randomBytes(10).toString("hex")}`;
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL unsubscribe-${label}`);
-    }
-  };
   const api = async (path: string, method = "GET", body?: unknown) => {
     const response = await fetch(`${target.baseUrl}${path}`, {
       method,
@@ -41,8 +44,6 @@ export async function runUnsubscribeContract(target: {
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
   // Public pages are fetched like a browser or mail provider: no credentials.
-  const visit = (url: string, init: RequestInit = {}) =>
-    fetch(url, { redirect: "manual", ...init, signal: AbortSignal.timeout(20_000) });
   const received = async (subject: string) => {
     const deadline = Date.now() + 10_000;
     for (;;) {

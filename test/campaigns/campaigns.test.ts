@@ -7,6 +7,8 @@ import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 
+const headers = (n: number) => Array.from({ length: n }, (_, i) => ({ [`X-H-${i}`]: "v" }));
+
 const fixtures: Array<CampaignsFixture> = [];
 const runnerCloses: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -409,7 +411,6 @@ test("a test send has an aggregate size limit across recipients and sends nothin
 test("custom header values are limited in number", async () => {
   const f = await open();
   const news = await f.list("news");
-  const headers = (n: number) => Array.from({ length: n }, (_, i) => ({ [`X-H-${i}`]: "v" }));
   const create = (name: string, value: Array<object>) =>
     f.json("/api/campaigns", "POST", { name, subject: "s", lists: [news], headers: value });
   expect((await create("ok", headers(32))).status).toBe(200);

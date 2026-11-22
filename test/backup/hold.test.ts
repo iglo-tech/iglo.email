@@ -22,6 +22,11 @@ import { createEmailer } from "@/messaging/email";
 import { HttpError } from "@/server/response";
 import { startSink } from "@/test/tx/sink";
 
+const refused = async (response: Response) => {
+  expect(response.status).toBe(503);
+  expect(((await response.json()) as { message: string }).message).toContain("held");
+};
+
 setDefaultTimeout(120_000);
 /** Longer than the campaign runner's scan and every sending loop's poll. */
 const QUIET_MS = 6500;
@@ -449,10 +454,6 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   const held = await restart(authorization);
 
   // Each path that hands a message to the emailer. A refused one says so and leaves no row.
-  const refused = async (response: Response) => {
-    expect(response.status).toBe(503);
-    expect(((await response.json()) as { message: string }).message).toContain("held");
-  };
   const tx = { subscriber_id: reader.id, template_id: template.id };
   await refused(await held("/api/tx", json(tx)));
   await refused(await held(`/api/sends/${sent.sends[0].id}/resend`, { method: "POST" }));

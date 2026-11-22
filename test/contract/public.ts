@@ -19,6 +19,18 @@ const form = { "content-type": "application/x-www-form-urlencoded" };
 const decodeEntities = (html: string) =>
   html.replaceAll("&amp;", "&").replaceAll("&#43;", "+").replaceAll("&#x2B;", "+");
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL public-${label}`);
+  }
+};
+const privacyForms = (text: string) =>
+  text.includes('id="data-form"') &&
+  text.includes('value="export"') &&
+  text.includes('value="wipe"');
+const invalid = (response: { status: number; text: string }) =>
+  response.status === 400 && response.text.includes("Invalid CAPTCHA.");
+
 export async function runPublicContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -30,11 +42,6 @@ export async function runPublicContract(target: {
   await assertOwnedMailpit(sink);
   const marker = `m25${randomBytes(8).toString("hex")}`;
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL public-${label}`);
-    }
-  };
   const call = async (path: string, method = "GET", body?: unknown) => {
     const response = await settingsFetch(
       `${target.baseUrl}${path}`,
@@ -764,10 +771,6 @@ export async function runPublicContract(target: {
     const unsubPage = await visit(prefs);
     // B123 (D126, deliberate difference): the placeholder campaign's page offers no privacy form in
     // production, since its links pair no send or campaign; upstream's page offers them.
-    const privacyForms = (text: string) =>
-      text.includes('id="data-form"') &&
-      text.includes('value="export"') &&
-      text.includes('value="wipe"');
     check(
       unsubPage.status === 200 &&
         unsubPage.headers.get("x-robots-tag") === "noindex" &&
@@ -1502,8 +1505,6 @@ export async function runPublicContract(target: {
           );
           const signup = (email: string, extra: Record<string, string>) =>
             post("/subscription/form", new URLSearchParams({ email, l: single.uuid, ...extra }));
-          const invalid = (response: { status: number; text: string }) =>
-            response.status === 400 && response.text.includes("Invalid CAPTCHA.");
           check(invalid(await signup(address("altcha-none"), {})), "altcha-missing");
           const payload = altchaPayload(challenge, solution);
           const tampered = altchaPayload(challenge, { ...solution, counter: solution.counter + 1 });

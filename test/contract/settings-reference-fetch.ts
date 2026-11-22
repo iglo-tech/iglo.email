@@ -65,7 +65,9 @@ export async function settingsFetch(
         const detail = `attempts=${attempts} waited=${waited}ms code=${code ?? "none"} reference=${reference}${reference ? upstreamLogTail() : ""}`;
         throw new Error(`FAIL settings-fetch-${method}-${reason} (${detail})`, { cause: error });
       }
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 25);
+      });
     }
   }
 }
@@ -116,7 +118,9 @@ export async function invalidSettingsReadEnd(
     if (Date.now() >= deadline) {
       return "unexpected";
     }
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25);
+    });
   }
   return "exited";
 }

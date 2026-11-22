@@ -4,6 +4,16 @@
 // reference result in reference mode and the iglo.email result in normal mode.
 import type { Credentials, Mode } from "@/test/contract/types";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL ${label}`);
+  }
+}
+
+const names = (body: any) =>
+  ((body.data?.results ?? []) as Array<{ email: string }>).map((row) => row.email.split("-")[0]);
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
 export async function runSubscriberQuery(target: {
   mode: Mode;
   baseUrl: string;
@@ -14,11 +24,6 @@ export async function runSubscriberQuery(target: {
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const resources: Array<{ kind: string; id: number }> = [];
   let cleanupFailures = 0;
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL ${label}`);
-    }
-  }
   const request = (
     path: string,
     method = "GET",
@@ -51,9 +56,6 @@ export async function runSubscriberQuery(target: {
     return response.body.data;
   }
   const q = encodeURIComponent;
-  const names = (body: any) =>
-    ((body.data?.results ?? []) as Array<{ email: string }>).map((row) => row.email.split("-")[0]);
-  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
   try {
     const listA = (await create("/api/lists", "lists", { name: `qa-${tag}`, optin: "single" })).id;
     const listB = (await create("/api/lists", "lists", { name: `qb-${tag}`, optin: "single" })).id;

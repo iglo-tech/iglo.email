@@ -77,7 +77,9 @@ const exit = (process: ChildProcess) =>
   });
 
 let release = () => {};
-const held = new Promise<void>((resolve) => (release = resolve));
+const held = new Promise<void>((resolve) => {
+  release = resolve;
+});
 const receiver = startReceiver(async () => {
   await held;
   return new Response("too late");

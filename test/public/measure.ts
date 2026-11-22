@@ -2,12 +2,13 @@
 // router with a real file-backed database at FULL synchronous, without a socket. Copy this file
 // into a checkout of another commit to compare; it uses only the shared fixture surface.
 import { publicFixture } from "@/test/public/fixture";
+import type { JsonObject } from "@/test/json-object";
 
 const median = (values: Array<number>) => [...values].sort((a, b) => a - b)[values.length >> 1]!;
 const p95 = (values: Array<number>) =>
   [...values].sort((a, b) => a - b)[Math.floor(values.length * 0.95)]!;
 const round = (value: number) => Math.round(value * 100) / 100;
-const report = (name: string, values: object) =>
+const report = (name: string, values: JsonObject) =>
   process.stdout.write(`${JSON.stringify({ name, ...values })}\n`);
 const rows = 100_000;
 const rounds = 150;

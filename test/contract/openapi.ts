@@ -4,10 +4,63 @@ import { Database } from "bun:sqlite";
 import { createHmac, generateKeyPairSync } from "node:crypto";
 import { join } from "node:path";
 import { validate } from "@/test/openapi/schema";
-import type { Document } from "@/test/openapi/schema";
+import type { Document, Schema } from "@/test/openapi/schema";
 import type { Credentials } from "@/test/contract/types";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { startReceiver } from "@/test/webhooks/receiver";
+
+const cookie = (response: Response, name: string) =>
+  response.headers
+    .getSetCookie()
+    .find((item) => item.startsWith(`${name}=`))
+    ?.split(";", 1)[0] ?? "";
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL openapi-${label}`);
+  }
+};
+const pixel = () => {
+  const form = new FormData();
+  form.append(
+    "file",
+    new File(
+      [
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+          "base64",
+        ),
+      ],
+      "pixel.png",
+      { type: "image/png" },
+    ),
+  );
+  return form;
+};
+const plainForm = () => new URLSearchParams({ body: "plain", content_type: "plain" });
+const placeholders = (key: string, id: string): Options => ({
+  params: Object.fromEntries(
+    [...key.matchAll(/\{(\w+)\}/g)].map(([, name]) => [
+      name!,
+      name === "id" || name === "step" ? id : "x",
+    ]),
+  ),
+});
+const needed = (operation: any) => {
+  const query = (
+    operation.parameters as Array<{
+      in: string;
+      name: string;
+      required?: boolean;
+    }>
+  )
+    .filter(({ in: at, name, required }) => at === "query" && (required || name === "id"))
+    .map(({ name }) => `${name}=${name === "id" ? "999999" : "2020-01-01"}`);
+  return query.length ? `?${query.join("&")}` : "";
+};
+const filled = (key: string) =>
+  key
+    .split(" ")[1]!
+    .replaceAll(/\{(\w+)\}/g, (_, name) => (name === "id" || name === "step" ? "999999" : "x"));
 
 interface Reply {
   status: number;
@@ -30,11 +83,6 @@ interface Options {
 async function session(origin: string, admin: { user: string; password: string }) {
   const page = await fetch(`${origin}/admin/login`);
   const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
-  const cookie = (response: Response, name: string) =>
-    response.headers
-      .getSetCookie()
-      .find((item) => item.startsWith(`${name}=`))
-      ?.split(";", 1)[0] ?? "";
   const login = await fetch(`${origin}/admin/login`, {
     method: "POST",
     redirect: "manual",
@@ -92,11 +140,6 @@ export async function runOpenApiContract(target: {
       },
     },
   });
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL openapi-${label}`);
-    }
-  };
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
 
   const send = async (
@@ -228,7 +271,7 @@ export async function runOpenApiContract(target: {
     const response = declared.$ref
       ? document.components.responses[declared.$ref.split("/").pop()]
       : declared;
-    const content = response.content as Record<string, { schema?: object }> | undefined;
+    const content = response.content as Record<string, { schema?: Schema }> | undefined;
     if (!content) {
       if (reply.text !== "") {
         throw new Error(`FAIL openapi-body ${key}: documented as empty`);
@@ -900,23 +943,6 @@ export async function runOpenApiContract(target: {
     await op("DELETE /api/sequences/{id}", { params: { id: empty.id } });
 
     // Campaigns.
-    const pixel = () => {
-      const form = new FormData();
-      form.append(
-        "file",
-        new File(
-          [
-            Buffer.from(
-              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
-              "base64",
-            ),
-          ],
-          "pixel.png",
-          { type: "image/png" },
-        ),
-      );
-      return form;
-    };
     const attachment = (await op("POST /api/media", { raw: pixel() })).body.data;
     const campaign = (
       await op("POST /api/campaigns", {
@@ -992,7 +1018,6 @@ export async function runOpenApiContract(target: {
       ).type === "text/plain",
       "plain-preview",
     );
-    const plainForm = () => new URLSearchParams({ body: "plain", content_type: "plain" });
     check(
       (
         await op("POST /api/campaigns/{id}/preview", {
@@ -1438,14 +1463,6 @@ export async function runOpenApiContract(target: {
         operation,
       })),
     );
-    const placeholders = (key: string, id: string): Options => ({
-      params: Object.fromEntries(
-        [...key.matchAll(/\{(\w+)\}/g)].map(([, name]) => [
-          name!,
-          name === "id" || name === "step" ? id : "x",
-        ]),
-      ),
-    });
     // Path parameters: the document's type has to be what the route takes. Numeric IDs are
     // `integer`, everything else is text. A non-number for an integer is a plain 400.
     const httpMethods = new Set([
@@ -1563,22 +1580,6 @@ export async function runOpenApiContract(target: {
     const refusal = (reply: Reply) =>
       reply.status === 403 && String(reply.body?.message ?? "").startsWith("permission denied");
     /** The query an operation cannot be reached without. */
-    const needed = (operation: any) => {
-      const query = (
-        operation.parameters as Array<{
-          in: string;
-          name: string;
-          required?: boolean;
-        }>
-      )
-        .filter(({ in: at, name, required }) => at === "query" && (required || name === "id"))
-        .map(({ name }) => `${name}=${name === "id" ? "999999" : "2020-01-01"}`);
-      return query.length ? `?${query.join("&")}` : "";
-    };
-    const filled = (key: string) =>
-      key
-        .split(" ")[1]!
-        .replaceAll(/\{(\w+)\}/g, (_, name) => (name === "id" || name === "step" ? "999999" : "x"));
     const reachable = operations.filter(
       ({ operation }) =>
         operation.security?.length !== 0 && !operation.security?.[0]?.SessionCookie,

@@ -5,6 +5,12 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL settings-new-items-${label}`);
+  }
+}
+
 export async function runSettingsNewItems(target: {
   mode: Mode;
   baseUrl: string;
@@ -24,11 +30,6 @@ export async function runSettingsNewItems(target: {
       },
       false,
     );
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL settings-new-items-${label}`);
-    }
-  }
   async function read() {
     const response = await request("/api/settings");
     check(response.status === 200, "read");

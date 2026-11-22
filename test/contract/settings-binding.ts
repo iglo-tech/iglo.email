@@ -2,6 +2,12 @@
 import type { Credentials, Mode } from "@/test/contract/types";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL settings-binding-${label}`);
+  }
+};
+
 export async function runSettingsBinding(target: {
   mode: Mode;
   baseUrl: string;
@@ -18,11 +24,6 @@ export async function runSettingsBinding(target: {
     ).data;
   const put = (path: string, body: string, type = "application/json") =>
     request(path, { method: "PUT", headers: { Authorization: auth, "Content-Type": type }, body });
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL settings-binding-${label}`);
-    }
-  };
   const original = await get();
   // AppLang, UploadProvider and the SMTP pool fields stay set: upstream stores a missing one as "" and exits on the next reload
   // (app.lang panic at cmd/main.go:211, "unknown provider" fatal at cmd/init.go:852, invalid duration at cmd/init.go:747, MaxConns at cmd/init.go:777).
