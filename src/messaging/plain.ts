@@ -6,6 +6,7 @@
 // closed by the next cell). Its document handler collects the text in order. Every later pass is a
 // linear scan of the collected text, and a link is one entry on the stack, so nested links are linear.
 import type { MessageBudget } from "@/templates/renderer";
+import { must } from "@/invariant";
 
 /** Elements whose content is never shown: the document head, styles, scripts and the title. */
 const SKIPPED = new Set(["head", "script", "style", "title"]);
@@ -242,7 +243,10 @@ function decodeReferences(text: string, attribute = false): string {
       whole?: string,
     ) => {
       if (hex !== undefined || dec !== undefined) {
-        const code = hex !== undefined ? Number.parseInt(hex, 16) : Number.parseInt(dec!, 10);
+        const code =
+          hex !== undefined
+            ? Number.parseInt(hex, 16)
+            : Number.parseInt(must(dec, "decimal reference"), 10);
         const windows = WINDOWS_1252.get(code);
         if (windows !== undefined) {
           return windows;
@@ -252,8 +256,10 @@ function decodeReferences(text: string, attribute = false): string {
           ? "�"
           : String.fromCodePoint(code);
       }
+      // Without a number the reference is a name, whose group the third alternative always matches.
+      const entity = must(name, "character reference name");
       if (semicolon === ";") {
-        return NAMED.get(name!) ?? match;
+        return NAMED.get(entity) ?? match;
       }
       // A reference without `;` decodes only when it is a legacy name.
       if (attribute) {
@@ -261,12 +267,12 @@ function decodeReferences(text: string, attribute = false): string {
         if (after === "=" || /[A-Za-z0-9]/.test(after)) {
           return match;
         }
-        return LEGACY.get(name!) ?? match;
+        return LEGACY.get(entity) ?? match;
       }
-      for (let end = name!.length; end > 0; end--) {
-        const value = LEGACY.get(name!.slice(0, end));
+      for (let end = entity.length; end > 0; end--) {
+        const value = LEGACY.get(entity.slice(0, end));
         if (value !== undefined) {
-          return value + name!.slice(end);
+          return value + entity.slice(end);
         }
       }
       return match;
@@ -427,7 +433,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   // Pops the entry at the top of the stack, which is also the newest entry of its name.
   const finish = (entry: Entry) => {
     entry.popped = true;
-    open.get(entry.name)!.pop();
+    must(open.get(entry.name), "open entry").pop();
     if (entry.own) {
       hidden--;
     }
@@ -444,7 +450,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   // Closes an entry and everything above it, as an end tag or an implied end does.
   const close = (entry: Entry) => {
     while (!entry.popped) {
-      finish(stack.pop()!);
+      finish(must(stack.pop(), "open element"));
     }
   };
 
@@ -581,7 +587,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
       end() {
         // A document that ends with elements open closes them, so their links and markers count.
         while (stack.length > 0) {
-          close(stack.at(-1)!);
+          close(must(stack.at(-1), "open element"));
         }
       },
     });

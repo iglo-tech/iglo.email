@@ -1,6 +1,7 @@
 // Native send journal retention (D70); listmonk keeps no message bodies.
 import type { Database } from "bun:sqlite";
 import { linkPath } from "@/unsubscribe/message";
+import { must } from "@/invariant";
 
 /** A finished send keeps its prepared message this long after it was created. */
 export const SEND_BODY_RETENTION_MS = 30 * 86_400_000;
@@ -47,11 +48,14 @@ export function createSendCompaction(db: Database) {
       if (compacted.length && bytes > PASS_BYTES) {
         break;
       }
-      const { body, alt } = db
-        .query<{ body: string | null; alt: string | null }, [bigint]>(
-          "SELECT json_extract(payload, '$.message.body') AS body, json_extract(payload, '$.message.altBody') AS alt FROM sends WHERE id = ?",
-        )
-        .get(row.id)!;
+      const { body, alt } = must(
+        db
+          .query<{ body: string | null; alt: string | null }, [bigint]>(
+            "SELECT json_extract(payload, '$.message.body') AS body, json_extract(payload, '$.message.altBody') AS alt FROM sends WHERE id = ?",
+          )
+          .get(row.id),
+        "compacted send",
+      );
       db.run("UPDATE sends SET payload = NULL, tracked_links = ? WHERE id = ?", [
         linksIn(row.uuid, [body, alt]),
         row.id,

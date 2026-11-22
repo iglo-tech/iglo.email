@@ -6,6 +6,7 @@ import type { Claimed, Sends } from "@/messaging/sends";
 import type { Outcome, createEmailer } from "@/messaging/email";
 import { createLoop } from "@/loops/loop";
 import { sendingHeld } from "@/settings/hold";
+import { must } from "@/invariant";
 
 // A marketing send has exactly one SMTP recipient, its admitted subscriber.
 const copies = (row: { kind: string }) => ({ copies: row.kind !== "marketing" });
@@ -146,7 +147,7 @@ export function createOutbox(options: OutboxOptions) {
     let failure: { reason: unknown } | undefined;
     options.sends.finishAll(
       pending.map((p, i) => {
-        const s = settled[i]!;
+        const s = must(settled[i], "settled send");
         if (!p.result) {
           if (!held) {
             failure ??= { reason: p.refused };
@@ -161,7 +162,7 @@ export function createOutbox(options: OutboxOptions) {
         }
         return {
           row: p.row,
-          outcome: s.status === "fulfilled" ? s.value! : uncertain(p.row),
+          outcome: s.status === "fulfilled" ? must(s.value, "send outcome") : uncertain(p.row),
         };
       }),
     );

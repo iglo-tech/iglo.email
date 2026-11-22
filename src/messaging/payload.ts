@@ -1,6 +1,7 @@
 // Versioned prepared messages are private journal data, never HTTP projections.
 import type { Message, MessageHeaders } from "@/messaging/email";
 import { parseAddress } from "@/settings/mail";
+import { must } from "@/invariant";
 
 const maxBody = 1024 * 1024;
 const maxAttachments = 4 * 1024 * 1024;
@@ -77,7 +78,7 @@ function prepare(message: Message, subscriberUuid: string | null, encode: boolea
       headers[name] = value;
     }
     if (["cc", "bcc"].includes(name.toLowerCase())) {
-      const list = (Array.isArray(value) ? value[0]! : value).split(",");
+      const list = must(Array.isArray(value) ? value[0] : value, "header value").split(",");
       if (!list.length || list.some((v) => !address(v.trim()))) {
         invalid();
       }
