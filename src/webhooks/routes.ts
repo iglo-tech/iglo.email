@@ -15,6 +15,9 @@ const BODY_BYTES = 16 * 1024;
 const MAX_URL = 2048;
 const MIN_SECRET = 16;
 const MAX_SECRET = 256;
+/** A rotation's old secret signs this long unless the body says otherwise (D130). */
+const DEFAULT_OVERLAP_HOURS = 24;
+const MAX_OVERLAP_HOURS = 168;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,6 +69,32 @@ const validEvents = (c: RequestContext, value: unknown) => {
     throw invalid(c, "events");
   }
   return [...new Set(value)];
+};
+/** The optional body of a rotation: nothing, or a JSON object. */
+const rotation = async (c: RequestContext) => {
+  const bytes = await readBounded(c.request, BODY_BYTES);
+  if (!bytes.length) {
+    return {};
+  }
+  const value = parseJson(c.request, bytes);
+  if (!isObject(value)) {
+    throw invalid(c, "body");
+  }
+  return value;
+};
+const validOverlap = (c: RequestContext, value: unknown) => {
+  if (value === undefined) {
+    return DEFAULT_OVERLAP_HOURS;
+  }
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > MAX_OVERLAP_HOURS
+  ) {
+    throw invalid(c, "overlap_hours");
+  }
+  return value;
 };
 const validEnabled = (c: RequestContext, value: unknown) => {
   if (typeof value !== "boolean") {
@@ -146,7 +175,7 @@ export function registerWebhookRoutes(
     async (c) => {
       const id = BigInt(getID(c));
       const value = await body(c);
-      // Rotating means a new webhook: a secret here would otherwise be silently ignored.
+      // A secret is changed by its own route (rotate-secret, D130); here it would be ignored.
       if (value.secret !== undefined) {
         throw invalid(c, "secret");
       }
@@ -166,6 +195,27 @@ export function registerWebhookRoutes(
         });
       });
       return ok(updated);
+    },
+    auth.middleware(MANAGE),
+    hasID,
+  );
+  router.route(
+    "POST",
+    "/api/webhooks/:id/rotate-secret",
+    async (c) => {
+      const id = BigInt(getID(c));
+      const value = await rotation(c);
+      const overlapHours = validOverlap(c, value.overlap_hours);
+      const secret = generateSecret();
+      const rotated = writeTransaction(c.app.db, () => {
+        auth.revalidate(c, MANAGE);
+        return webhooks.rotate(id, secret, overlapHours);
+      });
+      if (!rotated) {
+        throw new HttpError(404, "Webhook not found");
+      }
+      // The only other answer that holds a secret is the one that creates the webhook.
+      return ok({ ...rotated, secret });
     },
     auth.middleware(MANAGE),
     hasID,

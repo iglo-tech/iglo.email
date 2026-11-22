@@ -942,6 +942,113 @@ Operators can receive notifications for campaign and import events by configurin
 
 If `app.notify_emails` is empty or unset, no notifications are generated. An entry that is not a valid email address is skipped and logged as an error on every notification; the valid entries still receive the mail. If `app.from_email[0]` is not a valid address, no admin notification is sent and the bad value is logged once per distinct value per process, because the sender would be refused by SES. Nothing falls back to another sender. A notification that cannot be queued is logged and never changes the campaign or import it reports on. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
 
+## Outbound webhooks
+
+iglo.email posts a signed JSON `POST` to each URL you configure, for the events listed in
+[04-sending.md](design/04-sending.md#outbound-webhooks): an unsubscribe, a blocklisting, a deletion,
+a stored bounce and a failed send. Create a webhook with `POST /api/webhooks` (`webhooks:manage`).
+Its `secret` is in that one answer, and a rotation answers with the new secret the same way. `PUT` changes the URL, events or `enabled`, and
+`DELETE` removes it with its deliveries. `GET /api/webhooks/{id}/deliveries` shows each delivery's
+status and last error, never its payload.
+
+### Signature
+
+Each request carries `X-Iglo-Email-Signature: t=<unix>,v1=<hex>`. The `v1` value is HMAC-SHA256,
+keyed with the secret, over the text `<unix>.<body>`, where `<body>` is the exact bytes of the request
+body. During a secret rotation the header has one `v1` per secret, the new one first, and a receiver
+accepts the delivery when any of them verifies.
+
+### Rotating the secret
+
+`POST /api/webhooks/{id}/rotate-secret` (`webhooks:manage`) makes a new secret and returns the
+webhook with it in `secret`, once. An optional JSON body `{"overlap_hours": 24}` sets how long the
+old secret keeps signing: an integer from 0 to 168, 24 by default. `0` drops the old secret at once.
+The answer's `previous_secret_until` is the moment it stops, or `null` when none is in its window.
+
+To rotate without losing deliveries: rotate, then give your receiver the new secret at any point
+before `previous_secret_until`. Until then every delivery carries both signatures, so a receiver that
+holds either secret accepts it. After the window only the new secret signs. Each attempt is signed
+when it is sent, so a retry after the window carries the new signature alone. A second rotation during
+an overlap ends the earlier old secret at once: only the newest and the one before it sign. The stored
+old secret is removed by the retention pass within about an hour of its window's end; signing stops at
+the window's end whatever the time of that pass.
+
+### Verifying a delivery
+
+The receiver's rules:
+
+- **Verify the exact body.** Compute the HMAC over the raw bytes of the request body, before any
+  JSON parsing or re-encoding, and compare with a constant-time function.
+- **Accept any `v1` value** that matches one of your secrets: the current one, and a rotated one
+  while its window is open.
+- **Timestamp tolerance.** Reject a `t` more than 5 minutes from your clock (300 seconds either way).
+  Each attempt carries a fresh `t`, so a retry passes.
+- **Replay window.** Keep each delivery `id` (the body's `id`) for at least 25 hours. iglo.email
+  retries a delivery for up to 24 hours, with the same `id`, and a copy that arrives again is a
+  duplicate, not a new event.
+- **Body size cap.** Read at most 64 KiB and answer `413` above it. A delivery holds IDs and short
+  fields, so this is well above any delivery iglo.email sends.
+- **2xx only after the durable write.** Record the `id` and apply the change in one transaction,
+  commit it, and then answer. Any non-2xx answer is retried for up to 24 hours, and a `2xx` sent before
+  the commit would be lost if the process died. A duplicate of an applied `id` answers `2xx` too: the
+  first answer may have been lost on the way back.
+
+The helper below implements the signature, the timestamp and the replay check. It needs no package
+beyond Node's standard library and runs under Bun or Node. `applied(id)` must read the same table that
+the delivery's transaction writes, inside that transaction (`BEGIN IMMEDIATE` in SQLite), so two copies
+of one delivery cannot both pass the check. It throws `bad_timestamp`, `bad_signature` or `replay`:
+answer `2xx` to `replay` and `4xx` to the others.
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+/** Seconds either side of the signed time that a delivery may carry. */
+const TOLERANCE_SECONDS = 300;
+
+export interface Delivery {
+  id: string;
+  event: string;
+  occurred_at: string;
+  data: unknown;
+}
+
+/**
+ * Verify one delivery and return it. `raw` is the exact request body, `header` is the
+ * X-Iglo-Email-Signature value, `secrets` are the current secret and any rotated one still in its
+ * overlap, and `applied(id)` tells whether this delivery id was already applied. Throws on failure.
+ */
+export function verifyDelivery(
+  raw: string,
+  header: string,
+  secrets: ReadonlyArray<string>,
+  applied: (id: string) => boolean,
+  now = Date.now() / 1000,
+): Delivery {
+  const time = Number(/(?:^|,)t=(\d+)/.exec(header)?.[1]);
+  if (!Number.isSafeInteger(time) || Math.abs(now - time) > TOLERANCE_SECONDS) {
+    throw new Error("bad_timestamp");
+  }
+  const given = [...header.matchAll(/v1=([0-9a-f]{64})/g)].map(([, hex]) =>
+    Buffer.from(hex ?? "", "hex"),
+  );
+  const valid = secrets.some((secret) => {
+    const expected = createHmac("sha256", secret).update(`${time}.${raw}`).digest();
+    return given.some((signature) => timingSafeEqual(signature, expected));
+  });
+  if (!valid) {
+    throw new Error("bad_signature");
+  }
+  const delivery: Delivery = JSON.parse(raw);
+  if (applied(delivery.id)) {
+    throw new Error("replay");
+  }
+  return delivery;
+}
+```
+
+The helper is tested with the server's own deliveries, a rotation and a tampered body, in
+`test/webhooks/verify.test.ts`, which also fails if this block and that file differ.
+
 ## Monitoring
 
 - `GET /health` is public and answers `200` and `{"data":true}` once the server is listening. On a
