@@ -472,7 +472,6 @@ export default defineConfig({
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
     // B134c: findings remain only in test/.
-    "no-unexpected-multiline": "off", // B134c
     "quality/no-reflect-get": "off", // B134c
     "quality/no-unknown-type-aliases": "off", // B134c
     "unicorn/no-array-fill-with-reference-type": "off", // B134c
