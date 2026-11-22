@@ -449,7 +449,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
       b.step();
       const text = scalar(value);
       const fmt = scalar(format);
-      if (byteLength(fmt) > 256 || /%(?![%YmdHMS])/.test(fmt)) {
+      // Left to right: a percent sign is either the pair `%%` (a literal %) or one of the directives,
+      // so the second percent of `%%` is not a directive of its own.
+      if (byteLength(fmt) > 256 || !/^(?:[^%]|%[%YmdHMS])*$/.test(fmt)) {
         throw new Error("Invalid date format");
       }
       if (
@@ -472,7 +474,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
         ["M", pad(date.getUTCMinutes())],
         ["S", pad(date.getUTCSeconds())],
       ]);
-      // An unknown conversion letter renders as the text "undefined", as it always has.
+      // Every `%` now starts a valid pair, so each key is in the map.
       const out = fmt.replaceAll(/%(.)/g, (_, key: string) => String(values.get(key)));
       b.charge(byteLength(out));
       return out;
