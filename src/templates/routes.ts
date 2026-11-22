@@ -1,4 +1,6 @@
 // Template HTTP endpoints adapted from listmonk cmd/templates.go and cmd/handlers.go at 6fcd95f.
+import { mailBrand } from "@/public/brand";
+import type { BrandSite } from "@/public/brand";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -107,7 +109,6 @@ const dummy = {
   message_url: "",
   archive_url: "",
 };
-const data = JSON.stringify(dummy);
 const sampleBody = "<p>Hi there</p><p>Lorem ipsum dolor sit amet.</p>";
 function html(body: string) {
   return new Response(body, {
@@ -120,11 +121,16 @@ function html(body: string) {
   });
 }
 
+/**
+ * `brand` reads the operator's site settings for each request. A preview takes the brand as a send
+ * does (B129 review, D127): without it the built-in layouts render with empty brand values.
+ */
 export function registerTemplateRoutes(
   router: Router,
   store: TemplateStore,
   renderer: TemplateRenderer,
   auth: Authentication,
+  brand: () => BrandSite,
 ) {
   const collection = (context: RequestContext) =>
     ok(
@@ -152,8 +158,12 @@ export function registerTemplateRoutes(
     if (type === "campaign_visual") {
       throw new TemplateError("type");
     }
-    // Without a sample the context is the dummy one, byte for byte as it has always been.
-    const rendered = sample === undefined ? data : JSON.stringify(previewContext(dummy, sample));
+    // The dummy context with the brand read now, so a layout shows the accent, font and header it
+    // would send with. A sample replaces only the parts it names (D105).
+    const dummyData = { ...dummy, ...mailBrand(brand()) };
+    const rendered = JSON.stringify(
+      sample === undefined ? dummyData : previewContext(dummyData, sample),
+    );
     try {
       if (type === "campaign") {
         renderer.validate(body, "", true);

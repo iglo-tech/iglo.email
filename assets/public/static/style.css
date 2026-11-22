@@ -9,17 +9,35 @@ html, body {
 }
 body {
   background: #f9f9f9;
-  font-family: "Inter", "Open Sans", "Helvetica Neue", sans-serif;
+  font-family: var(--brand-font, "Inter", "Open Sans", "Helvetica Neue", sans-serif);
   font-size: 16px;
   line-height: 26px;
   color: #111;
 }
+/* Link text takes the link colour, the accent darkened where it would not read on white (B129, D127). */
 a {
-  color: #0055d4;
-  text-decoration-color: #abcbfb;
+  color: var(--brand-link, var(--brand-accent, #0055d4));
+  text-decoration-color: currentColor;
+}
+/* Form controls take the brand font too, not the browser's system face (B129, D127). */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 a:hover {
   color: #111;
+}
+/* The focus ring follows the accent (B129 review, D127), so a Tab focus is never the browser's blue. */
+:focus-visible {
+  outline: 2px solid var(--brand-focus, #0055d4);
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
 }
 label {
   cursor: pointer;
@@ -50,7 +68,7 @@ input[type="text"], input[type="email"], input[type="password"], select {
   font-size: 1em;
 }
   input:focus {
-    border-color: #0055d4;
+    border-color: var(--brand-accent, #0055d4);
   }
 
 input:focus::placeholder {
@@ -59,6 +77,12 @@ input:focus::placeholder {
 
 input[disabled] {
   opacity: 0.5;
+}
+
+/* Checkboxes and radios take the brand accent, not the browser's blue (B129 adopter check, D127). */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--brand-accent, #0055d4);
 }
 
 .center {
@@ -74,13 +98,14 @@ input[disabled] {
   color: #FF5722;
 }
 .button {
-  background: #0055d4;
+  background: var(--brand-accent, #0055d4);
   padding: 15px 30px;
   border-radius: 3px;
   border: 0;
   cursor: pointer;
   text-decoration: none;
-  color: #ffff;
+  /* Black or white, whichever reads on the accent (WCAG contrast, D127). */
+  color: var(--brand-on-accent, #fff);
   display: inline-block;
   min-width: 150px;
   font-size: 1.1em;
@@ -92,8 +117,9 @@ input[disabled] {
 }
 .button.button-outline {
   background: #fff;
-  border: 1px solid #0055d4;
-  color: #0055d4;
+  /* The border meets 3:1 against white (WCAG 1.4.11), so it takes the link colour, as the text does. */
+  border: 1px solid var(--brand-link, var(--brand-accent, #0055d4));
+  color: var(--brand-link, var(--brand-accent, #0055d4));
 }
 .button.button-outline:hover {
   border-color: #333;
@@ -121,6 +147,35 @@ input[disabled] {
 .header .logo img {
   width: auto;
   max-width: 150px;
+}
+.header .logo .site-name {
+  color: #111;
+  font-size: 1.25em;
+  font-weight: 600;
+}
+/* Every header mode aligns to the start (B129 adopter check, D127). Logo and name together are one
+   row with a gap and a smaller logo; the name wraps inside its own box, never under the logo. */
+.header .logo {
+  text-align: start;
+}
+.header .lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+}
+.header .lockup img {
+  max-width: 120px;
+  max-height: 40px;
+}
+.header .lockup .site-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+/* A brand accent (B129, D127) adds a rule above the card; without one the page is unchanged. */
+.branded .wrap {
+  border-top: 4px solid var(--brand-accent, #0055d4);
 }
 
 .unsub-all {

@@ -1,5 +1,6 @@
 // Public-boundary tests for admin notification mails (task B38).
 import { afterEach, describe, expect, test } from "bun:test";
+import type { BrandSite } from "@/public/brand";
 import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -227,6 +228,10 @@ async function createNotifyFixture(
         rootUrl: current["app.root_url"],
         logoUrl: current["app.logo_url"],
         siteName: current["app.site_name"],
+        siteUrl: current["app.site_url"],
+        accent: current["appearance.brand.accent"],
+        font: current["appearance.brand.font"],
+        header: current["appearance.brand.header"],
       };
     },
   });
@@ -251,6 +256,14 @@ async function createNotifyFixture(
     fromEmail: "Fixture <noreply@fixture.test>",
     rootUrl: root,
     siteName: "Fixture list",
+    brand: {
+      logoUrl: "",
+      siteName: "Fixture list",
+      siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
+    } satisfies BrandSite,
     messengers: ["email", "fixture"],
     unsubscribeHeader: true,
     allowBlocklist: true,
@@ -374,6 +387,14 @@ async function createNotifyFixture(
         slidingWindowDuration: "1h",
         slidingWindowRate: 10_000,
         rootUrl: root,
+        brand: {
+          logoUrl: "",
+          siteName: "Fixture list",
+          siteUrl: "",
+          accent: "",
+          font: "system-sans",
+          header: "auto",
+        },
         messengers: ["email", "fixture"],
         unsubscribeHeader: true,
         disableTracking: false,

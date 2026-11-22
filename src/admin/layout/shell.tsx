@@ -166,6 +166,15 @@ function Chrome(props: AdminShellProps) {
               {duration}
             </span>
           ) : null}
+          {/* B129 (D127): AGPL-3.0 §13 asks a modified version to offer its source, so the admin says where it is. */}
+          <a
+            class="text-light text-8"
+            href="https://github.com/iglo-tech/iglo.email"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Source code
+          </a>
         </footer>
       </aside>
       <main>

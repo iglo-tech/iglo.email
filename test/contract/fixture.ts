@@ -47,6 +47,9 @@ export function startContractFixture(credentials: Credentials) {
         subscriptionPage: true,
         archive: true,
         siteUrl: "",
+        accent: "",
+        font: "system-sans",
+        header: "auto",
       }),
     );
     const auth: Middleware = (context, next) => {

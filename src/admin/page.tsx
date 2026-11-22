@@ -21,6 +21,8 @@ export interface AdminSite {
   readonly siteName: string;
   readonly faviconUrl: string;
   readonly rootUrl: string;
+  /** The brand font is a Google Fonts family, so the sign-in pages may load it (B129, D127). */
+  readonly googleFonts?: boolean;
   readonly cacheSlowQueries: boolean;
   readonly disableTracking: boolean;
   readonly individualTracking: boolean;

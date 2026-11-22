@@ -187,7 +187,8 @@ test("the header logo has no empty link, and the done, unsubscribed and removed 
   // The operator's site: the logo and the back links point to it.
   Object.assign(f.overrides, { siteUrl: brandUrl });
   const manage = await (await f.request(`${page}?manage=true`)).text();
-  expect(manage).toContain(`<a href="${brandUrl}"><img`);
+  // The header's content is the logo or the name (B129, D127); the link wraps it either way.
+  expect(manage).toContain(`<div class="logo"><a href="${brandUrl}">`);
   expect(manage).not.toContain('href=""');
 
   const saved = await f.fresh(page, `manage=true&name=Ada+Two&l=${list.uuid}`);
@@ -209,7 +210,7 @@ test("the header logo links to the subscription page when there is no site URL, 
   const f = await open();
   const { send, uuid } = await sendTo(f);
   const html = await (await f.request(`/m/${send}/unsubscribe/${uuid}?manage=true`)).text();
-  expect(html).toContain('<a href="http://fixture.test/subscription/form"><img');
+  expect(html).toContain('<div class="logo"><a href="http://fixture.test/subscription/form">');
   expect(html).not.toContain('href=""');
 });
 
@@ -398,12 +399,12 @@ test("the subscriber mails name the site and link it when the site URL is set, a
     .map((m) => decoded(m.data))
     .find((m) => m.header("Subject") === "Your data from Brand Co");
   expect(data).toBeDefined();
-  expect(data!.body).toContain(`<a href="${brandUrl}">Brand Co</a>`);
+  expect(data!.body).toContain(`<a href="${brandUrl}" style="color: #0055d4;">Brand Co</a>`);
   expect(data!.body).toContain(`Brand Co <${brandUrl}>`);
 
   const optin = f.mailTo("opt@example.test").map((m) => decoded(m.data));
   expect(optin.length).toBeGreaterThan(0);
-  expect(optin[0]!.body).toContain(`<a href="${brandUrl}">Brand Co</a>`);
+  expect(optin[0]!.body).toContain(`<a href="${brandUrl}" style="color: #0055d4;">Brand Co</a>`);
   expect(optin[0]!.body).toContain(`Brand Co <${brandUrl}>`);
 });
 

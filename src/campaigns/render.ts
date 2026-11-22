@@ -4,6 +4,8 @@
 import type { ContentType, WritableCampaign } from "@/campaigns/store";
 import { hasTemplate } from "@/campaigns/input";
 import { must } from "@/invariant";
+import { mailBrand } from "@/public/brand";
+import type { BrandSite } from "@/public/brand";
 import { createMessageBudget } from "@/templates/renderer";
 import type { RenderRequest, RenderTracking, TemplateRenderer } from "@/templates/renderer";
 
@@ -42,6 +44,12 @@ export interface MessageLinks {
   tracking?: RenderTracking;
   /** A test message (D117): its per-subscriber links name `testSendUUID`, not the campaign. */
   test?: boolean;
+  /**
+   * The site's brand (B129, D127): the logo, name, link, accent, font and header a campaign or
+   * archive template reads as `brand_accent`, `brand_font`, `logo_url`, and so on, as a system mail
+   * does. Every render path passes the settings it holds.
+   */
+  brand: BrandSite;
 }
 export interface CampaignMessage {
   subject: string;
@@ -119,6 +127,7 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
           : `${root}/subscription/optin/${sub.uuid}`,
         message_url: `${root}/campaign/${links.test ? testSendUUID : c.uuid}/${sub.uuid}`,
         archive_url: `${root}/archive`,
+        ...mailBrand(links.brand),
       });
       const out = main.renderSync(data, links.tracking, budget);
       const plain = (tpl: ReturnType<TemplateRenderer["compile"]> | null, raw: string) =>

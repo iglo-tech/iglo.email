@@ -850,6 +850,12 @@ export const differences: Array<Difference> = [
     applies: [],
   },
   {
+    area: "Brand settings and no credit (B129, D127)",
+    summary:
+      "appearance.brand.accent (hex only), appearance.brand.font (system-sans, system-serif, system-mono or a Google Fonts family name) and appearance.brand.header (auto, logo, name or logo_and_name) are native settings, validated when saved. The public pages apply them as custom properties, and the subscriber mails as inline styles. The public pages and the campaign and sample templates carry no 'Powered by listmonk' footer, and the admin's sidebar links the source. With no logo URL the header is the site name, never a bundled image. A new install's sender and return path are placeholders that name no product. Upstream has neither the settings nor the credit-free output.",
+    applies: [],
+  },
+  {
     area: "Site URL setting (B126, D123)",
     summary:
       "app.site_url is a native setting for the operator's own site, empty by default, validated like the D107 root URL, except that a query string is allowed. The logo and back links point to it. The root URL is iglo.email's own address and cannot serve. Upstream has no such setting.",

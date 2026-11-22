@@ -251,7 +251,7 @@ export async function txFixture(
   if (subscriberQuery) {
     registerSubscriberQueryRoutes(router, subscriberQuery, subscribers, roles, auth);
   }
-  registerTemplateRoutes(router, templates, renderer, auth);
+  registerTemplateRoutes(router, templates, renderer, auth, () => pageOptions());
   registerSendRoutes(router, sends, auth);
   if (webhooks) {
     registerWebhookRoutes(router, { webhooks, auth });
@@ -356,6 +356,9 @@ export async function txFixture(
       subscriptionPage: false,
       archive: false,
       siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
       siteName: marketing.siteName,
       allowBlocklist: marketing.allowBlocklist,
       allowPreferences: false,

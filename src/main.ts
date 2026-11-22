@@ -81,6 +81,7 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import { createCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import { registerArchiveRoutes } from "@/public/archive";
+import { googleFontUrl } from "@/public/brand";
 import { createSubscriberMail, createSignupMail } from "@/public/mail";
 import type { SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
@@ -296,7 +297,9 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     const router = createRouter(() => restoreHold(db));
     // B125: every personal public page, whichever route family serves it (src/public/headers.ts).
     router.use(personalPageHeaders);
-    registerTemplateRoutes(router, templates, renderer, auth);
+    registerTemplateRoutes(router, templates, renderer, auth, () =>
+      publicSettings(wired(settings, "settings").read()),
+    );
     registerUserRoutes(router, users, roles, auth, () =>
       publicSettings(wired(settings, "settings").read()),
     );
@@ -445,6 +448,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           rootUrl: current["app.root_url"],
           logoUrl: current["app.logo_url"],
           siteName: current["app.site_name"],
+          siteUrl: current["app.site_url"],
+          accent: current["appearance.brand.accent"],
+          font: current["appearance.brand.font"],
+          header: current["appearance.brand.header"],
         };
       },
     });
@@ -522,6 +529,14 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         fromEmail: current["app.from_email"][0] ?? "",
         rootUrl: current["app.root_url"],
         siteName: current["app.site_name"],
+        brand: {
+          logoUrl: current["app.logo_url"],
+          siteName: current["app.site_name"],
+          siteUrl: current["app.site_url"],
+          accent: current["appearance.brand.accent"],
+          font: current["appearance.brand.font"],
+          header: current["appearance.brand.header"],
+        },
         messengers: [
           "email",
           ...(current.smtp as Array<{ enabled: boolean; name: string }>)
@@ -645,6 +660,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           unsubscribeHeader: campaign.unsubscribeHeader,
           disableTracking: campaign.disableTracking,
           individualTracking: campaign.individualTracking,
+          brand: campaign.brand,
         };
       },
       notify: notifier,
@@ -809,6 +825,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           siteName: current.siteName,
           faviconUrl: current.faviconUrl,
           rootUrl: current.rootUrl,
+          googleFonts: googleFontUrl(current.font) !== "",
           cacheSlowQueries: wired(settings, "settings").read()["app.cache_slow_queries"],
           disableTracking: wired(settings, "settings").read()["privacy.disable_tracking"],
           individualTracking: wired(settings, "settings").read()["privacy.individual_tracking"],
