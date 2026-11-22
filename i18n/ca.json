@@ -435,6 +435,7 @@
     "public.invalidFeature": "Aquesta funció no està disponible.",
     "public.managePrefs": "Gestiona les preferències",
     "public.managePrefsUnsub": "Desmarca les llistes de les quals vols fer-ne la desubscripció.",
+    "public.nothingToManage": "No hi ha res a gestionar aquí.",
     "public.noListsAvailable": "No hi ha llistes disponibles per subscriure's.",
     "public.noListsSelected": "No s'han seleccionat llistes vàlides per subscriure's.",
     "public.noSubInfo": "No hi ha subscripcions per confirmar.",

@@ -435,6 +435,7 @@
     "public.invalidFeature": "その機能は使用できません。",
     "public.managePrefs": "設定変更",
     "public.managePrefsUnsub": "チェックを消すサブスクリプションは退会となります。",
+    "public.nothingToManage": "ここで管理する項目はありません。",
     "public.noListsAvailable": "加入できるリストはありません。",
     "public.noListsSelected": "加入に有効なリストが選択されてません。",
     "public.noSubInfo": "確認できるサブスクリプションはありません。",

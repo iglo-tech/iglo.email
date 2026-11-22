@@ -435,6 +435,7 @@
     "public.invalidFeature": "Denna funktionen är inte tillgänglig.",
     "public.managePrefs": "Hantera preferenser",
     "public.managePrefsUnsub": "Avmarkera listor för att avprenumerera från dem.",
+    "public.nothingToManage": "Det finns inget att hantera här.",
     "public.noListsAvailable": "Inga listor är tillgängliga att prenumerera på.",
     "public.noListsSelected": "Inga giltiga listor har valts för att prenumerera på.",
     "public.noSubInfo": "Det finns inga prenumerationer att bekräfta.",

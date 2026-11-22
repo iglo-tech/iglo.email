@@ -435,6 +435,7 @@
     "public.invalidFeature": "Тази функция не е налична.",
     "public.managePrefs": "Управление на предпочитанията",
     "public.managePrefsUnsub": "Премахнете отметката от списъците, за да се отпишете от тях.",
+    "public.nothingToManage": "Тук няма нищо за управление.",
     "public.noListsAvailable": "Няма налични списъци за абониране.",
     "public.noListsSelected": "Не са избрани валидни списъци за абониране.",
     "public.noSubInfo": "Няма абонаменти за потвърждаване.",

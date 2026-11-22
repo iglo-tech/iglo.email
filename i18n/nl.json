@@ -435,6 +435,7 @@
     "public.invalidFeature": "Deze functie is niet beschikbaar",
     "public.managePrefs": "Beheer voorkeuren",
     "public.managePrefsUnsub": "Deselecteer lijsten om u voor af te melden.",
+    "public.nothingToManage": "Hier valt niets te beheren.",
     "public.noListsAvailable": "Geen lijsten beschikbaar om in te schrijven",
     "public.noListsSelected": "Geen geldige lijsten geselecteerd om op in te schrijven",
     "public.noSubInfo": "Er zijn geen inschrijvingen om te bevestigen.",

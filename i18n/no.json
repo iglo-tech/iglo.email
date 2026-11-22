@@ -435,6 +435,7 @@
     "public.invalidFeature": "Denne funksjonen er ikke tilgjengelig.",
     "public.managePrefs": "Administrer preferanser",
     "public.managePrefsUnsub": "Fjern avmerkingen for lister du vil melde deg av.",
+    "public.nothingToManage": "Det er ingenting å administrere her.",
     "public.noListsAvailable": "Ingen tilgjengelige lister å abonnere på.",
     "public.noListsSelected": "Ingen gyldige lister valgt for abonnement.",
     "public.noSubInfo": "Det er ingen abonnementer å bekrefte.",

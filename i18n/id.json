@@ -435,6 +435,7 @@
     "public.invalidFeature": "Fitur tersebut tidak tersedia.",
     "public.managePrefs": "Kelola preferensi",
     "public.managePrefsUnsub": "Hapus centang daftar untuk membatalkan langganan dari daftar tersebut.",
+    "public.nothingToManage": "Tidak ada yang perlu dikelola di sini.",
     "public.noListsAvailable": "Tidak ada daftar yang tersedia untuk berlangganan.",
     "public.noListsSelected": "Tidak ada daftar valid yang dipilih untuk berlangganan.",
     "public.noSubInfo": "Tidak ada langganan untuk dikonfirmasi.",

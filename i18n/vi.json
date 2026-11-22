@@ -435,6 +435,7 @@
     "public.invalidFeature": "Tính năng đó không khả dụng.",
     "public.managePrefs": "Quản lý tùy chọn",
     "public.managePrefsUnsub": "Bỏ chọn danh sách để hủy đăng ký.",
+    "public.nothingToManage": "Không có gì để quản lý ở đây.",
     "public.noListsAvailable": "Không có danh sách nào để đăng ký.",
     "public.noListsSelected": "Không có danh sách hợp lệ nào được chọn để đăng ký.",
     "public.noSubInfo": "Không có đăng ký để xác nhận.",

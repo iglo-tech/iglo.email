@@ -435,6 +435,7 @@
     "public.invalidFeature": "هذه الميزة غير متاحة.",
     "public.managePrefs": "إدارة التفضيلات",
     "public.managePrefsUnsub": "ألغِ تحديد القوائم لإلغاء الاشتراك منها.",
+    "public.nothingToManage": "لا يوجد شيء لإدارته هنا.",
     "public.noListsAvailable": "لا توجد قوائم متاحة للاشتراك.",
     "public.noListsSelected": "لم يتم اختيار قوائم صالحة.",
     "public.noSubInfo": "لا توجد اشتراكات للتأكيد.",

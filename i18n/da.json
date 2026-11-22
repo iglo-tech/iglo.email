@@ -435,6 +435,7 @@
     "public.invalidFeature": "Denne funktion er ikke tilgængelig.",
     "public.managePrefs": "Administrer foretruk",
     "public.managePrefsUnsub": "Fjern markeringen ved lister for at afmelde dem.",
+    "public.nothingToManage": "Der er intet at administrere her.",
     "public.noListsAvailable": "Der er ikke nogen lister at abonnere på.",
     "public.noListsSelected": "Der er ikke valgt nogen lister det er muligt at abonnere på.",
     "public.noSubInfo": "Der er ingen abonnementer at bekræfte.",

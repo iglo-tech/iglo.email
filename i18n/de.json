@@ -435,6 +435,7 @@
     "public.invalidFeature": "Dieses Feature ist nicht verfügbar",
     "public.managePrefs": "Einstellungen verwalten",
     "public.managePrefsUnsub": "Deselektiere die Listen, um dich von ihnen abzumelden.",
+    "public.nothingToManage": "Hier gibt es nichts zu verwalten.",
     "public.noListsAvailable": "Keine Listen zum Abonnieren verfügbar.",
     "public.noListsSelected": "Keine Liste zum Abonnieren ausgewählt.",
     "public.noSubInfo": "Es gibt keine zu bestätigenden Abonnements",

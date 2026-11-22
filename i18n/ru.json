@@ -435,6 +435,7 @@
     "public.invalidFeature": "Эта функция недоступна.",
     "public.managePrefs": "Управление настройками",
     "public.managePrefsUnsub": "Снимите галочки со списков, чтобы отписаться от них.",
+    "public.nothingToManage": "Здесь нечем управлять.",
     "public.noListsAvailable": "Нет доступных списков для подписки.",
     "public.noListsSelected": "Не выбраны допустимые списки для подписки.",
     "public.noSubInfo": "Нет подписок для подтверждения.",

@@ -63,6 +63,8 @@ test("with no public list to manage, there is no manage link and no preference f
   expect(manage).not.toContain('class="manage-form"');
   expect(manage).not.toContain('name="name"');
   expect(manage).not.toContain('name="l"');
+  // The privacy actions are the view's content, so it does not say there is nothing to manage.
+  expect(manage).not.toContain("There is nothing to manage here.");
 });
 
 test("privacy.allow_preferences off hides the manage link and the manage view even with a public list", async () => {
@@ -115,4 +117,35 @@ test("an archived page whose template has no head gets the font link after the d
     html.startsWith('<!doctype html><link rel="stylesheet" href="https://fonts.googleapis.com/'),
   ).toBe(true);
   expect(html).toContain("<p>");
+});
+
+test("a double opt-in subscriber who confirmed and opens the opt-in mail's manage link gets a page that says so, not a blank one", async () => {
+  const f = await open({ siteUrl: "https://example.test/" });
+  const list = await f.list("Double", "public", "double");
+  const id = await f.subscriber("ada@example.test", "Ada", { lists: [list.id] });
+  const { uuid } = (await f.json(`/api/subscribers/${id}`)).body.data;
+  await f.fresh(`/subscription/optin/${uuid}`, `confirm=true&l=${list.uuid}`);
+  expect(await f.status(id, list.id)).toBe("confirmed");
+
+  // The opt-in mail's manage link pairs the dummy campaign UUID with the subscriber (D128).
+  const manage = await (
+    await f.request(`/subscription/00000000-0000-0000-0000-000000000000/${uuid}?manage=true`)
+  ).text();
+  expect(manage).toContain("There is nothing to manage here.");
+  expect(manage).toContain('href="https://example.test/"');
+  expect(manage).not.toContain('class="manage-form"');
+  expect(manage).not.toContain('id="data-form"');
+});
+
+test("with no privacy action offered, a private-only subscriber's manage view says there is nothing to manage", async () => {
+  const f = await open({ allowExport: false, allowWipe: false });
+  const members = await f.list("Members", "private");
+  const { page } = await pageFor(f, "ada@example.test", members.id, "Members");
+
+  const unsubscribe = await (await f.request(page)).text();
+  expect(unsubscribe).not.toContain('href="?manage=true"');
+  const manage = await (await f.request(`${page}?manage=true`)).text();
+  expect(manage).toContain("There is nothing to manage here.");
+  expect(manage).not.toContain('id="data-form"');
+  expect(manage).not.toContain('class="manage-form"');
 });

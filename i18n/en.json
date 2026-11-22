@@ -455,6 +455,7 @@
     "public.noListsSelected": "No valid lists selected to subscribe.",
     "public.noSubInfo": "There are no subscriptions to confirm.",
     "public.noSubTitle": "No subscriptions",
+    "public.nothingToManage": "There is nothing to manage here.",
     "public.pageNotFound": "Page not found",
     "public.pendingCancelled": "Your pending subscription was cancelled.",
     "public.pendingCancelledMany": "Your pending subscriptions were cancelled.",

@@ -435,6 +435,7 @@
     "public.invalidFeature": "Ova mogućnost nije dostupna.",
     "public.managePrefs": "Upravljanje postavkama",
     "public.managePrefsUnsub": "Uklonite kvačicu s lista da biste otkazali pretplatu na njih.",
+    "public.nothingToManage": "Ovdje nema ničega za upravljanje.",
     "public.noListsAvailable": "Nema lista dostupnih za pretplatu.",
     "public.noListsSelected": "Niste odabrali nijednu listu.",
     "public.noSubInfo": "Nema pretplata koje treba potvrditi.",

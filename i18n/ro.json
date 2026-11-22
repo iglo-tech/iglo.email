@@ -435,6 +435,7 @@
     "public.invalidFeature": "Această caracteristică nu este disponibilă.",
     "public.managePrefs": "Gestionarea preferințelor",
     "public.managePrefsUnsub": "Debifați listele pentru a vă dezabona de la ele.",
+    "public.nothingToManage": "Nu există nimic de gestionat aici.",
     "public.noListsAvailable": "Nu există liste disponibile pentru a vă abona.",
     "public.noListsSelected": "Nu există liste valide pentru abonare.",
     "public.noSubInfo": "Nu există abonamente de confirmat.",

@@ -435,6 +435,7 @@
     "public.invalidFeature": "Ta funkcjonalność jest niedostępna.",
     "public.managePrefs": "Zmień preferencje",
     "public.managePrefsUnsub": "Odznacz listy, z których chcesz się wypisać",
+    "public.nothingToManage": "Nie ma tu nic do zarządzania.",
     "public.noListsAvailable": "Brak list do subkskrybowania.",
     "public.noListsSelected": "Brak prawidłowych list wybranych do subskrybowania.",
     "public.noSubInfo": "Brak subskrypcji do potwierdzenia.",

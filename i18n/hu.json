@@ -435,6 +435,7 @@
     "public.invalidFeature": "Ez a funkció nem elérhető.",
     "public.managePrefs": "Beállítások",
     "public.managePrefsUnsub": "Jelezze, milyen emaileket szeretne kapni a jövőben",
+    "public.nothingToManage": "Itt nincs mit kezelni.",
     "public.noListsAvailable": "Nincs lista, amire fel lehet iratkozni.",
     "public.noListsSelected": "Egy lista sincs kiválasztva.",
     "public.noSubInfo": "Nincsenek megerősítendő feliratkozások.",

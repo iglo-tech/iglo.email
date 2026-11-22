@@ -435,6 +435,7 @@
     "public.invalidFeature": "Questa funzione non è disponibile.",
     "public.managePrefs": "Modifica impostazioni",
     "public.managePrefsUnsub": "Deseleziona per togliere l'iscrizione.",
+    "public.nothingToManage": "Non c'è nulla da gestire qui.",
     "public.noListsAvailable": "Nessuna lista disponibile per l'iscrizione.",
     "public.noListsSelected": "Nessuna lista valida selezionata per l'iscrizione.",
     "public.noSubInfo": "Non ci sono iscrizioni da confermare.",

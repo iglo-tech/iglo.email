@@ -435,6 +435,7 @@
     "public.invalidFeature": "該功能無法使用。",
     "public.managePrefs": "管理喜好設定",
     "public.managePrefsUnsub": "取消訂閱清單請取消勾選。",
+    "public.nothingToManage": "這裡沒有可以管理的內容。",
     "public.noListsAvailable": "沒有可供訂閱的清單。",
     "public.noListsSelected": "沒有可訂閱的有效清單",
     "public.noSubInfo": "沒有需要確認的訂閱。",

@@ -435,6 +435,7 @@
     "public.invalidFeature": "Bu özellik geçerli değil.",
     "public.managePrefs": "Tercihleri Yönet",
     "public.managePrefsUnsub": "Abonelikten çıkmak için listelerin işaretini kaldırın.",
+    "public.nothingToManage": "Burada yönetilecek bir şey yok.",
     "public.noListsAvailable": "Eklenecek liste yok.",
     "public.noListsSelected": "Bağlanılacak geçerli bir liste seçilmedi.",
     "public.noSubInfo": "Doğrulanacak üyelik bulunmuyor.",

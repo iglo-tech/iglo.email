@@ -435,6 +435,7 @@
     "public.invalidFeature": "Cette fonctionnalité n'est pas disponible.",
     "public.managePrefs": "Gérer les préférences",
     "public.managePrefsUnsub": "Décochez les listes pour vous désabonner de celles-ci.",
+    "public.nothingToManage": "Il n'y a rien à gérer ici.",
     "public.noListsAvailable": "Aucune liste n'est disponible pour vous abonner.",
     "public.noListsSelected": "Aucune liste valide sélectionnée pour s'abonner.",
     "public.noSubInfo": "Il n'y a pas d'abonnement à confirmer.",

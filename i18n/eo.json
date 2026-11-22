@@ -435,6 +435,7 @@
     "public.invalidFeature": "Tiu funkcio ne disponeblas.",
     "public.managePrefs": "Administri preferojn",
     "public.managePrefsUnsub": "Malelektu listojn por malaboni ilin.",
+    "public.nothingToManage": "Ĉi tie nenio estas por administri.",
     "public.noListsAvailable": "Ne estas disponeblaj listoj por aboni.",
     "public.noListsSelected": "Neniuj validaj listoj elektitaj por aboni.",
     "public.noSubInfo": "Ne estas abonoj por konfirmi.",

@@ -149,7 +149,7 @@ export function subscriptionPage(
   // the manage view keeps only the privacy actions. `privacy.allow_preferences` stays the explicit switch.
   const managePrefs = options.allowPreferences && manageable.length > 0;
   const subscriptions = showManage ? manageable : [];
-  // A manage view with nothing to show (no public list, not a transactional link) has no section at all.
+  // A manage view with nothing to show (no public list, not a transactional link) has no preference section.
   const emptyManage = showManage && subscriptions.length === 0 && !transactional;
   const blocklist = mode.kind === "paired" && mode.blocklist && options.allowBlocklist;
   // B126 (D123 item 8): a transactional link offers export only. A wipe is a marketing or campaign link's.
@@ -157,6 +157,9 @@ export function subscriptionPage(
   const offersExport = privacyPaired && options.allowExport;
   const offersWipe = mode.kind === "paired" && mode.privacy && options.allowWipe;
   const privacy = offersExport || offersWipe;
+  // B130 (D128, review r1): a manage view with neither a preference section nor a privacy action says so,
+  // rather than rendering a page with only its header.
+  const nothingToManage = emptyManage && !privacy;
   const base = mode.kind === "pending" ? "" : mode.base;
   const body = render(
     <PublicShell
@@ -300,6 +303,12 @@ export function subscriptionPage(
           ) : null}
         </section>
       )}
+      {nothingToManage ? (
+        <section class="section">
+          <h2>{t.T("public.managePrefs")}</h2>
+          <p>{t.T("public.nothingToManage")}</p>
+        </section>
+      ) : null}
       {privacy ? (
         <>
           <form
@@ -348,7 +357,9 @@ export function subscriptionPage(
           </form>
         </>
       ) : null}
-      {alreadyNames || transactionalView === "confirmed" ? backLink(t, options) : null}
+      {alreadyNames || transactionalView === "confirmed" || nothingToManage
+        ? backLink(t, options)
+        : null}
       {raw(`<script>
 ${
   privacy

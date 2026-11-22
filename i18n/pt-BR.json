@@ -435,6 +435,7 @@
     "public.invalidFeature": "Este recurso não está disponível.",
     "public.managePrefs": "Gerenciar preferências",
     "public.managePrefsUnsub": "Desmarque as listas para cancelar a inscrição nelas.",
+    "public.nothingToManage": "Não há nada para gerenciar aqui.",
     "public.noListsAvailable": "Não há listas disponíveis para se inscrever.",
     "public.noListsSelected": "Não foram selecionadas listas válidas para inscrever.",
     "public.noSubInfo": "Não há nenhuma inscrição para confirmar.",

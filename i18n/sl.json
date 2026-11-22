@@ -435,6 +435,7 @@
     "public.invalidFeature": "Ta funkcija ni na voljo.",
     "public.managePrefs": "Upravljanje nastavitev",
     "public.managePrefsUnsub": "Počistite sezname, da se od njih odjavite.",
+    "public.nothingToManage": "Tukaj ni ničesar za upravljanje.",
     "public.noListsAvailable": "Noben seznam ni na voljo za naročanje.",
     "public.noListsSelected": "Ni izbranih veljavnih seznamov za naročanje.",
     "public.noSubInfo": "Ni naročnin za potrditev.",

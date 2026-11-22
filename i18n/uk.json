@@ -435,6 +435,7 @@
     "public.invalidFeature": "Ця функція недоступна.",
     "public.managePrefs": "Керувати налаштуваннями",
     "public.managePrefsUnsub": "Щоб відписатись від розсилки, приберіть пташку поруч.",
+    "public.nothingToManage": "Тут нема чим керувати.",
     "public.noListsAvailable": "Нема на що підписуватись.",
     "public.noListsSelected": "Щоб підписатись, оберіть розсилки.",
     "public.noSubInfo": "Не знайдено підписок, які можна було б підтвердити.",

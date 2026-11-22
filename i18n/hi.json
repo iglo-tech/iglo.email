@@ -435,6 +435,7 @@
     "public.invalidFeature": "यह सुविधा उपलब्ध नहीं है।",
     "public.managePrefs": "प्राथमिकताएँ प्रबंधित करें",
     "public.managePrefsUnsub": "जिन लिस्ट्स की सदस्यता रद्द करनी है, उनका चयन हटाएं।",
+    "public.nothingToManage": "यहाँ प्रबंधित करने के लिए कुछ नहीं है।",
     "public.noListsAvailable": "सदस्यता लेने के लिए कोई लिस्ट उपलब्ध नहीं है।",
     "public.noListsSelected": "सदस्यता लेने के लिए कोई वैध लिस्ट चयनित नहीं है।",
     "public.noSubInfo": "पुष्टि करने के लिए कोई सदस्यता नहीं है।",

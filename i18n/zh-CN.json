@@ -435,6 +435,7 @@
     "public.invalidFeature": "该功能不可用。",
     "public.managePrefs": "管理偏好设置",
     "public.managePrefsUnsub": "取消选中列表以取消订阅。",
+    "public.nothingToManage": "这里没有可以管理的内容。",
     "public.noListsAvailable": "没有可供订阅的列表。",
     "public.noListsSelected": "没有可以选择订阅的有效列表",
     "public.noSubInfo": "没有要确认的订阅。",

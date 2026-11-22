@@ -435,6 +435,7 @@
     "public.invalidFeature": "Tämä ominaisuus ei ole saatavilla.",
     "public.managePrefs": "Hallitse asetuksia",
     "public.managePrefsUnsub": "Poista valinta listoilta peruuttaaksesi tilauksen.",
+    "public.nothingToManage": "Täällä ei ole mitään hallittavaa.",
     "public.noListsAvailable": "Ei liityttävissä olevia listoja.",
     "public.noListsSelected": "Ei valittua listaa liittymisen muodostamiseksi.",
     "public.noSubInfo": "Sinulla ei ole vahvistettavia tilauksia.",

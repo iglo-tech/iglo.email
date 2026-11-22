@@ -435,6 +435,7 @@
     "public.invalidFeature": "Tato funkce není k dispozici.",
     "public.managePrefs": "Správa předvoleb",
     "public.managePrefsUnsub": "Zrušte zaškrtnutí seznamů, ze kterých se chcete odhlásit.",
+    "public.nothingToManage": "Zde není nic ke správě.",
     "public.noListsAvailable": "Nejsou k dispozici žádné seznamy k odběru.",
     "public.noListsSelected": "Nebyly vybrány žádné platné seznamy k odběru.",
     "public.noSubInfo": "Nejsou zde žádné odběry k potvrzení.",
