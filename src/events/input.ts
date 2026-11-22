@@ -192,7 +192,7 @@ function grantedLists(value: unknown): Array<bigint> {
   if (new Set(value).size !== value.length) {
     throw field();
   }
-  return value.map((id) => BigInt(id));
+  return value.map(BigInt);
 }
 
 /** Validate one event object without touching storage. */

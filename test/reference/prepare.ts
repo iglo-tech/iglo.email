@@ -139,8 +139,9 @@ async function prepareSource(signal?: AbortSignal) {
       try {
         await mkdir(source);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EEXIST")
+        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
           throw new Error(`Source cache appeared during preparation: ${source}`, { cause: error });
+        }
         throw error;
       }
       try {

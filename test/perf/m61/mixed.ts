@@ -36,7 +36,7 @@ const txPerSecond = Number(process.env.M61_TX_PER_SECOND ?? 2);
 const EVENT_MS = 10;
 const MAX_IN_FLIGHT = 500;
 const SUBSCRIBERS = 2000;
-const fixtures = readFileSync(join(repository, "test/users/fixtures.md"), "utf8");
+const fixtures = readFileSync(join(repository, "test/users/fixtures.md"), "utf-8");
 const admin = {
   user: /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixtures)![1]!,
   password: /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixtures)![1]!,
@@ -496,7 +496,7 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
     await Promise.all(pending);
     // Let tx and sequence sends queued near the end arrive, for their delivery latency.
     if (sequences) {
-      await Bun.sleep(5_000);
+      await Bun.sleep(5000);
     }
 
     const inWindow = (d: { accepted: number }) => d.accepted >= start && d.accepted < end;
@@ -555,8 +555,10 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
             delivered: tx.filter((r) => txMail.has(r.to)).length,
             deliveryMs: stats(
               tx
+                .values()
                 .filter((r) => txMail.has(r.to))
-                .map((r) => txMail.get(r.to)!.accepted - r.deadline),
+                .map((r) => txMail.get(r.to)!.accepted - r.deadline)
+                .toArray(),
             ),
           }
         : null,

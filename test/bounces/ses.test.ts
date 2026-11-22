@@ -3,6 +3,7 @@
 // also run against pinned upstream, and the signed cases against compiled production, in
 // test/contract/bounces.ts (through a loopback certificate tunnel, test/bounces/sns-tunnel.ts).
 import { afterEach, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
@@ -96,7 +97,7 @@ test("transient is soft, an invalid domain is hard, and a complaint deletes unde
   expect(
     rows(f)
       .map((r) => r.type)
-      .sort(),
+      .sort(ascending),
   ).toEqual(["hard", "soft"]);
   expect(await status(f, soft)).toBe("enabled");
   expect(await status(f, domain)).toBe("blocklisted");
@@ -444,7 +445,7 @@ test("the row, the action and the deliveries commit together, and a failure leav
   // first attempt is in flight: a jump past its lease would count that attempt as abandoned.
   await r.waitFor(2);
   await Bun.sleep(20);
-  expect(r.received.map((delivery) => delivery.body.event).sort()).toEqual([
+  expect(r.received.map((delivery) => delivery.body.event).sort(ascending)).toEqual([
     "bounce.recorded",
     "subscriber.blocklisted",
   ]);

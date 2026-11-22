@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
 import { command } from "@/test/reference/command";
 
-const fixture = await readFile(resolve("test/users/fixtures.md"), "utf8");
+const fixture = await readFile(resolve("test/users/fixtures.md"), "utf-8");
 const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1];
 const password = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1];
 if (!user || !password) {
@@ -27,7 +27,7 @@ const browser = async (...args: Array<string>) => {
   });
   if (result.code !== 0) {
     throw new Error(
-      `Browser operation failed: ${args[0]}: ${result.stderr.replace(/https?:\/\/\S+/g, "[local URL]").slice(0, 400)}`,
+      `Browser operation failed: ${args[0]}: ${result.stderr.replaceAll(/https?:\/\/\S+/g, "[local URL]").slice(0, 400)}`,
     );
   }
   return result.stdout;

@@ -88,7 +88,9 @@ try {
         template_id: 2_147_483_647,
       });
       ready = /template 2147483647/.test(await probe.text());
-    } catch {}
+    } catch {
+      // A refused or failed probe is not ready yet; the loop tries again until its deadline.
+    }
     if (!ready) {
       await Bun.sleep(20);
     }

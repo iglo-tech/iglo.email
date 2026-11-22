@@ -24,7 +24,7 @@ const decode = (data: string) =>
         String.fromCharCode(Number.parseInt(hex, 16)),
       ),
     "latin1",
-  ).toString("utf8");
+  ).toString("utf-8");
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {

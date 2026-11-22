@@ -237,7 +237,7 @@ describe("difference metadata and strict transport", () => {
         reference: endpoint,
         fixture: endpoint,
       };
-      const bad: Array<ContractCase>[] = [
+      const bad: Array<Array<ContractCase>> = [
         [{ ...base, difference: "D99" as Difference }],
         [{ ...base, difference: "D17" }],
         [{ ...base, id: "positive-id-overflow" }],

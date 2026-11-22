@@ -80,7 +80,9 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
         ) {
           return;
         }
-      } catch {}
+      } catch {
+        // Not up yet: the next poll retries until the deadline.
+      }
       if (Date.now() > deadline) {
         throw new Error("production readiness timed out");
       }

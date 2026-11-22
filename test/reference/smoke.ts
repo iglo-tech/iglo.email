@@ -85,13 +85,16 @@ async function finish(runner: ReturnType<typeof startRunner>) {
 async function stateFile(path: string, runner: ReturnType<typeof startRunner>): Promise<State> {
   return waitFor(async () => {
     try {
-      return JSON.parse(await readFile(path, "utf8")) as State;
+      return JSON.parse(await readFile(path, "utf-8")) as State;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      if (runner.child.exitCode !== null || runner.child.signalCode !== null)
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      if (runner.child.exitCode !== null || runner.child.signalCode !== null) {
         throw new Error(`Reference command exited before its child was ready: ${runner.output()}`, {
           cause: error,
         });
+      }
       return undefined;
     }
   }, "reference command readiness");
@@ -237,7 +240,7 @@ try {
       verify.output().includes("v1.32.0"),
     "Pinned versions/source were not validated",
   );
-  const verified = JSON.parse(await readFile(verifyPath, "utf8")) as State;
+  const verified = JSON.parse(await readFile(verifyPath, "utf-8")) as State;
   assert(runId(verify.output()) === verified.runId, "Run ID does not match child environment");
   await checkCleanup(verified.runId, verified);
   await sentinelSurvives();
@@ -253,7 +256,7 @@ try {
   active.push(orphan);
   const orphanCode = await finish(orphan);
   assert(orphanCode === 0, `Exited parent cleanup failed (${orphanCode}): ${orphan.output()}`);
-  const orphanState = JSON.parse(await readFile(orphanPath, "utf8")) as State;
+  const orphanState = JSON.parse(await readFile(orphanPath, "utf-8")) as State;
   assert(orphanState.grandchildUrl, "Exited parent did not start a descendant");
   await checkCleanup(orphanState.runId, orphanState);
   await sentinelSurvives();
@@ -285,7 +288,7 @@ try {
     failedCode === 37,
     `Command failure was not propagated (${failedCode}): ${failure.output()}`,
   );
-  const failedState = JSON.parse(await readFile(failurePath, "utf8")) as State;
+  const failedState = JSON.parse(await readFile(failurePath, "utf-8")) as State;
   assert(
     failedState.runId !== waiting.runId &&
       failedState.reference !== waiting.reference &&
@@ -389,11 +392,14 @@ try {
   active.push(startup);
   const startupPid = await waitFor(async () => {
     try {
-      return Number(await readFile(startupMarker, "utf8"));
+      return Number(await readFile(startupMarker, "utf-8"));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      if (startup.child.exitCode !== null || startup.child.signalCode !== null)
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      if (startup.child.exitCode !== null || startup.child.signalCode !== null) {
         throw new Error(`Startup exited before signal: ${startup.output()}`, { cause: error });
+      }
       return undefined;
     }
   }, "the owned startup operation");

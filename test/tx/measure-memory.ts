@@ -27,7 +27,7 @@ const git = (...args: Array<string>) =>
 const mib = (bytes: number) => +(bytes / 1_048_576).toFixed(1);
 /** The kernel's peak resident size, which a timer cannot miss while the thread is busy. */
 const highWater = () =>
-  Number(/VmHWM:\s+(\d+) kB/.exec(readFileSync("/proc/self/status", "utf8"))![1]) * 1024;
+  Number(/VmHWM:\s+(\d+) kB/.exec(readFileSync("/proc/self/status", "utf-8"))![1]) * 1024;
 const resetHighWater = () => writeFileSync("/proc/self/clear_refs", "5");
 
 const f = await txFixture({
@@ -121,7 +121,9 @@ const begin = performance.now();
 // body is built when it is sent, so its build time is in `seconds`.
 const statuses: Array<number> = [];
 if (gating === "serial") {
-  for (let i = 0; i < requests; i++) statuses.push(await send(build(i)));
+  for (let i = 0; i < requests; i++) {
+    statuses.push(await send(build(i)));
+  }
 } else {
   statuses.push(...(await Promise.all(Array.from({ length: requests }, (_, i) => send(build(i))))));
 }

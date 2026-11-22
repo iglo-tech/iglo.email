@@ -31,11 +31,13 @@ function alive(pid: number): boolean {
 // fresh `mkdir` whose owner has not written its PID: stale only after a few seconds.
 function stale(dir = lock): boolean {
   try {
-    const pid = Number(readFileSync(join(dir, "owner"), "utf8"));
+    const pid = Number(readFileSync(join(dir, "owner"), "utf-8"));
     if (Number.isInteger(pid) && pid > 0) {
       return !alive(pid);
     }
-  } catch {}
+  } catch {
+    // No readable owner yet: the age of the lock decides below.
+  }
   try {
     return Date.now() - statSync(dir).mtimeMs > 10_000;
   } catch {
@@ -56,7 +58,9 @@ function takeOver(): boolean {
   if (!stale(moved)) {
     try {
       renameSync(moved, lock);
-    } catch {}
+    } catch {
+      // Best effort: if another process has taken the lock path, that process owns it now.
+    }
     return false;
   }
   rmSync(moved, { recursive: true, force: true });
@@ -73,14 +77,19 @@ async function acquire(): Promise<void> {
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "EEXIST") {
-        if (stale() && takeOver()) continue;
+        if (stale() && takeOver()) {
+          continue;
+        }
         if (Date.now() - start > holdLimitMs) {
           throw new Error(`Production build lock ${lock} is still held by a live process`, {
             cause: error,
           });
         }
       } else if (Date.now() - start > faultLimitMs) {
-        throw new Error(`Cannot create production build lock ${lock}: ${(error as Error).message}`);
+        throw new Error(
+          `Cannot create production build lock ${lock}: ${(error as Error).message}`,
+          { cause: error },
+        );
       }
       await Bun.sleep(50);
     }

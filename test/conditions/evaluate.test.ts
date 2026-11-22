@@ -41,7 +41,7 @@ function children(): number {
     try {
       if (
         new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(
-          readFileSync(`/proc/${entry}/status`, "utf8"),
+          readFileSync(`/proc/${entry}/status`, "utf-8"),
         )
       ) {
         count++;

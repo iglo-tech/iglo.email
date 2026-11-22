@@ -35,7 +35,7 @@ export async function runSubscriberCouncilRevisions(target: {
     return (await response.json()).data;
   }
   const subscribers = "/api/subscribers";
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   try {
     for (const [i, local, expected] of [
       [0, "ǳuro", "ǲuro"],
@@ -162,11 +162,12 @@ export async function runSubscriberCouncilRevisions(target: {
     check(JSON.stringify(reset.attribs) === '{"safe":1}', "D43-bound-reset");
   } finally {
     for (const item of owned.reverse()) {
-      if ((await request(`/api/${item.path}/${item.id}`, "DELETE")).status !== 200)
-        cleanupFailed = true;
+      if ((await request(`/api/${item.path}/${item.id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL council-cleanup");
   }
 }

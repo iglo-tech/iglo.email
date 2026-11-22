@@ -136,7 +136,7 @@ function serverRss(executable: string): number | null {
       if (readlinkSync(`/proc/${pid}/exe`) !== executable) {
         continue;
       }
-      const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
+      const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf-8"))?.[1];
       return kb ? Math.round(Number(kb) / 1024) : null;
     } catch {
       /* process gone or not ours */
@@ -146,7 +146,7 @@ function serverRss(executable: string): number | null {
 }
 
 async function run(name: string, events: boolean, sends: boolean) {
-  const text = readFileSync(join(repository, "test/users/fixtures.md"), "utf8");
+  const text = readFileSync(join(repository, "test/users/fixtures.md"), "utf-8");
   const admin = {
     user: /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(text)![1]!,
     password: /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(text)![1]!,
@@ -295,8 +295,9 @@ async function run(name: string, events: boolean, sends: boolean) {
         const end = start + WINDOW_MS;
         const plan: Array<{ at: number; kind: "event" | "tx" | "marketing"; i: number }> = [];
         if (events) {
-          for (let i = 0; i * EVENT_MS < WINDOW_MS; i++)
+          for (let i = 0; i * EVENT_MS < WINDOW_MS; i++) {
             plan.push({ at: start + i * EVENT_MS, kind: "event", i });
+          }
         }
         if (sends) {
           for (let i = 0; i * TX_MS < WINDOW_MS; i++) {
@@ -397,8 +398,10 @@ async function run(name: string, events: boolean, sends: boolean) {
         const ok = eventResults.filter((r) => r.status === 200);
         const lastEvent = Math.max(0, ...eventResults.map((r) => r.done));
         const delivery = txResults
+          .values()
           .filter((r) => smtp.received.has(r.subject))
-          .map((r) => smtp.received.get(r.subject)! - r.deadline);
+          .map((r) => smtp.received.get(r.subject)! - r.deadline)
+          .toArray();
         return {
           name,
           windowMs: WINDOW_MS,

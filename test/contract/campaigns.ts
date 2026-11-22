@@ -132,7 +132,7 @@ export async function runCampaignsContract(target: {
     roles: [] as Array<number>,
     templates: [] as Array<number>,
   };
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   const create = async (input: object, label: string, auth = authorization) => {
     const response = await call("/api/campaigns", "POST", input, auth);
     check(response.status === 200, `${label}-status`);
@@ -1194,27 +1194,37 @@ export async function runCampaignsContract(target: {
     for (const id of owned.campaigns) {
       const response = await call(`/api/campaigns/${id}`, "DELETE");
       if (response.status !== 200 && response.status !== 400) {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       }
     }
     for (const id of owned.users) {
-      if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.roles.reverse()) {
-      if ((await call(`/api/roles/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await call(`/api/roles/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.templates) {
-      if ((await call(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await call(`/api/templates/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.subscribers) {
-      if ((await call(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await call(`/api/subscribers/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.lists) {
-      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     await mailpit.removeOwned();
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL campaigns-cleanup");
   }
 }

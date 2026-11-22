@@ -61,7 +61,7 @@ test("continuous overlap forces a gap after the window, by the injected clock", 
     const log = join(directory, "log");
     const go = join(directory, "go");
     writeFileSync(log, "");
-    const lines = () => readFileSync(log, "utf8").split("\n").filter(Boolean);
+    const lines = () => readFileSync(log, "utf-8").split("\n").filter(Boolean);
     let time = 0;
     const reader = createAnalyticsReader({
       path: "x",
@@ -86,7 +86,9 @@ test("continuous overlap forces a gap after the window, by the injected clock", 
       // Within the window the second child starts beside the first; past it, it is held back
       // until the first has finished, so there is nothing to wait for and the release comes now.
       if (!advance) {
-        while (lines().length < 2) await Bun.sleep(5);
+        while (lines().length < 2) {
+          await Bun.sleep(5);
+        }
       }
       writeFileSync(go, "");
       await Promise.all([first, second]);

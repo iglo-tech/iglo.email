@@ -138,7 +138,8 @@ async function user(response: Response): Promise<UserRecord> {
     "user_role",
     "username",
   ];
-  const entry = value.data as unknown as Record<string, unknown>;
+  // A copy of the JSON object, read as a dictionary: the check also reads keys the record type does not name.
+  const entry: Record<string, unknown> = { ...value.data };
   if (
     JSON.stringify(Object.keys(entry).sort()) !== JSON.stringify(keys.sort()) ||
     typeof entry.username !== "string" ||
@@ -190,7 +191,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
   const password = "  m13-spaced-password  ";
   const email = `${name}@example.test`;
   const created: Array<number> = [];
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   try {
     const health = await request(target, "/api/health", { auth: basic });
     check(
@@ -557,20 +558,20 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
             (await request(target, `/api/users/${listUserId}`, { method: "DELETE", auth: basic }))
               .status !== 200
           ) {
-            cleanupFailed = true;
+            cleanupFailures += 1;
           }
         } catch {
-          cleanupFailed = true;
+          cleanupFailures += 1;
         }
         try {
           if (
             (await request(target, `/api/roles/${role.id}`, { method: "DELETE", auth: basic }))
               .status !== 200
           ) {
-            cleanupFailed = true;
+            cleanupFailures += 1;
           }
         } catch {
-          cleanupFailed = true;
+          cleanupFailures += 1;
         }
       }
     }
@@ -889,17 +890,17 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
           auth: basic,
         });
         if (response.status !== 200) {
-          cleanupFailed = true;
+          cleanupFailures += 1;
         }
       } catch {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       }
     }
-    if (cleanupFailed) {
+    if (cleanupFailures > 0) {
       process.stderr.write("FAIL cleanup-user\n");
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL cleanup-user");
   }
   await lastHumanAdmin(target, basic);

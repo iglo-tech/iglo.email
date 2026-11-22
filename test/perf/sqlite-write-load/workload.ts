@@ -1,7 +1,6 @@
 // New synthetic workload: fixed deadlines and progress timing, not an upstream send pipeline.
 import type { Clock } from "@/clock";
-import type { SpikeStore } from "@/test/perf/sqlite-write-load/store";
-import { type Mutation, type SyntheticEvent } from "@/test/perf/sqlite-write-load/store";
+import type { Mutation, SpikeStore, SyntheticEvent } from "@/test/perf/sqlite-write-load/store";
 
 export type Mode = "record" | "batch" | "campaign-only";
 export interface WorkloadOptions {

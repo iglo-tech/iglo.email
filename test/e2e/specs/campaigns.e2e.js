@@ -3,6 +3,7 @@
 // Liquid (D9). Dropped cases, with reasons, are in the M4.3 pull request: the visual format, dates
 // set through psql, and the API-only bulk deletion cases the contract suite covers.
 import { expect } from "@playwright/test";
+import { ascending } from "../../order.ts";
 import {
   audience,
   confirm,
@@ -164,8 +165,10 @@ for (const format of ["richtext", "html", "markdown", "plain"]) {
         send_at: null,
         altbody: null,
       });
-      expect(saved.tags.sort()).toEqual(["monthly", "news"]);
-      expect(saved.lists.map((l) => l.id).sort()).toEqual(lists.map((l) => l.id).sort());
+      expect(saved.tags.sort(ascending)).toEqual(["monthly", "news"]);
+      expect(saved.lists.map((l) => l.id).sort(ascending)).toEqual(
+        lists.map((l) => l.id).sort(ascending),
+      );
       expect(saved.body).toContain(expression);
       await preview(page, rendered);
       await page.goto(`${CAMPAIGNS}?query=${name}`);

@@ -92,8 +92,9 @@ export function validate(
   }
   const schema = root as Record<string, unknown>;
   for (const key of Object.keys(schema)) {
-    if (!keywords.has(key) && !annotations.has(key))
+    if (!keywords.has(key) && !annotations.has(key)) {
       throw new Error(`Unknown schema keyword ${key} at ${path}`);
+    }
   }
   const problems: Array<string> = [];
   const next = (inner: Schema, item: unknown, at: string) =>
@@ -183,11 +184,14 @@ export function validate(
       problems.push(`${path}: too many properties`);
     }
     if (schema.propertyNames !== undefined) {
-      for (const name of Object.keys(object))
+      for (const name of Object.keys(object)) {
         problems.push(...next(schema.propertyNames as Schema, name, `${path}.${name} (name)`));
+      }
     }
     for (const name of (schema.required ?? []) as Array<string>) {
-      if (!Object.hasOwn(object, name)) problems.push(`${path}.${name}: required`);
+      if (!Object.hasOwn(object, name)) {
+        problems.push(`${path}.${name}: required`);
+      }
     }
     for (const [name, item] of Object.entries(object)) {
       if (Object.hasOwn(properties, name)) {

@@ -93,7 +93,9 @@ function attrValue(depth: number): unknown {
   }
   const out: Record<string, unknown> = {};
   for (const key of nestedKeys) {
-    if (chance(0.6)) out[key] = attrValue(depth + 1);
+    if (chance(0.6)) {
+      out[key] = attrValue(depth + 1);
+    }
   }
   return out;
 }
@@ -183,7 +185,9 @@ function genCondition(depth: number): Record<string, unknown> {
     if (chance(0.5)) {
       const count: Record<string, number> = {};
       for (const comparator of ["gte", "lte", "eq"]) {
-        if (chance(0.4)) count[comparator] = chance(0.6) ? int(4) : pick(counts);
+        if (chance(0.4)) {
+          count[comparator] = chance(0.6) ? int(4) : pick(counts);
+        }
       }
       if (Object.keys(count).length) {
         out.count = count;
@@ -210,11 +214,15 @@ beforeAll(async () => {
   for (let i = 0; i < 80; i++) {
     const attribs: Record<string, unknown> = {};
     for (const key of keys) {
-      if (chance(0.7)) attribs[key] = attrValue(0);
+      if (chance(0.7)) {
+        attribs[key] = attrValue(0);
+      }
     }
     const subscriber = f.addSubscriber({ attribs, status: pick(subscriberStatuses) });
     for (const list of lists) {
-      if (chance(0.5)) f.addMembership(subscriber, list, pick(listStatuses));
+      if (chance(0.5)) {
+        f.addMembership(subscriber, list, pick(listStatuses));
+      }
     }
     // Some subscribers have many events, so large count comparands are reached.
     for (let e = i % 10 === 0 ? 30 + int(30) : int(12); e > 0; e--) {
@@ -287,8 +295,9 @@ test(`generated conditions agree with the reference evaluator (seed ${seed}, ${c
     }
     outcomes[String(expected) as "true" | "false"]++;
     if (!("all" in condition || "any" in condition || "not" in condition)) {
-      for (const feature of features(condition))
+      for (const feature of features(condition)) {
         (featured[feature] ??= { true: 0, false: 0 })[String(expected) as "true" | "false"]++;
+      }
     }
   }
   // Both outcomes are common, so agreement is not vacuous.

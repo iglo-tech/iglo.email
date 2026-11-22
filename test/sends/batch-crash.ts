@@ -227,7 +227,9 @@ for (const point of ["claimed", "mid-batch"] as const) {
     );
   } finally {
     for (const { child } of children) {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+      }
     }
     await Promise.all(children.map((c) => c.exited));
     await sink.close();

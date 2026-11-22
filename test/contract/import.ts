@@ -220,7 +220,7 @@ export async function runImportContract(target: {
     check(dup.name === "First" && membership(dup, a) === "unconfirmed", "duplicate-first-wins");
 
     // Bad rows are skipped and logged; a bad attribute cell costs only the attributes.
-    const bytes = (...parts: Array<string | number[]>) =>
+    const bytes = (...parts: Array<string | Array<number>>) =>
       Buffer.concat(
         parts.map((part) => (typeof part === "string" ? Buffer.from(part) : Buffer.from(part))),
       );
@@ -482,7 +482,9 @@ export async function runImportContract(target: {
     const temporary = join(target.dataDir!, ".iglo-email-import");
     const drained = async () => {
       for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20)) {
-        if (!existsSync(temporary) || readdirSync(temporary).length === 0) return true;
+        if (!existsSync(temporary) || readdirSync(temporary).length === 0) {
+          return true;
+        }
       }
       return false;
     };
@@ -569,7 +571,7 @@ export async function runImportContract(target: {
       for (const id of hooks) {
         await call(`/api/webhooks/${id}`, "DELETE");
       }
-      receiver.close();
+      await receiver.close();
     }
     check(await drained(), "temporary-empty-after");
   } finally {

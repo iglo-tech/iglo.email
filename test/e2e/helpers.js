@@ -295,7 +295,7 @@ export async function receiver({ statuses = [204] } = {}) {
         method: request.method,
         path: request.url,
         headers: request.headers,
-        body: Buffer.concat(chunks).toString("utf8"),
+        body: Buffer.concat(chunks).toString("utf-8"),
       });
       const status = answers.length > 1 ? answers.shift() : answers[0];
       response.writeHead(status, { "Access-Control-Allow-Origin": "*" }).end();

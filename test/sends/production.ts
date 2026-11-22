@@ -489,8 +489,9 @@ try {
   }
 } finally {
   for (const child of active) {
-    if (child.exitCode === null && child.signalCode === null)
+    if (child.exitCode === null && child.signalCode === null) {
       await stop(child, "SIGKILL").catch(() => {});
+    }
   }
   await mailpit.removeOwned();
   await rm(dir, { recursive: true, force: true });

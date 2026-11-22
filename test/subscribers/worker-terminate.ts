@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 
 const cpu = () => {
-  const fields = readFileSync("/proc/self/stat", "utf8").split(") ")[1]!.split(" ");
+  const fields = readFileSync("/proc/self/stat", "utf-8").split(") ")[1]!.split(" ");
   return (Number(fields[11]) + Number(fields[12])) / 100;
 };
 const source = `

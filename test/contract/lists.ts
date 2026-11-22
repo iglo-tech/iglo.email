@@ -8,7 +8,7 @@ export async function runListsContract(target: {
 }) {
   const suffix = crypto.randomUUID();
   const owned: Array<number> = [];
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   const roles: Array<number> = [];
   const users: Array<number> = [];
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
@@ -1233,16 +1233,22 @@ export async function runListsContract(target: {
     check((await request(`/api/lists/${second.id}`)).status === 400, "list-deleted");
   } finally {
     for (const id of users.reverse()) {
-      if ((await request(`/api/users/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/users/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of roles.reverse()) {
-      if ((await request(`/api/roles/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/roles/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.reverse()) {
-      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL list-cleanup");
   }
 }

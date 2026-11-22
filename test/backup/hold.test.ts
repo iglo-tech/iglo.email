@@ -76,7 +76,9 @@ const recipients = (subject: string) =>
     .sort();
 async function until(condition: () => boolean, what: string, ms = 30_000) {
   for (const deadline = Date.now() + ms; !condition(); await Bun.sleep(25)) {
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out waiting for ${what}`);
+    }
   }
 }
 async function logIn(username: string, password: string) {

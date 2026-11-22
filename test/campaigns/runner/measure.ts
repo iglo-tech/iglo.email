@@ -21,7 +21,7 @@ if (/tmpfs|ramfs/.test(fsType)) {
   throw new Error(`Refusing ${fsType} measurement directory`);
 }
 const results = join(repository, "docs/perf/M3.2-results.jsonl");
-const fixtures = readFileSync(join(repository, "test/users/fixtures.md"), "utf8");
+const fixtures = readFileSync(join(repository, "test/users/fixtures.md"), "utf-8");
 const admin = {
   user: /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixtures)![1]!,
   password: /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixtures)![1]!,
@@ -756,10 +756,12 @@ if (mode === "limits" || mode === "all") {
   await limits();
 }
 if (mode === "crash" || mode === "all") {
-  for (const point of ["after-commit", "mid-batch", "batch-end", "unheld"] as const)
+  for (const point of ["after-commit", "mid-batch", "batch-end", "unheld"] as const) {
     await crash(point);
+  }
 }
 if (mode === "mixed" || mode === "all") {
-  for (const name of (process.env.M32_SCENARIOS ?? "events,campaign,mixed").split(","))
+  for (const name of (process.env.M32_SCENARIOS ?? "events,campaign,mixed").split(",")) {
     await mixed(name as "events" | "campaign" | "mixed");
+  }
 }

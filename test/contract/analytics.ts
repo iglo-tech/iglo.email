@@ -391,14 +391,14 @@ export async function runAnalyticsContract(target: {
     for (const interval of ["hour", "day", "week", "month"]) {
       const allowed = new Set([truncated(startedAt, interval), truncated(finishedAt, interval)]);
       const rows = (await analytics("campaigns", "views", ids, `&interval=${interval}`)).body
-        .data as CountRow[];
+        .data as Array<CountRow>;
       check(rows.length >= 2, `interval-${interval}-rows`);
       for (const row of rows) {
         same(Object.keys(row).sort(), ["campaign_id", "count", "timestamp"], "campaign-row-keys");
         check(allowed.has(row.timestamp), `interval-${interval}-${row.timestamp}`);
       }
       const listRows = (await analytics("lists", "views", [news], `&interval=${interval}`)).body
-        .data as CountRow[];
+        .data as Array<CountRow>;
       for (const row of listRows) {
         same(
           Object.keys(row).sort(),
@@ -846,7 +846,9 @@ export async function runAnalyticsContract(target: {
       await call(`/api/campaigns/${id}`, "DELETE");
     }
     for (const id of owned.users) {
-      if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) failed = true;
+      if ((await call(`/api/users/${id}`, "DELETE")).status !== 200) {
+        failed = true;
+      }
     }
     for (const id of owned.roles.reverse()) {
       await call(`/api/roles/${id}`, "DELETE");

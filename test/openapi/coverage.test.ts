@@ -44,9 +44,9 @@ async function registered(): Promise<Array<string>> {
   }
 }
 
-describe("coverage", async () => {
-  const routes = await registered();
+const routes = await registered();
 
+describe("coverage", () => {
   test("the router is the production composition", () => {
     expect(routes.length).toBeGreaterThan(200);
     expect(routes).toContain("GET /api/openapi.json");
@@ -136,7 +136,7 @@ describe("document", () => {
 
 describe("deliberate differences", () => {
   const areas = async () => {
-    const text = await readFile(join(repository, "docs/design/07-api-and-ui.md"), "utf8");
+    const text = await readFile(join(repository, "docs/design/07-api-and-ui.md"), "utf-8");
     const table = text.slice(
       text.indexOf("Deliberate differences:"),
       text.indexOf("## New endpoints"),
@@ -161,7 +161,9 @@ describe("deliberate differences", () => {
       ),
     );
     for (const { area, applies } of differences) {
-      if (applies.length) expect([area, named.has(area)]).toEqual([area, true]);
+      if (applies.length) {
+        expect([area, named.has(area)]).toEqual([area, true]);
+      }
     }
   });
 });

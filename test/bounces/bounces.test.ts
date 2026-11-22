@@ -156,7 +156,7 @@ test("a stored bounce delivery is cleared by the delete action and by a wipe", a
 
 test("an action on an existing subscriber goes through the consent effects once", async () => {
   const f = await open();
-  const calls: Array<unknown>[] = [];
+  const calls: Array<Array<unknown>> = [];
   const store = createSubscriberStore(f.db, f.clock, f.owners.lists, {
     ...noSubscriberEffects,
     blocklisted: (ids) => calls.push(["blocklisted", ids]),

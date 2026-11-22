@@ -484,7 +484,7 @@ test("export mails native sections; the response holds nothing personal", async 
   const [message] = f.mailTo("noa@example.test");
   expect(message?.data).toContain("filename=data.json");
   const part = /filename=data\.json\r\n\r\n([\s\S]*?)\r\n--/.exec(message!.data)![1]!;
-  const data = JSON.parse(Buffer.from(part, "base64").toString("utf8"));
+  const data = JSON.parse(Buffer.from(part, "base64").toString("utf-8"));
   expect(Object.keys(data).sort()).toEqual(
     [
       "bounces",
@@ -503,7 +503,7 @@ test("export mails native sections; the response holds nothing personal", async 
   await f.drain();
   const second = f.mailTo("noa@example.test")[1]!;
   const only = /filename=data\.json\r\n\r\n([\s\S]*?)\r\n--/.exec(second.data)![1]!;
-  expect(Object.keys(JSON.parse(Buffer.from(only, "base64").toString("utf8")))).toEqual([
+  expect(Object.keys(JSON.parse(Buffer.from(only, "base64").toString("utf-8")))).toEqual([
     "profile",
   ]);
 });

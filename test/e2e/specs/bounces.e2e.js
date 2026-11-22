@@ -91,9 +91,12 @@ async function removeLeftovers(request) {
   if (hooks.length) {
     const call = await requestAdmin(request);
     for (const id of hooks.splice(0)) {
-      const response = await call(`/api/webhooks/${id}`, "DELETE").catch((error) => ({
-        status: error.message,
-      }));
+      let response;
+      try {
+        response = await call(`/api/webhooks/${id}`, "DELETE");
+      } catch (error) {
+        response = { status: error.message };
+      }
       if (response.status !== 200 && response.status !== 404) {
         failures.push(`deleting webhook ${id}: ${response.status}`);
       }
@@ -107,10 +110,12 @@ async function removeLeftovers(request) {
 // The run shares one database: a later spec expects bounces as this one found them.
 test.afterEach(async ({ page, context, request }) => {
   // A failure here must not skip the settings below, so it is raised after them.
-  const leftover = await removeLeftovers(request).then(
-    () => null,
-    (error) => error,
-  );
+  let leftover = null;
+  try {
+    await removeLeftovers(request);
+  } catch (error) {
+    leftover = error;
+  }
   // A test may end as a user who cannot write settings.
   await context.clearCookies();
   await signIn(page);

@@ -373,7 +373,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
           }),
     });
     const text = await res.text();
-    let data: any = null;
+    let data: any;
     try {
       data = JSON.parse(text);
     } catch {
@@ -481,11 +481,11 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
       return { emailer, outbox, runner };
     },
     async close() {
-      scheduler.stop();
-      runner.stop();
+      const schedulerStopped = scheduler.stop();
+      const runnerStopped = runner.stop();
       const outboxStopped = outbox.stop();
       await emailer.close();
-      await outboxStopped;
+      await Promise.all([schedulerStopped, runnerStopped, outboxStopped]);
       settingsStore.close();
       db.close(true);
       await sink.close();
@@ -536,14 +536,13 @@ describe("B37: send rate cap", () => {
       const campId = campRes.body.data.id;
 
       // Warm up the pool socket so connection establishment doesn't add an initial phase shift
-      const warmup = await h.json("/api/tx", "POST", {
+      await h.json("/api/tx", "POST", {
         subscriber_email: "warmup@example.test",
         template_id: txTemplateId,
         data: {},
         messenger: "email",
       });
       await h.drive(() => h.sink.messages.length === 1, 10);
-      await warmup;
       h.sink.messages.length = 0;
       h.clock.advance(1000);
 

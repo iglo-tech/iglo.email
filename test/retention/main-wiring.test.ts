@@ -84,7 +84,9 @@ test("the server's first retention pass runs every owner's purge", async () => {
         count(reader, "events WHERE created_at < datetime('now', '-400 days')") === 0;
       // The loop pauses between owners, so a pass per owner takes about a second.
       for (const deadline = Date.now() + 60_000; !gone(); await Bun.sleep(50)) {
-        if (Date.now() > deadline) break;
+        if (Date.now() > deadline) {
+          break;
+        }
       }
       expect({
         sessions: count(reader, "sessions WHERE id IN ('old-expired', 'old-legacy')"),

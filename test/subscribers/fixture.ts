@@ -127,7 +127,7 @@ export async function queryFixture(
   const apiUser = async (
     name: string,
     permissions: Array<string>,
-    listPermissions?: Array<{ id: number; permissions: string[] }>,
+    listPermissions?: Array<{ id: number; permissions: Array<string> }>,
   ) => {
     const role = await json("/api/roles/users", "POST", { name, permissions });
     if (role.status !== 200) {

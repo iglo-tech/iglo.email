@@ -758,7 +758,7 @@ test("an enrollment waiting on a deleted step reaches the right next step after 
   const step = (wait: string) => tx(template, { wait });
   type Case = {
     name: string;
-    saves: (ids: Array<number>) => Array<number>[];
+    saves: (ids: Array<number>) => Array<Array<number>>;
     expected: Array<number>;
   };
   // Steps A,B,C,D (indexes 0-3); A is sent and the enrollment waits on B. Each save lists the

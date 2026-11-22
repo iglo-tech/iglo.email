@@ -12,7 +12,7 @@ import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { imagePng } from "@/test/media/images";
 
 const repository = resolve(import.meta.dir, "../..");
-const fixtures = await readFile(resolve(repository, "test/users/fixtures.md"), "utf8");
+const fixtures = await readFile(resolve(repository, "test/users/fixtures.md"), "utf-8");
 const admin = {
   user: /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixtures)![1]!,
   password: /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixtures)![1]!,
@@ -87,10 +87,14 @@ function parts(raw: string) {
   for (const boundary of boundaries) {
     for (const section of raw.split(`--${boundary}`)) {
       const split = section.indexOf("\r\n\r\n");
-      if (split < 0) continue;
+      if (split < 0) {
+        continue;
+      }
       const headers = section.slice(0, split);
-      if (!/^Content-Transfer-Encoding:\s*base64/im.test(headers)) continue;
-      const body = Buffer.from(section.slice(split + 4).replace(/\s+/g, ""), "base64");
+      if (!/^Content-Transfer-Encoding:\s*base64/im.test(headers)) {
+        continue;
+      }
+      const body = Buffer.from(section.slice(split + 4).replaceAll(/\s+/g, ""), "base64");
       found.push({ headers, body });
     }
   }

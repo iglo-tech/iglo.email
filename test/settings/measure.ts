@@ -52,7 +52,9 @@ for (let repetition = 1; repetition <= 3; repetition++) {
       });
       const snapshot = await request("/api/settings");
       for (const field of ["smtp", "bounce.mailboxes", "messengers"]) {
-        for (const item of snapshot[field]) item.password = "";
+        for (const item of snapshot[field]) {
+          item.password = "";
+        }
       }
       for (const field of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
         snapshot[field] = "";

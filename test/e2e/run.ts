@@ -101,7 +101,10 @@ async function relay(stream: ReadableStream<Uint8Array>, label: string) {
 
 interface JsonSuite {
   title: string;
-  specs?: Array<{ title: string; tests: { results: { duration: number; status: string }[] }[] }>;
+  specs?: Array<{
+    title: string;
+    tests: Array<{ results: Array<{ duration: number; status: string }> }>;
+  }>;
   suites?: Array<JsonSuite>;
 }
 
@@ -162,7 +165,7 @@ async function playwright(
   ]);
   const tests: Outcome["tests"] = [];
   try {
-    const parsed = JSON.parse(await readFile(report, "utf8")) as { suites: Array<JsonSuite> };
+    const parsed = JSON.parse(await readFile(report, "utf-8")) as { suites: Array<JsonSuite> };
     for (const suite of parsed.suites) {
       collect(suite, [], tests);
     }

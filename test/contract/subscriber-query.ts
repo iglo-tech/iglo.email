@@ -13,7 +13,7 @@ export async function runSubscriberQuery(target: {
   const tag = `q${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const resources: Array<{ kind: string; id: number }> = [];
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   function check(value: unknown, label: string): asserts value {
     if (!value) {
       throw new Error(`FAIL ${label}`);
@@ -544,10 +544,12 @@ export async function runSubscriberQuery(target: {
     }
   } finally {
     for (const { kind, id } of resources.reverse()) {
-      if ((await request(`/api/${kind}/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/${kind}/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL subscriber-query-cleanup");
   }
 }

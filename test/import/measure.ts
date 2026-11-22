@@ -40,7 +40,7 @@ const summary = (values: Array<number>) => ({
   max: +Math.max(...values).toFixed(1),
 });
 const peak = (pid: string) =>
-  Number(/VmHWM:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1]) / 1024;
+  Number(/VmHWM:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf-8"))?.[1]) / 1024;
 
 async function overHttp() {
   return withProduction(
@@ -218,9 +218,8 @@ async function lockHolds() {
     runMigrations(db, directory, clock, productionMigrations);
     const lists = createListReferences(db);
     const webhooks = createWebhookStore(db, clock);
-    let store: ReturnType<typeof createSubscriberStore>;
     const effects = createWebhookEffects(webhooks, () => store);
-    store = createSubscriberStore(db, clock, lists, {
+    const store = createSubscriberStore(db, clock, lists, {
       blocklisted() {},
       unsubscribed() {},
       ...effects.subscriberEffects,
@@ -280,7 +279,7 @@ async function lockHolds() {
     };
     await importer.close();
     webhooks.close();
-    store!.close();
+    store.close();
     lists.close();
     db.close(true);
     return result;

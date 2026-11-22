@@ -30,7 +30,9 @@ const reset = (link: string, password: string, password2 = password, extra = {})
 async function resetLink(address: string, seen = 0): Promise<string> {
   for (let attempt = 0; attempt < 200; attempt++) {
     const response = await fetch(`${f.origin}/fixture/mail`);
-    const { data } = (await response.json()) as { data: Array<{ to: string[]; body: string }> };
+    const { data } = (await response.json()) as {
+      data: Array<{ to: Array<string>; body: string }>;
+    };
     const mails = data.filter((mail) => mail.to[0] === address);
     if (mails.length > seen) {
       const href = /href="http:\/\/fixture\.test(\/admin\/reset\?[^"]+)"/.exec(mails.at(-1)!.body);

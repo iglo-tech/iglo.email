@@ -140,7 +140,7 @@ async function egress(budgeted: boolean, clients: number, bodyBytes: number) {
   for (const socket of sockets) {
     socket.destroy();
   }
-  server.stop(true);
+  await server.stop(true);
   await reader.close();
 }
 

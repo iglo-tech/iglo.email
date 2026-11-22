@@ -67,7 +67,7 @@ function environmentCredentials(env: NodeJS.ProcessEnv): Credentials | undefined
 }
 
 async function fixtureCredentials(): Promise<Credentials> {
-  const text = await readFile(resolve(repository, "test/contract/fixtures.md"), "utf8");
+  const text = await readFile(resolve(repository, "test/contract/fixtures.md"), "utf-8");
   const user = /^CONTRACT_API_USER=(.+)$/m.exec(text)?.[1];
   const token = /^CONTRACT_API_TOKEN=(.+)$/m.exec(text)?.[1];
   if (!user || !token) {
@@ -77,7 +77,7 @@ async function fixtureCredentials(): Promise<Credentials> {
 }
 
 async function productionAdmin(): Promise<{ user: string; password: string }> {
-  const text = await readFile(resolve(repository, "test/users/fixtures.md"), "utf8");
+  const text = await readFile(resolve(repository, "test/users/fixtures.md"), "utf-8");
   const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(text)?.[1];
   const password = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(text)?.[1];
   if (!user || !password) {
@@ -306,7 +306,16 @@ async function main(args: Array<string>, signal: AbortSignal): Promise<void> {
       // The bounces contract sends about 7,000 requests to measure the provider webhook budget.
       args[1] === "bounces" ? 120_000 : undefined,
       tunnel?.environment,
-    ).finally(() => tunnel?.close());
+    ).then(
+      async (result) => {
+        await tunnel?.close();
+        return result;
+      },
+      async (error: unknown) => {
+        await tunnel?.close();
+        throw error;
+      },
+    );
     if (!passed) {
       process.exitCode = 1;
     }

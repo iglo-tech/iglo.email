@@ -36,7 +36,7 @@ await withProduction(
     const old = spawnSync(
       control,
       ["serve", "--host", "127.0.0.1", "--port", "12345", "--data-dir", dataDir],
-      { encoding: "utf8", timeout: 10_000 },
+      { encoding: "utf-8", timeout: 10_000 },
     );
     assert.notEqual(old.status, 0);
     assert.match(old.stderr, /Database version 3 is ahead/);

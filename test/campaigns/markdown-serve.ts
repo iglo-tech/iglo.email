@@ -30,8 +30,8 @@ const server = Bun.serve({
 console.log(
   JSON.stringify({ origin: `http://127.0.0.1:${server.port}`, campaign: campaign.id, headers }),
 );
-process.on("SIGTERM", async () => {
-  server.stop(true);
-  await f.close();
-  process.exit(0);
+process.on("SIGTERM", () => {
+  // The signal handler cannot await: the stop and the fixture close run to completion, then the process exits.
+  void server.stop(true);
+  void f.close().then(() => process.exit(0));
 });

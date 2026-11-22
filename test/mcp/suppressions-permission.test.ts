@@ -61,7 +61,7 @@ async function api(path: string, method = "GET", body?: unknown, auth = adminAut
     headers: { authorization: auth, "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  return { status: response.status, body: (await response.json().catch(() => null)) as any };
+  return { status: response.status, body: await response.json().catch(() => null) };
 }
 
 async function callTool(name: string, args: Record<string, unknown>, auth: string) {
@@ -154,7 +154,7 @@ async function removeOverRest(auth: string, email: string) {
     headers: { authorization: auth, "content-type": "application/json" },
     body: JSON.stringify({ email }),
   });
-  return { status: response.status, body: (await response.json().catch(() => null)) as any };
+  return { status: response.status, body: await response.json().catch(() => null) };
 }
 
 test("removing a suppression needs suppressions:manage, over REST and MCP, and a refusal removes nothing", async () => {

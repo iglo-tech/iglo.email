@@ -558,7 +558,7 @@ test.describe("Subscribers: bulk scope safeguards", () => {
     );
     await expectTotal(page, 22);
     await openBulkMenu(page, { selectAll: true });
-    const csv = await readFile(await (await exportSelection(page)).path(), "utf8");
+    const csv = await readFile(await (await exportSelection(page)).path(), "utf-8");
     expect(csv.trim().split("\n")).toHaveLength(23);
     expect(csv).not.toContain("other0@example.com");
   });

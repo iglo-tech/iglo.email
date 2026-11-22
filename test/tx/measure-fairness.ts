@@ -8,7 +8,7 @@ import { txFixture } from "@/test/tx/fixture";
 
 const sends = Number(process.argv[2] ?? 60);
 const variant = process.argv[3] === "before" ? "before" : "after";
-const peakKiB = () => Number(/VmHWM:\s+(\d+)/.exec(readFileSync("/proc/self/status", "utf8"))![1]);
+const peakKiB = () => Number(/VmHWM:\s+(\d+)/.exec(readFileSync("/proc/self/status", "utf-8"))![1]);
 const mib = (kib: number) => +(kib / 1024).toFixed(1);
 
 let release = () => {};

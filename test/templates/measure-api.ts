@@ -11,7 +11,7 @@ for (const [kind, executable] of executables) {
   for (let rep = 1; rep <= 3; rep++) {
     await withProduction(
       executable,
-      AbortSignal.timeout(120000),
+      AbortSignal.timeout(120_000),
       async (origin, _signal, restart) => {
         const credentials = await provisionApiUser(origin, admin);
         const headers = {
@@ -24,12 +24,13 @@ for (const [kind, executable] of executables) {
             headers,
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           });
-          if (response.status !== 200)
+          if (response.status !== 200) {
             throw new Error(`HTTP ${response.status} in ${method} ${path.split("?")[0]}`);
+          }
           return ((await response.json()) as { data: any }).data;
         }
-        const samples: number[] = [];
-        const restartSamples: number[] = [];
+        const samples: Array<number> = [];
+        const restartSamples: Array<number> = [];
         for (let i = 0; i < 25; i++) {
           const start = performance.now();
           await request("/api/health");
@@ -48,14 +49,17 @@ for (const [kind, executable] of executables) {
           await request(`/api/subscribers/${sub.id}`, "PUT", { email, name: "Synthetic" });
           await request(`/api/subscribers/${sub.id}`, "DELETE");
           await request(`/api/lists/${list.id}`, "DELETE");
-          if (i >= 5) samples.push(performance.now() - start);
+          if (i >= 5) {
+            samples.push(performance.now() - start);
+          }
         }
         const start = performance.now();
         await restart();
         restartSamples.push(performance.now() - start);
         const settings = await request("/api/settings");
-        if (settings["app.site_name"] !== "Synthetic 24")
+        if (settings["app.site_name"] !== "Synthetic 24") {
           throw new Error("Restart did not preserve settings");
+        }
         const result: Record<string, unknown> = {
           kind,
           rep,
@@ -65,7 +69,7 @@ for (const [kind, executable] of executables) {
           restartMs: restartSamples[0],
         };
         if (kind === "candidate") {
-          const times: number[] = [];
+          const times: Array<number> = [];
           for (let i = 0; i < 25; i++) {
             const begin = performance.now();
             const item = await request("/api/templates", "POST", {
@@ -77,11 +81,14 @@ for (const [kind, executable] of executables) {
             const preview = await fetch(`${origin}/api/templates/${item.id}/preview`, {
               headers: { authorization: headers.authorization },
             });
-            if (preview.status !== 200 || !(await preview.text()).includes("John Doe"))
+            if (preview.status !== 200 || !(await preview.text()).includes("John Doe")) {
               throw new Error("Preview failed");
+            }
             await request(`/api/templates/${item.id}`, "PUT", { name: `renamed-${i}` });
             await request(`/api/templates/${item.id}`, "DELETE");
-            if (i >= 5) times.push(performance.now() - begin);
+            if (i >= 5) {
+              times.push(performance.now() - begin);
+            }
           }
           result.templateCycleMeanMs = mean(times);
           result.templateSamples = times.length;
@@ -89,7 +96,7 @@ for (const [kind, executable] of executables) {
         console.log(JSON.stringify(result));
       },
       admin,
-      120000,
+      120_000,
     );
   }
 }

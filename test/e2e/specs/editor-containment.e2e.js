@@ -348,11 +348,10 @@ test.describe("remote images load on request", () => {
     `background: url('${r}/size.gif'); background-size: cover`,
     `background-image: url('${r}/a.gif'); background-image: linear-gradient(red, blue)`,
   ];
-  const styleOf = (html, index) =>
-    new DOMParser()
-      .parseFromString(html, "text/html")
-      .querySelectorAll("td")
-      [index].getAttribute("style");
+  const styleOf = (html, index) => {
+    const cells = new DOMParser().parseFromString(html, "text/html").querySelectorAll("td");
+    return cells[index].getAttribute("style");
+  };
 
   test("saving held background cells unedited keeps declaration order and values (B10)", async ({
     page,

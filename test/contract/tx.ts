@@ -109,7 +109,7 @@ export async function runTxContract(target: {
     subscribers: [] as Array<number>,
     lists: [] as Array<number>,
   };
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   try {
     if (!reference) {
       const current = (await (await api("/api/settings")).json()) as {
@@ -473,17 +473,23 @@ export async function runTxContract(target: {
     }
   } finally {
     for (const id of owned.subscribers) {
-      if ((await api(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await api(`/api/subscribers/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.lists) {
-      if ((await api(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await api(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const id of owned.templates) {
-      if ((await api(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await api(`/api/templates/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     await mailpit.removeOwned();
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL tx-cleanup");
   }
 }

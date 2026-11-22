@@ -1,5 +1,6 @@
 // Test-only campaign owner supplies references through HTTP; template operations use production routes.
 import { expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { provisionApiUser } from "@/test/contract/owned";
 import { startTemplateFixture } from "@/test/templates/fixture";
 
@@ -107,7 +108,7 @@ test("a tx template referencing unsubscribe_url saves without an attention diagn
 }, 30_000);
 
 for (const operation of ["save", "preview"] as const) {
-  for (const change of ["role", "disabled", "deleted"] as const)
+  for (const change of ["role", "disabled", "deleted"] as const) {
     test(`held ${operation} input cannot outlive ${change} revocation`, async () => {
       const { createConnection } = await import("node:net");
       const f = await startTemplateFixture();
@@ -182,7 +183,8 @@ for (const operation of ["save", "preview"] as const) {
       } finally {
         await f.close();
       }
-    }, 30000);
+    }, 30_000);
+  }
 }
 
 for (const operation of ["save", "preview"] as const) {
@@ -271,7 +273,7 @@ for (const operation of ["save", "preview"] as const) {
     } finally {
       await f.close();
     }
-  }, 30000);
+  }, 30_000);
 }
 
 test("concurrent omitted-field updates and default/delete retain valid state", async () => {
@@ -315,7 +317,7 @@ test("concurrent omitted-field updates and default/delete retain valid state", a
       call(`/api/templates/${campaign.id}/default`, "PUT"),
       call(`/api/templates/${campaign.id}`, "DELETE"),
     ]);
-    expect([set.status, del.status].sort()).toEqual([200, 400]);
+    expect([set.status, del.status].sort(ascending)).toEqual([200, 400]);
     const rows = (await (await call("/api/templates")).json()).data as Array<{
       id: number;
       is_default: boolean;
@@ -403,7 +405,7 @@ for (const change of ["role", "disabled", "deleted"] as const) {
       f.releasePreview();
       await f.close();
     }
-  }, 30000);
+  }, 30_000);
 }
 
 test("preview revalidates a logged-out session after a held real render", async () => {

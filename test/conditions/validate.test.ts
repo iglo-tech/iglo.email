@@ -302,9 +302,11 @@ describe("hostile input stays bounded", () => {
       "condition.value",
     ]);
     ok({ attr: "a", op: "in", value: Array(limits.inValues).fill("v") });
-    const wide = { all: Array.from({ length: 8 }, () => ({ all: Array(8).fill(leaf) })) };
+    const wide = {
+      all: Array.from({ length: 8 }, () => ({ all: Array.from({ length: 8 }, () => leaf) })),
+    };
     expect(errors(wide)[0]!.message).toBe("too many conditions");
-    ok({ all: Array.from({ length: 7 }, () => ({ all: Array(8).fill(leaf) })) });
+    ok({ all: Array.from({ length: 7 }, () => ({ all: Array.from({ length: 8 }, () => leaf) })) });
   });
 
   test("huge paths are refused by length before they are split", () => {

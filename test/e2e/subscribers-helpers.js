@@ -220,7 +220,7 @@ export function filteredBulkActions(scopes) {
           } else if (action === "export") {
             await openBulkMenu(page, { selectAll: true });
             const download = await exportSelection(page);
-            const csv = await readFile(await download.path(), "utf8");
+            const csv = await readFile(await download.path(), "utf-8");
             expect(csv.trim().split("\n")).toHaveLength(23);
             for (const sub of before) {
               expect(csv.includes(sub.email)).toBe(sub.email.startsWith("target"));

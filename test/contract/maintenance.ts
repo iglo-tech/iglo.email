@@ -219,7 +219,7 @@ export async function runMaintenanceContract(target: {
       );
     } finally {
       db.close();
-      receiver.close();
+      await receiver.close();
     }
   };
 

@@ -7,7 +7,7 @@ import { createMarkdownBudget, markdownOutputBound, renderMarkdown } from "@/tem
 
 const markdown = Bun.markdown as { html: typeof Bun.markdown.html };
 const LIMIT = 1024 * 1024;
-const bytes = (value: string) => Buffer.byteLength(value, "utf8");
+const bytes = (value: string) => Buffer.byteLength(value, "utf-8");
 
 /** The real `html()` output, with no limit. */
 const realOutput = (source: string) => markdown.html(source);

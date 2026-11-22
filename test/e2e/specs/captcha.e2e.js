@@ -64,7 +64,7 @@ test("the widget solves the challenge, the form subscribes, and a replay is refu
   await expect(widget).toHaveAttribute("data-state", "verified", { timeout: 60_000 });
   await expect(widget.getByText("Verified")).toBeVisible();
   const payload = await widget.locator('input[name="altcha"]').inputValue();
-  const solved = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+  const solved = JSON.parse(Buffer.from(payload, "base64").toString("utf-8"));
   expect(Object.keys(solved)).toEqual(["challenge", "solution"]);
   expect(Object.keys(solved.solution)).toEqual(["counter", "derivedKey", "time"]);
   expect(solved.solution.counter).toBeLessThanOrEqual(20_000);

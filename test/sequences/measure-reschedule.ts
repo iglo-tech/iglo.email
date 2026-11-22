@@ -135,5 +135,7 @@ function expectOK(r: { status: number; body: unknown }) {
   }
 }
 for (const mode of ["before", "after"] as const) {
-  for (let i = 0; i < runs; i++) console.log(JSON.stringify(await once(mode)));
+  for (let i = 0; i < runs; i++) {
+    console.log(JSON.stringify(await once(mode)));
+  }
 }

@@ -152,7 +152,9 @@ export function startDbFixture(dataDir: string) {
           } else {
             writeTransaction(db, () => {
               insert();
-              if (input.mode === "failure") throw new Error("original error");
+              if (input.mode === "failure") {
+                throw new Error("original error");
+              }
             });
           }
           return { error: null, active: db.inTransaction };

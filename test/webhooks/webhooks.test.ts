@@ -1,5 +1,6 @@
 // M2.6 outbound webhooks through the HTTP API, the injected clock and a local receiver.
 import { afterEach, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { createServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { writeTransaction } from "@/db/transaction";
@@ -794,7 +795,10 @@ test("with blocking on, every private, loopback, link-local and unique-local fam
     await until(async () => (await deliveries(f, id))[0]?.status === "delivered");
   }
   // Only the public targets were requested, each at the address that was checked.
-  expect(sent.sort()).toEqual(["http://93.184.216.34/path", "http://[2606:4700:4700::1111]/path"]);
+  expect(sent.sort(ascending)).toEqual([
+    "http://93.184.216.34/path",
+    "http://[2606:4700:4700::1111]/path",
+  ]);
 });
 
 test("a resolver that never answers cannot outlast the request deadline", async () => {
@@ -876,7 +880,7 @@ test("a public wipe's own deleted event carries the external ID and lists (B124,
     list_ids: [list],
   };
   const afterWipe = r.received.slice(2);
-  expect(afterWipe.map((x) => x.body.event).sort()).toEqual([
+  expect(afterWipe.map((x) => x.body.event).sort(ascending)).toEqual([
     "subscriber.blocklisted",
     "subscriber.deleted",
     "subscriber.deleted",
@@ -1097,7 +1101,9 @@ test("bulk unsubscribing queues only memberships that really ended", async () =>
       .status,
   ).toBe(200);
   await r.waitFor(4);
-  expect(r.received.map((x) => [x.body.data.subscriber.id, x.body.data.list_ids]).sort()).toEqual([
+  expect(
+    r.received.map((x) => [x.body.data.subscriber.id, x.body.data.list_ids]).sort(ascending),
+  ).toEqual([
     [a, [list]],
     [b, [other]],
     [c, [list]],
@@ -1188,7 +1194,7 @@ test("pinned HTTPS checks the configured name, sends it as SNI and refuses a bad
   const seen: Array<{ sni: unknown; host: string | undefined }> = [];
   const server = createServer({ cert, key }, (request, response) => {
     seen.push({
-      sni: (request.socket as unknown as { servername?: unknown }).servername,
+      sni: "servername" in request.socket ? request.socket.servername : undefined,
       host: request.headers.host,
     });
     request.resume();

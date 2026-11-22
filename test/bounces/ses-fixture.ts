@@ -90,8 +90,8 @@ commonName = supplied
       notAfter,
     );
     return {
-      key: readFileSync(join(dir, "leaf.key"), "utf8"),
-      pem: readFileSync(join(dir, "leaf.pem"), "utf8"),
+      key: readFileSync(join(dir, "leaf.key"), "utf-8"),
+      pem: readFileSync(join(dir, "leaf.pem"), "utf-8"),
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -135,8 +135,10 @@ export function sign(n: Record<string, string>, key = good.key, version = "1") {
     "Type",
   ];
   const text = fields
+    .values()
     .filter((k) => n[k])
     .map((k) => `${k}\n${n[k]}\n`)
+    .toArray()
     .join("");
   const signer = createSign(version === "2" ? "RSA-SHA256" : "RSA-SHA1");
   return signer.update(text).sign(key, "base64");

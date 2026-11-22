@@ -395,7 +395,7 @@ export async function runWebhooksContract(target: {
     check((await call(`/api/webhooks/${id}/deliveries`)).status === 404, "deleted-gone");
     check(!stored(), "deliveries-gone");
   } finally {
-    receiver.close();
+    await receiver.close();
     await sink.close();
   }
 }

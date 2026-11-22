@@ -1,5 +1,6 @@
 // D38 production-only contract: external IDs do not exist in the reference.
 import { createConnection } from "node:net";
+import { ascending } from "@/test/order";
 import type { Credentials } from "@/test/contract/types";
 
 export async function runExternalContract(target: {
@@ -10,7 +11,7 @@ export async function runExternalContract(target: {
   const suffix = crypto.randomUUID();
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const owned: Array<number> = [];
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   const request = (path: string, method = "GET", body?: unknown) =>
     fetch(`${target.baseUrl}${path}`, {
       method,
@@ -228,13 +229,14 @@ export async function runExternalContract(target: {
       claims.map(async (r) => ({ status: r.status, body: await r.json() })),
     );
     for (const outcome of outcomes) {
-      if (outcome.status === 200 && typeof outcome.body.data?.id === "number")
+      if (outcome.status === 200 && typeof outcome.body.data?.id === "number") {
         owned.push(outcome.body.data.id);
+      }
     }
     check(
       outcomes
         .map((o) => o.status)
-        .sort()
+        .sort(ascending)
         .join(",") === "200,409",
       "D38-external-concurrent-claim",
     );
@@ -359,11 +361,11 @@ export async function runExternalContract(target: {
   } finally {
     for (const id of owned.reverse()) {
       if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       }
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL external-cleanup");
   }
 }

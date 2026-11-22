@@ -31,7 +31,7 @@ async function port() {
   return address.port;
 }
 try {
-  const fixture = await readFile(resolve("test/messaging/tls-fixture.md"), "utf8");
+  const fixture = await readFile(resolve("test/messaging/tls-fixture.md"), "utf-8");
   const blocks = [...fixture.matchAll(/```pem\n([\s\S]*?)```/g)].map((match) => match[1]!);
   if (blocks.length !== 2) {
     throw new Error("Invalid TLS fixture");

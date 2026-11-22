@@ -106,7 +106,9 @@ test("every screen carries it, and loads no inline script", async () => {
       .on("*", {
         element(element) {
           for (const [name] of element.attributes) {
-            if (/^on[a-z]+$/.test(name)) inline.push(`${path} ${element.tagName} ${name}`);
+            if (/^on[a-z]+$/.test(name)) {
+              inline.push(`${path} ${element.tagName} ${name}`);
+            }
           }
         },
       })
@@ -263,7 +265,9 @@ function refused(node: Node, found: Array<string>): void {
       continue;
     }
     for (const item of Array.isArray(child) ? child : [child]) {
-      if (item && typeof item === "object") refused(item as Node, found);
+      if (item && typeof item === "object") {
+        refused(item as Node, found);
+      }
     }
   }
 }
@@ -298,10 +302,15 @@ test("every rendered Alpine expression is one the CSP build can run", async () =
       .on("*", {
         element(element) {
           for (const [name, value] of element.attributes) {
-            if (!/^(x-|@|:)/.test(name) || /^x-(ref|cloak|ignore|transition)\b/.test(name))
+            if (!/^(x-|@|:)/.test(name) || /^x-(ref|cloak|ignore|transition)\b/.test(name)) {
               continue;
-            if (/^(iframe|script)$/.test(element.tagName)) framed.push(`${path} ${name}`);
-            if (value) seen.set(`${name}\0${decode(value)}`, path);
+            }
+            if (/^(iframe|script)$/.test(element.tagName)) {
+              framed.push(`${path} ${name}`);
+            }
+            if (value) {
+              seen.set(`${name}\0${decode(value)}`, path);
+            }
           }
         },
       })

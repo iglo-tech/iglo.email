@@ -118,7 +118,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
       ).toEqual([{ list_id: first, list_name: "fixture-count-a" }]);
       const grants = (
         (await (await request("/api/roles/lists?query=fixture-grants")).json()) as {
-          data: Array<{ id: number; lists: { id: number }[] }>;
+          data: Array<{ id: number; lists: Array<{ id: number }> }>;
         }
       ).data.find((x) => x.id === role.id);
       expect(grants?.lists.map((x) => x.id)).toEqual([first, second]);
@@ -145,7 +145,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
     expect((await request(`/api/users/${user.id}`)).status).toBe(200);
     const roleProjection = (
       (await (await request("/api/roles/lists?query=fixture-grants")).json()) as {
-        data: Array<{ id: number; lists: { id: number }[] }>;
+        data: Array<{ id: number; lists: Array<{ id: number }> }>;
       }
     ).data.find((item) => item.id === role.id);
     expect(roleProjection?.lists.map((item) => item.id)).toEqual([second]);
@@ -170,7 +170,7 @@ test("synthetic membership counts and campaign snapshots through HTTP", async ()
     expect(grant.status).toBe(400);
     const afterGrant = (
       (await (await request("/api/roles/lists?query=fixture-grants")).json()) as {
-        data: Array<{ id: number; lists: { id: number }[] }>;
+        data: Array<{ id: number; lists: Array<{ id: number }> }>;
       }
     ).data.find((item) => item.id === role.id);
     expect(afterGrant).toEqual(roleProjection);

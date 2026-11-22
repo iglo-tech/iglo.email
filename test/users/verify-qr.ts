@@ -3,12 +3,10 @@ import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
+import { PNG } from "pngjs";
 
-const { PNG } = require("pngjs") as {
-  PNG: { sync: { read(value: Buffer): { width: number; height: number; data: Buffer } } };
-};
 const root = resolve(import.meta.dir, "../..");
-const fixture = await readFile(resolve(root, "test/users/fixtures.md"), "utf8");
+const fixture = await readFile(resolve(root, "test/users/fixtures.md"), "utf-8");
 const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1];
 const password = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1];
 if (!user || !password) {
@@ -77,7 +75,7 @@ decl('zbar_image_destroy',None,p)(image); decl('zbar_image_scanner_destroy',None
         pixels: grayscale.toString("base64"),
         secret: data.secret,
       }),
-      encoding: "utf8",
+      encoding: "utf-8",
     });
     if (decoded.status !== 0) {
       throw new Error("Independent QR decoding failed");

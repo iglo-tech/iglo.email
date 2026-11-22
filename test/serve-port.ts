@@ -101,8 +101,10 @@ export function listensOn(pid: number, port: number): boolean {
     for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
       let text = "";
       try {
-        text = readFileSync(table, "utf8");
-      } catch {}
+        text = readFileSync(table, "utf-8");
+      } catch {
+        // A table this host does not have (no IPv6) lists no sockets.
+      }
       for (const line of text.split("\n").slice(1)) {
         const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
         if (state === "0A" && local?.endsWith(`:${hex}`) && inode) {
@@ -119,9 +121,13 @@ export function listensOn(pid: number, port: number): boolean {
         if (match && inodes.has(match[1]!)) {
           return true;
         }
-      } catch {}
+      } catch {
+        // A descriptor that is not a socket, or that closed after the listing, is skipped.
+      }
     }
-  } catch {}
+  } catch {
+    // No descriptor table for this pid: it cannot be listening here.
+  }
   return false;
 }
 
@@ -167,7 +173,7 @@ export async function healthWhenReady(
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       const stderr =
-        child.stderr instanceof ReadableStream ? await new Response(child.stderr).text() : "";
+        typeof child.stderr === "object" ? await new Response(child.stderr).text() : "";
       throw new Error(`Server exited before it became ready: ${stderr}`);
     }
     try {

@@ -5,7 +5,9 @@ export const SECRET_LISTS = ["smtp", "messengers", "bounce.mailboxes"] as const;
 export function withBlankPasswords<T extends Record<string, any>>(snapshot: T): T {
   const out = structuredClone(snapshot);
   for (const key of SECRET_LISTS) {
-    for (const entry of out[key]) entry.password = "";
+    for (const entry of out[key]) {
+      entry.password = "";
+    }
   }
   return out;
 }

@@ -222,44 +222,88 @@ export default defineConfig({
       ],
       rules: { "quality/no-conditional-empty-object-spread": "off" },
     },
-    // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
-    // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
+    // Test code (test/, JavaScript specs included): the rules still off here are B134c's unfinished work (the
+    // B134c markers) or B134g's type rules; no-console is permanent for test/ (see the comment below).
     {
       files: ["test/**"],
       rules: {
+        // Permanent: test runners, measure and reference scripts print their own command output, which AGENTS.md allows.
         "no-console": "off",
-        "prefer-const": "off",
-        curly: "off",
-        "typescript/array-type": "off",
-        "unicorn/numeric-separators-style": "off",
-        "unicorn/prefer-number-properties": "off",
-        "typescript/consistent-type-imports": "off",
-        "no-useless-assignment": "off",
-        "typescript/require-array-sort-compare": "off",
-        "unicorn/prefer-top-level-await": "off",
-        "typescript/await-thenable": "off",
-        "typescript/no-misused-promises": "off",
-        "unicorn/prefer-string-replace-all": "off",
-        "typescript/use-unknown-in-catch-callback-variable": "off",
-        "no-empty": "off",
-        "preserve-caught-error": "off",
-        "no-promise-executor-return": "off",
-        "quality/no-array-filter-map": "off",
-        "quality/no-chained-type-assertions": "off",
+        // B134c: test/ still has 74 object-typed parameters and 143 returns in promise executors; not yet fixed.
         "quality/no-object-parameters": "off",
-        "typescript/no-misused-spread": "off",
-        "typescript/no-unnecessary-type-assertion": "off",
-        "@nkzw/no-instanceof": "off",
-        "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
-        "quality/no-unknown-returns": "off", // B134c: test/ still has the rule's findings.
-        "quality/no-known-value-widening": "off", // B134c: test/ still has the rule's findings.
-        "quality/no-conditional-empty-object-spread": "off", // B134c: test/ still has the rule's findings.
-        "quality/no-unsafe-dictionary-type": "off", // B134c: test/ still has the rule's findings.
+        "no-promise-executor-return": "off",
+        "quality/no-unknown-returns": "off", // B134g: test/ still has the rule's findings.
+        "quality/no-known-value-widening": "off", // B134g: test/ still has the rule's findings.
+        "quality/no-conditional-empty-object-spread": "off", // B134g: test/ still has the rule's findings.
+        "quality/no-unsafe-dictionary-type": "off", // B134g: test/ still has the rule's findings.
         "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
-        "typescript/no-unsafe-call": "off", // B134c: test/ still calls values typed any.
-        "typescript/no-unsafe-return": "off", // B134c: test/ still returns values typed any.
-        "typescript/no-unsafe-type-assertion": "off", // B134c: test/ still asserts from any and unknown.
+        "typescript/no-unsafe-call": "off", // B134g: test/ still calls values typed any.
+        "typescript/no-unsafe-return": "off", // B134g: test/ still returns values typed any.
+        "typescript/no-unsafe-type-assertion": "off", // B134g: test/ still asserts from any and unknown.
       },
+    },
+    // Exception, for the lead to decide at review (no-floating-promises). The m14 browser scripts are evaluated as an
+    // expression by agent-browser, and their async IIFE is that expression's value, the promise the browser awaits.
+    {
+      files: ["test/users/m14-browser-setup.js", "test/users/m14-browser-submit.js"],
+      rules: { "typescript/no-floating-promises": "off" },
+    },
+    // Exception, for the lead to decide at review (await-thenable). bun:test types the `rejects` matchers as returning
+    // void, so `await expect(promise).rejects...` is flagged; the await is what makes the rejection assertion run.
+    {
+      files: [
+        "test/analytics/analytics.test.ts",
+        "test/analytics/budget.test.ts",
+        "test/contract/boundary.test.ts",
+        "test/messaging/notify.test.ts",
+        "test/scheduler/scheduler.test.ts",
+        "test/sends/lease.test.ts",
+        "test/subscribers/query.test.ts",
+        "test/templates/markdown-budget.test.ts",
+        "test/templates/render.test.ts",
+      ],
+      rules: { "typescript/await-thenable": "off" },
+    },
+    // Exception, for the lead to decide at review (no-reflect-get). The crash fixture's Proxy get trap forwards
+    // a property with Reflect.get and the proxy as receiver, so a getter on the owner sees the proxy as `this`;
+    // a property read would bind it to the target instead.
+    { files: ["test/scheduler/crash-entry.ts"], rules: { "quality/no-reflect-get": "off" } },
+    // Exceptions, for the lead to decide at review (prefer-top-level-await). Each of these runs a promise beside its
+    // main loop or its child, so awaiting it at the top level would stop that loop: the probe's stdin watcher, the
+    // backup measure's child-exit watcher, and ui:verify's fixture close. The m14 browser scripts are page scripts
+    // whose async IIFE returns the page's result to the browser, so they are not modules.
+    {
+      files: [
+        "test/maintenance/measure-probe.ts",
+        "test/backup/measure.ts",
+        "test/ui/verify.ts",
+        "test/users/m14-browser-setup.js",
+        "test/users/m14-browser-submit.js",
+      ],
+      rules: { "unicorn/prefer-top-level-await": "off" },
+    },
+    // Exception, for the lead to decide at review (no-chained-type-assertions). The tail probe wraps Database.prototype
+    // and JSON by method name, so each patch writes through a dictionary view of a built-in: no typed slot takes a
+    // dynamic key, and the chain is that one boundary.
+    {
+      files: ["test/perf/m61/tail-probe.ts"],
+      rules: { "quality/no-chained-type-assertions": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-instanceof). Each check is for a platform or own class where
+    // the exact class is the point: a FormData body is sent as it is and anything else as JSON, so a duck check on
+    // `append` would also take look-alikes; the own Listed error is the stop signal of the route listing; the browser
+    // audits detect DOM clobbering, which replaces globals such as `location` with elements that a duck check accepts.
+    {
+      files: [
+        "test/contract/import.ts",
+        "test/contract/media.ts",
+        "test/e2e/specs/csp.e2e.js",
+        "test/e2e/specs/editor-containment.e2e.js",
+        "test/import/import.test.ts",
+        "test/media/embed-contract.ts",
+        "test/openapi/routes-entry.ts",
+      ],
+      rules: { "@nkzw/no-instanceof": "off" },
     },
     // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
     // (its values are typed per key, and a per-key schema is a separate design, D132), and the journal payload is
@@ -451,12 +495,6 @@ export default defineConfig({
       files: ["src/main.ts", "src/settings/validate.ts"],
       rules: { "typescript/no-unsafe-return": "off" },
     },
-    // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
-    // test/ still has unawaited promises; src/ and scripts/ are fixed (B134b).
-    {
-      files: ["test/**"],
-      rules: { "@typescript-eslint/no-floating-promises": "off" },
-    },
   ],
   rules: {
     ...cloudflare.rules,
@@ -472,17 +510,5 @@ export default defineConfig({
     "react/checked-requires-onchange-or-readonly": "off", // HTML `checked` on a static form control
     "react/rules-of-hooks": "off", // no hooks in the in-house runtime
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
-
-    // B134c: findings remain only in test/.
-    "typescript/no-require-imports": "off", // B134c
-    "typescript/no-import-type-side-effects": "off", // B134c
-    "typescript/no-unsafe-function-type": "off", // B134c
-    "import/consistent-type-specifier-style": "off", // B134c
-    "no-unexpected-multiline": "off", // B134c
-    "quality/no-reflect-get": "off", // B134c
-    "quality/no-unknown-type-aliases": "off", // B134c
-    "unicorn/no-array-fill-with-reference-type": "off", // B134c
-    "unicorn/prefer-native-coercion-functions": "off", // B134c
-    "unicorn/prefer-single-call": "off", // B134c
   },
 });

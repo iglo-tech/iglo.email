@@ -63,7 +63,7 @@ try {
   }
   await production.close();
   await mailbox.close();
-  appEndpoint.close();
+  await appEndpoint.close();
 }
 if (failure) {
   if (production.errors()) {

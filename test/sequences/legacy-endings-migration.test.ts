@@ -1,6 +1,7 @@
 // B22 (D83): migration 17 turns the old scheduler's canceled blocklisted/sequence_archived
 // endings into exited, seen through GET /api/enrollments?status=.
 import { afterEach, expect, test } from "bun:test";
+import { ascending } from "@/test/order";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { SequencesFixture } from "@/test/sequences/fixture";
 
@@ -50,7 +51,7 @@ test("legacy canceled endings by blocklist or archive are exited; manual cancels
     }>;
   };
   const exited = await list("exited");
-  expect(exited.map((e) => e.id).sort()).toEqual([1, 2, 4]);
+  expect(exited.map((e) => e.id).sort(ascending)).toEqual([1, 2, 4]);
   expect((await list("canceled")).map((e) => e.id)).toEqual([3]);
   // The ending times are untouched.
   for (const e of exited) {

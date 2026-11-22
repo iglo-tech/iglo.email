@@ -55,7 +55,7 @@ try {
       stdout: "pipe",
       stderr: "ignore",
     });
-    child.stdin.write(JSON.stringify({ path: db.filename, method, args }));
+    await child.stdin.write(JSON.stringify({ path: db.filename, method, args }));
     await child.stdin.end();
     let bytes = 0;
     for await (const chunk of child.stdout) {
@@ -78,7 +78,8 @@ try {
       const before = performance.now();
       const outcome = await reader.read(method, [...args]).then(
         (body) => `served ${body.length >> 20} MiB`,
-        (error: { kind: string }) => `refused: ${error.kind}`,
+        (error: unknown) =>
+          `refused: ${typeof error === "object" && error !== null && "kind" in error ? error.kind : undefined}`,
       );
       report({
         name: `${method}, ${count} IDs, a year by hour`,

@@ -15,7 +15,7 @@ function children(): Array<number> {
       continue;
     }
     try {
-      const status = readFileSync(`/proc/${entry}/status`, "utf8");
+      const status = readFileSync(`/proc/${entry}/status`, "utf-8");
       if (new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(status)) {
         out.push(Number(entry));
       }

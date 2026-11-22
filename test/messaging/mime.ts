@@ -23,16 +23,16 @@ function splitPart(raw: string): MimePart {
   const encoding = (header("Content-Transfer-Encoding") ?? "7bit").toLowerCase();
   let text: string;
   if (encoding === "base64") {
-    text = Buffer.from(body.replaceAll(/\s+/g, ""), "base64").toString("utf8");
+    text = Buffer.from(body.replaceAll(/\s+/g, ""), "base64").toString("utf-8");
   } else if (encoding === "quoted-printable") {
     const octets = body
       .replaceAll("=\r\n", "")
       .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
         String.fromCharCode(Number.parseInt(hex, 16)),
       );
-    text = Buffer.from(octets, "latin1").toString("utf8");
+    text = Buffer.from(octets, "latin1").toString("utf-8");
   } else {
-    text = Buffer.from(body, "latin1").toString("utf8");
+    text = Buffer.from(body, "latin1").toString("utf-8");
   }
   return { headers, type, text: text.replaceAll("\r\n", "\n"), header };
 }

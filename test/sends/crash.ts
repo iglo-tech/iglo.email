@@ -167,8 +167,8 @@ try {
     assert.equal(messages.length, scenario.endsWith("claimed") ? 0 : 1, scenario);
     if (messages.length) {
       assert.equal(
-        messages[0]!.MessageID.replace(/[<>]/g, ""),
-        entry.smtp_message_id.replace(/[<>]/g, ""),
+        messages[0]!.MessageID.replaceAll(/[<>]/g, ""),
+        entry.smtp_message_id.replaceAll(/[<>]/g, ""),
       );
     }
     await kill(process.child);
@@ -205,8 +205,8 @@ try {
       assert.equal(messages.length, scenario === "lost-final" ? 1 : 0, scenario);
       if (messages.length) {
         assert.equal(
-          messages[0]!.MessageID.replace(/[<>]/g, ""),
-          entry.smtp_message_id.replace(/[<>]/g, ""),
+          messages[0]!.MessageID.replaceAll(/[<>]/g, ""),
+          entry.smtp_message_id.replaceAll(/[<>]/g, ""),
         );
       }
       await kill(worker.child);

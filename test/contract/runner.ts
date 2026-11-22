@@ -93,7 +93,7 @@ function validateCorpus(items: ReadonlyArray<ContractCase>, complete: boolean): 
     for (const endpoint of [item.reference, item.production, item.fixture]) {
       const invalidCharacter =
         endpoint &&
-        [...endpoint.path].some((character) => {
+        endpoint.path.split("").some((character) => {
           const code = character.charCodeAt(0);
           return code <= 32 || code === 127 || character === "#";
         });
@@ -136,7 +136,9 @@ function validateCorpus(items: ReadonlyArray<ContractCase>, complete: boolean): 
   if (complete) {
     for (const metadata of Object.values(differences)) {
       for (const id of metadata.cases) {
-        if (!ids.has(id)) throw new Error("Orphaned deliberate-difference metadata");
+        if (!ids.has(id)) {
+          throw new Error("Orphaned deliberate-difference metadata");
+        }
       }
     }
   }
@@ -175,8 +177,9 @@ function redact(message: string, credentials?: Credentials): string {
         value,
         encodeURIComponent(value),
         JSON.stringify(value).slice(1, -1),
-      ])
+      ]) {
         result = result.replaceAll(representation, "[redacted]");
+      }
     }
   }
   return result;
@@ -452,12 +455,14 @@ async function comparePublic404(
             // control characters. HTMLRewriter exposes attribute spellings,
             // not browser-decoded values, so reject unsupported encodings.
             if (
-              [...value].some(
-                (character) =>
-                  character === "&" ||
-                  character.charCodeAt(0) <= 32 ||
-                  character.charCodeAt(0) === 127,
-              )
+              value
+                .split("")
+                .some(
+                  (character) =>
+                    character === "&" ||
+                    character.charCodeAt(0) <= 32 ||
+                    character.charCodeAt(0) === 127,
+                )
             ) {
               throw new Error("Unsupported encoded HTML URL");
             }

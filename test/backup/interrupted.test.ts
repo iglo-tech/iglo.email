@@ -74,13 +74,14 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const) {
     const helperRunning = () =>
       readdirSync("/proc").some((entry) => {
         try {
-          return readFileSync(`/proc/${entry}/cmdline`, "utf8").includes(partial!);
+          return readFileSync(`/proc/${entry}/cmdline`, "utf-8").includes(partial!);
         } catch {
           return false;
         }
       });
-    for (const deadline = Date.now() + 5_000; helperRunning() && Date.now() < deadline;)
+    for (const deadline = Date.now() + 5000; helperRunning() && Date.now() < deadline;) {
       await Bun.sleep(25);
+    }
     expect(helperRunning()).toBe(false);
 
     expect(existsSync(output)).toBe(false);

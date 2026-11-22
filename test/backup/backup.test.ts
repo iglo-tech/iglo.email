@@ -1,5 +1,6 @@
 // `backup` through the compiled executable: snapshots of a live server, in temporary directories.
 import { Database } from "bun:sqlite";
+import { ascending } from "@/test/order";
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import {
   chmodSync,
@@ -78,7 +79,7 @@ const subscriberTotal = async (client: Client) => {
   const response = await client("/api/subscribers?per_page=1");
   return ((await response.json()) as { data: { total: number } }).data.total;
 };
-const names = (directory: string) => readdirSync(directory).sort();
+const names = (directory: string) => readdirSync(directory).sort(ascending);
 
 test("a backup under write load restores, opens and holds what was committed", async () => {
   const client = await live();
@@ -205,7 +206,7 @@ test("an existing backup is replaced only when told, and only a backup", async (
   writeFileSync(join(other, "precious.txt"), "not a backup");
   const kept = await runBackup(executable, ["--data-dir", dataDir, "--output", other, "--force"]);
   expect(kept.exitCode).toBe(1);
-  expect(readFileSync(join(other, "precious.txt"), "utf8")).toBe("not a backup");
+  expect(readFileSync(join(other, "precious.txt"), "utf-8")).toBe("not a backup");
 
   const self = await runBackup(executable, ["--data-dir", dataDir, "--output", dataDir, "--force"]);
   expect(self.exitCode).toBe(1);
@@ -237,7 +238,7 @@ test("a file with no row is harmless, and a row with no file is reported and sta
   const media = await restored("/api/media");
   const rows = ((await media.json()) as { data: { results: Array<{ filename: string }> } }).data
     .results;
-  expect(rows.map(({ filename }) => filename).sort()).toEqual(["gone.txt", "kept.txt"]);
+  expect(rows.map(({ filename }) => filename).sort(ascending)).toEqual(["gone.txt", "kept.txt"]);
 });
 
 test("an upload directory named by the settings is backed up at its place", async () => {
@@ -261,7 +262,7 @@ test("an upload directory named by the settings is backed up at its place", asyn
   expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
     0,
   );
-  expect(readFileSync(join(output, "media", "custom.txt"), "utf8")).toBe("custom");
+  expect(readFileSync(join(output, "media", "custom.txt"), "utf-8")).toBe("custom");
   const verified = await runBackup(executable, ["--verify", output]);
   expect(verified.stdout).toContain("Uploads: 1 files");
   expect(verified.stderr).toBe("");
@@ -342,7 +343,7 @@ test("overlapping backups to one path: one wins, and neither replaces the other"
   const output = join(base, "backup");
   const args = ["--data-dir", dataDir, "--output", output];
   const results = await Promise.all([runBackup(executable, args), runBackup(executable, args)]);
-  expect(results.map(({ exitCode }) => exitCode).sort()).toEqual([0, 1]);
+  expect(results.map(({ exitCode }) => exitCode).sort(ascending)).toEqual([0, 1]);
   expect(results.find(({ exitCode }) => exitCode === 1)!.stderr).toContain("--force");
   expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
@@ -367,12 +368,12 @@ test("a path taken while the backup runs is not replaced, and --force still chec
       warn() {},
     });
   expect(() => backup(false)).toThrow("already exists");
-  expect(readFileSync(join(output, "precious.txt"), "utf8")).toBe("someone else's");
+  expect(readFileSync(join(output, "precious.txt"), "utf-8")).toBe("someone else's");
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
   rmSync(output, { recursive: true });
   // Claiming the path again fails inside the callback only if it is there: start from nothing.
   expect(() => backup(true)).toThrow("does not look like a backup");
-  expect(readFileSync(join(output, "precious.txt"), "utf8")).toBe("someone else's");
+  expect(readFileSync(join(output, "precious.txt"), "utf-8")).toBe("someone else's");
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
 });
 
@@ -397,7 +398,7 @@ test("a directory that appears at the last moment survives with its content", as
   expect(race.stderr).toContain("already exists");
   expect(race.exitCode).toBe(1);
   expect(readdirSync(output)).toEqual(["precious.txt"]);
-  expect(readFileSync(join(output, "precious.txt"), "utf8")).toBe("someone else's");
+  expect(readFileSync(join(output, "precious.txt"), "utf-8")).toBe("someone else's");
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
 });
 
@@ -406,7 +407,7 @@ test("a file that appears at the last moment survives, and an empty directory gi
   const output = join(base, "backup");
   const race = await publishing("file", output, "--data-dir", dataDir, "--output", output);
   expect(race.exitCode).toBe(1);
-  expect(readFileSync(output, "utf8")).toBe("someone else's");
+  expect(readFileSync(output, "utf-8")).toBe("someone else's");
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
 
   const empty = join(base, "empty");
@@ -431,7 +432,7 @@ test("--force checks the target it actually moves, and puts back what it should 
   const file = await publishing("file", output, ...args, "--force");
   expect(file.stderr).toContain("does not look like a backup");
   expect(file.exitCode).toBe(1);
-  expect(readFileSync(output, "utf8")).toBe("someone else's");
+  expect(readFileSync(output, "utf-8")).toBe("someone else's");
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
 });
 
@@ -541,7 +542,7 @@ test("an older executable refuses a backup ahead of it", async () => {
   expect(verified.stdout).toContain(`Schema version: ${version + 1}`);
   expect(verified.stderr).toContain("ahead of this executable");
   restoreInto(output, dataDir);
-  const refused = await startServer(executable, dataDir).catch((error: Error) => error);
+  const refused = await startServer(executable, dataDir).catch((error: unknown) => error);
   expect(String(refused)).toContain(`Database version ${version + 1} is ahead of this executable`);
 });
 
@@ -658,7 +659,7 @@ test("a refusal keeps the folders that already existed, and what is in them", as
   const exists = await runBackup(executable, ["--data-dir", dataDir, "--output", taken]);
   expect(exists.exitCode).toBe(1);
   expect(exists.stderr).toContain("already exists");
-  expect(readFileSync(join(taken, "keep.txt"), "utf8")).toBe("kept");
+  expect(readFileSync(join(taken, "keep.txt"), "utf-8")).toBe("kept");
 
   const kept = join(dataDir, "uploads", "kept");
   mkdirSync(kept);
@@ -672,7 +673,7 @@ test("a refusal keeps the folders that already existed, and what is in them", as
   expect(inside.exitCode).toBe(1);
   expect(inside.stderr).toContain("is inside the upload directory");
   expect(names(kept)).toEqual(["keep.txt"]);
-  expect(readFileSync(join(kept, "keep.txt"), "utf8")).toBe("kept too");
+  expect(readFileSync(join(kept, "keep.txt"), "utf-8")).toBe("kept too");
 });
 
 test("a parent that is a regular file is named as a file, not reported as a raw ENOTDIR", async () => {
@@ -687,7 +688,7 @@ test("a parent that is a regular file is named as a file, not reported as a raw 
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toContain(`${join(base, "afile")} is a file, not a folder`);
   expect(result.stderr).not.toContain("ENOTDIR");
-  expect(readFileSync(join(base, "afile"), "utf8")).toBe("not a folder");
+  expect(readFileSync(join(base, "afile"), "utf-8")).toBe("not a folder");
 });
 
 test("a parent through a broken symlink is named as one, not reported as a raw ENOENT", async () => {
@@ -902,7 +903,7 @@ test("a failure after folders were created removes exactly those, and keeps what
   chmodSync(join(dataDir, "uploads", "unreadable.txt"), 0o644);
   expect(result.exitCode).toBe(1);
   expect(names(kept)).toEqual(["keep.txt"]);
-  expect(readFileSync(join(kept, "keep.txt"), "utf8")).toBe("kept");
+  expect(readFileSync(join(kept, "keep.txt"), "utf-8")).toBe("kept");
 });
 
 const PARTIAL_PREFIX = ".iglo-email-backup-partial-";

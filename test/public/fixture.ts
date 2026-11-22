@@ -22,7 +22,7 @@ import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 const form = { "content-type": "application/x-www-form-urlencoded" };
 
 export async function publicFixture() {
-  const calls: Array<{ inTransaction: boolean; listIds: bigint[] }> = [];
+  const calls: Array<{ inTransaction: boolean; listIds: Array<bigint> }> = [];
   let failEffect = false;
   const effects: UnsubscribeEffects = {
     unsubscribed(event) {
@@ -158,7 +158,7 @@ export async function publicFixture() {
           archive_template_id: null,
           archive_meta: {},
         },
-        lists.map((id) => BigInt(id)),
+        lists.map(BigInt),
         [],
       );
       const runner = createRunnerStore(f.db);

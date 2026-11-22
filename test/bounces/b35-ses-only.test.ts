@@ -169,7 +169,7 @@ test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces an
     message!.data,
   );
   expect(attachment).not.toBeNull();
-  const report = JSON.parse(Buffer.from(attachment![1]!, "base64").toString("utf8"));
+  const report = JSON.parse(Buffer.from(attachment![1]!, "base64").toString("utf-8"));
   expect(report.bounces.length).toBe(1);
   expect(report.bounces[0].source).toBe("mailgun");
   expect(report.bounces[0].type).toBe("hard");

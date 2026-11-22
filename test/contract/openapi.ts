@@ -182,8 +182,9 @@ export async function runOpenApiContract(target: {
         .map(({ name }) => name),
     );
     for (const name of new URLSearchParams(options.query).keys()) {
-      if (!declared.has(name))
+      if (!declared.has(name)) {
         throw new Error(`FAIL openapi-query ${key}: ${name} is undocumented`);
+      }
     }
     if (options.body !== undefined) {
       accepted(key, options.body);
@@ -1489,10 +1490,13 @@ export async function runOpenApiContract(target: {
     // The check itself has to fail on a deliberately wrong type.
     const wrong = structuredClone(document.paths);
     for (const item of Object.values(wrong)) {
-      for (const operation of Object.values(item))
-        for (const parameter of operation.parameters)
-          if (parameter.in === "path" && parameter.name === "step")
+      for (const operation of Object.values(item)) {
+        for (const parameter of operation.parameters) {
+          if (parameter.in === "path" && parameter.name === "step") {
             parameter.schema = { type: "string" };
+          }
+        }
+      }
     }
     check(pathTypeProblems(wrong).length > 0, "openapi-path-types-detects-wrong-type");
     check(
@@ -1518,7 +1522,7 @@ export async function runOpenApiContract(target: {
               key.split(" ")[0]!,
               key
                 .split(" ")[1]!
-                .replace(/\{(\w+)\}/g, (_, name: string) =>
+                .replaceAll(/\{(\w+)\}/g, (_, name: string) =>
                   name === tested ? "x" : integerParams.has(name) ? "999999" : "x",
                 ),
             )
@@ -1615,7 +1619,7 @@ export async function runOpenApiContract(target: {
     };
     for (const { key, operation } of reachable) {
       const permissions = (operation["x-required-permissions"] ?? []) as Array<string>;
-      const also = (operation["x-also-required-permissions"] ?? []) as Array<string>[];
+      const also = (operation["x-also-required-permissions"] ?? []) as Array<Array<string>>;
       const query = needed(operation);
       if (!key.startsWith("GET ")) {
         continue;
@@ -1683,7 +1687,7 @@ export async function runOpenApiContract(target: {
       }
     }
   } finally {
-    receiver.close();
+    await receiver.close();
     refusing.stop(true);
   }
 }

@@ -373,8 +373,9 @@ test.describe("Your own account", () => {
     const { body } = await api(page, "/api/users");
     const me = body.data.find((u) => u.username === ADMIN.user);
     for (const u of body.data) {
-      if (u.id !== me.id && u.user_role.id === 1 && u.status === "enabled" && u.type === "user")
+      if (u.id !== me.id && u.user_role.id === 1 && u.status === "enabled" && u.type === "user") {
         expect((await api(page, `/api/users/${u.id}`, "DELETE")).status).toBe(200);
+      }
     }
 
     await page.goto(`${USERS}/${me.id}`);

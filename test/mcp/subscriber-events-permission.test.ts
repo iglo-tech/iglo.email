@@ -29,7 +29,7 @@ async function api(path: string, method: string, body?: unknown, auth = adminAut
     headers: { authorization: auth, "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  return { status: response.status, body: (await response.json().catch(() => null)) as any };
+  return { status: response.status, body: await response.json().catch(() => null) };
 }
 
 async function callTool(name: string, args: Record<string, unknown>, auth: string) {

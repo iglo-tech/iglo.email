@@ -7,8 +7,10 @@ const db = new Database(process.argv[2]);
 db.run("PRAGMA busy_timeout = 0");
 let longest = 0;
 let stopped = false;
-(async () => {
+// Runs beside the probe loop below; nothing awaits it, and the loop ends on its own flag.
+void (async () => {
   for await (const _ of Bun.stdin.stream()) {
+    // Only the end of stdin matters: the parent closes it to stop the probe.
   }
   stopped = true;
 })();

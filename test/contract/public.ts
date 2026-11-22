@@ -273,7 +273,7 @@ export async function runPublicContract(target: {
     }
   };
 
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   try {
     const settings = (await call("/api/settings")).body.data;
     if (!reference) {
@@ -923,7 +923,7 @@ export async function runPublicContract(target: {
             `/api/v1/message/${encodeURIComponent(noaMail!.ID)}/part/${encodeURIComponent(attachment.PartID)}`,
           )
         ).arrayBuffer(),
-      ).toString("utf8"),
+      ).toString("utf-8"),
     );
     check(
       data.profile[0].email === noa.email &&
@@ -1589,28 +1589,31 @@ export async function runPublicContract(target: {
     for (const id of owned.campaigns) {
       const response = await call(`/api/campaigns/${id}`, "DELETE");
       if (response.status !== 200 && response.status !== 400) {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       }
     }
     for (const id of owned.subscribers) {
       const response = await call(`/api/subscribers/${id}`, "DELETE");
       if (response.status !== 200 && response.status !== 400) {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       }
     }
     for (const id of owned.lists) {
-      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await call(`/api/lists/${id}`, "DELETE")).status !== 200) {
+        cleanupFailures += 1;
+      }
     }
     for (const email of owned.addresses) {
-      for (const found of await mails(email).catch(() => []))
+      for (const found of await mails(email).catch(() => [])) {
         await mailpit("/api/v1/messages", {
           method: "DELETE",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ IDs: [found.ID] }),
         }).catch(() => {});
+      }
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL public-cleanup");
   }
 }
