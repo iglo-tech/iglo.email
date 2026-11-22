@@ -240,7 +240,6 @@ export default defineConfig({
         "no-promise-executor-return": "off",
         "quality/no-chained-type-assertions": "off",
         "quality/no-object-parameters": "off",
-        "typescript/no-misused-spread": "off",
         "@nkzw/no-instanceof": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
         "quality/no-unknown-returns": "off", // B134g: test/ still has the rule's findings.

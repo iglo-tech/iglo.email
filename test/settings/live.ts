@@ -91,13 +91,16 @@ export async function runSettingsLive(target: {
   check((await key("bounce.sendgrid_key", secret)).status === 200, "secret-write");
   let view = await get();
   check(
-    view["bounce.sendgrid_key"] === "•".repeat([...secret].length) &&
+    view["bounce.sendgrid_key"] === "•".repeat(Array.from(secret).length) &&
       !JSON.stringify(view).includes(secret),
     "secret-mask",
   );
   check((await key("bounce.sendgrid_key", "")).status === 200, "secret-retain");
   view = await get();
-  check(view["bounce.sendgrid_key"] === "•".repeat([...secret].length), "secret-retained-mask");
+  check(
+    view["bounce.sendgrid_key"] === "•".repeat(Array.from(secret).length),
+    "secret-retained-mask",
+  );
   check((await key("privacy.domain_blocklist", [" *.Example.Test "])).status === 200, "domain-set");
   async function create(email: string) {
     return request("/api/subscribers", "POST", { email });

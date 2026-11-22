@@ -155,7 +155,7 @@ try {
       path: f.db.filename,
       timeoutMs: 10_000,
       concurrency: 1,
-      ...(command ? { command: [...command] } : {}),
+      ...(command ? { command: Array.from(command) } : {}),
     });
     const samples: Array<number> = [];
     for (let i = 0; i < 5; i++) {

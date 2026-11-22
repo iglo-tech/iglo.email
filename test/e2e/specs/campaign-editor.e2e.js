@@ -302,7 +302,7 @@ test.describe("previews", () => {
   test.use({ bypassCSP: false });
 
   for (const start of [" ", " ", "﻿", "text ", "<!-- a -->", ""]) {
-    const label = [...start].map((ch) => ch.codePointAt(0).toString(16)).join(" ") || "nothing";
+    const label = Array.from(start, (ch) => ch.codePointAt(0).toString(16)).join(" ") || "nothing";
     test(`a template preview starting with ${label} reaches no receiver`, async ({ page }) => {
       await signIn(page);
       const place = await receiver();
