@@ -7,6 +7,9 @@ import {
 import {
   api, urls, config, i18n, ListTag,
 } from '@/assets/admin/js/main.js';
+import {
+  sequenceStepText, skipLabel, skipText, sourceText, statusText, statusVariant,
+} from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
 const pageKeys = [
@@ -76,6 +79,10 @@ function component() {
     activityPages: [],
     views: [],
     clicks: [],
+    // Sends (transactional and sequence) the subscriber has, from the journal's count (B127).
+    sendCount: '-',
+    // Sequence names by ID, for the events' refused starts.
+    sequenceNames: {},
     currentList: null,
     bounces: [],
 
@@ -131,13 +138,37 @@ function component() {
       }
       try {
         const data = await read(`/subscribers?${query}`);
-        this.subscribers = data.results || [];
-        this.page = data;
-        this.pages = pageLinks(params, data.page, data.per_page, data.total);
+        let results = data.results || [];
+        let total = data.total;
+        // A search that is exactly an external ID also finds that subscriber (B127), on the first
+        // page, through the external-ID route the API already has. The search API is unchanged.
+        const exact = await this.externalMatch();
+        if (exact) {
+          const others = results.filter((s) => s.id !== exact.id);
+          total += others.length === results.length ? 1 : 0;
+          results = [exact, ...others];
+        }
+        this.subscribers = results;
+        this.page = { ...data, total };
+        this.pages = pageLinks(params, data.page, data.per_page, total);
       } catch (e) {
         this.error = e.message;
       }
       this.loading = false;
+    },
+
+    // The subscriber whose external ID is the search, when the search is one and the viewer may read
+    // it; null for any other search, a miss, a refusal or a later page.
+    async externalMatch() {
+      const value = (params.get('search') || '').trim();
+      if (!value || Number(params.get('page') || 1) !== 1) {
+        return null;
+      }
+      try {
+        return await read(`/subscribers/external?${new URLSearchParams({ external_id: value })}`);
+      } catch (e) {
+        return null;
+      }
     },
 
     async fetchSubscriber() {
@@ -155,6 +186,10 @@ function component() {
           this.clicks = (act.link_clicks || []).map((c, i) => ({
             ...c, key: i, href: /^https?:\/\//i.test(c.url || '') ? c.url : '',
           }));
+          if (config.can_sends) {
+            const sends = await read(`/subscribers/${config.subscriber_id}/sends?per_page=1`);
+            this.sendCount = u.formatNumber(sends.total);
+          }
         }
         const activityPath = activityPaths[config.tab];
         if (activityPath) {
@@ -166,9 +201,22 @@ function component() {
           this.activity = data.results || [];
           this.activityPages = pageLinks(params, data.page, data.per_page, data.total);
         }
+        if (config.tab === 'events') {
+          this.sequenceNames = await this.fetchSequenceNames();
+        }
         this.ready = true;
       } catch (e) {
         this.error = e.message;
+      }
+    },
+
+    // Names are optional: a viewer who may not read sequences keeps each refused start's ID.
+    async fetchSequenceNames() {
+      try {
+        const sequences = await read('/sequences?per_page=100');
+        return Object.fromEntries((sequences.results || []).map((s) => [s.id, s.name]));
+      } catch (e) {
+        return {};
       }
     },
 
@@ -179,6 +227,27 @@ function component() {
     filterTitle,
     statusIcon,
     niceDate: u.niceDate,
+
+    sequenceName(id) {
+      return this.sequenceNames[id] || `#${id}`;
+    },
+
+    // The send labels are the send log's (send-labels.js), so one status and reason read the same.
+    statusText,
+    statusVariant,
+    skipText,
+    skipLabel,
+    sourceText,
+    sequenceStepText,
+
+    subjectText(send) {
+      return send.subject ?? i18n.t('sends.noSubject');
+    },
+
+    // A sequence send names its sequence and step; a transactional one, or a removed step, names its source.
+    sequenceCell(send) {
+      return send.sequence_name ? sequenceStepText(send) : sourceText(send.source);
+    },
 
     statusLabel(status) {
       return i18n.t(`globals.terms.${status}`);

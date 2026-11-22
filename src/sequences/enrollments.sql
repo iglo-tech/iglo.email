@@ -33,7 +33,7 @@ INSERT INTO enrollments (sequence_id, subscriber_id, trigger_event_id, step_id, 
 SELECT list_id FROM sequences WHERE id = ?1
   AND EXISTS (SELECT 1 FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active' AND kind = 'marketing');
 -- name: enrollment-steps
-SELECT id, position, kind, status FROM sequence_steps WHERE sequence_id = ? ORDER BY status, position;
+SELECT id, position, kind, status, cap_policy FROM sequence_steps WHERE sequence_id = ? ORDER BY status, position;
 -- name: enrollment-end
 UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active';

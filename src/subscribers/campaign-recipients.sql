@@ -48,7 +48,14 @@ SELECT (SELECT uuid FROM subscribers WHERE id = ?3) AS uuid,
       WHEN json_extract(l.value, '$.optin') = 'double' THEN sl.status = 'confirmed'
       ELSE sl.status != 'unsubscribed'
     END
-) AS eligible;
+) AS eligible,
+  -- B127: an audience membership that is unsubscribed names `unsubscribed`; any other change of a
+  -- membership (confirmed or deleted since the claim) is `membership_changed`.
+  EXISTS (
+  SELECT 1 FROM subscriber_lists sl
+  CROSS JOIN json_each(?1) l ON json_extract(l.value, '$.id') = sl.list_id
+  WHERE sl.subscriber_id = ?3 AND sl.status = 'unsubscribed'
+) AS unsubscribed;
 
 -- name: campaign-recipient
 SELECT id, uuid, email, name, attribs, external_id FROM subscribers

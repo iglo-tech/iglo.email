@@ -93,6 +93,9 @@ export function sidebar(
       ]),
     );
   }
+  if (can("sends:get")) {
+    items.push(link("sends.all", t.T("sends.title"), "/admin/sends"));
+  }
   if (can("users:get", "users:manage", "roles:get", "roles:manage")) {
     items.push(
       group("users", "users", t.T("globals.terms.users"), [

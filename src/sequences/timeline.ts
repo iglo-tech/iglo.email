@@ -5,17 +5,43 @@
 // the definition; only the step being waited for has one. `event` is null for a viewer who may not
 // read the subscriber.
 import type { EventRow } from "@/events/store";
-import type { EnrollmentSend } from "@/messaging/sends";
+import type { EnrollmentSend, Sends } from "@/messaging/sends";
 import { numberID } from "@/sequences/enrollments";
 import type { EnrollmentRow, Enrollments } from "@/sequences/enrollments";
 
 type Step = ReturnType<Enrollments["steps"]>[number];
+
+/**
+ * Until when the frequency cap holds an active enrollment's wait (B127), or null. It holds when the
+ * step being waited for is marketing under the `defer` policy, the cap still blocks at `now`, and
+ * the cap frees no later than the wait's due time, so the cap is what keeps the step from going
+ * when it is due. Read from the journal the cap counts; nothing is stored for it.
+ */
+export function frequencyHold(
+  row: EnrollmentRow,
+  steps: Array<Step>,
+  capFreeAt: Pick<Sends, "capFreeAt">["capFreeAt"],
+  now: Date,
+): Date | null {
+  const current = row.step_id === null ? undefined : steps.find((step) => step.id === row.step_id);
+  if (
+    row.status !== "active" ||
+    row.due_at === null ||
+    current?.kind !== "marketing" ||
+    current.cap_policy !== "defer"
+  ) {
+    return null;
+  }
+  const free = capFreeAt(row.subscriber_id, now);
+  return free.getTime() > now.getTime() && free.getTime() >= Date.parse(row.due_at) ? free : null;
+}
 
 export function timeline(
   row: EnrollmentRow,
   event: EventRow | null,
   steps: Array<Step>,
   sends: Array<EnrollmentSend>,
+  heldUntil: Date | null,
 ) {
   const byId = new Map(steps.map((step) => [step.id, step]));
   const current = row.step_id === null ? undefined : byId.get(row.step_id);
@@ -57,6 +83,9 @@ export function timeline(
             step_id: row.step_id === null ? null : numberID(row.step_id),
             position: current ? Number(current.position) : null,
             kind: current?.kind ?? null,
+            // The frequency cap's hold, when it is what keeps the step from going (B127).
+            held: heldUntil ? "frequency_cap" : null,
+            held_until: heldUntil ? heldUntil.toISOString() : null,
           },
         ]
       : [{ type: "ended", at: row.finished_at, status: row.status, reason: row.exit_reason }]),

@@ -6,6 +6,7 @@ import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { must } from "@/invariant";
 import type { ListReferences } from "@/lists/references";
+import type { StepLabel } from "@/messaging/sends";
 import { numberID } from "@/sequences/enrollments";
 import type { Enrollments } from "@/sequences/enrollments";
 import type { DefinitionInput, SequenceStatus } from "@/sequences/input";
@@ -82,6 +83,9 @@ const step = (row: StepRow) => ({
   created_at: row.created_at,
   updated_at: row.updated_at,
 });
+
+/** A row of the step-labels query: a step's ID, its sequence and its position. */
+type StepLabelRow = StepLabel & { id: bigint; sequence_name: string };
 
 export function createSequenceStore(
   db: Database,
@@ -191,6 +195,15 @@ export function createSequenceStore(
     templateType,
     listExists: (id: bigint) => deps.lists.name(id) !== null,
     get: full,
+    /** The sequence and position of each step, for the send log's labels (B127). */
+    stepLabels(ids: Array<bigint>): Map<bigint, StepLabel> {
+      const rows = q.get("step-labels").all(`[${ids.join(",")}]`) as Array<StepLabelRow>;
+      const labels = new Map<bigint, StepLabel>();
+      for (const { id, sequence_id, sequence_name, position } of rows) {
+        labels.set(id, { sequence_id, sequence_name, position });
+      }
+      return labels;
+    },
     list(filter: { status?: string; page: number; perPage: number }) {
       const status = filter.status ?? null;
       const rows = q

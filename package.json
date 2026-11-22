@@ -36,6 +36,7 @@
     "e2e:browser:media": "bun run build && bun test/e2e/browser-media.ts",
     "e2e:browser:analytics": "bun run build && bun test/e2e/browser-analytics.ts",
     "e2e:browser:sequences": "bun run build && bun test/e2e/browser-sequences.ts",
+    "e2e:browser:operator": "bun run build && bun test/e2e/browser-operator.ts",
     "ui:verify": "bun run assets:build && bun test/ui/verify.ts",
     "runtime:spike:liquid": "bun test/perf/runtime-compat/liquid-bench.ts",
     "runtime:spike:smtp": "bun test/perf/runtime-compat/smtp-bench.ts",

@@ -3,7 +3,7 @@
 import Alpine from '@alpinejs/csp';
 import { lineChart } from '@/assets/admin/js/charts.js';
 import { initials, read } from '@/assets/admin/js/listing.js';
-import { i18n } from '@/assets/admin/js/main.js';
+import { config, i18n } from '@/assets/admin/js/main.js';
 import * as u from '@/assets/admin/js/utils.js';
 
 function dashboardView() {
@@ -14,10 +14,17 @@ function dashboardView() {
     chartsError: '',
     campaigns: null,
     campaignsError: '',
+    // Sequence and transactional sends delivered, from the send log's count (B127).
+    sendsSent: '-',
 
     init() {
       read('/dashboard/counts').then((d) => { this.counts = d; })
         .catch((e) => { this.countsError = e.message; });
+
+      if (config.can_sends) {
+        read('/sends?status=sent&per_page=1').then((d) => { this.sendsSent = u.formatNumber(d.total); })
+          .catch(() => { this.sendsSent = '-'; });
+      }
 
       read('/dashboard/charts').then((d) => {
         lineChart('chart-views', d?.campaign_views);

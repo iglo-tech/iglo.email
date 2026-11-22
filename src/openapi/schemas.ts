@@ -597,6 +597,22 @@ export const schemas = {
     enrollment_id: nullable(integer),
     step_id: nullable(integer),
     list_id: nullable(integer),
+    subject: {
+      ...nullable(string),
+      description:
+        "The message's subject (B127), read from the prepared message the journal keeps. Null once that payload is dropped: thirty days after the send (D70), or when its address is anonymized (D135).",
+    },
+    sequence_id: {
+      ...nullable(integer),
+      description:
+        "The sequence of a sequence send's step (B127). Null for a transactional send, or when the step was deleted.",
+    },
+    sequence_name: nullable(string),
+    step_position: {
+      ...nullable(integer),
+      description:
+        "The step's position now in its sequence, counted from zero as the timeline's position is (B127). Null as sequence_id.",
+    },
     status: sendStatus,
     skip_reason: nullable(string),
     smtp_message_id: string,
@@ -719,7 +735,7 @@ export const schemas = {
     reason: {
       ...nullable(string),
       description:
-        "unsubscribed: the subscriber left the campaign's list between the batch's claim and its push. subscriber_blocklisted: the subscriber was blocklisted then. subscriber_unavailable: the subscriber's UUID or address changed after the claim, or it no longer exists. Null for a delivery skipped before schema 25, when the reason was not kept.",
+        "unsubscribed: an audience membership was unsubscribed between the batch's claim and its push. subscriber_blocklisted: the subscriber was blocklisted then. subscriber_unavailable: the subscriber's UUID or address changed after the claim, or it no longer exists. membership_changed: the subscriber no longer qualifies for another reason, such as a confirmation during an opt-in campaign or a deleted membership (B127). Null for a delivery skipped before schema 25, when the reason was not kept.",
     },
     at: time,
   }),
@@ -916,6 +932,8 @@ export const schemas = {
         step_id: nullable(integer),
         position: nullable(integer),
         kind: nullable(stepKind),
+        held: { anyOf: [choice("frequency_cap"), { type: "null" }] },
+        held_until: nullable(time),
       }),
       object({
         type: { const: "ended" },

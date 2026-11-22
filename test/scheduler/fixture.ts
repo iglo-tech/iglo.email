@@ -178,6 +178,8 @@ export async function schedulerFixture(
       lists,
       settings: () => marketing,
     }),
+    // As src/main.ts: the send log names each sequence step (B127).
+    stepLabels: (ids) => sequences.stepLabels(ids),
   });
   const tracking = createTracking(db, clock);
   const testSends = createTestSends(db, clock);

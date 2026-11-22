@@ -559,6 +559,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         position: bigint;
         kind: string;
         status: string;
+        cap_policy: "defer" | "skip";
       }>;
     },
     /** Cancel an active enrollment (canceled, manual). The caller holds the write. */

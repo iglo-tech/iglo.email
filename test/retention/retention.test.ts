@@ -335,8 +335,10 @@ test("an old email keeps working after its body is dropped, and only finished ro
   ).toBe(2);
   f.db.run("DELETE FROM sends WHERE uuid LIKE '%-old'");
 
-  // The public row and the producer's retry are unchanged.
-  expect(await f.json(`/api/sends/${send.id}`)).toEqual(before);
+  // The public row and the producer's retry are unchanged, but for the subject: it is read from the
+  // payload that the retention and the deletion dropped (D135), so it is null from now on.
+  const after = await f.json(`/api/sends/${send.id}`);
+  expect(after.body.data).toEqual({ ...before.body.data, subject: null });
   const replay = await f.tx({
     subscriber_id: ada,
     template_id: template,
@@ -427,7 +429,14 @@ test("analytics totals match before and after a compaction", async () => {
   f.clock.advance(31 * day);
   await compactAll(f);
   expect(scalar(f, "SELECT count(*) AS n FROM sends WHERE payload IS NOT NULL")).toBe(0);
-  expect(read()).toEqual(before);
+  // The subject is read from the payload that retention dropped (D135): the rest is unchanged.
+  expect(read()).toEqual({
+    ...before,
+    listed: {
+      ...before.listed,
+      results: before.listed.results.map((row) => ({ ...row, subject: null })),
+    },
+  });
   expect(f.errors).toEqual([]);
 });
 

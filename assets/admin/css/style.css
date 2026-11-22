@@ -1784,6 +1784,19 @@ section.sequences {
     .timeline {
         li {
             margin-block-end: var(--space-3);
+
+            /* A step's tone (B127): a skipped step is amber, a failed one red, a sent one green. */
+            &[data-variant="warning"] > strong {
+                color: var(--tone-amber);
+            }
+
+            &[data-variant="danger"] > strong {
+                color: var(--tone-red);
+            }
+
+            &[data-variant="success"] > strong {
+                color: var(--tone-green);
+            }
         }
 
         pre {
@@ -2096,6 +2109,12 @@ section.sequences {
                 color: var(--muted-foreground);
                 text-align: start;
             }
+
+            /* Event data is read top to bottom: its JSON stays left-aligned in a card (B127). */
+            > pre {
+                flex: 1 1 100%;
+                text-align: start;
+            }
         }
 
         td.stats {
@@ -2226,5 +2245,13 @@ section.sequences {
             max-width: 100%;
             overflow-y: auto;
         }
+    }
+
+    /* The subscriber's tabs are wider than a phone: they scroll inside their own row (B127), so the
+       page itself never scrolls sideways. */
+    section.subscribers [role="tablist"] {
+        max-width: 100%;
+        overflow-x: auto;
+        flex-wrap: nowrap;
     }
 }

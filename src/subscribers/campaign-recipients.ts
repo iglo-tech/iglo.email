@@ -10,6 +10,14 @@ export interface CampaignAudience {
   lists: Array<{ id: bigint; optin: string }>;
   type: "regular" | "optin";
 }
+/** Whether a claimed recipient still qualifies at its push, and if not, why (B116, D131, B127). */
+export type RecipientEligibility =
+  | "eligible"
+  | "unavailable"
+  | "changed"
+  | "blocklisted"
+  | "unsubscribed"
+  | "membership_changed";
 export interface CampaignRecipient {
   id: bigint;
   uuid: string;
@@ -48,12 +56,14 @@ export function createCampaignRecipients(db: Database) {
     /**
      * Whether the subscriber still qualifies, rechecked at the push. `unavailable`: no subscriber
      * now. `changed`: it has not the UUID and email its message was rendered for. `blocklisted`
-     * and `unsubscribed` say why it no longer qualifies (B116, D131).
+     * says why it no longer qualifies (B116, D131). `unsubscribed`: an audience membership is now
+     * unsubscribed. `membership_changed`: it qualifies no longer for another reason, such as a
+     * confirmation during an opt-in campaign or a deleted membership (B127).
      */
     eligible(
       audience: CampaignAudience,
       recipient: Pick<CampaignRecipient, "id" | "uuid" | "email">,
-    ): "eligible" | "unavailable" | "changed" | "blocklisted" | "unsubscribed" {
+    ): RecipientEligibility {
       const row = q
         .get("campaign-recipient-eligible")
         .get(lists(audience), audience.type, recipient.id) as {
@@ -61,6 +71,7 @@ export function createCampaignRecipients(db: Database) {
         email: string | null;
         status: string | null;
         eligible: bigint;
+        unsubscribed: bigint;
       };
       if (row.uuid === null) {
         return "unavailable";
@@ -71,7 +82,10 @@ export function createCampaignRecipients(db: Database) {
       if (row.eligible === 1n) {
         return "eligible";
       }
-      return row.status === "blocklisted" ? "blocklisted" : "unsubscribed";
+      if (row.status === "blocklisted") {
+        return "blocklisted";
+      }
+      return row.unsubscribed === 1n ? "unsubscribed" : "membership_changed";
     },
     close: () => q.close(),
   };

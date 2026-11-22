@@ -1,0 +1,159 @@
+// B127: the operator screens. The send log is a page of its own and filters by status; a subscriber's
+// sends and events name each message's subject, sequence and reason; an exact external ID finds its
+// subscriber on the list; and the subscriber's tabs fit a phone without the page scrolling sideways.
+import { expect } from "@playwright/test";
+import { api, signIn, test, unique } from "../helpers.js";
+
+async function template(page) {
+  const made = await api(page, "/api/templates", "POST", {
+    name: unique("op-tx"),
+    type: "tx",
+    subject: unique("Welcome"),
+    body: "<p>{{ subscriber.name }}</p>",
+  });
+  expect(made.status).toBe(200);
+  return made.body.data;
+}
+
+// A sequence that starts for a person on the event, with one marketing step sent at once.
+async function started(page, list, email, extra = {}) {
+  const tx = await template(page);
+  const event = unique("op-evt");
+  const seq = await api(page, "/api/sequences", "POST", {
+    name: unique("Onboarding"),
+    status: "active",
+    trigger: { event },
+    reentry: "always",
+    list_id: list.id,
+    steps: [{ wait: "PT0S", kind: "marketing", template_id: tx.id }],
+  });
+  expect(seq.status).toBe(200);
+  const sent = await api(page, "/api/subscriber-events", "POST", {
+    subscriber: { email, name: "Operator", grant_lists: [list.id], ...extra },
+    name: event,
+  });
+  expect(sent.status).toBe(200);
+  return {
+    sequence: seq.body.data,
+    event,
+    subscriber: sent.body.data.subscriber_id,
+    subject: tx.subject,
+  };
+}
+
+async function audience(page) {
+  const made = await api(page, "/api/lists", "POST", {
+    name: unique("Operator news"),
+    type: "public",
+    optin: "single",
+  });
+  expect(made.status).toBe(200);
+  return made.body.data;
+}
+
+test("the send log lists each send by its subject and sequence step, and filters by status", async ({
+  page,
+}) => {
+  await signIn(page);
+  const list = await audience(page);
+  const email = `${unique("op")}@example.com`;
+  const { sequence, subject } = await started(page, list, email);
+  await expect
+    .poll(async () => (await api(page, "/api/sends?status=sent&per_page=100")).body.data.total)
+    .toBeGreaterThan(0);
+
+  await page.goto("/admin/sends");
+  const row = page.getByTestId("send-row").filter({ hasText: email });
+  await expect(row).toContainText(subject);
+  await expect(row).toContainText(`${sequence.name}, step 1`);
+  await expect(row.getByTestId("send-status")).toHaveText("Sent");
+
+  await page.getByTestId("filter-status").selectOption("failed");
+  await page.getByTestId("btn-filter").click();
+  await expect(page).toHaveURL(/status=failed/);
+  await expect(page.getByTestId("send-row").filter({ hasText: email })).toHaveCount(0);
+});
+
+test("a subscriber's counts name what they count, and the sends tab names each message", async ({
+  page,
+}) => {
+  await signIn(page);
+  const list = await audience(page);
+  const email = `${unique("op")}@example.com`;
+  const { sequence, subscriber, subject } = await started(page, list, email);
+
+  await page.goto(`/admin/subscribers/${subscriber}`);
+  await expect(page.getByTestId("stat-campaigns")).toBeVisible();
+  await expect(page.getByTestId("stat-sends")).toHaveText("1");
+  await expect(page.getByText("Campaigns viewed")).toBeVisible();
+
+  await page.goto(`/admin/subscribers/${subscriber}/sends`);
+  const row = page.getByTestId("send-row");
+  await expect(row).toContainText(subject);
+  await expect(row).toContainText(`${sequence.name}, step 1`);
+  await expect(row).toContainText(email);
+  await expect(page.getByTestId("link-all-sends")).toHaveAttribute(
+    "href",
+    `/admin/sends?subscriber_id=${subscriber}`,
+  );
+});
+
+test("an exact external ID finds its subscriber on the list, and a fragment finds nothing", async ({
+  page,
+}) => {
+  await signIn(page);
+  const externalId = unique("ext");
+  const email = `${unique("op")}@example.com`;
+  const made = await api(page, "/api/subscribers", "POST", {
+    email,
+    name: "External",
+    status: "enabled",
+    external_id: externalId,
+    lists: [],
+  });
+  expect(made.status).toBe(200);
+
+  await page.goto(`/admin/subscribers?search=${externalId}`);
+  await expect(page.getByText(email)).toBeVisible();
+  await page.goto(`/admin/subscribers?search=${externalId.slice(0, -2)}`);
+  await expect(page.getByText(email)).toHaveCount(0);
+});
+
+test("a refused sequence start is named by its sequence and its reason on the events tab", async ({
+  page,
+}) => {
+  await signIn(page);
+  const list = await audience(page);
+  const email = `${unique("op")}@example.com`;
+  const { sequence, event, subscriber } = await started(page, list, email);
+  const blocked = await api(page, `/api/subscribers/${subscriber}/blocklist`, "PUT", {});
+  expect(blocked.status).toBe(200);
+  const refused = await api(page, "/api/subscriber-events", "POST", {
+    subscriber: { email },
+    name: event,
+  });
+  expect(refused.status).toBe(200);
+
+  await page.goto(`/admin/subscribers/${subscriber}/events`);
+  const note = page.getByTestId("event-skipped").first();
+  await expect(note).toContainText(sequence.name);
+  await expect(note).toContainText("blocklisted");
+});
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the subscriber's tabs scroll inside their own row, and the page does not scroll sideways", async ({
+    page,
+  }) => {
+    await signIn(page);
+    const list = await audience(page);
+    const { subscriber } = await started(page, list, `${unique("op")}@example.com`);
+    await page.goto(`/admin/subscribers/${subscriber}/events`);
+    await expect(page.getByTestId("event-row").first()).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBe(0);
+  });
+});

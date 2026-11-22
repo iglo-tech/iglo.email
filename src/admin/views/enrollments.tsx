@@ -4,19 +4,15 @@
 import { Icon } from "@/admin/layout/icon";
 import type { AdminView } from "@/admin/page";
 import { Alert, Breadcrumbs, EmptyRow } from "@/admin/views/parts";
+import { sendKeys } from "@/admin/views/sends";
 import { sequenceStatusKeys } from "@/admin/views/sequences";
 import type { Translation } from "@/i18n/i18n";
 import { getID } from "@/server/validation";
 
 const keys = [
   ...sequenceStatusKeys,
+  ...sendKeys,
   "globals.messages.confirm",
-  "sequences.decision.failed",
-  "sequences.decision.queued",
-  "sequences.decision.sending",
-  "sequences.decision.sent",
-  "sequences.decision.skipped",
-  "sequences.decision.unknown",
   "sequences.entry.ended",
   "sequences.entry.endedReason",
   "sequences.entry.enrolled",
@@ -26,6 +22,7 @@ const keys = [
   "sequences.entry.stepRemovedReason",
   "sequences.entry.trigger",
   "sequences.entry.waiting",
+  "sequences.entry.waitingHeld",
   "sequences.kind.marketing",
   "sequences.kind.transactional",
   "sequences.subscriberNotFound",
@@ -344,9 +341,13 @@ export const enrollmentView: AdminView = ({ context, can }) => {
             <h3>{t.T("sequences.timeline")}</h3>
             <ol class="timeline" data-testid="timeline">
               <template x-for="(entry, i) in entries" x-bind:key="i">
-                <li data-testid="timeline-entry" x-bind:data-type="entry.type">
+                <li
+                  data-testid="timeline-entry"
+                  x-bind:data-type="entry.type"
+                  x-bind:data-variant="entryVariant(entry)"
+                >
                   <strong x-text="entryLabel(entry)"></strong>{" "}
-                  <span class="text-light text-8" x-text="niceDate(entry.at, true)"></span>
+                  <span class="text-light text-8" x-text="niceDate(entryAt(entry), true)"></span>
                   <template x-if="entry.type === 'trigger'">
                     <pre data-testid="timeline-data" x-text="json(entry.data)"></pre>
                   </template>
