@@ -1,7 +1,7 @@
 // A `backup` killed midway through a large snapshot: nothing that looks complete is left. Its own
 // file so that the slow cases run in a parallel worker beside the rest of test/backup/backup.test.ts.
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { commandLines } from "@/test/host-processes";
 import {
@@ -18,6 +18,7 @@ setDefaultTimeout(60_000);
 const PARTIAL = ".iglo-email-backup-partial-";
 let executable = "";
 let build = "";
+let seeded = "";
 let base = "";
 let dataDir = "";
 let server: Server | undefined;
@@ -26,7 +27,19 @@ beforeAll(async () => {
   build = temporaryDirectory();
   executable = await buildExecutable(build);
 }, 120_000);
-afterAll(() => removeDirectory(build));
+// The 300k rows are seeded once, in a data directory that is stopped cleanly. Each case copies it
+// into its own base directory, so every case still owns its data and kills its backup midway.
+beforeAll(async () => {
+  seeded = temporaryDirectory();
+  const template = join(seeded, "data");
+  mkdirSync(join(template, "uploads"), { recursive: true });
+  await (await startServer(executable, template)).stop();
+  seedSubscribers(template, 300_000);
+}, 120_000);
+afterAll(() => {
+  removeDirectory(build);
+  removeDirectory(seeded);
+});
 afterEach(async () => {
   await server?.stop();
   server = undefined;
@@ -42,9 +55,7 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const) {
   test(`${signal} midway leaves nothing that looks complete`, async () => {
     base = temporaryDirectory();
     dataDir = join(base, "data");
-    mkdirSync(join(dataDir, "uploads"), { recursive: true });
-    await (await startServer(executable, dataDir)).stop();
-    seedSubscribers(dataDir, 300_000);
+    cpSync(join(seeded, "data"), dataDir, { recursive: true });
     server = await startServer(executable, dataDir);
     const destination = join(base, "destination");
     mkdirSync(destination);
