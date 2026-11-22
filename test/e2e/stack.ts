@@ -19,7 +19,7 @@ export async function withStack(run: (stack: Stack) => Promise<number>): Promise
   const mailbox = await startMailbox();
   try {
     const api = await apiClient(production.origin);
-    const settings = await api.ok("/api/settings");
+    const settings = await api.ok<Record<string, any>>("/api/settings");
     await api.ok("/api/settings/smtp", "PUT", [
       {
         ...settings.smtp[0],
@@ -34,7 +34,7 @@ export async function withStack(run: (stack: Stack) => Promise<number>): Promise
       },
     ]);
     // Each test is its own client through this setting; see test/e2e/helpers.js.
-    const current = await api.ok("/api/settings");
+    const current = await api.ok<Record<string, any>>("/api/settings");
     await api.ok("/api/settings", "PUT", {
       ...current,
       "security.trusted_proxies": ["127.0.0.1"],

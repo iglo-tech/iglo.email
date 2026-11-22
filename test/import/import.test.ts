@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { listensOn, startOnFreePort } from "@/test/serve-port";
+import { asBody } from "@/test/read-body";
 
 const subscribe = (lists: number) => ({ mode: "subscribe", delim: ",", lists: [lists] });
 const running = async (dataDir: string) => {
@@ -73,10 +74,13 @@ async function launch(dataDir: string, port: number) {
   }
   throw new Error("Server did not start");
 }
+// The import status and the JSON envelope the routes answer with: the fields the tests assert, not a full schema.
+type ImportStatus = { status: string; name: string; imported: number; total: number };
+type Envelope<T> = { data: T };
 async function client(origin: string, credentials?: { user: string; token: string }) {
   const { user, token } = credentials ?? (await provisionApiUser(origin, admin));
   const authorization = `Basic ${btoa(`${user}:${token}`)}`;
-  const call = async (path: string, method = "GET", body?: unknown) => {
+  const call = async <T = unknown>(path: string, method = "GET", body?: unknown) => {
     const form = body instanceof FormData;
     const response = await fetch(`${origin}${path}`, {
       method,
@@ -87,16 +91,16 @@ async function client(origin: string, credentials?: { user: string; token: strin
       ...(body === undefined ? {} : { body: form ? body : JSON.stringify(body) }),
     });
     const text = await response.text();
-    return { status: response.status, text, body: text ? JSON.parse(text) : null };
+    return { status: response.status, text, body: text ? asBody<T>(JSON.parse(text)) : null };
   };
-  const post = (params: unknown, content: BlobPart, name = "file.csv") => {
+  const post = <T = unknown>(params: unknown, content: BlobPart, name = "file.csv") => {
     const data = new FormData();
     data.append("params", JSON.stringify(params));
     data.append("file", new File([content], name));
-    return call("/api/import/subscribers", "POST", data);
+    return call<T>("/api/import/subscribers", "POST", data);
   };
   const status = async () => {
-    const response = await call("/api/import/subscribers");
+    const response = await call<Envelope<ImportStatus>>("/api/import/subscribers");
     // A reply without the data envelope is a failure of its own; name it instead of reading `undefined`.
     if (response.body?.data === undefined) {
       throw new Error(`import status answered ${response.status}: ${response.text.slice(0, 300)}`);
@@ -116,17 +120,29 @@ async function client(origin: string, credentials?: { user: string; token: strin
     const started = await post(params, content, name);
     expect(started.status).toBe(200);
     const done = await settled();
-    const log = (await call("/api/import/subscribers/logs")).body.data as string;
+    const log = (await call<Envelope<string>>("/api/import/subscribers/logs")).body!.data;
     await call("/api/import/subscribers", "DELETE");
     return { ...done, log };
   };
   const list = async (name: string) =>
-    (await call("/api/lists", "POST", { name })).body.data.id as number;
+    (await call<Envelope<{ id: number }>>("/api/lists", "POST", { name })).body!.data.id;
   const subscriber = async (email: string) => {
     const query = encodeURIComponent(`subscribers.email = '${email}'`);
-    return (await call(`/api/subscribers?query=${query}`)).body.data.results[0];
+    return (
+      await call<
+        Envelope<{
+          results: Array<{
+            id: number;
+            uuid: string;
+            name: string;
+            attribs: Record<string, unknown>;
+          }>;
+        }>
+      >(`/api/subscribers?query=${query}`)
+    ).body!.data.results[0]!;
   };
-  const subscribers = async () => (await call("/api/subscribers?per_page=1")).body.data.total;
+  const subscribers = async () =>
+    (await call<Envelope<{ total: number }>>("/api/subscribers?per_page=1")).body!.data.total;
   return { authorization, call, post, status, settled, run, list, subscriber, subscribers };
 }
 const rows = (label: string, count: number) =>
@@ -300,7 +316,8 @@ describe("one server", () => {
     const settled = await c.settled();
     expect(settled.status).toBe("finished");
     expect(settled.name).toBe("subscribers.csv");
-    const logs = async () => (await c.call("/api/import/subscribers/logs")).body.data as string;
+    const logs = async () =>
+      (await c.call<Envelope<string>>("/api/import/subscribers/logs")).body!.data;
     const before = await logs();
     expect(before).toContain("skipping line 7");
     expect(before).toContain("skipping invalid attributes JSON on line 5");
@@ -309,25 +326,30 @@ describe("one server", () => {
     // B123 (D126): the wipe pairs the subscriber through a marketing send made for them, on a list
     // they are not on, so the send is skipped and mails nothing.
     const other = (
-      await c.call("/api/lists", "POST", { name: "Paired", type: "public", optin: "single" })
-    ).body.data.id as number;
+      await c.call<Envelope<{ id: number }>>("/api/lists", "POST", {
+        name: "Paired",
+        type: "public",
+        optin: "single",
+      })
+    ).body!.data.id;
     const template = (
-      await c.call("/api/templates", "POST", {
+      await c.call<Envelope<{ id: number }>>("/api/templates", "POST", {
         name: "paired",
         type: "tx",
         subject: "Paired",
         body: "<p>Paired</p>",
       })
-    ).body.data.id as number;
+    ).body!.data.id;
     const sent = (
-      await c.call("/api/tx", "POST", {
+      await c.call<Envelope<{ sends: Array<{ id: number }> }>>("/api/tx", "POST", {
         subscriber_id: id,
         template_id: template,
         kind: "marketing",
         list_id: other,
       })
-    ).body.data.sends[0].id as number;
-    const sendUuid = (await c.call(`/api/sends/${sent}`)).body.data.uuid as string;
+    ).body!.data.sends[0]!.id;
+    const sendUuid = (await c.call<Envelope<{ uuid: string }>>(`/api/sends/${sent}`)).body!.data
+      .uuid;
     const wiped = await fetch(`${origin}/m/${sendUuid}/wipe/${uuid}?confirm=true`, {
       method: "POST",
       headers: { "sec-fetch-site": "same-origin" },
@@ -377,10 +399,14 @@ describe("one server", () => {
 
   test("the list's date moves when an import finishes", async () => {
     const id = await c.list("import-date");
-    const before = (await c.call(`/api/lists/${id}`)).body.data.updated_at;
+    const before = (await c.call<Envelope<{ updated_at: string }>>(`/api/lists/${id}`)).body!.data
+      .updated_at;
     await Bun.sleep(5);
     await c.run(subscribe({ lists: [id] }), "email\ndated@example.test\n");
-    expect((await c.call(`/api/lists/${id}`)).body.data.updated_at > before).toBe(true);
+    expect(
+      (await c.call<Envelope<{ updated_at: string }>>(`/api/lists/${id}`)).body!.data.updated_at >
+        before,
+    ).toBe(true);
   });
 
   test("the log keeps its end when a file has more bad rows than it holds", async () => {
@@ -490,9 +516,9 @@ describe("one server", () => {
     );
     await Bun.sleep(100);
     expect(leftovers()).toHaveLength(1);
-    const second = await c.post(subscribe(), "email\n");
+    const second = await c.post<{ message: string }>(subscribe(), "email\n");
     expect(second.status).toBe(400);
-    expect(second.body.message).toContain("already running");
+    expect(second.body!.message).toContain("already running");
     abort.abort();
     await first;
     for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20)) {

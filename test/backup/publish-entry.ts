@@ -5,6 +5,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runBackup } from "@/backup/cli";
 import { flushChildArgument, runFlushChild } from "@/backup/snapshot";
+import { asBody } from "@/test/read-body";
 
 if (process.argv[2] === flushChildArgument) {
   await runFlushChild();
@@ -27,6 +28,6 @@ const actions: Record<string, () => void> = {
 try {
   runBackup(args, process.env, { beforePublish: actions[action!]! });
 } catch (error) {
-  console.error((error as Error).message);
+  console.error(asBody<Error>(error).message);
   process.exitCode = 1;
 }

@@ -2,6 +2,7 @@
 // (docs/design/05-sequences.md#conditions). It reads the fixture model, never SQL, and is
 // written from the documented type rules rather than from the compiler.
 import type { ModelSubscriber } from "@/test/conditions/fixture";
+import { asBody } from "@/test/read-body";
 
 const at = (value: string | null | undefined) => {
   if (!value) {
@@ -28,7 +29,7 @@ function lookup(root: Record<string, unknown>, path: string): unknown {
     if (!Object.hasOwn(current, segment)) {
       return missing;
     }
-    current = (current as Record<string, unknown>)[segment];
+    current = asBody<Record<string, unknown>>(current)[segment];
   }
   return current;
 }
@@ -90,45 +91,50 @@ export function referenceEvaluate(
   sql?: (fragment: string, subscriber: ModelSubscriber) => boolean,
 ): boolean {
   if ("all" in condition) {
-    return (condition.all as Array<Record<string, unknown>>).every((c) =>
+    return asBody<Array<Record<string, unknown>>>(condition.all).every((c) =>
       referenceEvaluate(c, subscriber, context, sql),
     );
   }
   if ("any" in condition) {
-    return (condition.any as Array<Record<string, unknown>>).some((c) =>
+    return asBody<Array<Record<string, unknown>>>(condition.any).some((c) =>
       referenceEvaluate(c, subscriber, context, sql),
     );
   }
   if ("not" in condition) {
-    return !referenceEvaluate(condition.not as Record<string, unknown>, subscriber, context, sql);
+    return !referenceEvaluate(
+      asBody<Record<string, unknown>>(condition.not),
+      subscriber,
+      context,
+      sql,
+    );
   }
   if ("sql" in condition) {
     if (!sql) {
       throw new Error("no sql model");
     }
-    return sql(condition.sql as string, subscriber);
+    return sql(asBody<string>(condition.sql), subscriber);
   }
   if ("list" in condition) {
-    const statuses = (condition.status as Array<string> | undefined) ?? [
+    const statuses = asBody<Array<string> | undefined>(condition.status) ?? [
       "unconfirmed",
       "confirmed",
     ];
     return subscriber.lists.some((m) => m.list === condition.list && statuses.includes(m.status));
   }
   if ("attr" in condition) {
-    const op = condition.op as string,
+    const op = asBody<string>(condition.op),
       value = condition.value;
     const actual =
       condition.attr === "status"
         ? subscriber.status
-        : lookup(subscriber.attribs, condition.attr as string);
+        : lookup(subscriber.attribs, asBody<string>(condition.attr));
     switch (op) {
       case "eq":
         return equals(actual, value);
       case "ne":
         return !equals(actual, value);
       case "in":
-        return (value as Array<unknown>).some((v) => equals(actual, v));
+        return asBody<Array<unknown>>(value).some((v) => equals(actual, v));
       case "exists":
         return actual !== missing && actual !== null;
       default:
@@ -136,15 +142,15 @@ export function referenceEvaluate(
     }
   }
   if ("event" in condition) {
-    const after = lowerBound(condition.since as string | undefined, context);
-    const where = (condition.where ?? {}) as Record<string, unknown>;
+    const after = lowerBound(asBody<string | undefined>(condition.since), context);
+    const where = asBody<Record<string, unknown>>(condition.where ?? {});
     const n = subscriber.events.filter(
       (e) =>
         e.name === condition.event &&
         (after === undefined || Date.parse(e.occurredAt) > after) &&
         Object.entries(where).every(([path, v]) => equals(lookup(e.data, path.slice(5)), v)),
     ).length;
-    const count = (condition.count ?? { gte: 1 }) as Record<string, number>;
+    const count = asBody<Record<string, number>>(condition.count ?? { gte: 1 });
     return (
       (count.gte === undefined || n >= count.gte) &&
       (count.lte === undefined || n <= count.lte) &&

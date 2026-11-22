@@ -21,10 +21,11 @@ import { createRealClock } from "@/clock";
 import { createEmailer } from "@/messaging/email";
 import { HttpError } from "@/server/response";
 import { startSink } from "@/test/tx/sink";
+import { asBody, readJson } from "@/test/read-body";
 
 const refused = async (response: Response) => {
   expect(response.status).toBe(503);
-  expect(((await response.json()) as { message: string }).message).toContain("held");
+  expect((await readJson<{ message: string }>(response)).message).toContain("held");
 };
 
 setDefaultTimeout(120_000);
@@ -66,12 +67,12 @@ const json = (value: unknown): RequestInit => ({
   body: JSON.stringify(value),
 });
 const put = (value: unknown): RequestInit => ({ ...json(value), method: "PUT" });
-const data = async (response: Response) => {
+const data = async <T = unknown>(response: Response): Promise<T> => {
   const text = await response.text();
   if (!response.ok) {
     throw new Error(`${response.url}: ${response.status} ${text}`);
   }
-  return (JSON.parse(text) as { data: any }).data;
+  return asBody<{ data: T }>(JSON.parse(text)).data;
 };
 const subjects = () => sink!.messages.map(({ data }) => /^Subject: (.*)$/m.exec(data)?.[1] ?? "");
 const recipients = (subject: string) =>
@@ -136,7 +137,7 @@ async function stack() {
   server = await startServer(executable, dataDir);
   const authorization = await provisionAuthorization(server.origin);
   const client = apiClient(server.origin, authorization);
-  const settings = await data(await client("/api/settings"));
+  const settings = await data<Record<string, any>>(await client("/api/settings"));
   await data(
     await client(
       "/api/settings/smtp",
@@ -162,11 +163,11 @@ async function stack() {
       json({ url: `http://127.0.0.1:${receiver.port}/`, events: ["subscriber.unsubscribed"] }),
     ),
   );
-  const list = await data(
+  const list = await data<{ id: number }>(
     await client("/api/lists", json({ name: "News", type: "public", optin: "single" })),
   );
   const subscriber = async (name: string, lists: Array<number> = [list.id]) =>
-    data(
+    data<{ id: number; uuid: string }>(
       await client(
         "/api/subscribers",
         json({
@@ -181,7 +182,7 @@ async function stack() {
   return { authorization, client, list, subscriber };
 }
 const campaign = async (client: Client, list: number, subject: string, sendAt?: string) =>
-  data(
+  data<{ id: number; uuid: string }>(
     await client(
       "/api/campaigns",
       json({
@@ -371,16 +372,16 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   const { authorization, client, list, subscriber } = await stack();
   const reader = await subscriber("reader");
   const leaver = await subscriber("leaver");
-  const doubleList = await data(
+  const doubleList = await data<{ id: number }>(
     await client("/api/lists", json({ name: "Confirmed", type: "public", optin: "double" })),
   );
-  const template = await data(
+  const template = await data<{ id: number }>(
     await client(
       "/api/templates",
       json({ name: "Step", type: "tx", subject: "Tx subject", body: "<p>Tx body</p>" }),
     ),
   );
-  const sequence = await data(
+  const sequence = await data<{ id: number }>(
     await client(
       "/api/sequences",
       json({
@@ -392,7 +393,7 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
       }),
     ),
   );
-  const sent = await data(
+  const sent = await data<{ sends: Array<{ id: number }> }>(
     await client(
       "/api/tx",
       json({ subscriber_id: reader.id, template_id: template.id, subject: "Before" }),
@@ -401,10 +402,10 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   await until(() => subjects().includes("Before"), "the send before the backup");
   // B123 (D126): the export pairs the reader through a marketing send made before the hold. The
   // list is one the reader is not on, so the send is skipped and mails nothing.
-  const unpaired = await data(
+  const unpaired = await data<{ id: number }>(
     await client("/api/lists", json({ name: "Paired", type: "public", optin: "single" })),
   );
-  const pairing = await data(
+  const pairing = await data<{ sends: Array<{ id: number }> }>(
     await client(
       "/api/tx",
       json({
@@ -415,11 +416,13 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
       }),
     ),
   );
-  const pairedSend = await data(await client(`/api/sends/${pairing.sends[0].id}`));
+  const pairedSend = await data<{ uuid: string }>(
+    await client(`/api/sends/${pairing.sends[0]!.id}`),
+  );
   const exportPath = `/m/${pairedSend.uuid}/export/${reader.uuid}`;
   // B123 (D126): the leaver's one-click pairs through a marketing send to them, made and delivered
   // before the hold; a held campaign has delivered nothing to anyone.
-  const leaverSend = await data(
+  const leaverSend = await data<{ sends: Array<{ id: number }> }>(
     await client(
       "/api/tx",
       json({
@@ -430,17 +433,21 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
       }),
     ),
   );
-  const leaverSendId = leaverSend.sends[0].id;
-  let leaverSendRow = await data(await client(`/api/sends/${leaverSendId}`));
+  const leaverSendId = leaverSend.sends[0]!.id;
+  let leaverSendRow = await data<{ status: string; uuid: string }>(
+    await client(`/api/sends/${leaverSendId}`),
+  );
   for (let i = 0; i < 1200 && leaverSendRow.status !== "sent"; i++) {
     await Bun.sleep(25);
-    leaverSendRow = await data(await client(`/api/sends/${leaverSendId}`));
+    leaverSendRow = await data<{ status: string; uuid: string }>(
+      await client(`/api/sends/${leaverSendId}`),
+    );
   }
   expect(leaverSendRow.status).toBe("sent");
-  const leaverSendUuid = leaverSendRow.uuid as string;
+  const leaverSendUuid = leaverSendRow.uuid;
   const running = await campaign(client, list.id, "Was running");
   const paused = await campaign(client, list.id, "Was paused");
-  const admin = await data(await client("/api/subscribers?per_page=1"));
+  const admin = await data<{ total: number }>(await client("/api/subscribers?per_page=1"));
   expect(admin.total).toBe(2);
   const output = join(base, "backup");
   await backupTo(output);
@@ -456,7 +463,7 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   // Each path that hands a message to the emailer. A refused one says so and leaves no row.
   const tx = { subscriber_id: reader.id, template_id: template.id };
   await refused(await held("/api/tx", json(tx)));
-  await refused(await held(`/api/sends/${sent.sends[0].id}/resend`, { method: "POST" }));
+  await refused(await held(`/api/sends/${sent.sends[0]!.id}/resend`, { method: "POST" }));
   await refused(
     await held(
       `/api/campaigns/${paused.id}/test`,
@@ -530,13 +537,15 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
     body: "List-Unsubscribe=One-Click",
   });
   expect(leaving.status).toBe(200);
-  const left = await data(await held(`/api/subscribers/${leaver.id}`));
-  expect(left.lists.map(({ subscription_status }: any) => subscription_status)).toEqual([
+  const left = await data<{ lists: Array<{ subscription_status: string }> }>(
+    await held(`/api/subscribers/${leaver.id}`),
+  );
+  expect(left.lists.map(({ subscription_status }) => subscription_status)).toEqual([
     "unsubscribed",
   ]);
 
   // The settings API can neither see nor clear a hold.
-  const settings = await data(await held("/api/settings"));
+  const settings = await data<Record<string, any>>(await held("/api/settings"));
   expect(JSON.stringify(settings)).not.toContain("restore.hold");
   await data(await held("/api/settings", put({ ...settings, "restore.hold": null })));
 
@@ -552,9 +561,9 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   expect(await login.text()).toContain("restore-hold");
 
   // Nothing was marked failed.
-  const queued = await data(await held("/api/sends?status=queued"));
+  const queued = await data<{ total: number }>(await held("/api/sends?status=queued"));
   expect(queued.total).toBeGreaterThanOrEqual(2);
-  expect((await data(await held("/api/sends?status=failed"))).total).toBe(0);
+  expect((await data<{ total: number }>(await held("/api/sends?status=failed"))).total).toBe(0);
 
   // A backup of a held install is held too, since the same moment.
   const second = join(base, "second");
@@ -578,14 +587,14 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
 
 test("the emailer's last gate refuses a push and a test before any connection", async () => {
   sink = await startSink();
-  const server = {
+  const server = asBody<Parameters<ReturnType<typeof createEmailer>["test"]>[0]>({
     enabled: true,
     host: "127.0.0.1",
     port: sink.port,
     auth_protocol: "none",
     tls_type: "none",
     max_conns: 1,
-  } as Parameters<ReturnType<typeof createEmailer>["test"]>[0];
+  });
   const emailer = createEmailer({
     clock: createRealClock(),
     settings: () => ({ smtp: [server], rootUrl: "http://localhost" }),

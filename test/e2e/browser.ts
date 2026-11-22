@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { withStack } from "@/test/e2e/stack";
 import { totp } from "@/test/e2e/totp";
 import { admin, check } from "@/test/worked-example/harness";
+import { asBody } from "@/test/read-body";
 
 const session = `m41-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
@@ -17,8 +18,9 @@ function browser(...args: Array<string>): string {
   }
   return run.stdout.toString().trim();
 }
-const value = (expression: string) => JSON.parse(browser("eval", expression));
-const path = () => value("location.pathname") as string;
+const value = <T = unknown>(expression: string): T =>
+  asBody<T>(JSON.parse(browser("eval", expression)));
+const path = () => value<string>("location.pathname");
 const see = (label: string, observed: unknown) =>
   console.log(`${label}: ${JSON.stringify(observed)}`);
 const shot = (name: string) => {
@@ -52,7 +54,7 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
     see("unported view", value('document.querySelector("main").innerText'));
 
     // Dashboard, with one campaign and list made through the screens' own API.
-    const made = value(`(async () => {
+    const made = value<number>(`(async () => {
       const csrf = document.cookie.split("; ").find((c) => c.startsWith("csrf=")).slice(5);
       const post = async (uri, body) => (await (await fetch(uri, { method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": csrf },
@@ -65,7 +67,7 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
         name: "Browser User", type: "user", status: "enabled", password_login: true,
         password: "browser-user-password", password2: "browser-user-password", user_role_id: 1 });
       return user.id;
-    })()`) as number;
+    })()`);
     browser("open", `${origin}/admin`);
     settle();
     see(
@@ -100,9 +102,7 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
     settle();
     browser("click", "input[role=switch]");
     browser("wait", "[data-testid=totp-secret]");
-    const secret = value(
-      'document.querySelector("[data-testid=totp-secret]").textContent',
-    ) as string;
+    const secret = value<string>('document.querySelector("[data-testid=totp-secret]").textContent');
     see(
       "enrolment shows",
       value(

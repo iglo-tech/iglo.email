@@ -3,6 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { withStack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
+import { asBody } from "@/test/read-body";
 
 const shot = (name: string) => {
   if (shots) {
@@ -22,11 +23,14 @@ function browser(...args: Array<string>): string {
   }
   return run.stdout.toString().trim();
 }
-const value = (expression: string) => JSON.parse(browser("eval", expression));
+const value = <T = unknown>(expression: string): T =>
+  asBody<T>(JSON.parse(browser("eval", expression)));
 const see = (label: string, observed: unknown) =>
   console.log(`${label}: ${JSON.stringify(observed)}`);
 const text = (selector: string) =>
-  value(`document.querySelector(${JSON.stringify(selector)})?.innerText.replace(/\\s+/g, " ")`);
+  value<string>(
+    `document.querySelector(${JSON.stringify(selector)})?.innerText.replace(/\\s+/g, " ")`,
+  );
 const settle = () => browser("wait", "--load", "networkidle");
 
 process.exitCode = await withStack(async ({ origin }) => {
@@ -44,7 +48,12 @@ process.exitCode = await withStack(async ({ origin }) => {
     browser("click", "button[type=submit]");
     settle();
 
-    const made = value(`(async () => {
+    const made = value<{
+      list: number;
+      template: number;
+      scripted: number;
+      rich: number;
+    }>(`(async () => {
       const csrf = document.cookie.split("; ").find((c) => c.startsWith("csrf=")).slice(5);
       const post = async (uri, body) => (await (await fetch(uri, { method: "POST",
         headers: { "content-type": "application/json", "x-csrf-token": csrf },

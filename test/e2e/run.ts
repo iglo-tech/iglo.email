@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { root, withStacks } from "@/test/e2e/stack";
 import type { Stack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
+import { asBody } from "@/test/read-body";
 
 const results = resolve(root, "dist/e2e-results");
 const requested = process.env.E2E_WORKERS ?? "2";
@@ -165,7 +166,9 @@ async function playwright(
   ]);
   const tests: Outcome["tests"] = [];
   try {
-    const parsed = JSON.parse(await readFile(report, "utf-8")) as { suites: Array<JsonSuite> };
+    const parsed = asBody<{ suites: Array<JsonSuite> }>(
+      JSON.parse(await readFile(report, "utf-8")),
+    );
     for (const suite of parsed.suites) {
       collect(suite, [], tests);
     }

@@ -8,6 +8,7 @@ import type { Condition } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
 import { fragmentSlot } from "@/subscribers/query-filter";
 import { conditionsFixture } from "@/test/conditions/fixture";
+import { asBody } from "@/test/read-body";
 
 const subscribers = Number(process.argv[2] ?? 100_000);
 const events = Number(process.argv[3] ?? 1_000_000);
@@ -111,7 +112,7 @@ try {
     }
     const compileUs = ((performance.now() - t) / compileRuns) * 1000;
     const compiled = compile(valid);
-    const plan = (
+    const plan = asBody<Array<{ detail: string }>>(
       f.readonly
         // The plan of the statement as the read-only child composes it.
         .query(
@@ -124,9 +125,7 @@ try {
           ...compiled.params.map((p) =>
             typeof p === "object" ? (p.slot === "after" ? "" : 1) : p,
           ),
-        ) as Array<{
-        detail: string;
-      }>
+        ),
     ).map((row) => row.detail);
     const runs = compiled.fragments.length ? 50 : 2000;
     const samples: Array<number> = [];

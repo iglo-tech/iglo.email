@@ -8,6 +8,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createQueryRunner, openReadOnly } from "@/subscribers/query-runner";
 import { TestClock } from "@/test/server/fixture";
+import { asBody } from "@/test/read-body";
 
 export interface ModelEvent {
   name: string;
@@ -42,9 +43,11 @@ export async function conditionsFixture(
   const lists: Array<number> = [];
 
   const addList = (name: string) => {
-    const row = db
-      .query("INSERT INTO lists (uuid, name, type) VALUES (?, ?, 'private') RETURNING id")
-      .get(crypto.randomUUID(), name) as { id: bigint };
+    const row = asBody<{ id: bigint }>(
+      db
+        .query("INSERT INTO lists (uuid, name, type) VALUES (?, ?, 'private') RETURNING id")
+        .get(crypto.randomUUID(), name),
+    );
     lists.push(Number(row.id));
     return Number(row.id);
   };
@@ -53,21 +56,23 @@ export async function conditionsFixture(
   ): ModelSubscriber => {
     serial++;
     const attribsJSON = input.attribsJSON ?? JSON.stringify(input.attribs ?? {});
-    const row = db
-      .query(
-        "INSERT INTO subscribers (uuid, email, name, attribs, status) VALUES (?, ?, ?, ?, ?) RETURNING id",
-      )
-      .get(
-        crypto.randomUUID(),
-        `s${serial}@example.test`,
-        `S ${serial}`,
-        attribsJSON,
-        input.status ?? "enabled",
-      ) as { id: bigint };
+    const row = asBody<{ id: bigint }>(
+      db
+        .query(
+          "INSERT INTO subscribers (uuid, email, name, attribs, status) VALUES (?, ?, ?, ?, ?) RETURNING id",
+        )
+        .get(
+          crypto.randomUUID(),
+          `s${serial}@example.test`,
+          `S ${serial}`,
+          attribsJSON,
+          input.status ?? "enabled",
+        ),
+    );
     const subscriber: ModelSubscriber = {
       id: row.id,
       status: input.status ?? "enabled",
-      attribs: JSON.parse(attribsJSON) as Record<string, unknown>,
+      attribs: asBody<Record<string, unknown>>(JSON.parse(attribsJSON)),
       lists: [],
       events: [],
     };

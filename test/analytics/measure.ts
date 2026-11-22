@@ -11,6 +11,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createListCounts } from "@/subscribers/list-counts";
 import { seed } from "@/test/analytics/seed";
+import { asBody } from "@/test/read-body";
 
 const report = (values: unknown) => process.stdout.write(`${JSON.stringify(values)}\n`);
 const stats = (times: Array<number>) => {
@@ -133,9 +134,9 @@ try {
     refreshes.push(performance.now() - before);
     const body = await reader.read("summary", []);
     const hold = performance.now();
-    const { data } = JSON.parse(new TextDecoder().decode(body)) as {
-      data: Record<string, unknown>;
-    };
+    const { data } = asBody<{ data: Record<string, unknown> }>(
+      JSON.parse(new TextDecoder().decode(body)),
+    );
     writeTransaction(db, () => {
       for (const [name, value] of Object.entries(data)) {
         db.query("UPDATE analytics_summaries SET data = ?, updated_at = ? WHERE name = ?").run(

@@ -293,10 +293,10 @@ test(`generated conditions agree with the reference evaluator (seed ${seed}, ${c
         `seed ${seed} case ${i}: ${JSON.stringify({ condition, subscriber: subscriber.id, context, expected, actual })}`,
       );
     }
-    outcomes[String(expected) as "true" | "false"]++;
+    outcomes[expected ? "true" : "false"]++;
     if (!("all" in condition || "any" in condition || "not" in condition)) {
       for (const feature of features(condition)) {
-        (featured[feature] ??= { true: 0, false: 0 })[String(expected) as "true" | "false"]++;
+        (featured[feature] ??= { true: 0, false: 0 })[expected ? "true" : "false"]++;
       }
     }
   }

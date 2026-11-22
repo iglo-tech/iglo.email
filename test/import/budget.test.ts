@@ -7,6 +7,7 @@ import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 import { MAX_BULK_DELIVERIES } from "@/webhooks/effects";
+import { asBody } from "@/test/read-body";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -42,10 +43,10 @@ async function open() {
     const url = receiver.url();
     const created = await f.json("/api/webhooks", "POST", { url, events, enabled });
     expect(created.status).toBe(200);
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   const created = await f.json("/api/lists", "POST", { name: "budget" });
-  return { f, hook, list: created.body.data.id as number };
+  return { f, hook, list: asBody<number>(created.body.data.id) };
 }
 /** `ROWS` subscribers on `list`, the first `live` of them confirmed and the rest unsubscribed. */
 function seed(f: TxFixture, list: number, live: number) {
@@ -73,7 +74,8 @@ async function post(f: TxFixture, params: unknown) {
   });
   expect(response.status).toBe(200);
 }
-const status = async (f: TxFixture) => (await f.json("/api/import/subscribers")).body.data;
+const status = async (f: TxFixture) =>
+  asBody<{ imported: number; status: string }>((await f.json("/api/import/subscribers")).body.data);
 /** Let batches through until `imported`, or the end. The import then waits on the clock. */
 async function release(f: TxFixture, imported = Infinity) {
   for (const deadline = Date.now() + 20_000; Date.now() < deadline; await Bun.sleep(1)) {
@@ -86,10 +88,10 @@ async function release(f: TxFixture, imported = Infinity) {
   throw new Error("Import did not reach the row");
 }
 const count = (f: TxFixture, sql: string) =>
-  Number((f.db.query(`SELECT count(*) AS n FROM ${sql}`).get() as { n: bigint }).n);
+  Number(asBody<{ n: bigint }>(f.db.query(`SELECT count(*) AS n FROM ${sql}`).get()).n);
 const deliveries = (f: TxFixture) => count(f, "webhook_deliveries");
 const logs = async (f: TxFixture) =>
-  (await f.json("/api/import/subscribers/logs")).body.data as string;
+  asBody<string>((await f.json("/api/import/subscribers/logs")).body.data);
 
 test("a membership change during an import cannot carry it over the budget", async () => {
   const { f, hook, list } = await open();
@@ -108,9 +110,9 @@ test("a membership change during an import cannot carry it over the budget", asy
   expect((await release(f, 100)).imported).toBe(100);
   expect(deliveries(f)).toBe(2000);
   // The file was admitted at 2,000 deliveries. Now every other row would really queue them.
-  const ids = f.db.query("SELECT id FROM subscribers WHERE id > 100").all() as Array<{
-    id: bigint;
-  }>;
+  const ids = asBody<Array<{ id: bigint }>>(
+    f.db.query("SELECT id FROM subscribers WHERE id > 100").all(),
+  );
   const added = await f.json("/api/subscribers/lists", "PUT", {
     ids: ids.map(({ id }) => Number(id)),
     action: "add",
