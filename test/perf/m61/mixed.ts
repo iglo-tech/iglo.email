@@ -555,8 +555,10 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
             delivered: tx.filter((r) => txMail.has(r.to)).length,
             deliveryMs: stats(
               tx
+                .values()
                 .filter((r) => txMail.has(r.to))
-                .map((r) => txMail.get(r.to)!.accepted - r.deadline),
+                .map((r) => txMail.get(r.to)!.accepted - r.deadline)
+                .toArray(),
             ),
           }
         : null,

@@ -241,7 +241,6 @@ export default defineConfig({
         "typescript/use-unknown-in-catch-callback-variable": "off",
         "no-empty": "off",
         "no-promise-executor-return": "off",
-        "quality/no-array-filter-map": "off",
         "quality/no-chained-type-assertions": "off",
         "quality/no-object-parameters": "off",
         "typescript/no-misused-spread": "off",

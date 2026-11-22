@@ -135,8 +135,10 @@ export function sign(n: Record<string, string>, key = good.key, version = "1") {
     "Type",
   ];
   const text = fields
+    .values()
     .filter((k) => n[k])
     .map((k) => `${k}\n${n[k]}\n`)
+    .toArray()
     .join("");
   const signer = createSign(version === "2" ? "RSA-SHA256" : "RSA-SHA1");
   return signer.update(text).sign(key, "base64");

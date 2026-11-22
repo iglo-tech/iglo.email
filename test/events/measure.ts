@@ -397,8 +397,10 @@ async function run(name: string, events: boolean, sends: boolean) {
         const ok = eventResults.filter((r) => r.status === 200);
         const lastEvent = Math.max(0, ...eventResults.map((r) => r.done));
         const delivery = txResults
+          .values()
           .filter((r) => smtp.received.has(r.subject))
-          .map((r) => smtp.received.get(r.subject)! - r.deadline);
+          .map((r) => smtp.received.get(r.subject)! - r.deadline)
+          .toArray();
         return {
           name,
           windowMs: WINDOW_MS,
