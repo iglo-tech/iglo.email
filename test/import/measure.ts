@@ -218,9 +218,8 @@ async function lockHolds() {
     runMigrations(db, directory, clock, productionMigrations);
     const lists = createListReferences(db);
     const webhooks = createWebhookStore(db, clock);
-    let store: ReturnType<typeof createSubscriberStore>;
     const effects = createWebhookEffects(webhooks, () => store);
-    store = createSubscriberStore(db, clock, lists, {
+    const store = createSubscriberStore(db, clock, lists, {
       blocklisted() {},
       unsubscribed() {},
       ...effects.subscriberEffects,

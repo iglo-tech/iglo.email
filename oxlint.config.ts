@@ -229,7 +229,6 @@ export default defineConfig({
       rules: {
         // Permanent: test runners, measure and reference scripts print their own command output, which AGENTS.md allows.
         "no-console": "off",
-        "prefer-const": "off",
         curly: "off",
         "typescript/array-type": "off",
         "unicorn/numeric-separators-style": "off",
