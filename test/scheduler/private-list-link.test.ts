@@ -5,6 +5,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
@@ -21,9 +22,12 @@ async function open() {
 test("a sequence's private-list mail: the revisited link says already unsubscribed, without naming the list", async () => {
   const f = await open();
   const address = "member@example.test";
-  const members = (
-    await f.json("/api/lists", "POST", { name: "Members", type: "private", optin: "single" })
-  ).body.data.id as number;
+  const membersCreated = await f.json("/api/lists", "POST", {
+    name: "Members",
+    type: "private",
+    optin: "single",
+  });
+  const members = asBody<number>(membersCreated.body.data.id);
   const template = await f.template("<p>Hi {{ subscriber.name }}</p>", "Hello");
   await f.sequence({
     name: "Members",
@@ -36,19 +40,17 @@ test("a sequence's private-list mail: the revisited link says already unsubscrib
     name: "order_paid",
   });
   expect(started.status).toBe(200);
-  const subscriber = started.body.data.subscriber_id as number;
+  const subscriber = asBody<number>(started.body.data.subscriber_id);
 
   const marketing = () =>
     f.sink.messages.filter((m) => m.to.includes(address) && m.data.includes("List-Unsubscribe:"))
       .length;
   await f.until(() => marketing() === 1, "the sequence's marketing mail");
 
-  const send = (
-    f.db.query("SELECT uuid FROM sends WHERE to_email = ? AND kind = 'marketing'").get(address) as {
-      uuid: string;
-    }
+  const send = asBody<{ uuid: string }>(
+    f.db.query("SELECT uuid FROM sends WHERE to_email = ? AND kind = 'marketing'").get(address),
   ).uuid;
-  const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid);
   const page = `/m/${send}/unsubscribe/${uuid}`;
   expect(await (await f.request(page)).text()).toContain(
     "Do you want to unsubscribe from this mailing list?",

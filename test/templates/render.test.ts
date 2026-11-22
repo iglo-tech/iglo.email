@@ -5,6 +5,7 @@ import { createRealClock } from "@/clock";
 import { createTranslation, Translation } from "@/i18n/i18n";
 import { TestClock } from "@/test/server/fixture";
 import { initialTemplates, systemTemplates } from "@/templates/builtins";
+import { asBody, readJson } from "@/test/read-body";
 
 function caller() {
   const renderer = createRenderer(createRealClock(), createTranslation());
@@ -24,7 +25,7 @@ function caller() {
             (
               await renderer.render({
                 body,
-                data: raw ? (data as string) : JSON.stringify(data),
+                data: raw ? asBody<string>(data) : JSON.stringify(data),
                 mode,
                 ...(layout === undefined ? {} : { layout }),
               })
@@ -210,7 +211,7 @@ test("all entry points reject non-string contexts without observing them", async
     123,
   ];
   for (const value of values) {
-    const data = value as string;
+    const data = asBody<string>(value);
     expect(() => renderer.renderSync({ body: "ok", mode: "plain", data })).toThrow();
     expect(() => snapshot.renderSync(data)).toThrow();
     await expect(renderer.render({ body: "ok", mode: "plain", data })).rejects.toThrow();
@@ -250,7 +251,7 @@ test("serialized input is bounded before decoding and still checks nested limits
   }
   expect(() => render(JSON.stringify({ nested }))).toThrow();
   expect(() =>
-    render(JSON.stringify({ a: Array.from({ length: 10 }, () => Array(1024).fill(0)) })),
+    render(JSON.stringify({ a: Array.from({ length: 10 }, () => Array<number>(1024).fill(0)) })),
   ).toThrow();
 });
 
@@ -325,7 +326,7 @@ test("built-ins render synthetic semantic content and clock stays instance-owned
         );
         return new Response(result.body);
       }
-      const name = path.slice(1) as keyof typeof systemTemplates;
+      const name = asBody<keyof typeof systemTemplates>(path.slice(1));
       return new Response(
         (
           await renderer.render({
@@ -548,7 +549,7 @@ test("encoded context and rendered subject use UTF-8 byte boundaries", async () 
     hostname: "127.0.0.1",
     port: 0,
     fetch: async (request) => {
-      const { value } = (await request.json()) as { value: string };
+      const { value } = await readJson<{ value: string }>(request);
       try {
         return new Response(
           (

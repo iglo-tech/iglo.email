@@ -8,6 +8,7 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { startReceiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
 
 const invalid = (response: { status: number; body: any }, label: string) => {
   check(response.status === 400, `${label}-status-${response.status}`);
@@ -89,7 +90,7 @@ export async function runMaintenanceContract(target: {
     });
     check(created.status === 200, `list-${name}`);
     owned.lists.push(created.body.data.id);
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   const subscriber = async (name: string, lists: Array<number>, status = "enabled") => {
     const created = await call("/api/subscribers", "POST", {
@@ -100,11 +101,13 @@ export async function runMaintenanceContract(target: {
     });
     check(created.status === 200, `subscriber-${name}`);
     owned.subscribers.push(created.body.data.id);
-    return created.body.data as { id: number; uuid: string; email: string };
+    return asBody<{ id: number; uuid: string; email: string }>(created.body.data);
   };
   const exists = async (id: number) => (await call(`/api/subscribers/${id}`)).status === 200;
   const memberships = async (id: number) =>
-    (await call(`/api/subscribers/${id}`)).body.data.lists.map((l: { id: number }) => l.id);
+    asBody<Array<{ id: number }>>((await call(`/api/subscribers/${id}`)).body.data.lists).map(
+      (l) => l.id,
+    );
   const apiUser = async (name: string, permissions: Array<string>) => {
     const role = await call("/api/roles/users", "POST", {
       name: `${name}-${marker}`,
@@ -132,7 +135,7 @@ export async function runMaintenanceContract(target: {
     const db = new Database(join(target.dataDir!, "iglo-email.db"));
     const receiver = startReceiver();
     try {
-      const count = (sql: string) => (db.query(sql).get() as { n: number }).n;
+      const count = (sql: string) => asBody<{ n: number }>(db.query(sql).get()).n;
       // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
       await call("/api/settings/webhooks.block_private_addresses", "PUT", false);
       const hook = await call("/api/webhooks", "POST", {
@@ -200,7 +203,10 @@ export async function runMaintenanceContract(target: {
         INSERT INTO subscribers (uuid, email, name, status)
         SELECT lower(hex(randomblob(16))), 'budget' || i || '@example.test', 'b', 'blocklisted' FROM n`);
       const over = await del("/api/maintenance/subscribers/blocklisted");
-      check(over.status === 400 && over.body.message.includes("50,001"), "budget-refused");
+      check(
+        over.status === 400 && asBody<string>(over.body.message).includes("50,001"),
+        "budget-refused",
+      );
       check(
         count("SELECT count(*) AS n FROM subscribers WHERE status = 'blocklisted'") === 50_001,
         "budget-no-write",
@@ -233,7 +239,7 @@ export async function runMaintenanceContract(target: {
     const logs = await call("/api/logs", "GET", undefined, reader);
     check(logs.status === 200 && Array.isArray(logs.body.data), "logs-shape");
     check(
-      logs.body.data.every((line: unknown) => typeof line === "string"),
+      asBody<Array<unknown>>(logs.body.data).every((line) => typeof line === "string"),
       "logs-strings",
     );
     for (const [method, path] of [
@@ -317,7 +323,7 @@ export async function runMaintenanceContract(target: {
     // Analytics, through the real pixel and redirect.
     await setting("privacy.individual_tracking", true);
     const settings = (await call("/api/settings")).body.data;
-    const rootUrl = (settings["app.root_url"] as string).replace(/\/+$/, "");
+    const rootUrl = asBody<string>(settings["app.root_url"]).replace(/\/+$/, "");
     if (!reference) {
       const smtp = [
         {
@@ -359,7 +365,7 @@ export async function runMaintenanceContract(target: {
     });
     check(created.status === 200, "campaign");
     owned.campaigns.push(created.body.data.id);
-    const campaign = created.body.data as { id: number; uuid: string };
+    const campaign = asBody<{ id: number; uuid: string }>(created.body.data);
     check(
       (await call(`/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" })).status ===
         200,

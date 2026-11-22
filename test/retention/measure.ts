@@ -20,6 +20,7 @@ import { createSubscriberStore } from "@/subscribers/store";
 import { createUserStore } from "@/users/store";
 import { createWebhookStore } from "@/webhooks/store";
 import retentionSql from "@/migrations/0014_retention.sql" with { type: "text" };
+import { asBody } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const rows = Number(process.argv[2] ?? 1_000_000);
@@ -35,7 +36,7 @@ const real = createRealClock();
 const started = Date.now();
 const iso = (ms: number) => new Date(ms).toISOString();
 const record = (entry: Record<string, unknown>) => {
-  const line = JSON.stringify({ at: new Date().toISOString(), ...entry }, (_key, value) =>
+  const line = JSON.stringify({ at: new Date().toISOString(), ...entry }, (_key, value: unknown) =>
     typeof value === "bigint" ? Number(value) : value,
   );
   console.log(line);
@@ -64,7 +65,7 @@ function payload(uuid: string) {
     "<p>" + "Lorem ipsum dolor sit amet, consectetur adipiscing. ".repeat(12) + "</p>";
   const body = `<html><body>${paragraph.repeat(30)}${anchor()}${anchor()}${anchor()}</body></html>`;
   return encodePayload(
-    {
+    asBody<never>({
       from: "News <news@example.test>",
       to: ["person@example.test"],
       subject: "Monthly newsletter",
@@ -73,7 +74,7 @@ function payload(uuid: string) {
       altBody: new TextEncoder().encode(paragraph),
       headers: {},
       attachments: [],
-    } as never,
+    }),
     null,
   );
 }
@@ -150,7 +151,7 @@ const seconds = seed();
 const size = () => {
   db.run("PRAGMA wal_checkpoint(TRUNCATE)");
   const pages = (name: string) =>
-    Number((db.query(`PRAGMA ${name}`).get() as Record<string, bigint>)[name]);
+    Number(asBody<Record<string, bigint>>(db.query(`PRAGMA ${name}`).get())[name]);
   return {
     fileMiB: +(statSync(join(directory, "iglo-email.db")).size / 2 ** 20).toFixed(1),
     freeMiB: +((pages("freelist_count") * pages("page_size")) / 2 ** 20).toFixed(1),
@@ -211,11 +212,13 @@ async function writer(until: () => boolean) {
     await Bun.sleep(Math.max(0, due - performance.now()));
     const begin = performance.now();
     lateness.push(begin - due);
-    sends.enqueue({
-      source: "tx",
-      kind: "transactional",
-      message: message(),
-    } as never);
+    sends.enqueue(
+      asBody<never>({
+        source: "tx",
+        kind: "transactional",
+        message: message(),
+      }),
+    );
     const claimed = writeTransaction(db, () => {
       const time = new Date();
       return sends.claimBatch(time, new Date(time.getTime() + 60_000), 1);
@@ -223,7 +226,7 @@ async function writer(until: () => boolean) {
     sends.finishAll(
       claimed.map(({ row }) => ({
         row,
-        outcome: { status: "accepted", rejected: [] } as never,
+        outcome: asBody<never>({ status: "accepted", rejected: [] }),
       })),
     );
     whole.push(performance.now() - due);
@@ -259,19 +262,19 @@ const owners: Record<string, Purge> = {
   sends: createSendCompaction(db),
 };
 const count = {
-  sessions: () => db.query("SELECT count(*) AS n FROM sessions").get() as { n: bigint },
+  sessions: () => asBody<{ n: bigint }>(db.query("SELECT count(*) AS n FROM sessions").get()),
   deliveries: () =>
-    db.query("SELECT count(*) AS n FROM webhook_deliveries").get() as {
-      n: bigint;
-    },
+    asBody<{ n: bigint }>(db.query("SELECT count(*) AS n FROM webhook_deliveries").get()),
   sends: () =>
-    db
-      .query(
-        `SELECT count(*) AS n FROM sends INDEXED BY idx_sends_compactable
+    asBody<{ n: bigint }>(
+      db
+        .query(
+          `SELECT count(*) AS n FROM sends INDEXED BY idx_sends_compactable
            WHERE payload IS NOT NULL AND status IN ('sent','failed','skipped','unknown')
              AND created_at < '${iso(started)}'`,
-      )
-      .get() as { n: bigint },
+        )
+        .get(),
+    ),
 };
 async function drain(step: string, names: Array<keyof typeof count>) {
   const before = names.map((name) => Number(count[name]().n));
@@ -309,9 +312,11 @@ const quiet = async (step: string) => {
 };
 await quiet("idle with new indexes");
 await real.sleep(500);
-const saved = db
-  .query(`SELECT sql FROM sqlite_master WHERE name IN (${indexes.map(() => "?").join()})`)
-  .all(...indexes) as Array<{ sql: string }>;
+const saved = asBody<Array<{ sql: string }>>(
+  db
+    .query(`SELECT sql FROM sqlite_master WHERE name IN (${indexes.map(() => "?").join()})`)
+    .all(...indexes),
+);
 for (const name of indexes) {
   db.run(`DROP INDEX ${name}`);
 }

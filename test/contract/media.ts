@@ -5,6 +5,7 @@ import { existsSync, lstatSync, readdirSync, renameSync, rmSync, symlinkSync } f
 import { join } from "node:path";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { imagePng, imagePngSize, imageGif, imageJpeg } from "@/test/media/images";
+import { asBody } from "@/test/read-body";
 
 const check = (condition: unknown, label: string) => {
   if (!condition) {
@@ -61,7 +62,7 @@ export async function runMediaContract(target: {
   const stored = async (name: string, content?: BlobPart, type?: string) => {
     const created = await upload(name, content, type);
     check(created.status === 200, `upload-${name}`);
-    return created.body.data as Record<string, any> & { id: number; filename: string };
+    return asBody<Record<string, any> & { id: number; filename: string }>(created.body.data);
   };
   const setting = async (key: string, value: unknown) => {
     check((await call(`/api/settings/${key}`, "PUT", value)).status === 200, `setting-${key}`);
@@ -103,7 +104,7 @@ export async function runMediaContract(target: {
       authorization: `Basic ${btoa(`${name}-${suffix}:${user.body.data.password}`)}`,
     };
   };
-  const originals = (await call("/api/settings")).body.data as Record<string, any>;
+  const originals = asBody<Record<string, any>>((await call("/api/settings")).body.data);
   const created: Array<number> = [];
   const keep = <T extends { id: number }>(item: T) => (created.push(item.id), item);
   try {
@@ -152,7 +153,7 @@ export async function runMediaContract(target: {
     );
     check(new URL(image.url).pathname === `/uploads/${name}`, `url-${image.url}`);
     if (reference) {
-      check(image.thumb_url.endsWith(`/uploads/thumb_${name}`), "thumb-url");
+      check(asBody<string>(image.thumb_url).endsWith(`/uploads/thumb_${name}`), "thumb-url");
     } else {
       check(image.thumb_url === image.url, "thumb-url");
     }
@@ -411,13 +412,16 @@ export async function runMediaContract(target: {
     for (const path of ["data-alias", ".", "..", "/", dataDir, "/tmp"]) {
       const refusal = await moveTo(path);
       check(refusal.status === 400, `upload-path-${path}-${refusal.status}`);
-      check(refusal.body.message.includes("data directory"), `upload-path-message-${path}`);
+      check(
+        asBody<string>(refusal.body.message).includes("data directory"),
+        `upload-path-message-${path}`,
+      );
       check((await raw("/uploads/iglo-email.db")).status === 404, `database-served-${path}`);
     }
     // A row has one location: the directory cannot change under it.
     const populated = await moveTo("custom/place");
     check(populated.status === 400, `upload-path-populated-${populated.status}`);
-    check(populated.body.message.includes("media"), "upload-path-reason");
+    check(asBody<string>(populated.body.message).includes("media"), "upload-path-reason");
     check((await moveTo("uploads")).status === 200, "upload-path-unchanged");
     const everything = (await call("/api/settings")).body.data;
     check((await call("/api/settings", "PUT", everything)).status === 200, "settings-round-trip");
@@ -459,7 +463,7 @@ export async function runMediaContract(target: {
       check((await served(image.url)).status === 404, "refused-serve");
       const refused = await upload(`refused-${suffix}.png`);
       check(refused.status === 503, `refused-upload-${refused.status}`);
-      check(refused.body.message.includes("data directory"), "refused-reason");
+      check(asBody<string>(refused.body.message).includes("data directory"), "refused-reason");
       check((await call("/api/media")).status === 200, "refused-listing");
       const list = await call("/api/lists", "POST", {
         name: `Refused ${suffix}`,

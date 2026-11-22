@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import type { CapturedMessage } from "@/test/perf/runtime-compat/smtp-expect";
 import type { ReferenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import { readJson } from "@/test/read-body";
 
 export interface Summary {
   ID: string;
@@ -35,10 +36,10 @@ export class Mailpit {
         start: String(start),
         limit: "100",
       });
-      const result = (await (await this.request(`/api/v1/search?${query}`)).json()) as {
+      const result = await readJson<{
         messages: Array<Summary> | null;
         messages_count: number;
-      };
+      }>(await this.request(`/api/v1/search?${query}`));
       const messages = result.messages ?? [];
       for (const message of messages) {
         assert.ok(
@@ -54,9 +55,9 @@ export class Mailpit {
     return found;
   }
   async message(id: string) {
-    return (await (
-      await this.request(`/api/v1/message/${encodeURIComponent(id)}`)
-    ).json()) as CapturedMessage;
+    return await readJson<CapturedMessage>(
+      await this.request(`/api/v1/message/${encodeURIComponent(id)}`),
+    );
   }
   async raw(id: string) {
     return await (await this.request(`/api/v1/message/${encodeURIComponent(id)}/raw`)).text();

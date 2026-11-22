@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { spawnGroup, stopGroup } from "@/test/reference/command";
 import type { GroupChild } from "@/test/reference/command";
 import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { asBody } from "@/test/read-body";
 
 async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
   if (child.exitCode === null && child.signalCode === null) {
@@ -227,7 +228,7 @@ export async function provisionApiUser(origin: string, admin: { user: string; pa
   }
   let data: { data?: { username?: unknown; password?: unknown } };
   try {
-    data = (await response.json()) as { data?: { username?: unknown; password?: unknown } };
+    data = asBody<{ data?: { username?: unknown; password?: unknown } }>(await response.json());
   } catch {
     throw new Error("Invalid production contract API credential");
   }

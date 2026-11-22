@@ -17,6 +17,7 @@ import { createTranslation } from "@/i18n/i18n";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { createWebhookStore } from "@/webhooks/store";
+import { asBody } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const executable = resolve(process.argv[2] ?? join(repository, "dist/iglo.email"));
@@ -50,18 +51,20 @@ async function overHttp() {
       const pid = Bun.spawnSync(["pgrep", "-f", dataDir]).stdout.toString().trim().split("\n")[0]!;
       const { user, token } = await provisionApiUser(origin, admin);
       const authorization = `Basic ${btoa(`${user}:${token}`)}`;
-      const json = async (path: string, method = "GET", body?: unknown) =>
-        (
-          await (
-            await fetch(`${origin}${path}`, {
-              method,
-              headers: { authorization, "content-type": "application/json" },
-              ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-            })
-          ).json()
-        ).data;
-      const list = await json("/api/lists", "POST", { name: "measure" });
-      const campaign = await json("/api/campaigns", "POST", {
+      const json = async <T = unknown>(path: string, method = "GET", body?: unknown): Promise<T> =>
+        asBody<T>(
+          (
+            await (
+              await fetch(`${origin}${path}`, {
+                method,
+                headers: { authorization, "content-type": "application/json" },
+                ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+              })
+            ).json()
+          ).data,
+        );
+      const list = await json<{ id: number }>("/api/lists", "POST", { name: "measure" });
+      const campaign = await json<{ id: number; uuid: string }>("/api/campaigns", "POST", {
         name: "measure",
         subject: "measure",
         lists: [list.id],
@@ -92,7 +95,9 @@ async function overHttp() {
       };
       const finish = async () => {
         while (true) {
-          const status = await json("/api/import/subscribers");
+          const status = await json<{ status: string; imported: number }>(
+            "/api/import/subscribers",
+          );
           if (status.status === "finished" || status.status === "failed") {
             return status;
           }
@@ -133,7 +138,7 @@ async function overHttp() {
       out.hwmAfterOverwriteMiB = +peak(pid).toFixed(0);
       // A loopback target, which the default refuses (D122): this operator turns the block off.
       await json("/api/settings/webhooks.block_private_addresses", "PUT", false);
-      const hook = await json("/api/webhooks", "POST", {
+      const hook = await json<{ id: number }>("/api/webhooks", "POST", {
         url: "http://127.0.0.1:9/hook",
         events: ["subscriber.blocklisted", "subscriber.unsubscribed"],
         enabled: false,
@@ -248,7 +253,7 @@ async function lockHolds() {
     });
     await importer.sweep();
     db.run("INSERT INTO lists (uuid, name, type, optin) VALUES ('l', 'l', 'private', 'single')");
-    const listId = (db.query("SELECT id FROM lists").get() as { id: bigint }).id;
+    const listId = asBody<{ id: bigint }>(db.query("SELECT id FROM lists").get()).id;
     const go = async (mode: "subscribe" | "blocklist", overwrite: boolean, rows: number) => {
       holds.length = 0;
       const slot = importer.reserve()!;

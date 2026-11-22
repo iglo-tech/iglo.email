@@ -4,6 +4,7 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { asBody } from "@/test/read-body";
 
 const rows = Number(process.argv[2] ?? 1_000_000);
 const batch = 100;
@@ -32,7 +33,7 @@ try {
     (SELECT key FROM r WHERE expires_at <= ?1 ORDER BY expires_at LIMIT ?2)`);
   const times = Array.from({ length: 200 }, () => milliseconds(() => bounded.run(now, batch)));
   const sorted = times.toSorted((a, b) => a - b);
-  const left = (db.query("SELECT count(*) AS n FROM r").get() as { n: number }).n;
+  const left = asBody<{ n: number }>(db.query("SELECT count(*) AS n FROM r").get()).n;
   const whole = milliseconds(() => db.query("DELETE FROM r WHERE expires_at <= ?").run(now));
   process.stdout.write(
     `${JSON.stringify({

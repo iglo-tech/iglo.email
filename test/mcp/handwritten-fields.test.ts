@@ -4,6 +4,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
 import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 import { HANDWRITTEN_COVERAGE } from "@/mcp/coverage";
 
 /** The API field a hand-written tool takes under its own argument name: `dir` is the `order` of getCampaigns. */
@@ -65,9 +66,10 @@ function fieldsOf(
       if (operation.operationId !== operationId) {
         continue;
       }
-      const query = (operation.parameters ?? [])
-        .filter((parameter: any) => parameter.in === "query")
-        .map((parameter: any) => parameter.name as string);
+      const parameters: Array<{ in: string; name: string }> = operation.parameters ?? [];
+      const query = parameters.flatMap((parameter) =>
+        parameter.in === "query" ? [parameter.name] : [],
+      );
       const schema: Schema | undefined = Object.values<any>(operation.requestBody?.content ?? {})[0]
         ?.schema;
       const structured =
@@ -142,10 +144,9 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       headers: { authorization: adminAuth, "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
     });
-    return (await response.json()) as {
-      result?: any;
-      error?: { code: number; message: string };
-    };
+    return asBody<{ result?: any; error?: { code: number; message: string } }>(
+      await response.json(),
+    );
   }
 
   async function callTool(name: string, args: Record<string, unknown> = {}) {
@@ -153,11 +154,11 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
     if (reply.error) {
       throw new Error(`${name}: ${reply.error.message}`);
     }
-    return reply.result as {
+    return asBody<{
       isError?: boolean;
       content: Array<{ type: string; text: string }>;
       structuredContent?: any;
-    };
+    }>(reply.result);
   }
 
   async function api(method: string, path: string, body?: unknown) {
@@ -172,17 +173,17 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
   async function createList(name: string, type: string, optin: string): Promise<number> {
     const created = await api("POST", "/api/lists", { name, type, optin });
     expect(created.status).toBe(200);
-    return created.json.data.id;
+    return asBody<number>(created.json.data.id);
   }
 
   test("tools/list: each query parameter and body field of a covered operation is an argument of its tool", async () => {
-    const document = (await (
-      await fetch(`${production.origin}/api/openapi.json`, { headers: adminHeaders })
-    ).json()) as Document;
-    const tools = (await rpc("tools/list")).result.tools as Array<{
-      name: string;
-      inputSchema: { properties?: Record<string, unknown> };
-    }>;
+    const response = await fetch(`${production.origin}/api/openapi.json`, {
+      headers: adminHeaders,
+    });
+    const document = asBody<Document>(await response.json());
+    const tools = asBody<
+      Array<{ name: string; inputSchema: { properties?: Record<string, unknown> } }>
+    >((await rpc("tools/list")).result.tools);
     const argumentNames = new Map(
       tools.map((tool) => [tool.name, Object.keys(tool.inputSchema.properties ?? {})]),
     );
@@ -271,7 +272,7 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       type: "public",
     });
     expect(ascending.isError).toBeFalsy();
-    const names = (ascending.structuredContent.data.results as Array<{ name: string }>).map(
+    const names = asBody<Array<{ name: string }>>(ascending.structuredContent.data.results).map(
       (list) => list.name,
     );
     expect(names).toEqual(["B79 Lists Alpha", "B79 Lists Mid", "B79 Lists Zeta"]);
@@ -283,7 +284,7 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       type: "public",
     });
     expect(
-      (descending.structuredContent.data.results as Array<{ name: string }>).map(
+      asBody<Array<{ name: string }>>(descending.structuredContent.data.results).map(
         (list) => list.name,
       ),
     ).toEqual(["B79 Lists Zeta", "B79 Lists Mid", "B79 Lists Alpha"]);
@@ -292,8 +293,10 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
       "GET",
       "/api/lists?query=B79%20Lists&order_by=name&order=asc&type=public",
     );
-    expect(rest.json.data.results.map((list: any) => list.id)).toEqual(
-      ascending.structuredContent.data.results.map((list: any) => list.id),
+    expect(asBody<Array<{ id: number }>>(rest.json.data.results).map((list) => list.id)).toEqual(
+      asBody<Array<{ id: number }>>(ascending.structuredContent.data.results).map(
+        (list) => list.id,
+      ),
     );
   });
 
@@ -312,7 +315,7 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
     }
 
     const names = async (dir: string) =>
-      (
+      asBody<Array<{ name: string }>>(
         (
           await callTool("list_campaigns", {
             query: "B79 Sort",
@@ -321,7 +324,7 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
             tag: ["b79-sort"],
             type: "regular",
           })
-        ).structuredContent.data.results as Array<{ name: string }>
+        ).structuredContent.data.results,
       ).map((campaign) => campaign.name);
     expect(await names("ASC")).toEqual(["B79 Sort Alpha", "B79 Sort Zulu"]);
     expect(await names("DESC")).toEqual(["B79 Sort Zulu", "B79 Sort Alpha"]);

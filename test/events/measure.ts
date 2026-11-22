@@ -9,6 +9,7 @@ import type { Socket } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { variantIdentity } from "@/test/perf/variant";
+import { asBody, readJson } from "@/test/read-body";
 
 const round = (n: number) => +n.toFixed(2);
 
@@ -176,7 +177,7 @@ async function run(name: string, events: boolean, sends: boolean) {
           return { status: response.status, body: text ? JSON.parse(text) : null };
         };
         const settings = await fetch(`${baseUrl}/api/settings`, { headers: { authorization } });
-        const current = (await settings.json()) as { data: { smtp: Array<object> } };
+        const current = await readJson<{ data: { smtp: Array<object> } }>(settings);
         const configured = await api("/api/settings/smtp", "PUT", [
           {
             ...current.data.smtp[0],
@@ -193,41 +194,48 @@ async function run(name: string, events: boolean, sends: boolean) {
         if (configured.status !== 200) {
           throw new Error("smtp settings");
         }
-        const template = (
-          await api("/api/templates", "POST", {
-            name: "measure",
-            type: "tx",
-            subject: "{{ data.s }}",
-            body: "<p>Order {{ data.s }} for {{ subscriber.name }}</p>",
-          })
-        ).body.data.id as number;
+        const template = asBody<number>(
+          (
+            await api("/api/templates", "POST", {
+              name: "measure",
+              type: "tx",
+              subject: "{{ data.s }}",
+              body: "<p>Order {{ data.s }} for {{ subscriber.name }}</p>",
+            })
+          ).body.data.id,
+        );
         // EVENTS_MEASURE_GRANT=1: every event also grants one single opt-in list (D99).
         const grantList = GRANT
-          ? ((
-              await api("/api/lists", "POST", {
-                name: "measure grant",
-                type: "public",
-                optin: "single",
-              })
-            ).body.data.id as number)
+          ? asBody<number>(
+              (
+                await api("/api/lists", "POST", {
+                  name: "measure grant",
+                  type: "public",
+                  optin: "single",
+                })
+              ).body.data.id,
+            )
           : null;
         const marketingCount = Math.ceil(WINDOW_MS / MARKETING_MS);
         let list = 0;
         const recipients: Array<number> = [];
         if (sends) {
-          list = (await api("/api/lists", "POST", { name: "measure", type: "public" })).body.data
-            .id as number;
+          list = asBody<number>(
+            (await api("/api/lists", "POST", { name: "measure", type: "public" })).body.data.id,
+          );
           // The 7-day frequency cap admits one marketing send per subscriber.
           for (let i = 0; i < marketingCount; i++) {
             recipients.push(
-              (
-                await api("/api/subscribers", "POST", {
-                  email: `mk${i}@example.test`,
-                  name: `Marketing ${i}`,
-                  lists: [list],
-                  preconfirm_subscriptions: true,
-                })
-              ).body.data.id as number,
+              asBody<number>(
+                (
+                  await api("/api/subscribers", "POST", {
+                    email: `mk${i}@example.test`,
+                    name: `Marketing ${i}`,
+                    lists: [list],
+                    preconfirm_subscriptions: true,
+                  })
+                ).body.data.id,
+              ),
             );
           }
         }
@@ -241,17 +249,13 @@ async function run(name: string, events: boolean, sends: boolean) {
         const reader = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
         const sample = () => {
           const statuses = Object.fromEntries(
-            (
-              reader
-                .query("SELECT status, count(*) AS n FROM sends GROUP BY status")
-                .all() as Array<{
-                status: string;
-                n: number;
-              }>
+            asBody<Array<{ status: string; n: number }>>(
+              reader.query("SELECT status, count(*) AS n FROM sends GROUP BY status").all(),
             ).map((row) => [row.status, row.n]),
           );
-          const stored = (reader.query("SELECT count(*) AS n FROM events").get() as { n: number })
-            .n;
+          const stored = asBody<{ n: number }>(
+            reader.query("SELECT count(*) AS n FROM events").get(),
+          ).n;
           return { statuses, stored };
         };
 
@@ -439,7 +443,7 @@ async function run(name: string, events: boolean, sends: boolean) {
           final,
           serverRssMiB: {
             start: rssStart,
-            peak: Math.max(...samples.map((s) => (s as { rss: number | null }).rss ?? 0)),
+            peak: Math.max(...samples.map((s) => asBody<{ rss: number | null }>(s).rss ?? 0)),
             end: serverRss(executable),
           },
           samples,

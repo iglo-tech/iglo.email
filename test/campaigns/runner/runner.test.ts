@@ -5,6 +5,7 @@ import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 import { createSends } from "@/messaging/sends";
 import { createMarketingPolicy } from "@/unsubscribe/policy";
+import { asBody } from "@/test/read-body";
 
 const smtpMs = (i: number) => ((i * 7) % 10) * 30;
 
@@ -442,7 +443,7 @@ test("an unsubscribe or blocklist during a batch stops that subscriber's message
 async function skippedOf(campaign: number): Promise<Array<[number, string]>> {
   const r = await f.json(`/api/campaigns/${campaign}/skipped`);
   expect(r.status).toBe(200);
-  return (r.body.data.results as Array<{ subscriber_id: number; reason: string }>)
+  return asBody<Array<{ subscriber_id: number; reason: string }>>(r.body.data.results)
     .map((row): [number, string] => [row.subscriber_id, row.reason])
     .sort((x, y) => x[0] - y[0]);
 }
@@ -897,9 +898,11 @@ test("a runner that lost its lease writes no cursor, count or delivery change", 
   f.runnerStore.settle(id, "A", sub, "sent", now);
   f.runnerStore.unclaim(id, "A", sub);
   expect(f.runnerStore.state(id)!.last_subscriber_id).toBe(before.last_subscriber_id);
-  const sent = f.db.query("SELECT sent FROM campaigns WHERE id = ?").get(id) as { sent: bigint };
+  const sent = asBody<{ sent: bigint }>(
+    f.db.query("SELECT sent FROM campaigns WHERE id = ?").get(id),
+  );
   expect(sent.sent).toBe(0n);
-  expect(deliveries(id).map((d) => (d as { status: string }).status)).toEqual([
+  expect(deliveries(id).map((d) => asBody<{ status: string }>(d).status)).toEqual([
     "claimed",
     "claimed",
   ]);
@@ -910,10 +913,16 @@ test("a runner cannot settle or unclaim a delivery that is no longer claimed", a
   f.db.run("UPDATE campaigns SET runner_lease = 'A' WHERE id = ?", [Number(id)]);
   const sub = BigInt(subs[0]!.id);
   f.runnerStore.settle(id, "A", sub, "sent", now);
-  expect(deliveries(id).map((d) => (d as { status: string }).status)).toEqual(["sent", "claimed"]);
+  expect(deliveries(id).map((d) => asBody<{ status: string }>(d).status)).toEqual([
+    "sent",
+    "claimed",
+  ]);
   f.runnerStore.settle(id, "A", sub, "failed", now);
   f.runnerStore.unclaim(id, "A", sub);
-  expect(deliveries(id).map((d) => (d as { status: string }).status)).toEqual(["sent", "claimed"]);
+  expect(deliveries(id).map((d) => asBody<{ status: string }>(d).status)).toEqual([
+    "sent",
+    "claimed",
+  ]);
 });
 
 test("the runner's own pause does not stop a campaign paused and resumed since", async () => {
@@ -937,12 +946,12 @@ const stealLease = (id: number) =>
     id,
   ]);
 const sentOf = (id: number) =>
-  (f.db.query("SELECT sent FROM campaigns WHERE id = ?").get(id) as { sent: bigint }).sent;
+  asBody<{ sent: bigint }>(f.db.query("SELECT sent FROM campaigns WHERE id = ?").get(id)).sent;
 const statuses = (id: number) =>
-  (
+  asBody<Array<{ status: string }>>(
     f.db
       .query("SELECT status FROM campaign_deliveries WHERE campaign_id = ? ORDER BY subscriber_id")
-      .all(id) as Array<{ status: string }>
+      .all(id),
   ).map((d) => d.status);
 
 test("a runner that loses its lease between batches stops sending and writes nothing more", async () => {

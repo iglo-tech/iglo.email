@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { day, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
@@ -34,8 +35,8 @@ async function oldPurchase(f: SchedulerFixture, email: string) {
   });
   expect(r.status).toBe(200);
   return {
-    eventId: r.body.data.event_id as number,
-    subscriberId: r.body.data.subscriber_id as number,
+    eventId: asBody<number>(r.body.data.event_id),
+    subscriberId: asBody<number>(r.body.data.subscriber_id),
   };
 }
 
@@ -52,7 +53,7 @@ test("D101: a manual enrollment's wait counts from its creation, not from the ol
     trigger_event_id: purchase.eventId,
   });
   expect(enrolled.status).toBe(200);
-  const id = enrolled.body.data.id as number;
+  const id = asBody<number>(enrolled.body.data.id);
   const created = Date.parse(enrolled.body.data.created_at);
   expect(Date.parse(enrolled.body.data.due_at)).toBe(created + 3 * day);
 
@@ -79,7 +80,7 @@ test("D101: a test enrollment keeps its 1-minute cap, counted from creation, on 
     trigger_event_id: purchase.eventId,
   });
   expect(tested.status).toBe(200);
-  const id = tested.body.data.id as number;
+  const id = asBody<number>(tested.body.data.id);
   const created = Date.parse(tested.body.data.created_at);
   expect(Date.parse(tested.body.data.due_at)).toBe(created + minute);
 

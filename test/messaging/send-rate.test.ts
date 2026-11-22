@@ -55,6 +55,7 @@ import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
 import { waitWall } from "@/test/wait";
 import type { WaitOptions } from "@/test/wait";
+import { asBody } from "@/test/read-body";
 
 const admin = { user: "rate-admin", password: "rate-admin-password" };
 const root = "http://fixture.test";
@@ -161,7 +162,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   let limiter = countGrants(
     createSendRateLimiter({
       clock,
-      rate: () => settingsStore.read()["messaging.max_send_rate"],
+      rate: () => asBody<number>(settingsStore.read()["messaging.max_send_rate"]),
     }),
   );
   settingsStore.onUpdate((next, current) => {
@@ -390,7 +391,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
             body:
               typeof body === "string"
                 ? body
-                : JSON.stringify(body, (_, v) => (typeof v === "bigint" ? Number(v) : v)),
+                : JSON.stringify(body, (_, v: unknown) => (typeof v === "bigint" ? Number(v) : v)),
           }),
     });
     const text = await res.text();
@@ -413,7 +414,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     if (created.status !== 200) {
       throw new Error(`template ${created.status}: ${JSON.stringify(created.body)}`);
     }
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
 
   // Waits for a sink or store condition, advancing the injected clock by `step` per unmet check. The
@@ -422,9 +423,9 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   // A timeout names the progress made: messages at the sink, the clock, and sends by status. A wait
   // that timed out under host load shows progress here; a stall shows the same counts unchanged.
   const sendRows = () => {
-    const rows = db
-      .query("SELECT status, COUNT(*) AS n FROM sends GROUP BY status ORDER BY status")
-      .all() as Array<{ status: string; n: number }>;
+    const rows = asBody<Array<{ status: string; n: number }>>(
+      db.query("SELECT status, COUNT(*) AS n FROM sends GROUP BY status ORDER BY status").all(),
+    );
     return rows.map((row) => `${row.status} ${row.n}`).join(", ") || "none";
   };
   const describeState = () =>
@@ -505,7 +506,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
       limiter = countGrants(
         createSendRateLimiter({
           clock,
-          rate: () => settingsStore.read()["messaging.max_send_rate"],
+          rate: () => asBody<number>(settingsStore.read()["messaging.max_send_rate"]),
         }),
       );
       emailer = createEmailer({

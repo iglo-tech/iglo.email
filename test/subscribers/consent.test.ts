@@ -2,6 +2,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
@@ -19,23 +20,21 @@ const form = (fields: Record<string, string | Array<string>>) =>
     .flatMap(([key, value]) => [value].flat().map((v) => `${key}=${encodeURIComponent(v)}`))
     .join("&");
 const membership = async (f: PublicFixture, id: number, list: number) =>
-  (await f.json(`/api/subscribers/${id}`)).body.data.lists.find(
-    (item: { id: number }) => item.id === list,
-  ) as { subscription_status: string; subscription_updated_at: string } | undefined;
+  asBody<Array<{ id: number; subscription_status: string; subscription_updated_at: string }>>(
+    (await f.json(`/api/subscribers/${id}`)).body.data.lists,
+  ).find((item) => item.id === list);
 const statuses = async (f: PublicFixture, id: number) =>
-  (
-    (await f.json(`/api/subscribers/${id}`)).body.data.lists as Array<{
-      subscription_status: string;
-    }>
+  asBody<Array<{ subscription_status: string }>>(
+    (await f.json(`/api/subscribers/${id}`)).body.data.lists,
   )
     .map((l) => l.subscription_status)
     .sort();
 const subscriberOf = async (f: PublicFixture, id: number) =>
-  (await f.json(`/api/subscribers/${id}`)).body.data as {
+  asBody<{
     status: string;
     updated_at: string;
     uuid: string;
-  };
+  }>((await f.json(`/api/subscribers/${id}`)).body.data);
 /** A confirmed member of two lists, a stale membership timestamp for each. */
 async function member(f: PublicFixture, email = "m@example.test") {
   const a = await f.list("A"),
@@ -167,11 +166,13 @@ test("the public form ignores an archived list", async () => {
     form({ email: "new@example.test", l: [live.uuid, old.uuid] }),
   );
   expect(response.status).toBe(200);
-  const rows = f.db
-    .query(
-      "SELECT list_id FROM subscriber_lists m JOIN subscribers s ON s.id = m.subscriber_id WHERE s.email = ?",
-    )
-    .all("new@example.test") as Array<{ list_id: number }>;
+  const rows = asBody<Array<{ list_id: number }>>(
+    f.db
+      .query(
+        "SELECT list_id FROM subscriber_lists m JOIN subscribers s ON s.id = m.subscriber_id WHERE s.email = ?",
+      )
+      .all("new@example.test"),
+  );
   expect(rows.map((r) => Number(r.list_id))).toEqual([live.id]);
   const only = await f.fresh(
     "/subscription/form",

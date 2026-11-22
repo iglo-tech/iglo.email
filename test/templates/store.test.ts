@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { ascending } from "@/test/order";
 import { provisionApiUser } from "@/test/contract/owned";
 import { startTemplateFixture } from "@/test/templates/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 test("primary references move to default, nullable archive references clear", async () => {
   const f = await startTemplateFixture();
@@ -24,7 +25,7 @@ test("primary references move to default, nullable archive references clear", as
       body: "<main>{{ content | raw }}</main>",
     });
     expect(created.status).toBe(200);
-    const row = ((await created.json()) as { data: { id: number } }).data;
+    const row = (await readJson<{ data: { id: number } }>(created)).data;
     expect((await call("/fixture/campaign", "POST", { template: String(row.id) })).status).toBe(
       200,
     );
@@ -61,7 +62,7 @@ test("historical missing default is not reseeded, and high IDs retain exact wire
     await call("/fixture/initialize", "POST");
     const before = (await (await call("/api/templates")).json()).data;
     expect(before.length).toBe(3);
-    expect(before.some((x: { is_default: boolean }) => x.is_default)).toBe(false);
+    expect(asBody<Array<{ is_default: boolean }>>(before).some((x) => x.is_default)).toBe(false);
     expect((await call("/api/templates/2", "DELETE")).status).toBe(400);
     expect((await call("/api/templates/1/default", "PUT")).status).toBe(200);
     await call("/fixture/sequence", "POST");
@@ -318,10 +319,11 @@ test("concurrent omitted-field updates and default/delete retain valid state", a
       call(`/api/templates/${campaign.id}`, "DELETE"),
     ]);
     expect([set.status, del.status].sort(ascending)).toEqual([200, 400]);
-    const rows = (await (await call("/api/templates")).json()).data as Array<{
-      id: number;
-      is_default: boolean;
-    }>;
+    const rows = (
+      await readJson<{ data: Array<{ id: number; is_default: boolean }> }>(
+        await call("/api/templates"),
+      )
+    ).data;
     expect(rows.filter((item) => item.is_default).length).toBe(1);
     expect(rows.some((item) => item.is_default && [1, campaign.id].includes(item.id))).toBe(true);
   } finally {

@@ -3,6 +3,7 @@ import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -22,14 +23,14 @@ export async function runSettingsCouncilFinal(target: {
       {
         method: body === undefined ? "GET" : "PUT",
         headers: { Authorization: auth, "Content-Type": "application/json" },
-        ...(body === undefined ? {} : { body: body as BodyInit }),
+        ...(body === undefined ? {} : { body: asBody<BodyInit>(body) }),
       },
       target.mode === "reference",
     );
   async function read() {
     const response = await request();
     check(response.status === 200, "read");
-    return (await response.json()).data as Record<string, any>;
+    return asBody<Record<string, any>>((await response.json()).data);
   }
   const original = await read();
   function candidate() {

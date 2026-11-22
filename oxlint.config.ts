@@ -223,7 +223,7 @@ export default defineConfig({
       rules: { "quality/no-conditional-empty-object-spread": "off" },
     },
     // Test code (test/, JavaScript specs included). Each rule off here is a directory-wide exception with its reason
-    // beside it. The three no-unsafe rules are B134h's: typed boundary helpers under test/ replace these casts.
+    // beside it.
     {
       files: ["test/**"],
       rules: {
@@ -239,11 +239,22 @@ export default defineConfig({
         "quality/no-unsafe-dictionary-type": "off",
         // Fixtures and request bodies built in tests never reach production output; a test that sends a key or leaves it out relies on each key's exact presence, which the spread states.
         "quality/no-conditional-empty-object-spread": "off",
-        "typescript/no-unsafe-call": "off", // B134h
-        "typescript/no-unsafe-return": "off", // B134h
-        "typescript/no-unsafe-type-assertion": "off", // B134h
       },
     },
+    // Exception, for the lead to decide at review (no-unsafe-call, no-unsafe-return). The JavaScript under test/ (the
+    // e2e specs, their helpers and the browser scripts) is untyped JavaScript run by Playwright and agent-browser, so its
+    // values are `any` there. Converting these files to TypeScript is a separate change, not a lint fix (D132).
+    {
+      files: ["test/**/*.js"],
+      rules: {
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-return": "off",
+      },
+    },
+    // Exception, for the lead to decide at review (no-unsafe-type-assertion). The two casts that type a parsed body
+    // for a test (readJson and asBody): the test names the shape and asserts the fields it reads, so the shape is the
+    // check, and no other file under test/ casts a parsed body.
+    { files: ["test/read-body.ts"], rules: { "typescript/no-unsafe-type-assertion": "off" } },
     // Exception, for the lead to decide at review (no-floating-promises). The m14 browser scripts are evaluated as an
     // expression by agent-browser, and their async IIFE is that expression's value, the promise the browser awaits.
     {

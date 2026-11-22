@@ -20,6 +20,7 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
+import { asBody, readJson } from "@/test/read-body";
 
 export async function startTemplateFixture(
   options: { saturateFirstPreview?: boolean; holdPreview?: boolean } = {},
@@ -101,7 +102,7 @@ export async function startTemplateFixture(
     };
     registerTemplateRoutes(router, templates, previewRenderer, auth);
     router.route("POST", "/fixture/campaign", async ({ request }) => {
-      const { template } = (await request.json()) as { template: string };
+      const { template } = await readJson<{ template: string }>(request);
       db.query(
         "INSERT INTO campaigns(uuid,name,subject,from_email,body,messenger,template_id,archive_template_id) VALUES(?,?,?,?,?,?,?,?)",
       ).run(
@@ -117,9 +118,9 @@ export async function startTemplateFixture(
       return ok(true);
     });
     router.route("GET", "/fixture/campaign", () => {
-      const row = db
-        .query("SELECT template_id, archive_template_id FROM campaigns LIMIT 1")
-        .get() as { template_id: bigint | null; archive_template_id: bigint | null };
+      const row = asBody<{ template_id: bigint | null; archive_template_id: bigint | null }>(
+        db.query("SELECT template_id, archive_template_id FROM campaigns LIMIT 1").get(),
+      );
       return ok({
         primary: row.template_id === null ? null : row.template_id.toString(),
         archive: row.archive_template_id === null ? null : row.archive_template_id.toString(),
@@ -127,10 +128,12 @@ export async function startTemplateFixture(
     });
     // Synthetic future-owner references, exposed only through this fixture.
     router.route("POST", "/fixture/history", async ({ request }) => {
-      const { template } = (await request.json()) as { template: string };
-      const sequence = db
-        .query("INSERT INTO sequences(uuid,name,trigger) VALUES(?,?,'{}') RETURNING id")
-        .get(crypto.randomUUID(), "Synthetic sequence") as { id: bigint };
+      const { template } = await readJson<{ template: string }>(request);
+      const sequence = asBody<{ id: bigint }>(
+        db
+          .query("INSERT INTO sequences(uuid,name,trigger) VALUES(?,?,'{}') RETURNING id")
+          .get(crypto.randomUUID(), "Synthetic sequence"),
+      );
       db.query(
         "INSERT INTO sequence_steps(uuid,sequence_id,position,wait,kind,template_id) VALUES(?,?,1,'0s','transactional',?)",
       ).run(crypto.randomUUID(), sequence.id, BigInt(template));
@@ -140,12 +143,12 @@ export async function startTemplateFixture(
       return ok(true);
     });
     router.route("GET", "/fixture/history", () => {
-      const sequence = db.query("SELECT template_id FROM sequence_steps LIMIT 1").get() as {
-        template_id: bigint | null;
-      };
-      const send = db.query("SELECT template_id FROM sends LIMIT 1").get() as {
-        template_id: bigint | null;
-      };
+      const sequence = asBody<{ template_id: bigint | null }>(
+        db.query("SELECT template_id FROM sequence_steps LIMIT 1").get(),
+      );
+      const send = asBody<{ template_id: bigint | null }>(
+        db.query("SELECT template_id FROM sends LIMIT 1").get(),
+      );
       return ok({
         sequence: sequence.template_id === null ? null : sequence.template_id.toString(),
         send: send.template_id === null ? null : send.template_id.toString(),

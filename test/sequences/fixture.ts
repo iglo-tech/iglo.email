@@ -10,6 +10,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
 import { createListReferences } from "@/lists/references";
+import { asBody } from "@/test/read-body";
 import { createListStore } from "@/lists/store";
 import { registerListRoutes } from "@/lists/routes";
 import { createListCounts } from "@/subscribers/list-counts";
@@ -322,16 +323,18 @@ export async function sequencesFixture(
     if (created.status !== 200) {
       throw new Error(`template ${created.status}`);
     }
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   const list = async (name: string) =>
-    (
-      await json("/api/lists", "POST", {
-        name,
-        type: "public",
-        optin: "single",
-      })
-    ).body.data.id as number;
+    asBody<number>(
+      (
+        await json("/api/lists", "POST", {
+          name,
+          type: "public",
+          optin: "single",
+        })
+      ).body.data.id,
+    );
   const subscriber = async (email: string, extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", {
       email,
@@ -341,13 +344,13 @@ export async function sequencesFixture(
     if (created.status !== 200) {
       throw new Error(`subscriber ${created.status}`);
     }
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   const event = (body: JsonObject, headers: Record<string, string> = sessionHeaders) =>
     json("/api/subscriber-events", "POST", body, headers);
   /** Rows of an owned table, for checks that nothing partial was written. */
   const count = (table: "sequences" | "sequence_steps" | "enrollments" | "events") =>
-    Number((db.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: bigint }).n);
+    Number(asBody<{ n: bigint }>(db.query(`SELECT count(*) AS n FROM ${table}`).get()).n);
   return {
     app,
     db,

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startSchemaFixture, tables } from "@/test/schema/fixture";
+import { readJson } from "@/test/read-body";
 
 async function call(origin: string, action: string) {
   const response = await fetch(origin, {
@@ -12,7 +13,7 @@ async function call(origin: string, action: string) {
   });
   return {
     status: response.status,
-    ...((await response.json()) as { result?: any; error?: string }),
+    ...(await readJson<{ result?: any; error?: string }>(response)),
   };
 }
 

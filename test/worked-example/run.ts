@@ -6,6 +6,10 @@ import { apiClient, check, startMailbox, startProduction } from "@/test/worked-e
 import type { Api, Mailbox } from "@/test/worked-example/harness";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import type { Receiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
+
+// A JSON row the worked example reads field by field: the fields it asserts, not a schema per route.
+type Row = Record<string, any>;
 
 /** Every shortened `P3D`/`P5D`/`P45D` wait. */
 const WAIT = "PT10S";
@@ -77,7 +81,7 @@ async function scenario(api: Api, mail: Mailbox, expected: Array<[string, string
   const { ok } = api;
 
   // --- Setup: SMTP to the sink, a short cap, templates, a marketing list and the sequences.
-  const settings = await ok("/api/settings");
+  const settings = await ok<Row>("/api/settings");
   await ok("/api/settings/smtp", "PUT", [
     {
       ...settings.smtp[0],
@@ -94,35 +98,45 @@ async function scenario(api: Api, mail: Mailbox, expected: Array<[string, string
   await ok("/api/settings/marketing.min_interval", "PUT", CAP);
   // The app's endpoint is on loopback, which the default refuses (D122): this operator turns the block off.
   await ok("/api/settings/webhooks.block_private_addresses", "PUT", false);
-  const { secret } = await ok("/api/webhooks", "POST", {
+  const { secret } = await ok<{ secret: string }>("/api/webhooks", "POST", {
     url: app.url(),
     events: ["subscriber.unsubscribed"],
   });
   const list = (
-    await ok("/api/lists", "POST", { name: "Product news", type: "public", optin: "single" })
-  ).id as number;
+    await ok<{ id: number }>("/api/lists", "POST", {
+      name: "Product news",
+      type: "public",
+      optin: "single",
+    })
+  ).id;
 
   const template = async (key: Key) => {
     const unsubscribe = marketing.has(key)
       ? ` <a href="{{ unsubscribe_url }}">Unsubscribe</a>`
       : "";
     return (
-      await ok("/api/templates", "POST", {
+      await ok<{ id: number }>("/api/templates", "POST", {
         name: subjects[key],
         type: "tx",
         subject: subjects[key],
         body: `<p>marker:${key} Hi {{ subscriber.attribs.first_name }} [{{ sequence.name }}] downloads={{ trigger.data.downloads }}${unsubscribe}</p>`,
       })
-    ).id as number;
+    ).id;
   };
-  const t = Object.fromEntries(
-    await Promise.all(
-      (Object.keys(subjects) as Array<Key>).map(async (k) => [k, await template(k)]),
+  const t = asBody<Record<Key, number>>(
+    Object.fromEntries(
+      await Promise.all(
+        asBody<Array<Key>>(Object.keys(subjects)).map(async (k) => [k, await template(k)]),
+      ),
     ),
-  ) as Record<Key, number>;
+  );
 
   const sequence = async (definition: Record<string, unknown>) =>
-    ok("/api/sequences", "POST", { status: "active", reentry: "never", ...definition });
+    ok<{ id: number }>("/api/sequences", "POST", {
+      status: "active",
+      reentry: "never",
+      ...definition,
+    });
   const tx = (key: Key, wait = "PT0S") => ({ wait, kind: "transactional", template_id: t[key] });
   const mk = (key: Key, wait: string, extra: Record<string, unknown> = {}) => ({
     wait,
@@ -190,7 +204,7 @@ async function scenario(api: Api, mail: Mailbox, expected: Array<[string, string
   // --- Helpers over the public API.
   const subscribers = new Map<string, number>();
   const person = async (name: string, plan: string) => {
-    const created = await ok("/api/subscribers", "POST", {
+    const created = await ok<{ id: number }>("/api/subscribers", "POST", {
       email: email(name),
       name,
       lists: [list],
@@ -205,35 +219,36 @@ async function scenario(api: Api, mail: Mailbox, expected: Array<[string, string
     data: Record<string, unknown> = {},
     occurredAt?: Date,
   ) =>
-    ok("/api/subscriber-events", "POST", {
-      subscriber: { email: email(name), attribs: { first_name: name } },
-      name: event,
-      data,
-      ...(occurredAt ? { occurred_at: occurredAt.toISOString() } : {}),
-      idempotency_key: `worked:${run}:${++keys}`,
-    }) as Promise<{
+    ok<{
       subscriber_id: number;
       enrollments: {
         started: Array<{ id: number; sequence_id: number }>;
         ended: Array<{ id: number; sequence_id: number; exit_reason: string }>;
       };
-    }>;
+    }>("/api/subscriber-events", "POST", {
+      subscriber: { email: email(name), attribs: { first_name: name } },
+      name: event,
+      data,
+      ...(occurredAt ? { occurred_at: occurredAt.toISOString() } : {}),
+      idempotency_key: `worked:${run}:${++keys}`,
+    });
   const startedIn = (response: Awaited<ReturnType<typeof event>>, sequence: { id: number }) =>
     response.enrollments.started.find((e) => e.sequence_id === sequence.id)?.id;
-  const enrollment = (id: number) => ok(`/api/enrollments/${id}`);
+  const enrollment = (id: number) => ok<Row>(`/api/enrollments/${id}`);
   const enrollmentsOf = async (name: string) =>
-    (await ok(`/api/enrollments?subscriber_id=${subscribers.get(name)}&per_page=50`))
-      .results as Array<{
-      id: number;
-      sequence_id: number;
-      status: string;
-      exit_reason: string | null;
-      due_at: string | null;
-    }>;
+    (
+      await ok<{ results: Array<Row> }>(
+        `/api/enrollments?subscriber_id=${subscribers.get(name)}&per_page=50`,
+      )
+    ).results;
   const membership = async (name: string) =>
-    (await ok(`/api/subscribers/${subscribers.get(name)}`)).lists.find(
-      (l: { id: number }) => l.id === list,
-    )?.subscription_status as string;
+    asBody<string>(
+      (
+        await ok<{ lists: Array<{ id: number; subscription_status: string }> }>(
+          `/api/subscribers/${subscribers.get(name)}`,
+        )
+      ).lists.find((l) => l.id === list)?.subscription_status,
+    );
   const receive = async (name: string, key: Key, timeoutMs?: number) => {
     const found = await mail.one(email(name), subjects[key], timeoutMs);
     check(found.body.includes(`marker:${key} Hi ${name}`), `${key} body marker for ${name}`);
@@ -448,7 +463,7 @@ async function scenario(api: Api, mail: Mailbox, expected: Array<[string, string
         (delivery) =>
           delivery.body.event === "subscriber.unsubscribed" &&
           delivery.body.data.subscriber.email === email(name) &&
-          delivery.body.data.list_ids.includes(list),
+          asBody<Array<number>>(delivery.body.data.list_ids).includes(list),
       ),
     ),
     "the app heard both unsubscribes and can sync its consent field",
@@ -483,7 +498,8 @@ async function scenario(api: Api, mail: Mailbox, expected: Array<[string, string
       w1now.status === "active" && Date.parse(w1now.due_at) > Date.now(),
       "w1's step 2 is still waiting when the process stops",
     );
-    const active = (await ok("/api/enrollments?status=active&per_page=100")).total;
+    const active = (await ok<{ total: number }>("/api/enrollments?status=active&per_page=100"))
+      .total;
     await production.stop();
     check(
       mail.find(email("r1"), subjects.failed2).length === 0,
@@ -565,14 +581,14 @@ async function scenario(api: Api, mail: Mailbox, expected: Array<[string, string
   await receive("d1", "welcome");
   const d1before = await enrollment(d1);
 
-  const current = await ok(`/api/sequences/${payment.id}`);
-  const edited = await ok(`/api/sequences/${payment.id}`, "PUT", {
+  const current = await ok<Row>(`/api/sequences/${payment.id}`);
+  const edited = await ok<Row>(`/api/sequences/${payment.id}`, "PUT", {
     ...current,
     steps: [current.steps[0], { ...current.steps[1], template_id: t.failedFinal, wait: "PT40S" }],
   });
   check(edited.steps[1].id === current.steps[1].id, "the edited step keeps its ID");
-  const welcomeNow = await ok(`/api/sequences/${welcome.id}`);
-  const withoutSetup = await ok(`/api/sequences/${welcome.id}`, "PUT", {
+  const welcomeNow = await ok<Row>(`/api/sequences/${welcome.id}`);
+  const withoutSetup = await ok<Row>(`/api/sequences/${welcome.id}`, "PUT", {
     ...welcomeNow,
     steps: [welcomeNow.steps[0], tx("tips", TIPS_WAIT)],
   });

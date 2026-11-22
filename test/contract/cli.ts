@@ -8,6 +8,7 @@ import { runEventsContract } from "@/test/contract/events";
 import { runSequencesContract } from "@/test/contract/sequences";
 import { runMaintenanceContract } from "@/test/contract/maintenance";
 import { runMediaContract } from "@/test/contract/media";
+import { asBody } from "@/test/read-body";
 import { runImportContract } from "@/test/contract/import";
 import { runWebhooksContract } from "@/test/contract/webhooks";
 import { runOpenApiContract } from "@/test/contract/openapi";
@@ -100,9 +101,9 @@ async function main(args: Array<string>, signal: AbortSignal): Promise<void> {
     const values = argumentsForRun(args.slice(1));
     const credentials = environmentCredentials(process.env);
     const target: ContractTarget = {
-      mode: values["--mode"] as Mode,
-      target: values["--target"] as TargetName,
-      profile: values["--profile"] as Profile,
+      mode: asBody<Mode>(values["--mode"]),
+      target: asBody<TargetName>(values["--target"]),
+      profile: asBody<Profile>(values["--profile"]),
       baseUrl:
         values["--base-url"] ??
         (values["--mode"] === "reference" ? process.env.REFERENCE_URL : undefined) ??

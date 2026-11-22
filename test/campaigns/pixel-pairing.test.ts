@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<RunnerFixture> = [];
 afterEach(async () => {
@@ -21,7 +22,7 @@ const dummy = "00000000-0000-0000-0000-000000000000";
 const body = '<p><a href="{{ unsubscribe_url }}">u</a></p>{{ track_view }}';
 
 const views = async (f: RunnerFixture, id: number) =>
-  (await f.json(`/api/campaigns/${id}`)).body.data.views as number;
+  asBody<number>((await f.json(`/api/campaigns/${id}`)).body.data.views);
 /** The view pixel path in a delivered message. */
 const pixelOf = (f: RunnerFixture, to: string) => {
   const push = f.pushes.find((p) => p.to === to)!;

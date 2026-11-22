@@ -12,6 +12,7 @@ import {
   startReceiver,
 } from "@/test/webhooks/receiver";
 import { verifyDelivery } from "@/test/webhooks/verify-delivery";
+import { asBody } from "@/test/read-body";
 
 const dummy = "00000000-0000-0000-0000-000000000000";
 const events = [
@@ -60,7 +61,7 @@ export async function runWebhooksContract(target: {
       return reader
         .query("SELECT payload FROM webhook_deliveries ORDER BY id")
         .all()
-        .map((row) => (row as { payload: string }).payload)
+        .map((row) => asBody<{ payload: string }>(row).payload)
         .join("\n");
     } finally {
       reader.close();
@@ -101,26 +102,29 @@ export async function runWebhooksContract(target: {
       (await call("/api/settings")).body.data["webhooks.block_private_addresses"] === true,
       "setting-default",
     );
-    const probeList = (
-      await call("/api/lists", "POST", { name: "probe", type: "public", optin: "single" })
-    ).body.data.id as number;
-    const probe = (
-      await call("/api/subscribers", "POST", {
-        email: "probe@example.test",
-        name: "probe",
-        lists: [probeList],
-      })
-    ).body.data.id as number;
+    const probeListCreated = await call("/api/lists", "POST", {
+      name: "probe",
+      type: "public",
+      optin: "single",
+    });
+    const probeList = asBody<number>(probeListCreated.body.data.id);
+    const probeCreated = await call("/api/subscribers", "POST", {
+      email: "probe@example.test",
+      name: "probe",
+      lists: [probeList],
+    });
+    const probe = asBody<number>(probeCreated.body.data.id);
     const probes: Array<number> = [];
     for (const url of [
       receiver.url(),
       `http://localhost:${receiver.port}/`,
       "http://169.254.169.254/latest/meta-data/",
     ]) {
-      probes.push(
-        (await call("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
-          .id as number,
-      );
+      const webhookCreated = await call("/api/webhooks", "POST", {
+        url,
+        events: ["subscriber.blocklisted"],
+      });
+      probes.push(asBody<number>(webhookCreated.body.data.id));
     }
     await call(`/api/subscribers/${probe}/blocklist`, "PUT", {});
     for (const id of probes) {
@@ -147,7 +151,7 @@ export async function runWebhooksContract(target: {
 
     const created = await call("/api/webhooks", "POST", { url: receiver.url(), events });
     check(created.status === 200 && /^[0-9a-f]{64}$/.test(created.body.data.secret), "create");
-    const { id, secret } = created.body.data as { id: number; secret: string };
+    const { id, secret } = asBody<{ id: number; secret: string }>(created.body.data);
     check(!JSON.stringify((await call("/api/webhooks")).body).includes(secret), "secret-hidden");
 
     const settings = (await call("/api/settings")).body.data;
@@ -166,18 +170,21 @@ export async function runWebhooksContract(target: {
     ]);
     await call("/api/settings/app.from_email", "PUT", ["Fixture <noreply@fixture.test>"]);
 
-    const list = (
-      await call("/api/lists", "POST", { name: "hooks", type: "public", optin: "single" })
-    ).body.data.id as number;
-    const subscriber = async (name: string, external?: string) =>
-      (
-        await call("/api/subscribers", "POST", {
-          email: `${name}@example.test`,
-          name,
-          lists: [list],
-          ...(external ? { external_id: external } : {}),
-        })
-      ).body.data as { id: number; uuid: string };
+    const listCreated = await call("/api/lists", "POST", {
+      name: "hooks",
+      type: "public",
+      optin: "single",
+    });
+    const list = asBody<number>(listCreated.body.data.id);
+    const subscriber = async (name: string, external?: string) => {
+      const created = await call("/api/subscribers", "POST", {
+        email: `${name}@example.test`,
+        name,
+        lists: [list],
+        ...(external ? { external_id: external } : {}),
+      });
+      return asBody<{ id: number; uuid: string }>(created.body.data);
+    };
 
     // One-click without a login; a repeat changes nothing, so it queues nothing.
     const oneClick = (uuid: string) =>
@@ -237,14 +244,13 @@ export async function runWebhooksContract(target: {
 
     // A failed send, with the send journal's own state.
     const failing = await subscriber("failing");
-    const template = (
-      await call("/api/templates", "POST", {
-        name: "hook",
-        type: "tx",
-        subject: "Hello",
-        body: "<p>hello</p>",
-      })
-    ).body.data.id as number;
+    const templateCreated = await call("/api/templates", "POST", {
+      name: "hook",
+      type: "tx",
+      subject: "Hello",
+      body: "<p>hello</p>",
+    });
+    const template = asBody<number>(templateCreated.body.data.id);
     await call("/api/tx", "POST", { subscriber_id: failing.id, template_id: template });
     await arrived("send.failed", 1);
     const failed = ofEvent("send.failed")[0]!.body.data;
@@ -256,18 +262,17 @@ export async function runWebhooksContract(target: {
     const wiped = await subscriber("wiped", "app-wiped-7");
     // B123 (D126): a wipe pairs the subscriber through a campaign the runner delivered to them. It
     // is made before the blocklist below, since a blocklisted subscriber gets no delivery.
-    const paired = (
-      await call("/api/campaigns", "POST", {
-        name: "wipe pairing",
-        subject: "wipe pairing",
-        lists: [list],
-        type: "regular",
-        content_type: "html",
-        messenger: "email",
-        from_email: "Fixture <noreply@fixture.test>",
-        body: "<p>Paired</p>",
-      })
-    ).body.data as { id: number; uuid: string };
+    const pairedCreated = await call("/api/campaigns", "POST", {
+      name: "wipe pairing",
+      subject: "wipe pairing",
+      lists: [list],
+      type: "regular",
+      content_type: "html",
+      messenger: "email",
+      from_email: "Fixture <noreply@fixture.test>",
+      body: "<p>Paired</p>",
+    });
+    const paired = asBody<{ id: number; uuid: string }>(pairedCreated.body.data);
     check(
       (await call(`/api/campaigns/${paired.id}/status`, "PUT", { status: "running" })).status ===
         200,
@@ -316,8 +321,10 @@ export async function runWebhooksContract(target: {
     const settled = async () => {
       const deadline = Date.now() + 10_000;
       for (;;) {
-        const rows = (await call(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results;
-        if (rows.every((row: { status: string }) => row.status === "delivered")) {
+        const rows = asBody<Array<{ status: string }>>(
+          (await call(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results,
+        );
+        if (rows.every((row) => row.status === "delivered")) {
           return rows;
         }
         check(Date.now() < deadline, "deliveries-settle");
@@ -326,7 +333,10 @@ export async function runWebhooksContract(target: {
     };
     const rows = await settled();
     check(rows.length === receiver.received.length, "one-delivery-each");
-    check(new Set(receiver.received.map((r) => r.body.id)).size === rows.length, "ids-unique");
+    const deliveredIds = asBody<Array<{ body: { id: unknown } }>>(receiver.received).map(
+      (r) => r.body.id,
+    );
+    check(new Set(deliveredIds).size === rows.length, "ids-unique");
     const bytes = stored();
     for (const value of ["wiped@example.test", "bulk-a@example.test", "app-bulk"]) {
       check(!bytes.includes(value), `cleared-${value}`);
@@ -412,7 +422,10 @@ export async function runWebhooksContract(target: {
     const over = await call("/api/subscribers/query/blocklist", "PUT", {
       query: "subscribers.email LIKE 'budget%'",
     });
-    check(over.status === 400 && over.body.message.includes("Narrow the selection"), "budget");
+    check(
+      over.status === 400 && asBody<string>(over.body.message).includes("Narrow the selection"),
+      "budget",
+    );
     check(
       (await call("/api/subscribers?per_page=1&status=blocklisted")).body.data.total ===
         blockedBefore,
@@ -432,9 +445,9 @@ export async function runWebhooksContract(target: {
       "restart-keeps-stored-false",
     );
     // D130: the rotation's window is stored, so after a restart the old secret still signs.
-    const kept = (await call("/api/webhooks")).body.data.results.find(
-      (hook: { id: number }) => hook.id === id,
-    );
+    const kept = asBody<{ results: Array<{ id: number; previous_secret_until: unknown }> }>(
+      (await call("/api/webhooks")).body.data,
+    ).results.find((hook) => hook.id === id)!;
     check(kept.previous_secret_until === until, "restart-keeps-window");
     const restarted = await subscriber("restarted");
     await call(`/api/subscribers/${restarted.id}`, "DELETE");

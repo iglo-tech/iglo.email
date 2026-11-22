@@ -2,6 +2,7 @@
 // MEASURE_PART=tx runs only the transactional path, which also exists before M2.4.
 import { createRealClock } from "@/clock";
 import { txFixture } from "@/test/tx/fixture";
+import { asBody } from "@/test/read-body";
 
 const link = (data: string) =>
   /http:\/\/fixture\.test(\/m\/[0-9a-f-]+\/link\/[0-9a-f-]+)/.exec(
@@ -52,9 +53,10 @@ const body =
 if (part === "all") {
   const f = await txFixture({ clock: createRealClock() });
   const template = await f.template(`${body}<a href="{{ unsubscribe_url }}">u</a>{{ track_view }}`);
-  const list = (
-    await f.json("/api/lists", "POST", { name: "measure", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "measure", type: "public", optin: "single" })).body
+      .data.id,
+  );
   const ids: Array<number> = [];
   for (let i = 0; i < N; i++) {
     ids.push(await f.subscriber(`m-${i}@example.test`, `M ${i}`, { lists: [list] }));
@@ -115,7 +117,7 @@ if (part === "all") {
     return stats(values);
   };
   const subscriberUuid = async (id: number) =>
-    (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+    asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
   const subs: Array<string> = [];
   for (const id of ids) {
     subs.push(await subscriberUuid(id));
@@ -135,7 +137,7 @@ if (part === "all") {
     ),
   };
   results.journalRows = Number(
-    (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n,
+    asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM sends").get()).n,
   );
   await f.close();
 }

@@ -1,6 +1,7 @@
 // Reference: listmonk cmd/lists.go, internal/core/lists.go and queries/lists.sql at 6fcd95f.
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 function check(condition: unknown, label: string): asserts condition {
   if (!condition) {
@@ -36,7 +37,7 @@ export async function runListsContract(target: {
     });
   async function create(name: string, fields: Record<string, unknown> = {}) {
     const response = await request("/api/lists", "POST", { name, ...fields });
-    const data = (await response.json()) as { data?: Record<string, any> };
+    const data = asBody<{ data?: Record<string, any> }>(await response.json());
     if (response.status === 200 && typeof data.data?.id === "number") {
       owned.push(data.data.id);
     }
@@ -48,8 +49,10 @@ export async function runListsContract(target: {
       `/api/lists?query=${encodeURIComponent(query)}&status=&per_page=all`,
     );
     check(response.status === 200, "list-search-status");
-    return ((await response.json()) as { data: { results: Array<Record<string, any>> } }).data
-      .results;
+    const page = asBody<{ data: { results: Array<Record<string, any>> } }>(
+      await response.json(),
+    ).data;
+    return page.results;
   }
   try {
     check(
@@ -85,9 +88,9 @@ export async function runListsContract(target: {
       tag: `\u0085${queryWhitespaceTag}\u0085`,
     });
     check(
-      (await (await request(`/api/lists?${nelQuery}`)).json()).data.results.some(
-        (row: any) => row.id === whitespaceRow.id,
-      ),
+      asBody<{ data: { results: Array<{ id: number }> } }>(
+        await (await request(`/api/lists?${nelQuery}`)).json(),
+      ).data.results.some((row) => row.id === whitespaceRow.id),
       "collection-NEL-is-Go-space",
     );
     // Raw requests retain duplicate JSON keys and XML element order.
@@ -109,10 +112,7 @@ export async function runListsContract(target: {
           body,
         },
       );
-      const value = (await response.json()) as {
-        data?: Record<string, any>;
-        message?: string;
-      };
+      const value = asBody<{ data?: Record<string, any>; message?: string }>(await response.json());
       if (method === "POST" && response.status === 200 && typeof value.data?.id === "number") {
         owned.push(value.data.id);
       }
@@ -592,10 +592,8 @@ export async function runListsContract(target: {
       bounded.id,
     );
     check(longUpdate.response.status === (target.mode === "reference" ? 200 : 400), "D35-tag-put");
-    const boundedRead = (
-      (await (await request(`/api/lists/${bounded.id}`)).json()) as {
-        data: Record<string, any>;
-      }
+    const boundedRead = asBody<{ data: Record<string, any> }>(
+      await (await request(`/api/lists/${bounded.id}`)).json(),
     ).data;
     check(
       target.mode === "reference"
@@ -610,7 +608,7 @@ export async function runListsContract(target: {
       `/api/lists?query=${encodeURIComponent(target.mode === "reference" ? `renamed-${suffix}` : bounded.name)}&tag=${encodeURIComponent(target.mode === "reference" ? "x".repeat(100) : limitTag)}`,
     );
     check(
-      ((await exact.json()) as { data: { results: Array<{ id: number }> } }).data.results.some(
+      asBody<{ data: { results: Array<{ id: number }> } }>(await exact.json()).data.results.some(
         (x) => x.id === bounded.id,
       ),
       "D35-tag-exact-filter",
@@ -689,7 +687,7 @@ export async function runListsContract(target: {
     const read = await request(`/api/lists/${list.id}`);
     check(
       read.status === 200 &&
-        ((await read.json()) as { data: { uuid: string } }).data.uuid === list.uuid,
+        asBody<{ data: { uuid: string } }>(await read.json()).data.uuid === list.uuid,
       "list-read",
     );
     for (const [query, expected, label] of [
@@ -708,7 +706,7 @@ export async function runListsContract(target: {
       description: "",
     });
     check(update.status === 200, "list-update");
-    const changed = ((await update.json()) as { data: Record<string, unknown> }).data;
+    const changed = asBody<{ data: Record<string, unknown> }>(await update.json()).data;
     check(
       changed.description === (target.mode === "reference" ? "description" : ""),
       "D33-description-clear",
@@ -729,7 +727,7 @@ export async function runListsContract(target: {
     const minimal = await request(`/api/lists?minimal=true&status=archived`);
     check(
       minimal.status === 200 &&
-        JSON.stringify(((await minimal.json()) as { data: unknown }).data) === "[]",
+        JSON.stringify(asBody<{ data: unknown }>(await minimal.json()).data) === "[]",
       "list-minimal-empty",
     );
     const second = await create(`m15 ${suffix} other`, {
@@ -741,11 +739,9 @@ export async function runListsContract(target: {
     const repeatedMinimal = await request(
       `/api/lists?minimal=&minimal=true&status=&status=archived`,
     );
-    const repeatedMinimalData = (
-      (await repeatedMinimal.json()) as {
-        data: { results: Array<{ id: number; subscriber_statuses: unknown }> };
-      }
-    ).data;
+    const repeatedMinimalData = asBody<{
+      data: { results: Array<{ id: number; subscriber_statuses: unknown }> };
+    }>(await repeatedMinimal.json()).data;
     check(
       repeatedMinimalData.results.some(
         (entry) => entry.id === second.id && entry.subscriber_statuses === null,
@@ -753,11 +749,9 @@ export async function runListsContract(target: {
       "list-repeated-minimal-status",
     );
     const filtered = await request(`/api/lists?query=${suffix}&status=archived&tag=one&tag=two`);
-    const result = (
-      (await filtered.json()) as {
-        data: { results: Array<{ id: number }>; total: number };
-      }
-    ).data;
+    const result = asBody<{
+      data: { results: Array<{ id: number }>; total: number };
+    }>(await filtered.json()).data;
     check(
       filtered.status === 200 && result.total === 1 && result.results[0]?.id === second.id,
       "list-filters",
@@ -773,7 +767,7 @@ export async function runListsContract(target: {
       name: "D82",
       lists: [consent.id],
     });
-    const memberId = ((await member.json()) as { data: { id: number } }).data.id;
+    const memberId = asBody<{ data: { id: number } }>(await member.json()).data.id;
     try {
       const toSingle = await request(`/api/lists/${consent.id}`, "PUT", {
         name: consent.name,
@@ -809,11 +803,9 @@ export async function runListsContract(target: {
       await request(`/api/subscribers/${memberId}`, "DELETE");
     }
     const emptyMinimal = await request(`/api/lists?minimal=true&status=archived`, "GET");
-    const minimalData = (
-      (await emptyMinimal.json()) as {
-        data: { results: Array<Record<string, unknown>>; total: number };
-      }
-    ).data;
+    const minimalData = asBody<{
+      data: { results: Array<Record<string, unknown>>; total: number };
+    }>(await emptyMinimal.json()).data;
     check(
       minimalData.results.some(
         (entry) =>
@@ -831,16 +823,9 @@ export async function runListsContract(target: {
       ["page=999", 999, 20],
     ] as const) {
       const response = await request(`/api/lists?query=${suffix}&${param}`);
-      const pageData = (
-        (await response.json()) as {
-          data: {
-            page: number;
-            per_page: number;
-            total: number;
-            results: Array<unknown>;
-          };
-        }
-      ).data;
+      const pageData = asBody<{
+        data: { page: number; per_page: number; total: number; results: Array<unknown> };
+      }>(await response.json()).data;
       check(
         response.status === 200 &&
           pageData.page === page &&
@@ -861,11 +846,9 @@ export async function runListsContract(target: {
         ...(tags === undefined ? {} : { tags }),
         description: null,
       });
-      const replacementData = (
-        (await replacement.json()) as {
-          data: { tags: Array<string>; description: string };
-        }
-      ).data;
+      const replacementData = asBody<{
+        data: { tags: Array<string>; description: string };
+      }>(await replacement.json()).data;
       check(
         replacement.status === 200 &&
           JSON.stringify(replacementData.tags) === "[]" &&
@@ -913,7 +896,7 @@ export async function runListsContract(target: {
     const overflowID = await request("/api/lists?id=-9223372036854775809", "DELETE");
     check(
       overflowID.status === 400 &&
-        ((await overflowID.json()) as { message: string }).message ===
+        asBody<{ message: string }>(await overflowID.json()).message ===
           'One or more IDs are invalid: strconv.Atoi: parsing "-9223372036854775809": value out of range',
       "list-negative-query-id-overflow",
     );
@@ -967,7 +950,7 @@ export async function runListsContract(target: {
     });
     check(
       formDelete.status === 400 &&
-        ((await formDelete.json()) as { message: string }).message ===
+        asBody<{ message: string }>(await formDelete.json()).message ===
           "One or more IDs are invalid: id or query required",
       "delete-body-selectors-ignored",
     );
@@ -993,14 +976,14 @@ export async function runListsContract(target: {
       permissions: [],
     });
     check(userRoleResponse.status === 200, "list-create-user-role");
-    const userRole = ((await userRoleResponse.json()) as { data: { id: number } }).data.id;
+    const userRole = asBody<{ data: { id: number } }>(await userRoleResponse.json()).data.id;
     roles.push(userRole);
     const listRoleResponse = await request("/api/roles/lists", "POST", {
       name: `m15-list-${suffix}`,
       lists: [{ id: list.id, permissions: ["list:get"] }],
     });
     check(listRoleResponse.status === 200, "list-create-list-role");
-    const listRole = ((await listRoleResponse.json()) as { data: { id: number } }).data.id;
+    const listRole = asBody<{ data: { id: number } }>(await listRoleResponse.json()).data.id;
     roles.push(listRole);
     const limitedResponse = await request("/api/users", "POST", {
       username: `m15-${suffix}`,
@@ -1010,11 +993,9 @@ export async function runListsContract(target: {
       list_role_id: listRole,
     });
     check(limitedResponse.status === 200, "list-create-limited-user");
-    const limited = (
-      (await limitedResponse.json()) as {
-        data: { id: number; username: string; password: string };
-      }
-    ).data;
+    const limited = asBody<{
+      data: { id: number; username: string; password: string };
+    }>(await limitedResponse.json()).data;
     users.push(limited.id);
     const limitedAuth = `Basic ${btoa(`${limited.username}:${limited.password}`)}`;
     check(
@@ -1070,11 +1051,9 @@ export async function runListsContract(target: {
       undefined,
       limitedAuth,
     );
-    const visibleData = (
-      (await visible.json()) as {
-        data: { total: number; results: Array<{ id: number }> };
-      }
-    ).data;
+    const visibleData = asBody<{
+      data: { total: number; results: Array<{ id: number }> };
+    }>(await visible.json()).data;
     check(
       visibleData.total === 1 &&
         visibleData.results.length === 1 &&
@@ -1082,11 +1061,9 @@ export async function runListsContract(target: {
       "list-scoped-collection",
     );
     const minimalVisible = await request("/api/lists?minimal=true", "GET", undefined, limitedAuth);
-    const minimalVisibleData = (
-      (await minimalVisible.json()) as {
-        data: { total: number; results: Array<{ id: number }> };
-      }
-    ).data;
+    const minimalVisibleData = asBody<{
+      data: { total: number; results: Array<{ id: number }> };
+    }>(await minimalVisible.json()).data;
     check(
       minimalVisibleData.total === 1 && minimalVisibleData.results[0]?.id === list.id,
       "list-scoped-minimal",
@@ -1165,8 +1142,8 @@ export async function runListsContract(target: {
       tags: [`m15-${suffix}`],
     });
     const selection = await request(`/api/lists?query=pony&tag=m15-${suffix}`);
-    const selected = (
-      (await selection.json()) as { data: { results: Array<{ id: number }> } }
+    const selected = asBody<{ data: { results: Array<{ id: number }> } }>(
+      await selection.json(),
     ).data.results.some((entry) => entry.id === deletionTarget.id);
     check(selected === (target.mode === "reference"), "D33-delete-preview-stemming");
     const deleteQuery = await request(`/api/lists?query=pony&tag=m15-${suffix}`, "DELETE");
@@ -1187,15 +1164,15 @@ export async function runListsContract(target: {
       ["invalid", [sortedLast.id, sortedFirst.id]],
     ] as const) {
       const sorted = await request(`/api/lists?query=sort-${suffix}&order_by=name&order=${order}`);
-      const ids = (
-        (await sorted.json()) as { data: { results: Array<{ id: number }> } }
+      const ids = asBody<{ data: { results: Array<{ id: number }> } }>(
+        await sorted.json(),
       ).data.results.map((item) => item.id);
       check(JSON.stringify(ids) === JSON.stringify(expected), `list-sort-name-${order}`);
     }
     // Deliberate difference (B80): order takes any case. Upstream's documented ASC sorts descending.
     const upperSort = await request(`/api/lists?query=sort-${suffix}&order_by=name&order=ASC`);
-    const upperIds = (
-      (await upperSort.json()) as { data: { results: Array<{ id: number }> } }
+    const upperIds = asBody<{ data: { results: Array<{ id: number }> } }>(
+      await upperSort.json(),
     ).data.results.map((item) => item.id);
     check(
       JSON.stringify(upperIds) ===
@@ -1209,11 +1186,9 @@ export async function runListsContract(target: {
     const repeatedSort = await request(
       `/api/lists?query=sort-${suffix}&order_by=&order_by=name&order=desc&per_page=&per_page=1&page=&page=2`,
     );
-    const repeatedSortData = (
-      (await repeatedSort.json()) as {
-        data: { page: number; per_page: number; results: Array<{ id: number }> };
-      }
-    ).data;
+    const repeatedSortData = asBody<{
+      data: { page: number; per_page: number; results: Array<{ id: number }> };
+    }>(await repeatedSort.json()).data;
     check(
       repeatedSortData.page === 2 &&
         repeatedSortData.per_page === 1 &&
@@ -1223,11 +1198,9 @@ export async function runListsContract(target: {
     const pageSorted = await request(
       `/api/lists?query=sort-${suffix}&order_by=name&per_page=1&page=2`,
     );
-    const pageSortedData = (
-      (await pageSorted.json()) as {
-        data: { total: number; results: Array<{ id: number }> };
-      }
-    ).data;
+    const pageSortedData = asBody<{
+      data: { total: number; results: Array<{ id: number }> };
+    }>(await pageSorted.json()).data;
     check(
       pageSortedData.total === 2 && pageSortedData.results[0]?.id === sortedLast.id,
       "list-sort-before-pagination",

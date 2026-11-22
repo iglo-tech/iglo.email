@@ -7,6 +7,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, admin } from "@/test/worked-example/harness";
 import type { Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 
 type ToolResult = {
   isError?: boolean;
@@ -32,7 +33,7 @@ describe("MCP template default fallback for a user without templates:get (B82)",
       body: JSON.stringify({ name: "B82 Template Writer", permissions: ["templates:manage"] }),
     });
     expect(roleResponse.status).toBe(200);
-    const roleId = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+    const roleId = asBody<{ data: { id: number } }>(await roleResponse.json()).data.id;
 
     const userResponse = await fetch(`${production.origin}/api/users`, {
       method: "POST",
@@ -45,8 +46,9 @@ describe("MCP template default fallback for a user without templates:get (B82)",
       }),
     });
     expect(userResponse.status).toBe(200);
-    const writer = ((await userResponse.json()) as { data: { username: string; password: string } })
-      .data;
+    const writer = asBody<{ data: { username: string; password: string } }>(
+      await userResponse.json(),
+    ).data;
     writerAuth = `token ${writer.username}:${writer.password}`;
   }, 60_000);
 
@@ -71,7 +73,7 @@ describe("MCP template default fallback for a user without templates:get (B82)",
     if (response.status !== 200) {
       throw new Error(`${name}: /api/mcp answered HTTP ${response.status}, expected 200`);
     }
-    return (await response.json()) as { result?: ToolResult; error?: { message: string } };
+    return asBody<{ result?: ToolResult; error?: { message: string } }>(await response.json());
   }
 
   /** Calls an MCP tool as the given API user and returns its result. */
@@ -80,7 +82,7 @@ describe("MCP template default fallback for a user without templates:get (B82)",
     if (reply.error) {
       throw new Error(`${name}: ${reply.error.message}`);
     }
-    return reply.result as ToolResult;
+    return asBody<ToolResult>(reply.result);
   }
 
   async function api(auth: string, method: string, path: string, body?: unknown) {
@@ -96,7 +98,9 @@ describe("MCP template default fallback for a user without templates:get (B82)",
   async function listedTemplates(): Promise<
     Array<{ id: number; name: string; is_default: boolean }>
   > {
-    return (await api(adminAuth, "GET", "/api/templates")).json.data;
+    return asBody<Array<{ id: number; name: string; is_default: boolean }>>(
+      (await api(adminAuth, "GET", "/api/templates")).json.data,
+    );
   }
 
   /** The IDs of every template that is the default, as the admin sees them. */

@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { limits } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
+import { asBody } from "@/test/read-body";
 
 const wide = (base: Record<string, unknown>, prefix: string) => {
   const values = new Map<string | symbol, unknown>(Object.entries(base));
@@ -58,8 +59,8 @@ describe("accepted shapes", () => {
     ];
     for (const example of examples) {
       const copy = ok(example);
-      expect(copy).toEqual(example as never);
-      expect(copy).not.toBe(example as never);
+      expect(copy).toEqual(asBody<never>(example));
+      expect(copy).not.toBe(asBody<never>(example));
     }
     const sql = { sql: "json_extract(subscribers.attribs, '$.credits_left') < 100" };
     expect(ok(sql, true)).toEqual(sql);

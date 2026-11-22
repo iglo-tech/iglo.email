@@ -3,6 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { withStack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
+import { asBody } from "@/test/read-body";
 
 const session = `m46-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
@@ -16,7 +17,8 @@ function browser(...args: Array<string>): string {
   }
   return run.stdout.toString().trim();
 }
-const value = (expression: string) => JSON.parse(browser("eval", expression));
+const value = <T = unknown>(expression: string): T =>
+  asBody<T>(JSON.parse(browser("eval", expression)));
 const see = (label: string, observed: unknown) =>
   console.log(`${label}: ${JSON.stringify(observed)}`);
 const text = (selector: string) =>

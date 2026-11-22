@@ -4,6 +4,7 @@
 // A source whose real output is over the 1 MiB limit is refused before `html()` runs.
 import { expect, test } from "bun:test";
 import { createMarkdownBudget, markdownOutputBound, renderMarkdown } from "@/templates/markdown";
+import { asBody } from "@/test/read-body";
 
 const seeded = (seed: number) => {
   let a = seed >>> 0;
@@ -40,7 +41,7 @@ function rendering(source: string): { refusal: string | null; htmlCalls: number 
       createMarkdownBudget(() => {}),
     );
   } catch (error) {
-    refusal = (error as Error).message;
+    refusal = asBody<Error>(error).message;
   } finally {
     markdown.html = html;
   }

@@ -4,6 +4,7 @@
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import type { Credentials } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 const check = (condition: unknown, label: string) => {
   if (!condition) {
@@ -46,11 +47,13 @@ export async function runEventsContract(target: {
       safeIntegers: true,
     });
     try {
-      return db
-        .query(
-          "SELECT id, subscriber_id, name, data, occurred_at, created_at FROM events ORDER BY id",
-        )
-        .all() as Array<{ id: bigint; subscriber_id: bigint; name: string; data: string }>;
+      return asBody<Array<{ id: bigint; subscriber_id: bigint; name: string; data: string }>>(
+        db
+          .query(
+            "SELECT id, subscriber_id, name, data, occurred_at, created_at FROM events ORDER BY id",
+          )
+          .all(),
+      );
     } finally {
       db.close();
     }
@@ -120,8 +123,9 @@ export async function runEventsContract(target: {
   );
   check(
     racing.every((r) => r.status === 200) &&
-      new Set(racing.map((r) => r.body.data.subscriber_id)).size === 1 &&
-      new Set(racing.map((r) => r.body.data.event_id)).size === 4,
+      new Set(racing.map((r) => asBody<{ subscriber_id: number }>(r.body.data).subscriber_id))
+        .size === 1 &&
+      new Set(racing.map((r) => asBody<{ event_id: number }>(r.body.data).event_id)).size === 4,
     "concurrent-create",
   );
 
@@ -170,8 +174,9 @@ export async function runEventsContract(target: {
   });
   check(
     batch.status === 200 &&
-      JSON.stringify(batch.body.data.results.map((r: { status: number }) => r.status)) ===
-        "[200,409,200,400]",
+      JSON.stringify(
+        asBody<Array<{ status: number }>>(batch.body.data.results).map((r) => r.status),
+      ) === "[200,409,200,400]",
     "batch",
   );
   const rows = stored();

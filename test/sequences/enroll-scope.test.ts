@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SequencesFixture } from "@/test/sequences/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
@@ -32,7 +33,7 @@ async function sequence(f: SequencesFixture, extra: JsonObject = {}) {
   if (created.status !== 200) {
     throw new Error(JSON.stringify(created.body));
   }
-  return created.body.data.id as number;
+  return asBody<number>(created.body.data.id);
 }
 
 /** A caller that may manage enrollments and read subscribers on list `a` only. */
@@ -45,7 +46,7 @@ async function scoped(f: SequencesFixture, list: number) {
 
 /** Enrollments of one subscriber, read by a caller that sees everything. */
 const enrollmentsOf = async (f: SequencesFixture, subscriber: number) =>
-  (await f.json(`/api/enrollments?subscriber_id=${subscriber}`)).body.data.total as number;
+  asBody<number>((await f.json(`/api/enrollments?subscriber_id=${subscriber}`)).body.data.total);
 
 test("D103: a scoped caller enrolls a subscriber on one of its lists", async () => {
   const f = await open();

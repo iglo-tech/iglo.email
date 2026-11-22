@@ -6,6 +6,7 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
+import { asBody } from "@/test/read-body";
 
 const headers = (n: number) => Array.from({ length: n }, (_, i) => ({ [`X-H-${i}`]: "v" }));
 
@@ -223,9 +224,9 @@ test("campaign unsubscribe changes only the campaign's lists, or blocklists", as
   });
   expect(manage.status).toBe(400);
   const statuses = async () =>
-    ((await f.json(`/api/subscribers/${ada.id}`)).body.data.lists as Array<any>).map(
-      (l) => l.subscription_status,
-    );
+    asBody<Array<{ subscription_status: string }>>(
+      (await f.json(`/api/subscribers/${ada.id}`)).body.data.lists,
+    ).map((l) => l.subscription_status);
   expect(await statuses()).toEqual(["unconfirmed", "unconfirmed"]);
   // A campaign that delivered nothing to her pairs nobody: the answer is the unpaired one (D126).
   const unknown = await f.request(`/subscription/${crypto.randomUUID()}/${ada.uuid}`, {
@@ -244,10 +245,9 @@ test("campaign unsubscribe changes only the campaign's lists, or blocklists", as
   expect(block.status).toBe(200);
   const after = (await f.json(`/api/subscribers/${ada.id}`)).body.data;
   expect(after.status).toBe("blocklisted");
-  expect(after.lists.map((l: any) => l.subscription_status)).toEqual([
-    "unsubscribed",
-    "unsubscribed",
-  ]);
+  expect(
+    asBody<Array<{ subscription_status: string }>>(after.lists).map((l) => l.subscription_status),
+  ).toEqual(["unsubscribed", "unsubscribed"]);
   const page = await f.request(path);
   expect(await page.text()).toContain("No subscriptions");
 });
@@ -443,9 +443,10 @@ test("campaign search and query deletion fold Unicode case", async () => {
   const krakow = await f.campaign({ name: "Kraków", subject: "Wiosna", lists: [news] });
   const other = await f.campaign({ name: "Gdańsk", subject: "s", lists: [news] });
   const found = async (query: string) =>
-    (
-      await f.json(`/api/campaigns?query=${encodeURIComponent(query)}&per_page=all`)
-    ).body.data.results.map((c: { id: number }) => c.id);
+    asBody<Array<{ id: number }>>(
+      (await f.json(`/api/campaigns?query=${encodeURIComponent(query)}&per_page=all`)).body.data
+        .results,
+    ).map((c) => c.id);
   expect(await found("KRAKÓW")).toEqual([krakow.id]);
   expect(await found("kraków")).toEqual([krakow.id]);
   expect(await found("ów wIOSNA")).toEqual([krakow.id]);
@@ -464,9 +465,10 @@ test("campaign search lowercases both sides like upstream ILIKE (İstanbul, ẞ)
   const gross = await f.campaign({ name: "GRO\u1E9E", subject: "s", lists: [news] });
   const other = await f.campaign({ name: "Izmir", subject: "s", lists: [news] });
   const found = async (query: string) =>
-    (
-      await f.json(`/api/campaigns?query=${encodeURIComponent(query)}&per_page=all`)
-    ).body.data.results.map((c: { id: number }) => c.id);
+    asBody<Array<{ id: number }>>(
+      (await f.json(`/api/campaigns?query=${encodeURIComponent(query)}&per_page=all`)).body.data
+        .results,
+    ).map((c) => c.id);
   expect(await found("istanbul")).toEqual([istanbul.id]);
   expect(await found("\u0130STANBUL")).toEqual([istanbul.id]);
   expect(await found("gro\u00DF")).toEqual([gross.id]);
@@ -505,9 +507,10 @@ test("order_by=status follows upstream's status enum rank across pages", async (
   await make("running", "running");
   await make("draft");
   const page = async (order: string, n: number) =>
-    (
-      await f.json(`/api/campaigns?order_by=status&order=${order}&per_page=2&page=${n}`)
-    ).body.data.results.map((c: { status: string }) => c.status);
+    asBody<Array<{ status: string }>>(
+      (await f.json(`/api/campaigns?order_by=status&order=${order}&per_page=2&page=${n}`)).body.data
+        .results,
+    ).map((c) => c.status);
   const rank = ["draft", "running", "scheduled", "paused", "cancelled", "finished"];
   const asc = [...(await page("asc", 1)), ...(await page("asc", 2)), ...(await page("asc", 3))];
   expect(asc).toEqual(rank);

@@ -9,6 +9,7 @@ import type { LogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
+import { asBody } from "@/test/read-body";
 
 const REFUSED = "refused@example.test";
 const DELIVERED = "delivered@example.test";
@@ -55,7 +56,7 @@ async function captureStderr(run: () => Promise<void>) {
   const written: Array<string> = [];
   const original = console.error;
   console.error = (...parts: Array<unknown>) => {
-    written.push(String((parts[1] as Error | undefined)?.message ?? parts[0]));
+    written.push(String(asBody<Error | undefined>(parts[1])?.message ?? parts[0]));
   };
   try {
     await run();
@@ -68,7 +69,7 @@ async function captureStderr(run: () => Promise<void>) {
 const logLines = async (f: CampaignsFixture) => {
   const response = await f.json("/api/logs");
   expect(response.status).toBe(200);
-  return response.body.data as Array<string>;
+  return asBody<Array<string>>(response.body.data);
 };
 
 async function testCampaign(f: CampaignsFixture, to: string) {

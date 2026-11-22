@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<QueryFixture> = [];
 afterEach(async () => {
@@ -21,12 +22,14 @@ const forms = (external: string) =>
 test("D101: a list-scoped token gets 404 for an absent external ID and keeps 403 out of scope", async () => {
   const f = await queryFixture();
   fixtures.push(f);
-  const listA = (
-    await f.json("/api/lists", "POST", { name: "Scope A", type: "public", optin: "single" })
-  ).body.data.id as number;
-  const listB = (
-    await f.json("/api/lists", "POST", { name: "Scope B", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const listA = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "Scope A", type: "public", optin: "single" })).body
+      .data.id,
+  );
+  const listB = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "Scope B", type: "public", optin: "single" })).body
+      .data.id,
+  );
   const inside = await f.json("/api/subscribers", "POST", {
     email: "inside@example.test",
     name: "Inside",

@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { eventsFixture } from "@/test/events/fixture";
 import type { EventsFixture } from "@/test/events/fixture";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
@@ -30,7 +31,7 @@ async function make(f: EventsFixture, body: Record<string, unknown>) {
     ...body,
   });
   expect(r.status).toBe(200);
-  return r.body.data.id as number;
+  return asBody<number>(r.body.data.id);
 }
 
 test("an address held by a subscriber with no external_id is claimed, keeping lists and history", async () => {

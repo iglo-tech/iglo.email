@@ -1,3 +1,5 @@
+import { readJson } from "@/test/read-body";
+
 interface Delivery {
   method: string;
   headers: Record<string, string>;
@@ -33,7 +35,7 @@ export function startReceiver() {
       }
       if (path === "/status" && request.method === "PUT") {
         try {
-          const input = (await request.json()) as { status?: unknown };
+          const input = await readJson<{ status?: unknown }>(request);
           if (
             typeof input.status !== "number" ||
             !Number.isInteger(input.status) ||

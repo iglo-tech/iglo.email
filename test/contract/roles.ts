@@ -2,6 +2,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import type { ErrorCode } from "@/server/error-codes";
 import type { AuthTarget } from "@/test/contract/auth";
+import { asBody } from "@/test/read-body";
 
 function responseCookie(response: Response, name: string): string {
   return (
@@ -60,7 +61,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
   async function create(kind: "users" | "lists", body: unknown): Promise<number> {
     const response = await request(`/api/roles/${kind}`, "POST", body);
     check(response.status === 200, `role-create-${kind}`);
-    const data = ((await response.json()) as { data: { id: number } }).data;
+    const data = asBody<{ data: { id: number } }>(await response.json()).data;
     const row: Record<string, unknown> = data;
     const keys =
       kind === "users"
@@ -105,21 +106,19 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     const list = await create("lists", { name: `m14-list-${suffix}`, lists: [] });
     const listResource = await request("/api/lists", "POST", { name: `m14-owned-list-${suffix}` });
     check(listResource.status === 200, "role-real-list-create");
-    realList = ((await listResource.json()) as { data: { id: number } }).data.id;
+    realList = asBody<{ data: { id: number } }>(await listResource.json()).data.id;
     const grant = await request(`/api/roles/lists/${list}`, "PUT", {
       name: `m14-list-${suffix}`,
       lists: [{ id: realList, permissions: ["list:get"] }],
     });
     check(grant.status === 200, "role-real-list-grant");
     const grants = await request(`/api/roles/lists?query=m14-list-${suffix}`);
-    const granted = (
-      (await grants.json()) as {
-        data: Array<{
-          id: number;
-          lists: Array<{ id: number; name: string; permissions: Array<string> }>;
-        }>;
-      }
-    ).data.find((item) => item.id === list);
+    const granted = asBody<{
+      data: Array<{
+        id: number;
+        lists: Array<{ id: number; name: string; permissions: Array<string> }>;
+      }>;
+    }>(await grants.json()).data.find((item) => item.id === list);
     check(
       granted?.lists.some(
         (item) =>
@@ -135,11 +134,9 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(clearGrant.status === 200, "role-real-list-clear");
     const users = await request(`/api/roles/users?query=${suffix}`);
-    const userRoles = (
-      (await users.json()) as {
-        data: Array<{ id: number; name: string; type: string; permissions: Array<string> }>;
-      }
-    ).data;
+    const userRoles = asBody<{
+      data: Array<{ id: number; name: string; type: string; permissions: Array<string> }>;
+    }>(await users.json()).data;
     check(
       users.status === 200 &&
         userRoles.some(
@@ -152,8 +149,8 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       "role-user-projection-search",
     );
     const lists = await request(`/api/roles/lists?query=${suffix}`);
-    const listRoles = (
-      (await lists.json()) as { data: Array<{ id: number; name: string; lists: Array<unknown> }> }
+    const listRoles = asBody<{ data: Array<{ id: number; name: string; lists: Array<unknown> }> }>(
+      await lists.json(),
     ).data;
     check(
       lists.status === 200 &&
@@ -196,7 +193,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     async function currentUserRole() {
       const response = await request(`/api/roles/users?query=${suffix}`);
       check(response.status === 200, "D32-user-role-read");
-      const entries = ((await response.json()) as { data: Array<Record<string, unknown>> }).data;
+      const entries = asBody<{ data: Array<Record<string, unknown>> }>(await response.json()).data;
       return entries.find((entry) => entry.id === role);
     }
     for (const variant of ["omitted", "null"] as const) {
@@ -209,7 +206,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
           method,
           { name, ...missing },
         );
-        const body = (await response.json()) as { message?: string; data?: { id: number } };
+        const body = asBody<{ message?: string; data?: { id: number } }>(await response.json());
         // Retain cleanup even if a regression unexpectedly creates a role.
         if (method === "POST" && response.status === 200 && body.data?.id) {
           owned.push(body.data.id);
@@ -231,7 +228,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
         );
         const named = await request(`/api/roles/users?query=${name}`);
         check(
-          ((await named.json()) as { data: Array<unknown> }).data.length === 0,
+          asBody<{ data: Array<unknown> }>(await named.json()).data.length === 0,
           `D32-${method}-${variant}-name-not-written`,
         );
       }
@@ -260,8 +257,8 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       });
       check(replacement.status === 200, `list-child-${variant}-replacement`);
       const response = await request(`/api/roles/lists?query=${suffix}`);
-      const entries = (
-        (await response.json()) as { data: Array<{ id: number; lists: Array<unknown> }> }
+      const entries = asBody<{ data: Array<{ id: number; lists: Array<unknown> }> }>(
+        await response.json(),
       ).data;
       check(
         [list, cleared].every((id) =>
@@ -315,7 +312,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       "D31-invalid-child-create-message",
     );
     const after = await request(`/api/roles/lists?query=bad-child-${suffix}`);
-    const orphans = ((await after.json()) as { data: Array<{ id: number }> }).data;
+    const orphans = asBody<{ data: Array<{ id: number }> }>(await after.json()).data;
     check(orphans.length === (reference ? 1 : 0), "D30-invalid-child-create-atomicity");
     for (const r of orphans) {
       owned.push(r.id);
@@ -330,7 +327,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       ["nothing-matches-m14", false],
     ] as const) {
       const response = await request(`/api/roles/users?query=${encodeURIComponent(query)}`);
-      const matches = ((await response.json()) as { data: Array<{ id: number }> }).data;
+      const matches = asBody<{ data: Array<{ id: number }> }>(await response.json()).data;
       check(
         matches.some((r) => r.id === ponies) === expected,
         `D31-search-${query === "%" ? "percent" : query === "_" ? "underscore" : query === "pony" ? "stemming" : query.includes(suffix) ? "whitespace" : query.includes("PONIES") ? "case" : "no-match"}`,
@@ -346,7 +343,9 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       const sorted = await request(
         `/api/roles/users?query=sort-${suffix}&order_by=name&order=${order}`,
       );
-      const ids = ((await sorted.json()) as { data: Array<{ id: number }> }).data.map((r) => r.id);
+      const ids = asBody<{ data: Array<{ id: number }> }>(await sorted.json()).data.map(
+        (r) => r.id,
+      );
       check(JSON.stringify(ids) === JSON.stringify(expected), `role-sort-${order}`);
     }
     for (const [query, expected] of [
@@ -354,7 +353,9 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       ["order_by=invalid", [alpha, zeta]],
     ] as const) {
       const sorted = await request(`/api/roles/users?query=sort-${suffix}&${query}`);
-      const ids = ((await sorted.json()) as { data: Array<{ id: number }> }).data.map((r) => r.id);
+      const ids = asBody<{ data: Array<{ id: number }> }>(await sorted.json()).data.map(
+        (r) => r.id,
+      );
       check(
         JSON.stringify(ids) === JSON.stringify(expected),
         `role-sort-default-${query.includes("desc") ? "desc" : "asc"}`,
@@ -366,7 +367,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       trimmed.status === 200 &&
-        ((await trimmed.json()) as { data: { name: string } }).data.name === `sort-${suffix}-a`,
+        asBody<{ data: { name: string } }>(await trimmed.json()).data.name === `sort-${suffix}-a`,
       "role-update-trim",
     );
     const longName = await request("/api/roles/users", "POST", {
@@ -426,8 +427,8 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       "D31-invalid-child-update-message",
     );
     const currentLists = await request("/api/roles/lists");
-    const currentListRoles = (
-      (await currentLists.json()) as { data: Array<{ id: number; name: string }> }
+    const currentListRoles = asBody<{ data: Array<{ id: number; name: string }> }>(
+      await currentLists.json(),
     ).data;
     check(
       currentListRoles.find((r) => r.id === list)?.name ===
@@ -447,7 +448,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       user_role_id: 1,
     });
     check(created.status === 200, "factor-human-create");
-    human = ((await created.json()) as { data: { id: number } }).data.id;
+    human = asBody<{ data: { id: number } }>(await created.json()).data.id;
     const firstLogin = await login(username, password);
     const session = responseCookie(firstLogin, "session");
     const csrf = responseCookie(firstLogin, "csrf").slice(5);
@@ -465,7 +466,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       });
     }
     const provisioning = await self(`/api/users/${human}/twofa/totp`);
-    const factor = ((await provisioning.json()) as { data: { secret: string; qr: string } }).data;
+    const factor = asBody<{ data: { secret: string; qr: string } }>(await provisioning.json()).data;
     check(
       provisioning.status === 200 &&
         /^[A-Z2-7]+=*$/.test(factor.secret) &&
@@ -485,7 +486,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(enabled.status === 200 && (await enabled.text()) === '{"data":true}\n', "factor-enable");
     const profile = await self("/api/profile");
-    const profileData = ((await profile.json()) as { data: Record<string, unknown> }).data;
+    const profileData = asBody<{ data: Record<string, unknown> }>(await profile.json()).data;
     check(
       profile.status === 200 && profileData.twofa_type === "totp" && !("twofa_key" in profileData),
       "factor-profile-no-secret",

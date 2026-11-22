@@ -4,6 +4,9 @@ import { afterEach, expect, test } from "bun:test";
 import { ascending } from "@/test/order";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { SequencesFixture } from "@/test/sequences/fixture";
+import { asBody } from "@/test/read-body";
+
+type Ending = { id: number; updated_at: string; finished_at: string };
 
 const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
@@ -44,11 +47,7 @@ test("legacy canceled endings by blocklist or archive are exited; manual cancels
   const list = async (status: string) => {
     const response = await f.json(`/api/enrollments?status=${status}&per_page=50`);
     expect(response.status).toBe(200);
-    return response.body.data.results as Array<{
-      id: number;
-      updated_at: string;
-      finished_at: string;
-    }>;
+    return asBody<{ results: Array<Ending> }>(response.body.data).results;
   };
   const exited = await list("exited");
   expect(exited.map((e) => e.id).sort(ascending)).toEqual([1, 2, 4]);

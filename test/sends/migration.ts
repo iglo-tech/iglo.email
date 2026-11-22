@@ -4,6 +4,7 @@ import { copyFile, readdir, rename } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 const control = resolve("node_modules/.cache/m22-control/dist/iglo.email");
 const candidate = resolve("dist/iglo.email");
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
@@ -26,7 +27,7 @@ await withProduction(
     await restart();
     response = await fetch(`${origin}/api/settings`, { headers });
     assert.equal(response.status, 200);
-    const settings = ((await response.json()) as { data: Record<string, unknown> }).data;
+    const settings = (await readJson<{ data: Record<string, unknown> }>(response)).data;
     assert.equal(settings["app.site_name"], "synthetic-migration");
     assert.equal((await fetch(`${origin}/api/sends`, { headers })).status, 200);
     assert.equal(

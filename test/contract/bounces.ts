@@ -6,6 +6,14 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 import { startSink } from "@/test/tx/sink";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
+
+/** A page of bounces as GET /api/bounces returns it, read as the shape the checks use. */
+type BounceList = {
+  total: number;
+  results: Array<{ id: number; campaign: any; [field: string]: any }>;
+  [field: string]: any;
+};
 
 const check = (condition: unknown, label: string) => {
   if (!condition) {
@@ -76,13 +84,15 @@ export async function runBouncesContract(target: {
       preconfirm_subscriptions: true,
     });
     check(created.status === 200, `subscriber-${name}`);
-    const { id, uuid } = created.body.data as { id: number; uuid: string };
+    const { id, uuid } = asBody<{ id: number; uuid: string }>(created.body.data);
     return { id, uuid, email };
   };
   const post = (body: unknown, headers?: Record<string, string>) =>
     call("/webhooks/bounce", "POST", body, headers);
   const bounces = async (id: number) =>
-    (await call(`/api/subscribers/${id}/bounces`)).body.data as Array<any>;
+    asBody<Array<{ id: number; type: string; [field: string]: any }>>(
+      (await call(`/api/subscribers/${id}/bounces`)).body.data,
+    );
   /** Upstream queues bounces; a sentinel behind them in that queue shows they were handled. */
   const flushed = async () => {
     const sentinel = await subscriber(`sentinel-${crypto.randomUUID().slice(0, 8)}`);
@@ -101,7 +111,7 @@ export async function runBouncesContract(target: {
     check(response.status === 200 && response.body?.data === true, "record");
     await flushed();
   };
-  const originals = (await call("/api/settings")).body.data as Record<string, any>;
+  const originals = asBody<Record<string, any>>((await call("/api/settings")).body.data);
   const lists: Array<number> = [],
     campaigns: Array<number> = [],
     users: Array<number> = [],
@@ -114,7 +124,7 @@ export async function runBouncesContract(target: {
     });
     check(created.status === 200, `list-${name}`);
     lists.push(created.body.data.id);
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   const campaign = async (name: string, listID: number) => {
     const created = await call("/api/campaigns", "POST", {
@@ -128,7 +138,7 @@ export async function runBouncesContract(target: {
     });
     check(created.status === 200, `campaign-${name}`);
     campaigns.push(created.body.data.id);
-    return created.body.data as { id: number; uuid: string; name: string };
+    return asBody<{ id: number; uuid: string; name: string }>(created.body.data);
   };
   const apiUser = async (
     name: string,
@@ -269,7 +279,7 @@ export async function runBouncesContract(target: {
       listB = await list("b");
     const first = await campaign("first", listA),
       second = await campaign("second", listA);
-    const before = (await call("/api/bounces?per_page=all")).body.data.total as number;
+    const before = asBody<number>((await call("/api/bounces?per_page=all")).body.data.total);
     const ada = await subscriber("ada", [listA]);
     await recorded({ email: ada.email, type: "soft", source: "api", meta: { reason: "x" } });
     await recorded({
@@ -292,9 +302,9 @@ export async function runBouncesContract(target: {
     // complaint blocklists, so upstream records no row for either: both stores agree on two.
     check(adas.length === 2, "ada-rows");
     check((await call("/api/bounces?per_page=all")).body.data.total === before + 2, "total");
-    const complaint = adas.find((b) => b.type === "complaint");
-    const soft = adas.find((b) => b.type === "soft");
-    check(adas[0].id === soft.id, "default-order");
+    const complaint = adas.find((b) => b.type === "complaint")!;
+    const soft = adas.find((b) => b.type === "soft")!;
+    check(adas[0]!.id === soft.id, "default-order");
     check(complaint.campaign.id === first.id && complaint.campaign.name === first.name, "camp");
     check(Object.keys(complaint.campaign).length === 2, "camp-shape");
     check(soft.campaign === null && soft.meta.reason === "x" && soft.source === "api", "soft");
@@ -327,10 +337,10 @@ export async function runBouncesContract(target: {
       campaign_uuid: crypto.randomUUID(),
     });
     const kazRows = await bounces(kaz.id);
-    check(kazRows.length === 1 && kazRows[0].campaign === null, "unknown-campaign");
+    check(kazRows.length === 1 && kazRows[0]!.campaign === null, "unknown-campaign");
     check((await call(`/api/subscribers/${kaz.id}/bounces`, "DELETE")).status === 200, "kaz");
     const query = async (params: string) =>
-      (await call(`/api/bounces?${params}`)).body.data as Record<string, any>;
+      asBody<BounceList>((await call(`/api/bounces?${params}`)).body.data);
     const byCampaign = await query(`campaign_id=${first.id}`);
     check(byCampaign.total === 2, "filter-campaign");
     check(
@@ -341,7 +351,7 @@ export async function runBouncesContract(target: {
     check((await query(`source=alpha&campaign_id=${second.id}`)).total === 0, "filter-both");
     check((await query("source=beta&type=hard")).total === 0, "filter-type");
     const bySource = await query(`source=beta&type=soft`);
-    check(bySource.results[0].email === bob.email, "filter-type-rows");
+    check(bySource.results[0]!.email === bob.email, "filter-type-rows");
     const empty = await query("source=absent");
     check(
       JSON.stringify(empty) ===
@@ -354,17 +364,17 @@ export async function runBouncesContract(target: {
     check(paged.search === "" && paged.query === "", "paged-keys");
     const ours = "campaign_id=" + first.id;
     const ascending = await query(`${ours}&order_by=email&order=asc`);
-    check(ascending.results[0].email === ada.email, "order-asc");
+    check(ascending.results[0]!.email === ada.email, "order-asc");
     const descending = await query(`${ours}&order_by=email&order=desc`);
-    check(descending.results[0].email === cyd.email, "order-desc");
+    check(descending.results[0]!.email === cyd.email, "order-desc");
     // Deliberate difference (B80): order takes any case. Upstream's documented ASC sorts descending.
     const upperAscending = await query(`${ours}&order_by=email&order=ASC`);
     check(
-      upperAscending.results[0].email === (reference ? cyd.email : ada.email),
+      upperAscending.results[0]!.email === (reference ? cyd.email : ada.email),
       "B80-order-upper-bounces",
     );
     const fallback = await query(`${ours}&order_by=nope&order=nope`);
-    check(fallback.results[0].created_at >= fallback.results[1].created_at, "order-fallback");
+    check(fallback.results[0]!.created_at >= fallback.results[1]!.created_at, "order-fallback");
     const all = await query("per_page=all");
     check(all.per_page === 0 && all.page === 1 && all.total === all.results.length, "per-all");
     // Upstream's order_by=campaign_name names no column and answers 500, and an unknown type
@@ -381,7 +391,7 @@ export async function runBouncesContract(target: {
     // schema's `meta` is an object, so it stores the object the string holds.
     const dee = await subscriber("dee", [listB]);
     await recorded({ email: dee.email, type: "soft", meta: '{"additional":"info"}' });
-    const [documented] = await bounces(dee.id);
+    const documented = (await bounces(dee.id))[0]!;
     if (reference) {
       check(documented.meta === '{"additional":"info"}', "meta-reference");
     } else {
@@ -397,13 +407,13 @@ export async function runBouncesContract(target: {
     // Unsubscribe at the count, on every list, keeping the status. A later bounce adds no row.
     const eve = await subscriber("eve", [listA, listB]);
     const statuses = async (id: number) =>
-      (await call(`/api/subscribers/${id}`)).body.data.lists.map(
-        (l: any) => l.subscription_status,
-      ) as Array<string>;
+      asBody<{ lists: Array<{ subscription_status: string }> }>(
+        (await call(`/api/subscribers/${id}`)).body.data,
+      ).lists.map((l) => l.subscription_status);
     const consentTimes = async (id: number) =>
-      (await call(`/api/subscribers/${id}`)).body.data.lists.map((l: any) =>
-        Date.parse(l.subscription_updated_at),
-      ) as Array<number>;
+      asBody<{ lists: Array<{ subscription_updated_at: string }> }>(
+        (await call(`/api/subscribers/${id}`)).body.data,
+      ).lists.map((l) => Date.parse(l.subscription_updated_at));
     const consentBefore = await consentTimes(eve.id);
     await recorded({ email: eve.email, type: "hard", source: "api" });
     check(
@@ -529,7 +539,7 @@ export async function runBouncesContract(target: {
     }
     await recorded({ email: jon.email, type: "hard", source: "d5" });
     const ids = async (source: string) =>
-      (await query(`source=${source}`)).results.map((b: any) => b.id as number);
+      (await query(`source=${source}`)).results.map((b) => b.id);
     const [d1] = await ids("d1");
     const [d2] = await ids("d2");
     const [d3] = await ids("d3");
@@ -644,7 +654,7 @@ export async function runBouncesContract(target: {
       const events = ["bounce.recorded", "subscriber.blocklisted", "subscriber.deleted"];
       const hook = await call("/api/webhooks", "POST", { url: receiver.url(), events });
       check(hook.status === 200, "hook");
-      const secret = hook.body.data.secret as string;
+      const secret = asBody<string>(hook.body.data.secret);
       await setting("bounce.actions", {
         soft: { count: 2, action: "none" },
         hard: { count: 1, action: "blocklist" },
@@ -712,7 +722,7 @@ export async function runBouncesContract(target: {
         });
         check(sent.status === 200, "tx");
         const send = (await call("/api/sends?per_page=1")).body.data.results[0];
-        return send as { id: number; uuid: string; smtp_message_id: string };
+        return asBody<{ id: number; uuid: string; smtp_message_id: string }>(send);
       };
 
       // Native webhook callers can name a send.

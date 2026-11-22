@@ -3,6 +3,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { sequencesFixture } from "@/test/sequences/fixture";
 import type { SequencesFixture } from "@/test/sequences/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
@@ -33,10 +34,7 @@ async function make(f: SequencesFixture) {
   expect(created.status).toBe(200);
   return {
     tx,
-    seq: created.body.data as {
-      id: number;
-      steps: Array<{ id: number; wait: string }>;
-    },
+    seq: asBody<{ id: number; steps: Array<{ id: number; wait: string }> }>(created.body.data),
   };
 }
 const setWait = async (
@@ -50,12 +48,12 @@ const setWait = async (
   const saved = await f.json(`/api/sequences/${seq.seq.id}`, "PUT", full);
   expect(saved.status).toBe(200);
 };
-const dues = async (f: SequencesFixture) =>
-  Object.fromEntries(
-    ((await f.json("/api/enrollments")).body.data.results as Array<Record<string, any>>).map(
-      (e) => [e.subscriber_id, e.due_at as string],
-    ),
-  );
+const dues = async (f: SequencesFixture) => {
+  const rows = asBody<{ results: Array<{ subscriber_id: number; due_at: string }> }>(
+    (await f.json("/api/enrollments")).body.data,
+  ).results;
+  return Object.fromEntries(rows.map((e) => [e.subscriber_id, e.due_at]));
+};
 const reschedule = (f: SequencesFixture, s: Awaited<ReturnType<typeof make>>, headers?: any) =>
   f.json(
     `/api/sequences/${s.seq.id}/steps/${s.seq.steps[0]!.id}/reschedule`,
@@ -115,9 +113,9 @@ test("leased enrollments are untouched, and a test enrollment keeps its 1-minute
   const after = await dues(f);
   expect(after[a]).toBe(before[a]);
   expect(after[b]).toBe(before[b]);
-  expect(after[c]).toBe(new Date(Date.parse(before[c]) - hour + 10 * hour).toISOString());
+  expect(after[c]).toBe(new Date(Date.parse(before[c]!) - hour + 10 * hour).toISOString());
   // The cap holds for a test even with a longer wait.
-  expect(Date.parse(after[b]) - f.clock.now().getTime()).toBeLessThanOrEqual(60_000);
+  expect(Date.parse(after[b]!) - f.clock.now().getTime()).toBeLessThanOrEqual(60_000);
 });
 
 test("a large waiting set is done in batches and sends nothing", async () => {
@@ -141,11 +139,14 @@ test("a large waiting set is done in batches and sends nothing", async () => {
   await setWait(f, s, "PT2H");
   const res = await reschedule(f, s);
   expect(res.body.data).toEqual({ changed: total });
-  const row = f.db
-    .query("SELECT count(*) AS n FROM enrollments WHERE due_at = ?")
-    .get(new Date(Date.parse(now) + 2 * hour).toISOString()) as { n: bigint };
+  const row = asBody<{ n: bigint }>(
+    f.db
+      .query("SELECT count(*) AS n FROM enrollments WHERE due_at = ?")
+      .get(new Date(Date.parse(now) + 2 * hour).toISOString()),
+  );
   expect(Number(row.n)).toBe(total);
-  expect(Number((f.db.query("SELECT count(*) AS n FROM sends").get() as any).n)).toBe(0);
+  const sends = asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM sends").get());
+  expect(Number(sends.n)).toBe(0);
 });
 
 test("reschedule needs sequences:manage and a real active step", async () => {
@@ -175,9 +176,8 @@ test("condition validation returns a save's errors and writes nothing", async ()
   delete full.status;
   const saved = await f.json(`/api/sequences/${s.seq.id}`, "PUT", full);
   expect(saved.status).toBe(400);
-  expect(saved.body.message).toContain(
-    bad.body.data.errors[0].field.replace("condition", "steps.0.condition"),
-  );
+  const field = asBody<{ errors: Array<{ field: string }> }>(bad.body.data).errors[0]!.field;
+  expect(saved.body.message).toContain(field.replace("condition", "steps.0.condition"));
   // Raw SQL keeps its permission gate.
   const manager = await f.apiUser(["sequences:manage"]);
   const sql = await validate({ sql: "subscribers.id > 0" }, manager);
@@ -228,10 +228,10 @@ test("a step deleted between batches reports the rows already moved, not a 404 (
   );
   f.db.run("COMMIT");
   // The step goes away while the first batch commits, as when an editor saves during a run.
-  const cut = (
+  const cut = asBody<{ id: bigint }>(
     f.db
       .query("SELECT id FROM enrollments WHERE sequence_id = ? ORDER BY id LIMIT 1 OFFSET 400")
-      .get(s.seq.id) as { id: bigint }
+      .get(s.seq.id),
   ).id;
   f.db.run(
     `CREATE TRIGGER mid_run AFTER UPDATE OF due_at ON enrollments WHEN NEW.id = ${cut}

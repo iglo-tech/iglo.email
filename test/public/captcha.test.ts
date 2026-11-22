@@ -7,6 +7,7 @@ import { altchaPayload, solveAltcha } from "@/test/public/altcha-solver";
 import type { AltchaChallenge } from "@/test/public/altcha-solver";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const flip = (hex: string) => (hex[0] === "0" ? "1" : "0") + hex.slice(1);
 
@@ -42,10 +43,10 @@ const challenge = async (f: PublicFixture) => {
   const response = await f.peer("/api/public/captcha/altcha", "192.0.2.50");
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toBe("application/json");
-  return JSON.parse(await response.text()) as AltchaChallenge;
+  return asBody<AltchaChallenge>(JSON.parse(await response.text()));
 };
 const subscribers = (f: PublicFixture) =>
-  Number((f.db.query("SELECT count(*) AS n FROM subscribers").get() as { n: bigint }).n);
+  Number(asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM subscribers").get()).n);
 const submit = (f: PublicFixture, email: string, list: string, extra: Record<string, string>) =>
   f.fresh("/subscription/form", form({ email, l: list, ...extra }));
 const refused = async (response: Response) => {
@@ -158,8 +159,11 @@ test("a tampered or malformed ALTCHA payload is refused", async () => {
     altchaPayload({ ...c, parameters: { ...c.parameters, cost: 2 } }, solution),
     altchaPayload({ ...c, parameters: { ...c.parameters, keyPrefix: "0" } }, solution),
     altchaPayload({ ...c, parameters: { ...c.parameters, algorithm: "SHA-512" } }, solution),
-    altchaPayload({ ...c, parameters: { ...c.parameters, keySignature: "ab" } } as never, solution),
-    altchaPayload({ ...c, parameters: { ...c.parameters, data: {} } } as never, solution),
+    altchaPayload(
+      asBody<never>({ ...c, parameters: { ...c.parameters, keySignature: "ab" } }),
+      solution,
+    ),
+    altchaPayload(asBody<never>({ ...c, parameters: { ...c.parameters, data: {} } }), solution),
     // Another challenge's signature with this one's solution.
     altchaPayload({ ...c, signature: other.signature }, solution),
     btoa(JSON.stringify({ challenge: c })),

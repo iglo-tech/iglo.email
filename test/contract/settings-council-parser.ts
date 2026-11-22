@@ -3,6 +3,7 @@ import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 const check = (condition: unknown, label: string) => {
   if (!condition) {
@@ -33,7 +34,7 @@ export async function runSettingsCouncilParser(target: {
   const read = async () => {
     const response = await request();
     check(response.status === 200, "read");
-    return (await response.json()).data as Record<string, any>;
+    return asBody<Record<string, any>>((await response.json()).data);
   };
   const original = await read();
   async function accepted(key: string, value: unknown, label: string) {

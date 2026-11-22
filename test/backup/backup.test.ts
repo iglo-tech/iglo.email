@@ -36,6 +36,7 @@ import {
   uploadFile,
 } from "@/test/backup/fixture";
 import type { Client, Server } from "@/test/backup/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 setDefaultTimeout(60_000);
 const HOLD_HEADER = "x-iglo-email-hold";
@@ -78,7 +79,7 @@ const stopped = async () => {
 };
 const subscriberTotal = async (client: Client) => {
   const response = await client("/api/subscribers?per_page=1");
-  return ((await response.json()) as { data: { total: number } }).data.total;
+  return (await readJson<{ data: { total: number } }>(response)).data.total;
 };
 const names = (directory: string) => readdirSync(directory).sort(ascending);
 
@@ -139,7 +140,7 @@ test("a backup under write load restores, opens and holds what was committed", a
 
   restoreInto(output, dataDir);
   server = await startServer(executable, dataDir);
-  expect(((await (await fetch(server.health)).json()) as { data: boolean }).data).toBe(true);
+  expect((await readJson<{ data: boolean }>(await fetch(server.health))).data).toBe(true);
   const restored = apiClient(server.origin, authorization);
   const total = await subscriberTotal(restored);
   expect(total).toBeGreaterThanOrEqual(20 + acknowledged);
@@ -198,7 +199,7 @@ test("an existing backup is replaced only when told, and only a backup", async (
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
   const replaced = new Database(join(output, "iglo-email.db"), { readonly: true });
   expect(
-    replaced.query("SELECT count(*) AS count FROM subscribers").get() as { count: number },
+    asBody<{ count: number }>(replaced.query("SELECT count(*) AS count FROM subscribers").get()),
   ).toEqual({ count: 1 });
   replaced.close();
 
@@ -237,7 +238,7 @@ test("a file with no row is harmless, and a row with no file is reported and sta
   expect(await (await fetch(`${server.origin}/uploads/kept.txt`)).text()).toBe("kept");
   const restored = apiClient(server.origin, authorization);
   const media = await restored("/api/media");
-  const rows = ((await media.json()) as { data: { results: Array<{ filename: string }> } }).data
+  const rows = (await readJson<{ data: { results: Array<{ filename: string }> } }>(media)).data
     .results;
   expect(rows.map(({ filename }) => filename).sort(ascending)).toEqual(["gone.txt", "kept.txt"]);
 });
@@ -917,7 +918,7 @@ function refusal(run: () => unknown): string {
   try {
     run();
   } catch (error) {
-    return (error as Error).message;
+    return asBody<Error>(error).message;
   }
   throw new Error("the call did not refuse");
 }

@@ -4,6 +4,7 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { asBody, readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const executable = resolve(process.argv[2] ?? join(repository, "dist/iglo.email"));
@@ -56,11 +57,11 @@ try {
         if (!response.ok) {
           throw new Error(`${method} ${path}: ${response.status} ${text}`);
         }
-        return JSON.parse(text);
+        return asBody<{ data: Record<string, any> }>(JSON.parse(text));
       };
-      const settings = (await (
-        await fetch(`${origin}/api/settings`, { headers: { authorization } })
-      ).json()) as { data: Record<string, any> };
+      const settings = await readJson<{ data: Record<string, any> }>(
+        await fetch(`${origin}/api/settings`, { headers: { authorization } }),
+      );
       await api("/api/settings/security.public_rate_limit", "PUT", {
         ...settings.data["security.public_rate_limit"],
         unsubscribe: 1_000_000,
@@ -73,19 +74,22 @@ try {
           events: ["subscriber.unsubscribed"],
         });
       }
-      const list = (
-        await api("/api/lists", "POST", { name: "measure", type: "public", optin: "single" })
-      ).data.id as number;
+      const list = asBody<number>(
+        (await api("/api/lists", "POST", { name: "measure", type: "public", optin: "single" })).data
+          .id,
+      );
       const ids: Array<string> = [];
       for (let i = 0; i < N; i++) {
         ids.push(
-          (
-            await api("/api/subscribers", "POST", {
-              email: `m${i}@example.test`,
-              name: `M ${i}`,
-              lists: [list],
-            })
-          ).data.uuid as string,
+          asBody<string>(
+            (
+              await api("/api/subscribers", "POST", {
+                email: `m${i}@example.test`,
+                name: `M ${i}`,
+                lists: [list],
+              })
+            ).data.uuid,
+          ),
         );
       }
       const ingest: Array<number> = [];

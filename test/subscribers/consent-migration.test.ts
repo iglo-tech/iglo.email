@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
+import { asBody } from "@/test/read-body";
 
 const directories: Array<string> = [];
 afterEach(() => {
@@ -42,9 +43,11 @@ test("a blocklisted subscriber's live memberships become unsubscribed, nothing e
   const rows = db
     .query("SELECT subscriber_id AS id, status, updated_at FROM subscriber_lists ORDER BY 1")
     .all();
-  expect(rows).toEqual([
-    { id: 1n, status: "unsubscribed", updated_at: stamp },
-    { id: 2n, status: "confirmed", updated_at: stamp },
-  ] as never);
+  expect(rows).toEqual(
+    asBody<never>([
+      { id: 1n, status: "unsubscribed", updated_at: stamp },
+      { id: 2n, status: "confirmed", updated_at: stamp },
+    ]),
+  );
   db.close(true);
 });

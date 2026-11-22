@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
 import { PNG } from "pngjs";
+import { readJson } from "@/test/read-body";
 
 const root = resolve(import.meta.dir, "../..");
 const fixture = await readFile(resolve(root, "test/users/fixtures.md"), "utf-8");
@@ -37,14 +38,14 @@ await withProduction(
     });
     const session = cookie(login, "session");
     const profile = await fetch(`${origin}/api/profile`, { headers: { cookie: session } });
-    const id = ((await profile.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(profile)).data.id;
     const response = await fetch(`${origin}/api/users/${id}/twofa/totp`, {
       headers: { cookie: session },
     });
     if (response.status !== 200) {
       throw new Error("QR provisioning failed");
     }
-    const data = ((await response.json()) as { data: { qr: string; secret: string } }).data;
+    const data = (await readJson<{ data: { qr: string; secret: string } }>(response)).data;
     const image = PNG.sync.read(Buffer.from(data.qr, "base64"));
     const grayscale = Buffer.alloc(image.width * image.height);
     for (let i = 0; i < grayscale.length; i++) {

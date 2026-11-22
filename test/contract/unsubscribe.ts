@@ -9,6 +9,7 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 type SendRow = { id: number; uuid: string; status: string };
 
@@ -55,9 +56,9 @@ export async function runUnsubscribeContract(target: {
     }
   };
   const membership = async (subscriber: number, list: number) =>
-    (await api(`/api/subscribers/${subscriber}`)).body.data.lists.find(
-      (l: { id: number }) => l.id === list,
-    )?.subscription_status as string | undefined;
+    asBody<Array<{ id: number; subscription_status?: string }>>(
+      (await api(`/api/subscribers/${subscriber}`)).body.data.lists,
+    ).find((l) => l.id === list)?.subscription_status;
 
   const owned = {
     templates: [] as Array<number>,
@@ -108,7 +109,7 @@ export async function runUnsubscribeContract(target: {
       });
       check(response.status === 200, "list-create");
       owned.lists.push(response.body.data.id);
-      return response.body.data.id as number;
+      return asBody<number>(response.body.data.id);
     };
     const subscriber = async (name: string, lists: Array<number>) => {
       const response = await api("/api/subscribers", "POST", {
@@ -118,7 +119,10 @@ export async function runUnsubscribeContract(target: {
       });
       check(response.status === 200, "subscriber-create");
       owned.subscribers.push(response.body.data.id);
-      return { id: response.body.data.id as number, uuid: response.body.data.uuid as string };
+      return {
+        id: asBody<number>(response.body.data.id),
+        uuid: asBody<string>(response.body.data.uuid),
+      };
     };
     const news = await list("news", "single");
     const other = await list("other", "single");
@@ -133,7 +137,7 @@ export async function runUnsubscribeContract(target: {
       body: `<p>Hi {{ subscriber.name }} <a href="{{ unsubscribe_url }}">Unsubscribe</a> <a href="{{ "https://example.test/offer?a=1&b=2" | track_link }}">Offer</a></p>{{ track_view }}`,
     });
     check(templateResponse.status === 200, "template-create");
-    const template = templateResponse.body.data.id as number;
+    const template = asBody<number>(templateResponse.body.data.id);
     owned.templates.push(template);
     const send = async (to: number, list: number, n: string) => {
       const response = await api("/api/tx", "POST", {
@@ -144,9 +148,9 @@ export async function runUnsubscribeContract(target: {
         data: { n },
       });
       check(response.status === 200, `tx-${n}`);
-      const row = response.body.data.sends[0] as SendRow;
+      const row = asBody<SendRow>(response.body.data.sends[0]);
       const journal = (await api(`/api/sends/${row.id}`)).body.data;
-      return { ...row, skip_reason: journal.skip_reason as string | null };
+      return { ...row, skip_reason: asBody<string | null>(journal.skip_reason) };
     };
 
     // A received marketing message carries the link, the RFC 8058 pair and tracking.

@@ -11,6 +11,17 @@ import type { TxFixture } from "@/test/tx/fixture";
 import { signatureTime, signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import type { JsonObject } from "@/test/json-object";
 import type { Receiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
+
+// A webhook delivery body as the receiver saw it: the fields these tests assert.
+type DeliveryBody = {
+  event: string;
+  data: {
+    list_ids: Array<number>;
+    subscriber: { id: number; email: string };
+    send?: { uuid: string };
+  };
+};
 
 const noop = () => {};
 const refused = async (result: Promise<{ status: number; body: any }>) => {
@@ -49,10 +60,12 @@ const all = [
 const hook = async (f: TxFixture, r: Receiver, events = all, extra: JsonObject = {}) => {
   const created = await f.json("/api/webhooks", "POST", { url: r.url(), events, ...extra });
   expect(created.status).toBe(200);
-  return created.body.data as { id: number; secret: string };
+  return asBody<{ id: number; secret: string }>(created.body.data);
 };
 const deliveries = async (f: TxFixture, id: number) =>
-  (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results as Array<any>;
+  asBody<Array<Record<string, any>>>(
+    (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results,
+  );
 /** Network I/O is real, so settling is awaited in real time; delays use the injected clock. */
 async function until(check: () => unknown | Promise<unknown>) {
   const deadline = Date.now() + 10_000;
@@ -80,11 +93,13 @@ const queued = (f: TxFixture, id: number, attempts: number) =>
 const blocklist = (f: TxFixture, id: number) =>
   f.json(`/api/subscribers/${id}/blocklist`, "PUT", {});
 const stored = (f: TxFixture) =>
-  f.db.query("SELECT event, status, payload FROM webhook_deliveries ORDER BY id").all() as Array<{
-    event: string;
-    status: string;
-    payload: string;
-  }>;
+  asBody<
+    Array<{
+      event: string;
+      status: string;
+      payload: string;
+    }>
+  >(f.db.query("SELECT event, status, payload FROM webhook_deliveries ORDER BY id").all());
 
 test("configuration needs webhooks:manage and the usual auth and CSRF", async () => {
   const f = await open();
@@ -135,7 +150,9 @@ test("the secret is shown once at create and never again", async () => {
   expect(text).not.toContain(created.secret);
   expect(text).not.toContain(supplied.secret);
   expect(text).not.toContain('"secret"');
-  expect(listed.body.data.results.map((w: any) => w.enabled)).toEqual([false, true]);
+  expect(
+    asBody<Array<{ enabled: boolean }>>(listed.body.data.results).map((w) => w.enabled),
+  ).toEqual([false, true]);
   // Rotation is delete and recreate; a silently ignored new secret would mislead a caller.
   expect(
     (await f.json(`/api/webhooks/${created.id}`, "PUT", { secret: "x".repeat(32) })).status,
@@ -190,8 +207,10 @@ test("every listed event reaches the receiver correctly signed", async () => {
   const f = await open({ reject: () => true });
   const r = receiver();
   const { secret } = await hook(f, r);
-  const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
-    .body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" })).body.data
+      .id,
+  );
   const email = (name: string, extra: JsonObject = {}) =>
     f.subscriber(`${name}@example.test`, name, { lists: [list], ...extra });
 
@@ -251,7 +270,7 @@ test("every listed event reaches the receiver correctly signed", async () => {
   expect(
     r.received
       .filter((x) => x.body.event === "subscriber.unsubscribed")
-      .map((x) => x.body.data.subscriber.email),
+      .map((x) => asBody<DeliveryBody>(x.body).data.subscriber.email),
   ).toEqual(["unsub@example.test", "blocked@example.test"]);
 });
 
@@ -260,8 +279,10 @@ test("list_ids is a JSON array in every delivered body that carries it, with or 
   const f = await open({ reject: () => true });
   const r = receiver();
   await hook(f, r);
-  const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
-    .body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" })).body.data
+      .id,
+  );
   const unsub = await f.subscriber("unsub@example.test", "unsub", { lists: [list] });
   await f.json("/api/subscribers/lists", "PUT", {
     ids: [unsub],
@@ -338,7 +359,7 @@ test("one delivery per enabled webhook subscribed to the event", async () => {
   expect((await deliveries(f, off.id)).length).toBe(0);
   const [a] = await deliveries(f, wanted.id);
   const [b] = await deliveries(f, second.id);
-  expect(a.uuid).not.toBe(b.uuid);
+  expect(a!.uuid).not.toBe(b!.uuid);
 });
 
 test("a rollback queues nothing and repeats of a consent change queue nothing new", async () => {
@@ -372,8 +393,10 @@ test("an update that blocklists a subscriber reports the memberships it ended", 
   const f = await open();
   const r = receiver();
   await hook(f, r, ["subscriber.unsubscribed", "subscriber.blocklisted"]);
-  const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
-    .body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" })).body.data
+      .id,
+  );
   const subscriber = await f.subscriber("a@example.test", "a", { lists: [list] });
   await f.json(`/api/subscribers/${subscriber}`, "PUT", {
     email: "a@example.test",
@@ -382,7 +405,12 @@ test("an update that blocklists a subscriber reports the memberships it ended", 
     lists: [list],
   });
   await r.waitFor(2);
-  expect(r.received.map((x) => [x.body.event, x.body.data.list_ids])).toEqual([
+  expect(
+    r.received.map((x) => [
+      asBody<DeliveryBody>(x.body).event,
+      asBody<DeliveryBody>(x.body).data.list_ids,
+    ]),
+  ).toEqual([
     ["subscriber.unsubscribed", [list]],
     ["subscriber.blocklisted", [list]],
   ]);
@@ -397,8 +425,10 @@ test("one-click unsubscribes queue once, inside the unsubscribe transaction", as
   const r = receiver();
   const { id } = await hook(f, r, ["subscriber.unsubscribed"]);
   f.marketing.minInterval = "";
-  const list = (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" }))
-    .body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" })).body.data
+      .id,
+  );
   const subscriber = await f.subscriber("a@example.test", "A", { lists: [list] });
   const template = await f.template('<a href="{{ unsubscribe_url }}">u</a>');
   const sent = await f.tx({
@@ -408,8 +438,8 @@ test("one-click unsubscribes queue once, inside the unsubscribe transaction", as
     list_id: list,
   });
   expect(sent.body.data.sends[0].status).toBe("sent");
-  const send = sent.body.data.sends[0].uuid as string;
-  const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
+  const send = asBody<string>(sent.body.data.sends[0].uuid);
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid);
   const post = () =>
     f.request(`/m/${send}/unsubscribe/${uuid}`, {
       method: "POST",
@@ -432,8 +462,8 @@ test("retries follow the injected clock with the same id and bytes and a fresh t
   await r.waitFor(1);
   await queued(f, id, 1);
   const [first] = await deliveries(f, id);
-  expect(first.last_error).toBe("http_500");
-  expect(Date.parse(first.next_attempt_at) - f.clock.now().getTime()).toBe(30_000);
+  expect(first!.last_error).toBe("http_500");
+  expect(Date.parse(first!.next_attempt_at) - f.clock.now().getTime()).toBe(30_000);
 
   f.advanceWebhooks(29_000);
   await Bun.sleep(20);
@@ -442,22 +472,22 @@ test("retries follow the injected clock with the same id and bytes and a fresh t
   await r.waitFor(2);
   await queued(f, id, 2);
   const [second] = await deliveries(f, id);
-  expect(Date.parse(second.next_attempt_at) - f.clock.now().getTime()).toBe(60_000);
+  expect(Date.parse(second!.next_attempt_at) - f.clock.now().getTime()).toBe(60_000);
   f.advanceWebhooks(60_000);
   await r.waitFor(3);
-  await settled(f, id, first.uuid, "delivered", 3);
+  await settled(f, id, first!.uuid, "delivered", 3);
 
   const [a, b, c] = r.received;
   expect(new Set([a!.text, b!.text, c!.text]).size).toBe(1);
-  expect(a!.body.id).toBe(first.uuid);
+  expect(a!.body.id).toBe(first!.uuid);
   for (const x of r.received) {
     expect(signatureValid(x, secret)).toBe(true);
   }
   expect(signatureTime(b!) - signatureTime(a!)).toBe(30);
   expect(signatureTime(c!) - signatureTime(b!)).toBe(60);
   const [done] = await deliveries(f, id);
-  expect(done.next_attempt_at).toBeNull();
-  expect(done.last_error).toBeNull();
+  expect(done!.next_attempt_at).toBeNull();
+  expect(done!.last_error).toBeNull();
   expect(done).not.toHaveProperty("payload");
 });
 
@@ -505,7 +535,7 @@ test("redirects are not followed and count as failures", async () => {
   await blocklist(f, await f.subscriber("a@example.test"));
   await r.waitFor(1);
   await queued(f, id, 1);
-  expect((await deliveries(f, id))[0].last_error).toBe("redirect_302");
+  expect((await deliveries(f, id))[0]!.last_error).toBe("redirect_302");
   expect(r.received.map((x) => x.path)).toEqual(["/hook"]);
 });
 
@@ -571,7 +601,7 @@ test("a disabled webhook holds its deliveries, resumes when enabled, and fails a
   await blocklist(f, await f.subscriber("skipped@example.test"));
   expect((await deliveries(f, id)).length).toBe(1);
   f.advanceWebhooks(1000);
-  await until(async () => (await deliveries(f, id))[0].last_error === "webhook_disabled");
+  await until(async () => (await deliveries(f, id))[0]!.last_error === "webhook_disabled");
   expect(r.received.length).toBe(0);
   // Enabled again within the window: everything still queued arrives.
   await f.json(`/api/webhooks/${id}`, "PUT", { enabled: true });
@@ -587,7 +617,7 @@ test("a disabled webhook holds its deliveries, resumes when enabled, and fails a
     f.advanceWebhooks(3_600_000);
     await until(async () => {
       const [row] = await deliveries(f, id);
-      return row.status === "failed" || Date.parse(row.next_attempt_at) > f.clock.now().getTime();
+      return row!.status === "failed" || Date.parse(row!.next_attempt_at) > f.clock.now().getTime();
     });
   }
   await until(async () =>
@@ -735,7 +765,7 @@ test("block_private_addresses refuses private targets after resolution, without 
     await queued(f, id, 1);
   }
   for (const id of ids) {
-    expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
+    expect((await deliveries(f, id))[0]!.last_error).toBe("blocked_address");
   }
   expect(r.received.length).toBe(0);
   // Off (an operator's stored choice), a self-hosted receiver on a private address works.
@@ -772,10 +802,10 @@ test("with blocking on, every private, loopback, link-local and unique-local fam
   const f = await open({
     webhooks: {
       lookup: async (host: string) => resolved[host] ?? [],
-      fetch: (async (url: string | URL | Request) => {
+      fetch: asBody<typeof fetch>(async (url: string | URL | Request) => {
         sent.push(String(url));
         return new Response(null, { status: 200 });
-      }) as typeof fetch,
+      }),
     },
   });
   f.blockPrivate.value = true;
@@ -806,7 +836,7 @@ test("with blocking on, every private, loopback, link-local and unique-local fam
   await blocklist(f, await f.subscriber("a@example.test"));
   for (const id of refused) {
     await queued(f, id, 1);
-    expect((await deliveries(f, id))[0].last_error).toBe("blocked_address");
+    expect((await deliveries(f, id))[0]!.last_error).toBe("blocked_address");
   }
   for (const id of allowed) {
     await until(async () => (await deliveries(f, id))[0]?.status === "delivered");
@@ -828,7 +858,7 @@ test("a resolver that never answers cannot outlast the request deadline", async 
   await until(async () => (await deliveries(f, id))[0]?.claimed_until);
   f.advanceWebhooks(10_000);
   await queued(f, id, 1);
-  expect((await deliveries(f, id))[0].last_error).toBe("timeout");
+  expect((await deliveries(f, id))[0]!.last_error).toBe("timeout");
 });
 
 test("with blocking on, the request goes to the checked address, not a fresh lookup", async () => {
@@ -869,7 +899,9 @@ test("a public wipe's own deleted event carries the external ID and lists (B124,
   await blocklist(f, subscriber);
   await r.waitFor(2);
   await until(async () => (await deliveries(f, id)).every((d) => !d.claimed_until));
-  expect(stored(f).map((row) => JSON.parse(row.payload).data.list_ids)).toEqual([[list], [list]]);
+  expect(
+    stored(f).map((row) => asBody<DeliveryBody>(JSON.parse(row.payload)).data.list_ids),
+  ).toEqual([[list], [list]]);
 
   const wipe = await f.request(await f.privacyPath(subscriber, "wipe"), { method: "POST" });
   expect(wipe.status).toBe(200);
@@ -897,7 +929,7 @@ test("a public wipe's own deleted event carries the external ID and lists (B124,
     list_ids: [list],
   };
   const afterWipe = r.received.slice(2);
-  expect(afterWipe.map((x) => x.body.event).sort(ascending)).toEqual([
+  expect(afterWipe.map((x) => asBody<DeliveryBody>(x.body).event).sort(ascending)).toEqual([
     "subscriber.blocklisted",
     "subscriber.deleted",
     "subscriber.deleted",
@@ -912,7 +944,9 @@ test("a public wipe's own deleted event carries the external ID and lists (B124,
   // While the wipe's deleted event is still queued it keeps the external ID and the lists, so the
   // receiver can still be told. Once it goes out, both leave storage.
   expect(body()).toContain(external);
-  expect(stored(f).map((row) => JSON.parse(row.payload).data.list_ids)).toEqual([[], [], [list]]);
+  expect(
+    stored(f).map((row) => asBody<DeliveryBody>(JSON.parse(row.payload)).data.list_ids),
+  ).toEqual([[], [], [list]]);
   r.respond(() => new Response("ok"));
   await until(async () => {
     f.advanceWebhooks(30_000);
@@ -920,7 +954,9 @@ test("a public wipe's own deleted event carries the external ID and lists (B124,
   });
   expect(body()).not.toContain(address);
   expect(body()).not.toContain(external);
-  expect(stored(f).map((row) => JSON.parse(row.payload).data.list_ids)).toEqual([[], [], []]);
+  expect(
+    stored(f).map((row) => asBody<DeliveryBody>(JSON.parse(row.payload)).data.list_ids),
+  ).toEqual([[], [], []]);
 });
 
 test("a delivery held at DNS goes out cleared when its subscriber is deleted meanwhile", async () => {
@@ -1010,26 +1046,24 @@ function seed(f: TxFixture, count: number, list?: number) {
   }
 }
 const deliveryCount = (f: TxFixture) =>
-  Number((f.db.query("SELECT count(*) AS n FROM webhook_deliveries").get() as { n: bigint }).n);
+  Number(asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM webhook_deliveries").get()).n);
 const subscriberCount = (f: TxFixture, status: string) =>
   Number(
-    (
-      f.db.query("SELECT count(*) AS n FROM subscribers WHERE status = ?").get(status) as {
-        n: bigint;
-      }
+    asBody<{ n: bigint }>(
+      f.db.query("SELECT count(*) AS n FROM subscribers WHERE status = ?").get(status),
     ).n,
   );
 const memberships = (f: TxFixture, status: string) =>
   Number(
-    (
-      f.db.query("SELECT count(*) AS n FROM subscriber_lists WHERE status = ?").get(status) as {
-        n: bigint;
-      }
+    asBody<{ n: bigint }>(
+      f.db.query("SELECT count(*) AS n FROM subscriber_lists WHERE status = ?").get(status),
     ).n,
   );
 const newList = async (f: TxFixture) =>
-  (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" })).body.data
-    .id as number;
+  asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "l", type: "public", optin: "single" })).body.data
+      .id,
+  );
 
 test("bulk actions queue the bytes a single action would, each with its own id", async () => {
   const f = await open();
@@ -1074,13 +1108,13 @@ test("bulk actions queue the bytes a single action would, each with its own id",
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
   }
-  const rows = f.db
-    .query("SELECT uuid, payload, subscriber_id FROM webhook_deliveries")
-    .all() as Array<{
-    uuid: string;
-    payload: string;
-    subscriber_id: bigint;
-  }>;
+  const rows = asBody<
+    Array<{
+      uuid: string;
+      payload: string;
+      subscriber_id: bigint;
+    }>
+  >(f.db.query("SELECT uuid, payload, subscriber_id FROM webhook_deliveries").all());
   expect(new Set(rows.map((row) => row.uuid)).size).toBe(4);
   for (const row of rows) {
     const body = JSON.parse(row.payload);
@@ -1123,7 +1157,12 @@ test("bulk unsubscribing queues only memberships that really ended", async () =>
   ).toBe(200);
   await r.waitFor(4);
   expect(
-    r.received.map((x) => [x.body.data.subscriber.id, x.body.data.list_ids]).sort(ascending),
+    r.received
+      .map((x) => [
+        asBody<DeliveryBody>(x.body).data.subscriber.id,
+        asBody<DeliveryBody>(x.body).data.list_ids,
+      ])
+      .sort(ascending),
   ).toEqual([
     [a, [list]],
     [b, [other]],
@@ -1159,8 +1198,8 @@ test("a bulk action over the delivery budget is refused before any write", async
   const list = await newList(f);
   const selection = Math.ceil(MAX_BULK_DELIVERIES / 19);
   seed(f, selection, list);
-  const ids = (
-    f.db.query("SELECT id FROM subscribers ORDER BY id").all() as Array<{ id: bigint }>
+  const ids = asBody<Array<{ id: bigint }>>(
+    f.db.query("SELECT id FROM subscribers ORDER BY id").all(),
   ).map(({ id }) => Number(id));
   const unsubscribe = { action: "unsubscribe", target_list_ids: [list] };
   const half = Math.ceil(MAX_BULK_DELIVERIES / 38);
@@ -1225,24 +1264,27 @@ test("pinned HTTPS checks the configured name, sends it as SNI and refuses a bad
       }),
   );
   server.unref();
-  const { port } = server.address() as AddressInfo;
+  const { port } = asBody<AddressInfo>(server.address());
   let trust: string | undefined = cert;
   const f = await open({
     webhooks: {
       lookup: async () => ["127.0.0.1"],
       blocked: () => false,
       // The certificate covers `localhost` and 127.0.0.1, so only a name check refuses others.
-      fetch: ((url: string | URL, init: RequestInit & { tls?: object }) =>
+      fetch: asBody<typeof fetch>((url: string | URL, init: RequestInit & { tls?: object }) =>
         fetch(url, {
           ...init,
           tls: { ...init.tls, ...(trust ? { ca: trust } : {}) },
-        })) as typeof fetch,
+        }),
+      ),
     },
   });
   f.blockPrivate.value = true;
   const target = async (url: string) =>
-    (await f.json("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
-      .id as number;
+    asBody<number>(
+      (await f.json("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
+        .id,
+    );
   const valid = await target(`https://localhost:${port}/hook`);
   await blocklist(f, await f.subscriber("a@example.test"));
   await until(async () => (await deliveries(f, valid))[0]?.status === "delivered");
@@ -1252,14 +1294,14 @@ test("pinned HTTPS checks the configured name, sends it as SNI and refuses a bad
   const wrong = await target(`https://wrong.test:${port}/hook`);
   await blocklist(f, await f.subscriber("b@example.test"));
   await queued(f, wrong, 1);
-  expect((await deliveries(f, wrong))[0].last_error).toBe("network_error");
+  expect((await deliveries(f, wrong))[0]!.last_error).toBe("network_error");
   await f.json(`/api/webhooks/${wrong}`, "DELETE");
 
   trust = undefined;
   const untrusted = await target(`https://localhost:${port}/hook`);
   await blocklist(f, await f.subscriber("c@example.test"));
   await queued(f, untrusted, 1);
-  expect((await deliveries(f, untrusted))[0].last_error).toBe("network_error");
+  expect((await deliveries(f, untrusted))[0]!.last_error).toBe("network_error");
   expect(seen.length).toBe(1);
 });
 
@@ -1325,13 +1367,17 @@ test("every start names each enabled webhook the block refuses, one line each, a
     },
   });
   const created = async (url: string) =>
-    (await f.json("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
-      .id as number;
+    asBody<number>(
+      (await f.json("/api/webhooks", "POST", { url, events: ["subscriber.blocklisted"] })).body.data
+        .id,
+    );
   const privateHook = await created("http://private.test/hook");
   const hanging = await created("http://hang.test/hook");
   await created("http://public.test/hook");
   const notices = () =>
-    f.errors.map((error) => (error as Error).message).filter((line) => line.startsWith("Webhook "));
+    f.errors
+      .map((error) => asBody<Error>(error).message)
+      .filter((line) => line.startsWith("Webhook "));
   // The check's promise is returned inside an object: an async function would adopt it, and wait.
   const restart = async () => {
     await f.crashWebhooks();

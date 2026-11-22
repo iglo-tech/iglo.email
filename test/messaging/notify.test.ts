@@ -52,6 +52,7 @@ import { startWebhookDelivery } from "@/webhooks/delivery";
 import { createSubscriberTracking } from "@/analytics/subscriber";
 import { startReceiver } from "@/test/webhooks/receiver";
 import { waitWall } from "@/test/wait";
+import { asBody } from "@/test/read-body";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
@@ -465,7 +466,7 @@ async function createNotifyFixture(
       });
       return {
         ...created,
-        id: BigInt(created.id as any),
+        id: BigInt(asBody<number>(created.id)),
       };
     },
     drainOutbox,

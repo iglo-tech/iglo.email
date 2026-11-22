@@ -1,11 +1,16 @@
 // The policy of admin pages (D71), read over HTTP, and every Alpine expression those pages render,
 // through the parser of the CSP build they load.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-// @ts-expect-error The package ships this source without types.
-import { generateRuntimeFunction, Parser, Tokenizer } from "@alpinejs/csp/src/parser.js";
+import {
+  generateRuntimeFunction as untypedGenerate,
+  Parser as UntypedParser,
+  Tokenizer as UntypedTokenizer,
+  // @ts-expect-error The package ships this source without types.
+} from "@alpinejs/csp/src/parser.js";
 import { admin, get, login } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+import { asBody } from "@/test/read-body";
 
 const screens = [
   "/admin",
@@ -209,6 +214,17 @@ interface Node {
   readonly [child: string]: unknown;
 }
 
+// The Alpine CSP parser is untyped JavaScript: this is the typed view of the three exports this file uses.
+const { generateRuntimeFunction, Parser, Tokenizer } = asBody<{
+  generateRuntimeFunction: (expression: string) => unknown;
+  Parser: new (tokens: unknown) => { parse(): Node };
+  Tokenizer: new (source: string) => { tokenize(): unknown };
+}>({
+  generateRuntimeFunction: untypedGenerate,
+  Parser: UntypedParser,
+  Tokenizer: UntypedTokenizer,
+});
+
 /**
  * Globals a browser has and Bun does not, so `name in globalThis` alone would let them through:
  * the CSP build resolves a name in the component's scope only, and these are all undefined there.
@@ -266,7 +282,7 @@ function refused(node: Node, found: Array<string>): void {
     }
     for (const item of Array.isArray(child) ? child : [child]) {
       if (item && typeof item === "object") {
-        refused(item as Node, found);
+        refused(asBody<Node>(item), found);
       }
     }
   }
@@ -322,7 +338,7 @@ test("every rendered Alpine expression is one the CSP build can run", async () =
 
   const failures: Array<string> = [];
   for (const [key, path] of seen) {
-    const [name, value] = key.split("\0") as [string, string];
+    const [name, value] = asBody<[string, string]>(key.split("\0"));
     const expression = name === "x-for" ? value.replace(/^.*?\s(?:in|of)\s/, "") : value;
     try {
       generateRuntimeFunction(expression);
@@ -332,7 +348,7 @@ test("every rendered Alpine expression is one the CSP build can run", async () =
         failures.push(`${path} ${name}="${value}": ${reason}`);
       }
     } catch (error) {
-      failures.push(`${path} ${name}="${value}": ${(error as Error).message}`);
+      failures.push(`${path} ${name}="${value}": ${asBody<Error>(error).message}`);
     }
   }
   expect(failures).toEqual([]);

@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
@@ -25,7 +26,7 @@ const kept = { email: "kept@example.test", name: "Kept", external_id: "kept-1" }
 async function seed(f: PublicFixture) {
   const created = await f.json("/api/subscribers", "POST", kept);
   expect(created.status).toBe(200);
-  return created.body.data.id as number;
+  return asBody<number>(created.body.data.id);
 }
 /** The refused writes created nothing: the address they named is still free. */
 const freeAddress = async (f: PublicFixture) =>

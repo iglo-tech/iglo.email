@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import { asBody, readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const session = `m25-${randomBytes(6).toString("hex")}`;
@@ -54,7 +55,7 @@ const passed = await withProduction(
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
-      return (await response.json()) as { data: any };
+      return await readJson<{ data: any }>(response);
     };
     const settings = (await api("/api/settings")).data;
     await api("/api/settings/smtp", "PUT", [
@@ -104,17 +105,17 @@ const passed = await withProduction(
     const search = new URLSearchParams({ query: `to:"${email}"`, limit: "5" });
     let id = "";
     for (let i = 0; i < 100 && !id; i++, await Bun.sleep(50)) {
-      const found = (await (await fetch(`${sink.api}/api/v1/search?${search}`)).json()) as {
+      const found = await readJson<{
         messages: Array<{ ID: string }>;
-      };
+      }>(await fetch(`${sink.api}/api/v1/search?${search}`));
       id = found.messages[0]?.ID ?? "";
     }
     if (!id) {
       fail("optin-mail");
     }
-    const mail = (await (await fetch(`${sink.api}/api/v1/message/${id}`)).json()) as {
+    const mail = await readJson<{
       HTML: string;
-    };
+    }>(await fetch(`${sink.api}/api/v1/message/${id}`));
     const link = /href="([^"]*\/subscription\/optin\/[^"]*)"/
       .exec(mail.HTML)?.[1]
       ?.replaceAll("&amp;", "&");
@@ -125,9 +126,15 @@ const passed = await withProduction(
     expectText("Product updates", "optin-page");
     shot("optin");
     const query = new URLSearchParams({ query: `subscribers.email = '${email}'` });
-    const row = async () => (await api(`/api/subscribers?${query}`)).data.results[0];
+    const row = async () =>
+      asBody<{
+        id: number;
+        name: string;
+        uuid: string;
+        lists: Array<{ id: number; subscription_status: string }>;
+      }>((await api(`/api/subscribers?${query}`)).data.results[0]);
     const status = async (list: number) =>
-      (await row()).lists.find((l: { id: number }) => l.id === list)?.subscription_status;
+      (await row()).lists.find((l) => l.id === list)?.subscription_status;
     if ((await status(double.id)) !== "unconfirmed") {
       fail("optin-get-changed");
     }
@@ -138,7 +145,7 @@ const passed = await withProduction(
     }
 
     // Preferences through the page reached from the unsubscribe link.
-    const uuid = (await row()).uuid as string;
+    const uuid = (await row()).uuid;
     const prefs = `${origin}/subscription/00000000-0000-0000-0000-000000000000/${uuid}`;
     browser("open", prefs);
     expectText("Unsubscribe", "unsub-page");
@@ -169,14 +176,14 @@ const passed = await withProduction(
         subject: "Browser marketing",
         body: "<p>Hello</p>",
       })
-    ).data.id as number;
+    ).data.id;
     const sent = await api("/api/tx", "POST", {
       subscriber_id: (await row()).id,
       template_id: template,
       kind: "marketing",
       list_id: single.id,
     });
-    const sendUuid = (await api(`/api/sends/${sent.data.sends[0].id}`)).data.uuid as string;
+    const sendUuid = asBody<string>((await api(`/api/sends/${sent.data.sends[0].id}`)).data.uuid);
     const paired = `${origin}/m/${sendUuid}/unsubscribe/${uuid}?manage=true`;
     browser("open", paired);
     browser("click", "#privacy-export");

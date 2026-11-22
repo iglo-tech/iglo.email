@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { command, spawnGroup, stopGroup } from "@/test/reference/command";
 import type { GroupChild } from "@/test/reference/command";
 import { cache, repository, sourceCommit } from "@/test/reference/prepare";
+import { asBody } from "@/test/read-body";
 
 interface State {
   runId: string;
@@ -85,9 +86,9 @@ async function finish(runner: ReturnType<typeof startRunner>) {
 async function stateFile(path: string, runner: ReturnType<typeof startRunner>): Promise<State> {
   return waitFor(async () => {
     try {
-      return JSON.parse(await readFile(path, "utf-8")) as State;
+      return asBody<State>(JSON.parse(await readFile(path, "utf-8")));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      if (asBody<NodeJS.ErrnoException>(error).code !== "ENOENT") {
         throw error;
       }
       if (runner.child.exitCode !== null || runner.child.signalCode !== null) {
@@ -180,9 +181,11 @@ let sentinel: GroupChild | undefined;
 let sentinelCreated = false;
 const active: Array<ReturnType<typeof startRunner>> = [];
 async function verifySentinelVolume() {
-  const volumes = JSON.parse(await docker(["volume", "inspect", sentinelName])) as Array<{
-    Labels?: Record<string, string>;
-  }>;
+  const volumes = asBody<
+    Array<{
+      Labels?: Record<string, string>;
+    }>
+  >(JSON.parse(await docker(["volume", "inspect", sentinelName])));
   assert(
     volumes[0]?.Labels?.["io.iglo.email.reference.run"] === sentinelLabel,
     "Sentinel volume has an unexpected ownership label",
@@ -240,7 +243,7 @@ try {
       verify.output().includes("v1.32.0"),
     "Pinned versions/source were not validated",
   );
-  const verified = JSON.parse(await readFile(verifyPath, "utf-8")) as State;
+  const verified = asBody<State>(JSON.parse(await readFile(verifyPath, "utf-8")));
   assert(runId(verify.output()) === verified.runId, "Run ID does not match child environment");
   await checkCleanup(verified.runId, verified);
   await sentinelSurvives();
@@ -256,7 +259,7 @@ try {
   active.push(orphan);
   const orphanCode = await finish(orphan);
   assert(orphanCode === 0, `Exited parent cleanup failed (${orphanCode}): ${orphan.output()}`);
-  const orphanState = JSON.parse(await readFile(orphanPath, "utf-8")) as State;
+  const orphanState = asBody<State>(JSON.parse(await readFile(orphanPath, "utf-8")));
   assert(orphanState.grandchildUrl, "Exited parent did not start a descendant");
   await checkCleanup(orphanState.runId, orphanState);
   await sentinelSurvives();
@@ -288,7 +291,7 @@ try {
     failedCode === 37,
     `Command failure was not propagated (${failedCode}): ${failure.output()}`,
   );
-  const failedState = JSON.parse(await readFile(failurePath, "utf-8")) as State;
+  const failedState = asBody<State>(JSON.parse(await readFile(failurePath, "utf-8")));
   assert(
     failedState.runId !== waiting.runId &&
       failedState.reference !== waiting.reference &&
@@ -394,7 +397,7 @@ try {
     try {
       return Number(await readFile(startupMarker, "utf-8"));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      if (asBody<NodeJS.ErrnoException>(error).code !== "ENOENT") {
         throw error;
       }
       if (startup.child.exitCode !== null || startup.child.signalCode !== null) {

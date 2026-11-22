@@ -2,8 +2,9 @@
 // running without finishing: the shape of a query that is slow only after its first rows.
 import { writeSync } from "node:fs";
 import { createIdWriter } from "@/subscribers/id-stage";
+import { asBody } from "@/test/read-body";
 
-const request = JSON.parse(await Bun.stdin.text()) as { spool: string };
+const request = asBody<{ spool: string }>(JSON.parse(await Bun.stdin.text()));
 for (const index of [0, 1]) {
   const writer = createIdWriter(`${request.spool}${index}`);
   writer.push(1n);

@@ -8,6 +8,7 @@ import type { TxFixture } from "@/test/tx/fixture";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import { bounceMessage, envelope, network, post } from "@/test/bounces/ses-fixture";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -26,23 +27,22 @@ async function hooked(f: TxFixture, subscribed: Array<string> = events) {
   cleanups.push(() => r.close());
   const created = await f.json("/api/webhooks", "POST", { url: r.url(), events: subscribed });
   expect(created.status).toBe(200);
-  return { receiver: r, secret: created.body.data.secret as string };
+  return { receiver: r, secret: asBody<string>(created.body.data.secret) };
 }
 const rowsOf = (f: TxFixture) =>
-  f.db.query("SELECT subscriber_id, send_id, type, meta FROM bounces ORDER BY id").all() as Array<{
-    subscriber_id: bigint | null;
-    send_id: bigint | null;
-    type: string;
-    meta: string;
-  }>;
-const statusOf = async (f: TxFixture, id: number) =>
-  (await f.json(`/api/subscribers/${id}`)).body.data?.status as string | undefined;
-const deliveries = (f: TxFixture) =>
-  (
-    f.db.query("SELECT event, payload FROM webhook_deliveries ORDER BY id").all() as Array<{
-      event: string;
-      payload: string;
+  asBody<
+    Array<{
+      subscriber_id: bigint | null;
+      send_id: bigint | null;
+      type: string;
+      meta: string;
     }>
+  >(f.db.query("SELECT subscriber_id, send_id, type, meta FROM bounces ORDER BY id").all());
+const statusOf = async (f: TxFixture, id: number) =>
+  asBody<string | undefined>((await f.json(`/api/subscribers/${id}`)).body.data?.status);
+const deliveries = (f: TxFixture) =>
+  asBody<Array<{ event: string; payload: string }>>(
+    f.db.query("SELECT event, payload FROM webhook_deliveries ORDER BY id").all(),
   ).map((row) => ({ event: row.event, body: JSON.parse(row.payload) }));
 
 test("native meta spellings are stored as objects", async () => {
@@ -61,7 +61,7 @@ test("native meta spellings are stored as objects", async () => {
       ).status,
     ).toBe(200);
   }
-  expect(rowsOf(f).map((row) => JSON.parse(row.meta))).toEqual([
+  expect(rowsOf(f).map((row) => asBody<unknown>(JSON.parse(row.meta)))).toEqual([
     { a: 1 },
     { value: "plain text" },
     { value: 7 },
@@ -207,15 +207,12 @@ const sendTo = async (f: TxFixture, body: JsonObject) => {
     ...body,
   });
   expect(sent.status).toBe(200);
-  const [row] = sent.body.data.sends as Array<{ id: number; status: string }>;
+  const [row] = asBody<Array<{ id: number; status: string }>>(sent.body.data.sends);
   expect(row!.status).toBe("sent");
-  return (await f.json(`/api/sends/${row!.id}`)).body.data as {
-    id: number;
-    uuid: string;
-  };
+  return asBody<{ id: number; uuid: string }>((await f.json(`/api/sends/${row!.id}`)).body.data);
 };
 const uuidOf = async (f: TxFixture, id: number) =>
-  (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
 /** A public wipe through the subscriber's own marketing send (B123, D126). */
 const wipe = async (f: TxFixture, id: number) =>
   expect((await f.request(await f.privacyPath(id, "wipe"), { method: "POST" })).status).toBe(200);
@@ -400,10 +397,10 @@ test("one request prunes a bounded batch of expired receipts, and a backlog stil
   })();
   const expiredLeft = () =>
     Number(
-      (
+      asBody<{ n: bigint }>(
         f.db
           .query("SELECT count(*) AS n FROM bounce_receipts WHERE expires_at <= ?")
-          .get(f.clock.now().toISOString()) as { n: bigint }
+          .get(f.clock.now().toISOString()),
       ).n,
     );
 
@@ -455,9 +452,9 @@ test("D81: the automatic blocklist action leaves the memberships unsubscribed", 
   ).toBe(200);
   const body = (await f.json(`/api/subscribers/${id}`)).body.data;
   expect(body.status).toBe("blocklisted");
-  expect(body.lists.map((l: { subscription_status: string }) => l.subscription_status)).toEqual([
-    "unsubscribed",
-  ]);
+  expect(
+    asBody<Array<{ subscription_status: string }>>(body.lists).map((l) => l.subscription_status),
+  ).toEqual(["unsubscribed"]);
 });
 
 test("D81: the automatic blocklist action queues subscriber.unsubscribed for the memberships it ends", async () => {

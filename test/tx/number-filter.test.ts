@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { txFixture } from "@/test/tx/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { TxFixture } from "@/test/tx/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
@@ -31,7 +32,7 @@ async function render(f: TxFixture, body: string, data: JsonObject = {}) {
     .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
       String.fromCharCode(Number.parseInt(hex, 16)),
     );
-  return { http: response.status, status: row?.status as string | undefined, message };
+  return { http: response.status, status: asBody<string | undefined>(row?.status), message };
 }
 
 test("integers are grouped and fractions round to three places, half away from zero", async () => {

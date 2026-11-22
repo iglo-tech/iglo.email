@@ -2,6 +2,7 @@
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 
 function check(value: unknown, label: string): asserts value {
@@ -29,7 +30,7 @@ export async function runSettingsCouncilSmall(target: {
   async function read() {
     const response = await request();
     check(response.status === 200, "read");
-    return (await response.json()).data as Record<string, any>;
+    return asBody<Record<string, any>>((await response.json()).data);
   }
   const original = await read();
   function candidate() {
@@ -58,8 +59,9 @@ export async function runSettingsCouncilSmall(target: {
     "supplementary-name-no-false-collision",
   );
   check(
-    JSON.stringify((await read()).smtp.map((server: { name: string }) => server.name)) ===
-      '["email--","email---"]',
+    JSON.stringify(
+      asBody<{ smtp: Array<{ name: string }> }>(await read()).smtp.map((server) => server.name),
+    ) === '["email--","email---"]',
     "supplementary-name-rune-projection",
   );
 

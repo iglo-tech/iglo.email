@@ -18,6 +18,7 @@ import {
   post,
 } from "@/test/bounces/ses-fixture";
 import type { Network } from "@/test/bounces/ses-fixture";
+import { asBody } from "@/test/read-body";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -32,14 +33,16 @@ async function open(net: Network = network()) {
   return f;
 }
 const rows = (f: TxFixture) =>
-  f.db.query("SELECT subscriber_id, type, source, meta FROM bounces ORDER BY id").all() as Array<{
-    subscriber_id: bigint | null;
-    type: string;
-    source: string;
-    meta: string;
-  }>;
+  asBody<
+    Array<{
+      subscriber_id: bigint | null;
+      type: string;
+      source: string;
+      meta: string;
+    }>
+  >(f.db.query("SELECT subscriber_id, type, source, meta FROM bounces ORDER BY id").all());
 const status = async (f: TxFixture, id: number) =>
-  (await f.json(`/api/subscribers/${id}`)).body.data?.status as string | undefined;
+  asBody<string | undefined>((await f.json(`/api/subscribers/${id}`)).body.data?.status);
 
 test("a signed permanent bounce is recorded and the hard action applies", async () => {
   const net = network();
@@ -133,7 +136,7 @@ test("event-publishing messages and several recipients are accepted", async () =
 test("the campaign delivery in the headers selects the subscriber", async () => {
   const f = await open();
   const id = await f.subscriber("named@example.com");
-  const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
   const headers = [{ name: "x-listmonk-subscriber", value: uuid }];
   await post(f, envelope(f, { Message: bounceMessage(f, ["named@example.com"], {}, headers) }));
   expect(rows(f)[0]!.subscriber_id).toBe(BigInt(id));
@@ -445,10 +448,9 @@ test("the row, the action and the deliveries commit together, and a failure leav
   // first attempt is in flight: a jump past its lease would count that attempt as abandoned.
   await r.waitFor(2);
   await Bun.sleep(20);
-  expect(r.received.map((delivery) => delivery.body.event).sort(ascending)).toEqual([
-    "bounce.recorded",
-    "subscriber.blocklisted",
-  ]);
+  expect(
+    r.received.map((delivery) => asBody<{ event: string }>(delivery.body).event).sort(ascending),
+  ).toEqual(["bounce.recorded", "subscriber.blocklisted"]);
 
   // A provider's repeat of the same message adds no row and no delivery.
   expect((await post(f, message)).status).toBe(200);

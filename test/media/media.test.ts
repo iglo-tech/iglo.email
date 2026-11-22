@@ -10,6 +10,7 @@ import { startStalledSink } from "@/test/tx/sink";
 import { imageSize } from "@/media/image";
 import { makeFilename } from "@/media/filesystem";
 import type { JsonObject } from "@/test/json-object";
+import { readJson } from "@/test/read-body";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -45,7 +46,7 @@ const stored = async (
 ) => {
   const response = await upload(f, name, content);
   expect(response.status).toBe(200);
-  return (await response.json()).data as { id: number; filename: string };
+  return (await readJson<{ data: { id: number; filename: string } }>(response)).data;
 };
 const uploads = (f: Pick<Fixture, "directory">) => join(f.directory, "uploads");
 const TEMPORARY = ".iglo-email-uploading";

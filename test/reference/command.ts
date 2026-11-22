@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
+import { asBody } from "@/test/read-body";
 
 export interface GroupChild extends ChildProcess {
   stopGroup(signal?: NodeJS.Signals): void;
 }
 
 export function spawnGroup(executable: string, args: Array<string>, options: SpawnOptions = {}) {
-  const child = spawn(executable, args, { ...options, detached: true }) as GroupChild;
+  const child = asBody<GroupChild>(spawn(executable, args, { ...options, detached: true }));
   let owned = true;
   child.stopGroup = (signal = "SIGTERM") => {
     if (!owned || !child.pid) {
@@ -15,7 +16,7 @@ export function spawnGroup(executable: string, args: Array<string>, options: Spa
     try {
       process.kill(-child.pid, signal);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+      if (asBody<NodeJS.ErrnoException>(error).code !== "ESRCH") {
         throw error;
       }
     }

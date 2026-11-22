@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { admin, api, get, login, userWith } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+import { readJson } from "@/test/read-body";
 
 let f: Fixture;
 let cookie = "";
@@ -89,7 +90,7 @@ test("stored names are escaped where the server writes them", async () => {
     name: hostile,
     permissions: ["lists:get_all"],
   });
-  const { data } = (await created.json()) as { data: { id: number } };
+  const { data } = await readJson<{ data: { id: number } }>(created);
   for (const path of [
     `/admin/users/roles/${data.id}`,
     "/admin/users/new",

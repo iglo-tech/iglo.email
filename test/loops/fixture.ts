@@ -2,11 +2,13 @@
 import { openDatabase } from "@/db/connection";
 import { createRealClock } from "@/clock";
 import { startLoop } from "@/loops/loop";
+import { readJson } from "@/test/read-body";
 import { TestClock } from "@/test/server/fixture";
 
 interface Running {
   loop: ReturnType<typeof startLoop<number>>;
-  release?: () => void;
+  // Set while the process call holds a row; releasing it lets that call finish.
+  hold: { release?: () => void };
 }
 
 export function startLoopFixture(dataDir: string) {
@@ -31,7 +33,7 @@ export function startLoopFixture(dataDir: string) {
         return true;
       case "start": {
         const connection = databases[input.connection ?? 0]!;
-        const entry: Running = {} as Running;
+        const hold: Running["hold"] = {};
         const observe = (id: number) => {
           started.push({
             loop: input.name,
@@ -67,13 +69,12 @@ export function startLoopFixture(dataDir: string) {
                 observe(id);
                 if (input.hold) {
                   await new Promise<void>((resolve) => {
-                    entry.release = resolve;
+                    hold.release = resolve;
                   });
                 }
               },
         });
-        entry.loop = loop;
-        running.set(input.name, entry);
+        running.set(input.name, { loop, hold });
         // Observe failure even when the test requests the result later.
         void loop.done.catch(() => undefined);
         return true;
@@ -98,7 +99,7 @@ export function startLoopFixture(dataDir: string) {
           .catch(() => undefined);
         return true;
       case "release":
-        running.get(input.name)!.release?.();
+        running.get(input.name)!.hold.release?.();
         return true;
       case "done": {
         try {
@@ -120,7 +121,7 @@ export function startLoopFixture(dataDir: string) {
     async fetch(request) {
       try {
         return Response.json({
-          result: await action((await request.json()) as Record<string, any>),
+          result: await action(await readJson<Record<string, any>>(request)),
         });
       } catch (error) {
         return Response.json({ error: String(error) }, { status: 400 });
@@ -131,7 +132,7 @@ export function startLoopFixture(dataDir: string) {
     origin: `http://127.0.0.1:${server.port}`,
     async close() {
       for (const entry of running.values()) {
-        entry.release?.();
+        entry.hold.release?.();
         void entry.loop.stop().catch(() => undefined);
       }
       await Promise.allSettled([...running.values()].map((entry) => entry.loop.done));

@@ -7,6 +7,7 @@ import { openReadOnly } from "@/subscribers/query-runner";
 import { childPids } from "@/test/host-processes";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
+import { asBody } from "@/test/read-body";
 
 let f: QueryFixture;
 let listA: number, listB: number;
@@ -268,9 +269,9 @@ describe("GET /api/subscribers", () => {
     const all = await f.json("/api/subscribers?per_page=all", "GET", undefined, scoped);
     expect(emails(all.body)).toEqual(["bob", "alice"]);
     const bob = all.body.data.results[0];
-    const hidden = bob.lists.find((list: { id: number }) => list.id === listB);
+    const hidden = asBody<Array<{ id: number }>>(bob.lists).find((list) => list.id === listB);
     expect(hidden).toMatchObject({ name: "*Unknown", restricted: true });
-    expect("description" in hidden).toBe(false);
+    expect("description" in hidden!).toBe(false);
     const other = await f.json(`/api/subscribers?list_id=${listB}`, "GET", undefined, scoped);
     expect(other.body.data.total).toBe(0);
     const exported = await f.request("/api/subscribers/export", { headers: scoped });
@@ -425,8 +426,8 @@ describe("query-selected actions", () => {
     const bob = (await f.json(`/api/subscribers/${ids.bob}`)).body.data;
     expect(bob.status).toBe("blocklisted");
     expect(
-      bob.lists.every(
-        (l: { subscription_status: string }) => l.subscription_status === "unsubscribed",
+      asBody<Array<{ subscription_status: string }>>(bob.lists).every(
+        (l) => l.subscription_status === "unsubscribed",
       ),
     ).toBe(true);
     const dave = (await f.json(`/api/subscribers/${ids.dave}`)).body.data;

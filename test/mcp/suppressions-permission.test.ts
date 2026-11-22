@@ -8,6 +8,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { admin, startMailbox, startProduction } from "@/test/worked-example/harness";
 import type { Mailbox, Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 
 let production: Production;
 let mailbox: Mailbox;
@@ -75,10 +76,10 @@ async function callTool(name: string, args: Record<string, unknown>, auth: strin
       params: { name, arguments: args },
     }),
   });
-  const reply = (await response.json()) as {
+  const reply = asBody<{
     result?: { isError?: boolean; content: Array<{ type: string; text: string }> };
     error?: { message: string };
-  };
+  }>(await response.json());
   if (reply.error) {
     throw new Error(`${name}: ${reply.error.message}`);
   }

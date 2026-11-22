@@ -3,6 +3,7 @@
 // for one complete pass (an idle sleep) without sleeping in real time.
 import { fixturePageSite } from "@/test/public/site";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -414,10 +415,12 @@ export async function schedulerFixture(
     if (created.status !== 200) {
       throw new Error(`template ${JSON.stringify(created.body)}`);
     }
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
-  const list = async (name: string, optin = "single") =>
-    (await json("/api/lists", "POST", { name, type: "public", optin })).body.data.id as number;
+  const list = async (name: string, optin = "single") => {
+    const created = await json("/api/lists", "POST", { name, type: "public", optin });
+    return asBody<number>(created.body.data.id);
+  };
   const subscriber = async (email: string, extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", {
       email,
@@ -427,7 +430,7 @@ export async function schedulerFixture(
     if (created.status !== 200) {
       throw new Error(`subscriber ${JSON.stringify(created.body)}`);
     }
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   const sequence = async (definition: JsonObject) => {
     const created = await json("/api/sequences", "POST", {
@@ -440,10 +443,9 @@ export async function schedulerFixture(
     if (created.status !== 200) {
       throw new Error(JSON.stringify(created.body));
     }
-    return created.body.data as {
-      id: number;
-      steps: Array<{ id: number }>;
-    } & Record<string, any>;
+    return asBody<{ id: number; steps: Array<{ id: number }> } & Record<string, any>>(
+      created.body.data,
+    );
   };
   const event = async (email: string, name = "order_paid", extra: JsonObject = {}) => {
     const r = await json("/api/subscriber-events", "POST", {
@@ -454,19 +456,30 @@ export async function schedulerFixture(
     if (r.status !== 200) {
       throw new Error(JSON.stringify(r.body));
     }
-    return r.body.data as {
+    return asBody<{
       subscriber_id: number;
       enrollments: { started: Array<{ id: number }> };
-    };
+    }>(r.body.data);
   };
   const enrollment = async (id: number) =>
-    (await json(`/api/enrollments/${id}`)).body.data as Record<string, any>;
+    asBody<Record<string, any>>((await json(`/api/enrollments/${id}`)).body.data);
+  type SendRow = {
+    status: string;
+    skip_reason: string | null;
+    step_id: number | null;
+    enrollment_id: number | null;
+    subscriber_id: number;
+    source: string;
+    uuid: string;
+    sent_at: string;
+    [field: string]: unknown;
+  };
   const sendLog = async (query = "") => {
     const r = await json(`/api/sends?per_page=100${query}`);
     if (r.status !== 200) {
       throw new Error(`send log ${r.status} ${JSON.stringify(r.body)}`);
     }
-    return (r.body.data.results as Array<Record<string, any>>).slice().reverse();
+    return asBody<{ results: Array<SendRow> }>(r.body.data).results.slice().reverse();
   };
   return {
     app,

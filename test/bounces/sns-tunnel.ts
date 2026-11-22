@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TLSSocket } from "node:tls";
 import { CERT, good } from "@/test/bounces/ses-fixture";
+import { asBody } from "@/test/read-body";
 
 const { hostname: host, pathname: certPath } = new URL(CERT);
 
@@ -102,7 +103,7 @@ export async function startSnsTunnel(
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => resolve());
   });
-  const { port } = server.address() as AddressInfo;
+  const { port } = asBody<AddressInfo>(server.address());
   return {
     environment: {
       HTTPS_PROXY: `http://127.0.0.1:${port}`,

@@ -8,6 +8,7 @@ import { openDatabase } from "@/db/connection";
 import { runMigrations } from "@/db/migrations";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
+import { asBody } from "@/test/read-body";
 
 const base = resolve(
   process.env.IGLO_EMAIL_PERF_DIR ?? join(import.meta.dir, "../../upstream/measurements"),
@@ -81,7 +82,7 @@ try {
       }
       const written = performance.now();
       for (let id = 1; id <= rows; id++) {
-        if ((lookup.get(id) as { value: string } | null)?.value !== `value-${id}`) {
+        if (asBody<{ value: string } | null>(lookup.get(id))?.value !== `value-${id}`) {
           throw new Error("Incorrect lookup");
         }
       }

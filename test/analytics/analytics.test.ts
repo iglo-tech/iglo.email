@@ -13,8 +13,10 @@ import { createSummaries, startSummaryRefresh } from "@/analytics/summaries";
 import { createRouter, startServer } from "@/server/server";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
-const lists = async () => (await data("/api/dashboard/counts")).lists.total as number;
+const lists = async () =>
+  (await data<{ lists: { total: number } }>("/api/dashboard/counts")).lists.total;
 const at = (text: string) => new Date(text);
 const due = (spec: string, after: string, until: string) => dueBetween(spec, at(after), at(until));
 const dueZone = (zone: string) =>
@@ -25,9 +27,9 @@ const dueZone = (zone: string) =>
   );
 const sends = async (from: string, to: string, group: string) =>
   (
-    (await data(`/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`)) as Array<{
-      sends: number;
-    }>
+    await data<Array<{ sends: number }>>(
+      `/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`,
+    )
   ).map((row) => row.sends);
 const week = (id: number, count: number) => ({
   list_id: id,
@@ -93,10 +95,10 @@ const relogin = async () => {
   }
   headers = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
 };
-const data = async (path: string) => {
+const data = async <T = unknown>(path: string): Promise<T> => {
   const response = await f.json(path, "GET", undefined, headers);
   expect(response.status).toBe(200);
-  return response.body.data;
+  return asBody<T>(response.body.data);
 };
 
 test("periods are UTC DATE_TRUNC, with weeks from Monday", async () => {
@@ -219,33 +221,35 @@ test("sends group by template and by sequence step; only sent ones count as send
   const { db, owners } = f;
   const at = f.clock.now().toISOString();
   const template = (name: string) =>
-    (
+    asBody<{ id: bigint }>(
       db
         .query(
           "INSERT INTO templates (name, type, subject, body) VALUES (?, 'tx', 's', 'b') RETURNING id",
         )
-        .get(name) as { id: bigint }
+        .get(name),
     ).id;
   const receipt = template("receipt");
   const welcome = template("welcome");
-  const { id: sequence } = db
-    .query(
-      `INSERT INTO sequences (uuid, name, trigger) VALUES ('q', 'Onboarding', '{"event":"x"}') RETURNING id`,
-    )
-    .get() as { id: bigint };
+  const { id: sequence } = asBody<{ id: bigint }>(
+    db
+      .query(
+        `INSERT INTO sequences (uuid, name, trigger) VALUES ('q', 'Onboarding', '{"event":"x"}') RETURNING id`,
+      )
+      .get(),
+  );
   const step = (position: number) =>
-    (
+    asBody<{ id: bigint }>(
       db
         .query(
           "INSERT INTO sequence_steps (uuid, sequence_id, position, wait, kind) VALUES (?, ?, ?, 'PT0S', 'marketing') RETURNING id",
         )
-        .get(`step-${position}`, sequence, position) as { id: bigint }
+        .get(`step-${position}`, sequence, position),
     ).id;
   const first = step(1);
   const second = step(2);
   let n = 0;
   const send = (template: bigint, step: bigint | null, status = "sent") =>
-    (
+    asBody<{ id: bigint }>(
       db
         .query(
           "INSERT INTO sends (uuid, source, kind, to_email, template_id, step_id, status, created_at, sent_at) VALUES (?, ?, 'transactional', 'a@example.test', ?, ?, ?, ?, ?) RETURNING id",
@@ -258,7 +262,7 @@ test("sends group by template and by sequence step; only sent ones count as send
           status,
           at,
           status === "sent" ? at : null,
-        ) as { id: bigint }
+        ),
     ).id;
   const one = send(receipt, null);
   send(receipt, null, "failed");
@@ -316,7 +320,7 @@ test("sends group by template and by sequence step; only sent ones count as send
   ]);
   // A deleted template keeps its numbers under a null group.
   db.run("DELETE FROM templates WHERE id = ?", [receipt]);
-  expect((await data(`/api/sends/analytics?${wide}`))[0]).toMatchObject({
+  expect((await data<Array<unknown>>(`/api/sends/analytics?${wide}`))[0]).toMatchObject({
     template_id: null,
     template_name: null,
     sends: 1,
@@ -329,7 +333,7 @@ test("sequence counts are per page of IDs, per step, and leave test enrollments 
   const owners = f.owners;
   const at = "2026-01-02T00:00:00.000Z";
   const one = (sql: string, ...args: Array<string | number | bigint | null>) =>
-    (db.query(sql).get(...args) as { id: bigint }).id;
+    asBody<{ id: bigint }>(db.query(sql).get(...args)).id;
   const subscriber = await f.subscriber("counts@example.test", []);
   const other = await f.subscriber("counts-other@example.test", []);
   const template = one(
@@ -380,13 +384,11 @@ test("sequence counts are per page of IDs, per step, and leave test enrollments 
   }
   owners.tracking.click(sent, link, null);
 
-  const counts = await data(`/api/sequences/counts?id=${sequence}`);
-  const byStatus = Object.fromEntries(
-    (counts.enrollments as Array<{ status: string; count: number }>).map((r) => [
-      r.status,
-      r.count,
-    ]),
-  );
+  const counts = await data<{
+    enrollments: Array<{ status: string; count: number }>;
+    steps: Array<unknown>;
+  }>(`/api/sequences/counts?id=${sequence}`);
+  const byStatus = Object.fromEntries(counts.enrollments.map((r) => [r.status, r.count]));
   expect(byStatus).toEqual({ active: 1, completed: 1, exited: 1 });
   const row = (id: bigint, position: number, sentCount: number, skipped: number, seen: number) => ({
     sequence_id: Number(sequence),
@@ -441,9 +443,9 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
     expect(await lists()).toBe(0);
     await tick(55 * 60_000); // 04:00:05 passed the cron minute.
     await until(1);
-    const { data: raw } = f.db
-      .query("SELECT data FROM analytics_summaries WHERE name = 'list_stats'")
-      .get() as { data: string };
+    const { data: raw } = asBody<{ data: string }>(
+      f.db.query("SELECT data FROM analytics_summaries WHERE name = 'list_stats'").get(),
+    );
     expect(JSON.parse(raw)).toEqual({});
     // Off forgets the rows, so on starts again from now.
     settings.enabled = false;
@@ -504,9 +506,9 @@ test("reader limits: a timeout kills the child, a full queue is refused, failure
   const router = createRouter();
   let current = failed;
   registerAnalyticsRoutes(router, {
-    reader: {
+    reader: asBody<never>({
       respond: (method: "dashboardCounts") => current.respond(method, []),
-    } as never,
+    }),
     summaries,
     campaigns: f.owners.store,
     roles: f.owners.roles,
@@ -532,9 +534,9 @@ test("reader limits: a timeout kills the child, a full queue is refused, failure
 test("the dashboard campaigns card reads through the reader", async () => {
   const list = await f.list("news");
   await f.campaign({ name: "c", subject: "s", lists: [list] });
-  expect((await data("/api/dashboard/campaigns")).map((row: { name: string }) => row.name)).toEqual(
-    ["c"],
-  );
+  expect(
+    (await data<Array<{ name: string }>>("/api/dashboard/campaigns")).map((row) => row.name),
+  ).toEqual(["c"]);
   const failed = createAnalyticsReader({ path: "x", command: ["false"] });
   const router = createRouter();
   registerAnalyticsRoutes(router, {
@@ -612,7 +614,8 @@ function refreshing(interval: string) {
       await Bun.sleep(1);
       await settled();
     },
-    lists: async () => (await data("/api/dashboard/counts")).lists.total as number,
+    lists: async () =>
+      (await data<{ lists: { total: number } }>("/api/dashboard/counts")).lists.total,
     async stop() {
       f.clock.advance(60_000);
       await loop.stop().catch(() => {}); // A test's own assertion reports a dead loop.
@@ -706,21 +709,27 @@ test("@every counts from when scheduling starts, not from multiples of the durat
 });
 
 test("a send counts on the day it was delivered, not the day it was queued", async () => {
-  const { id: template } = f.db
-    .query(
-      "INSERT INTO templates (name, type, subject, body) VALUES ('t', 'tx', 's', 'b') RETURNING id",
-    )
-    .get() as { id: bigint };
-  const { id: sequence } = f.db
-    .query(
-      `INSERT INTO sequences (uuid, name, trigger) VALUES ('q', 'Q', '{"event":"x"}') RETURNING id`,
-    )
-    .get() as { id: bigint };
-  const { id: step } = f.db
-    .query(
-      "INSERT INTO sequence_steps (uuid, sequence_id, position, wait, kind) VALUES ('st', ?, 1, 'PT0S', 'marketing') RETURNING id",
-    )
-    .get(sequence) as { id: bigint };
+  const { id: template } = asBody<{ id: bigint }>(
+    f.db
+      .query(
+        "INSERT INTO templates (name, type, subject, body) VALUES ('t', 'tx', 's', 'b') RETURNING id",
+      )
+      .get(),
+  );
+  const { id: sequence } = asBody<{ id: bigint }>(
+    f.db
+      .query(
+        `INSERT INTO sequences (uuid, name, trigger) VALUES ('q', 'Q', '{"event":"x"}') RETURNING id`,
+      )
+      .get(),
+  );
+  const { id: step } = asBody<{ id: bigint }>(
+    f.db
+      .query(
+        "INSERT INTO sequence_steps (uuid, sequence_id, position, wait, kind) VALUES ('st', ?, 1, 'PT0S', 'marketing') RETURNING id",
+      )
+      .get(sequence),
+  );
   f.db
     .query(
       "INSERT INTO sends (uuid, source, kind, to_email, template_id, step_id, status, created_at, sent_at) VALUES ('s', 'sequence', 'transactional', 'a@example.test', ?, ?, 'sent', '2026-01-01T23:59:00.000Z', '2026-01-02T00:01:00.000Z')",
@@ -774,7 +783,7 @@ const until = async (condition: () => boolean) => {
 };
 const kinds = async (reads: Array<Promise<unknown>>) =>
   (await Promise.allSettled(reads)).map((result) =>
-    result.status === "rejected" ? (result.reason as ReaderError).kind : "read",
+    result.status === "rejected" ? asBody<ReaderError>(result.reason).kind : "read",
   );
 
 test("closing stops admission, refuses queued reads and awaits every child", async () => {
@@ -939,7 +948,7 @@ test("a read over a limit is a clean error, never a partial body", async () => {
     }),
   );
   expect(response.status).toBe(422);
-  expect((await response.json()) as { message: string }).toMatchObject({
+  expect(await readJson<{ message: string }>(response)).toMatchObject({
     message: expect.stringContaining("too large"),
   });
   expect(f.errors).toEqual([]);

@@ -2,6 +2,21 @@
 import { createConnection } from "node:net";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
+
+/** A subscriber or list as the API returns it, read as the fields the checks use. */
+type Row = {
+  id: number;
+  status: string;
+  lists: Array<{
+    id: number;
+    name?: string;
+    restricted?: boolean;
+    subscription_status?: string;
+    [field: string]: any;
+  }>;
+  [field: string]: any;
+};
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -48,7 +63,7 @@ export async function runSubscriberScope(target: {
       resources.push({ kind, id: value.id });
     }
     check(response.status === 200 && value?.id, "subscriber-scope-setup");
-    return value;
+    return asBody<Row>(value);
   }
   try {
     const accessible = await create("/api/lists", "lists", { name: `allowed-${suffix}` });
@@ -86,12 +101,12 @@ export async function runSubscriberScope(target: {
     });
     const limited = { Authorization: `Basic ${btoa(`${token.username}:${token.password}`)}` };
     let response = await request(`/api/subscribers/${visible.id}`, "GET", undefined, limited);
-    let row = (await response.json()).data;
+    let row = asBody<Row>((await response.json()).data);
     check(
       response.status === 200 &&
         row.lists.find((entry: any) => entry.id === hidden.id)?.name === "*Unknown" &&
         row.lists.find((entry: any) => entry.id === hidden.id)?.restricted === true &&
-        !("description" in row.lists.find((entry: any) => entry.id === hidden.id)),
+        !("description" in row.lists.find((entry: any) => entry.id === hidden.id)!),
       "subscriber-scope-mask",
     );
     const invisibleBefore = (await (await request(`/api/subscribers/${invisible.id}`)).json()).data;
@@ -204,7 +219,7 @@ export async function runSubscriberScope(target: {
       { lists: [accessible.id], name: "scope update" },
       limited,
     );
-    row = (await response.json()).data;
+    row = asBody<Row>((await response.json()).data);
     check(
       response.status === 200 && row.lists.some((entry: any) => entry.id === hidden.id),
       "subscriber-scope-preserve-unmanaged",
@@ -277,7 +292,7 @@ export async function runSubscriberScope(target: {
       if (target.restart) {
         await target.restart();
         const persisted = await request(alias, "GET", undefined, sessionHeaders);
-        const afterRestart = (await persisted.json()).data;
+        const afterRestart = asBody<Row>((await persisted.json()).data);
         check(
           persisted.status === 200 &&
             afterRestart.id === visible.id &&

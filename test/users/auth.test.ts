@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { startUserFixture } from "@/test/users/fixture";
 import { defaultAuthPolicy } from "@/users/auth";
 import { createConnection } from "node:net";
+import { readJson } from "@/test/read-body";
 
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
 type Session = { cookie: string; csrf: string; headers: Array<string> };
@@ -89,7 +90,7 @@ async function createHuman(fixture: Fixture, session: Session, username: string)
   };
   const response = await call(fixture, "/api/users", { method: "POST", session, body: input });
   expect(response.status).toBe(200);
-  return { input, user: ((await response.json()) as { data: { id: number } }).data };
+  return { input, user: (await readJson<{ data: { id: number } }>(response)).data };
 }
 
 test("session cookies rotate on login and expire according to the injected clock", async () => {
@@ -316,7 +317,7 @@ for (const [kind, revoked, full] of [
       body: { name, permissions: ["settings:manage"] },
     });
     expect(roleResponse.status).toBe(200);
-    const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+    const role = (await readJson<{ data: { id: number } }>(roleResponse)).data.id;
     const input = {
       username: name,
       email: `${name}@example.test`,
@@ -327,7 +328,7 @@ for (const [kind, revoked, full] of [
     };
     const created = await call(f, "/api/users", { method: "POST", session: admin, body: input });
     expect(created.status).toBe(200);
-    const user = ((await created.json()) as { data: { id: number; password: string } }).data;
+    const user = (await readJson<{ data: { id: number; password: string } }>(created)).data;
     const human = kind === "human" ? await login(f, name, "fixture-user-password") : undefined;
     const authorization = human
       ? `Cookie: ${human.cookie}\r\nX-CSRF-Token: ${human.csrf}\r\n`
@@ -469,7 +470,7 @@ test("profile and admin password changes, disable and delete revoke the right se
       .status,
   ).toBe(200);
   const adminProfile = await call(f, "/api/profile", { session: admin });
-  const adminId = ((await adminProfile.json()) as { data: { id: number } }).data.id;
+  const adminId = (await readJson<{ data: { id: number } }>(adminProfile)).data.id;
   expect(
     (await call(f, `/api/users/${adminId}`, { method: "DELETE", session: admin })).status,
   ).toBe(400);
@@ -508,9 +509,9 @@ test("a profile write already in flight cannot outlive revocation", async () => 
     ).status,
   ).toBe(200);
   const valid = await login(f, input.username, input.password);
-  const profile = (await (await call(f, "/api/profile", { session: valid })).json()) as {
+  const profile = await readJson<{
     data: { name: string };
-  };
+  }>(await call(f, "/api/profile", { session: valid }));
   expect(profile.data.name).toBe(input.username);
 });
 
@@ -524,9 +525,9 @@ for (const scenario of ["omitted", "zero-empty", "converted-api", "explicit"] as
       method: "POST",
       body: { name: "Reader", permissions: ["users:get"] },
     });
-    const role = ((await roleResponse.json()) as { data: number }).data;
+    const role = (await readJson<{ data: number }>(roleResponse)).data;
     const listResponse = await call(f, "/fixture/list-role", { method: "POST" });
-    const listRole = ((await listResponse.json()) as { data: number }).data;
+    const listRole = (await readJson<{ data: number }>(listResponse)).data;
     const defaults =
       scenario === "explicit"
         ? { type: "user", status: "enabled", user_role_id: 1 }
@@ -562,14 +563,12 @@ for (const scenario of ["omitted", "zero-empty", "converted-api", "explicit"] as
       },
     });
     expect(concurrent.status).toBe(200);
-    expect(((await concurrent.json()) as { data: { status: string } }).data.status).toBe(
-      "disabled",
-    );
+    expect((await readJson<{ data: { status: string } }>(concurrent)).data.status).toBe("disabled");
     expect((await call(f, "/fixture/gate-release", { method: "POST" })).status).toBe(200);
     expect((await pending).status).toBe(200);
     const response = await call(f, `/api/users/${user.id}`, { session: admin });
     const result = (
-      (await response.json()) as {
+      await readJson<{
         data: {
           name: string;
           type: string;
@@ -579,7 +578,7 @@ for (const scenario of ["omitted", "zero-empty", "converted-api", "explicit"] as
           user_role: { id: number };
           list_role: { id: number };
         };
-      }
+      }>(response)
     ).data;
     expect(result.name).toBe("Password changed");
     expect(result.status).toBe(scenario === "explicit" ? "enabled" : "disabled");
@@ -617,13 +616,13 @@ test("lower-permission API users can read only where granted and cannot escalate
     method: "POST",
     body: { name: "Reader", permissions: ["users:get"] },
   });
-  const role = ((await roleResponse.json()) as { data: number }).data;
+  const role = (await readJson<{ data: number }>(roleResponse)).data;
   const response = await call(f, "/api/users", {
     method: "POST",
     session: admin,
     body: { username: "fixture-reader", type: "api", status: "enabled", user_role_id: role },
   });
-  const api = ((await response.json()) as { data: { id: number; password: string } }).data;
+  const api = (await readJson<{ data: { id: number; password: string } }>(response)).data;
   const auth = `token fixture-reader:${api.password}`;
   expect((await call(f, "/api/users", { auth })).status).toBe(200);
   expect((await call(f, "/api/users", { method: "POST", auth, body: {} })).status).toBe(403);
@@ -645,9 +644,9 @@ test("lower-permission API users can read only where granted and cannot escalate
   });
   expect(updated.status).toBe(200);
   const profile = (
-    (await updated.json()) as {
+    await readJson<{
       data: { username: string; type: string; user_role: { id: number } };
-    }
+    }>(updated)
   ).data;
   expect(profile.username).toBe("fixture-reader");
   expect(profile.type).toBe("api");
@@ -658,7 +657,7 @@ test("user detail and user list preserve the reference's distinct empty list-rol
   const f = await fixture();
   const admin = await login(f, f.admin.user, f.admin.password);
   const roleResponse = await call(f, "/fixture/list-role", { method: "POST" });
-  const roleId = ((await roleResponse.json()) as { data: number }).data;
+  const roleId = (await readJson<{ data: number }>(roleResponse)).data;
   const response = await call(f, "/api/users", {
     method: "POST",
     session: admin,
@@ -672,14 +671,14 @@ test("user detail and user list preserve the reference's distinct empty list-rol
     },
   });
   expect(response.status).toBe(200);
-  const created = ((await response.json()) as { data: { id: number; list_role: unknown } }).data;
+  const created = (await readJson<{ data: { id: number; list_role: unknown } }>(response)).data;
   expect(created.list_role).toEqual({ id: roleId, name: "Fixture list role", lists: null });
   const detail = await call(f, `/api/users/${created.id}`, { session: admin });
-  expect(((await detail.json()) as { data: { list_role: unknown } }).data.list_role).toEqual(
+  expect((await readJson<{ data: { list_role: unknown } }>(detail)).data.list_role).toEqual(
     created.list_role,
   );
   const list = await call(f, "/api/users", { session: admin });
-  const users = ((await list.json()) as { data: Array<{ id: number; list_role: unknown }> }).data;
+  const users = (await readJson<{ data: Array<{ id: number; list_role: unknown }> }>(list)).data;
   expect(users.find((entry) => entry.id === created.id)?.list_role).toEqual({
     id: roleId,
     name: "Fixture list role",
@@ -733,7 +732,7 @@ test("an unexpected first role is not silently granted bootstrap authority", asy
     method: "POST",
     body: { name: "Unrelated role", permissions: ["users:get"] },
   });
-  expect(((await role.json()) as { data: number }).data).toBe(1);
+  expect((await readJson<{ data: number }>(role)).data).toBe(1);
   expect((await call(f, "/fixture/bootstrap", { method: "POST" })).status).toBe(500);
   expect((await call(f, "/health")).status).toBe(200);
   expect((await call(f, "/api/health")).status).toBe(403);
@@ -774,7 +773,7 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
   const first = await login(f, f.admin.user, f.admin.password);
   const other = await login(f, f.admin.user, f.admin.password);
   const profile = await call(f, "/api/profile", { session: first });
-  const id = ((await profile.json()) as { data: { id: number } }).data.id;
+  const id = (await readJson<{ data: { id: number } }>(profile)).data.id;
   // RFC 6238 SHA-1 key; these independent codes are for the fixture clock at 2026-01-02T03:04:05Z.
   const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
   expect(
@@ -944,7 +943,7 @@ test("role permissions are resolved live for retained API tokens and sessions", 
     body: { name: "Limited role", permissions: ["roles:get", "users:get"] },
   });
   expect(createRole.status).toBe(200);
-  const role = ((await createRole.json()) as { data: { id: number } }).data.id;
+  const role = (await readJson<{ data: { id: number } }>(createRole)).data.id;
   const humanName = "m14-limited-human";
   const createHumanResponse = await call(f, "/api/users", {
     method: "POST",
@@ -961,7 +960,7 @@ test("role permissions are resolved live for retained API tokens and sessions", 
     },
   });
   expect(createHumanResponse.status).toBe(200);
-  const humanId = ((await createHumanResponse.json()) as { data: { id: number } }).data.id;
+  const humanId = (await readJson<{ data: { id: number } }>(createHumanResponse)).data.id;
   const human = await login(f, humanName, "fixture-user-password");
   const createApi = await call(f, "/api/users", {
     method: "POST",
@@ -970,7 +969,7 @@ test("role permissions are resolved live for retained API tokens and sessions", 
   });
   expect(createApi.status).toBe(200);
   const api = (
-    (await createApi.json()) as { data: { id: number; username: string; password: string } }
+    await readJson<{ data: { id: number; username: string; password: string } }>(createApi)
   ).data;
   const authorization = `token ${api.username}:${api.password}`;
   for (const auth of [{ session: human }, { auth: authorization }]) {
@@ -1077,7 +1076,7 @@ test("role permissions are resolved live for retained API tokens and sessions", 
       body: { username: name, type: "api", status: "enabled", user_role_id: role },
     });
     expect(created.status).toBe(200);
-    const createdId = ((await created.json()) as { data: { id: number } }).data.id;
+    const createdId = (await readJson<{ data: { id: number } }>(created)).data.id;
     expect(
       (await call(f, `/api/users/${createdId}`, { method: "DELETE", session: admin })).status,
     ).toBe(200);
@@ -1118,20 +1117,20 @@ test("list roles project child permissions and roll back invalid replacement and
   const f = await fixture();
   const admin = await login(f, f.admin.user, f.admin.password);
   const listResponse = await call(f, "/fixture/list", { method: "POST" });
-  const list = ((await listResponse.json()) as { data: number }).data;
+  const list = (await readJson<{ data: number }>(listResponse)).data;
   const userRoleResponse = await call(f, "/api/roles/users", {
     method: "POST",
     session: admin,
     body: { name: "No permissions", permissions: [] },
   });
-  const userRole = ((await userRoleResponse.json()) as { data: { id: number } }).data.id;
+  const userRole = (await readJson<{ data: { id: number } }>(userRoleResponse)).data.id;
   const roleResponse = await call(f, "/api/roles/lists", {
     method: "POST",
     session: admin,
     body: { name: "Synthetic list role", lists: [{ id: list, permissions: ["list:get"] }] },
   });
   expect(roleResponse.status).toBe(200);
-  const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+  const role = (await readJson<{ data: { id: number } }>(roleResponse)).data.id;
   // The child is allocated immediately after its parent in this isolated fixture.
   // A missing ID would return 500, so the 400 response also identifies a real child.
   for (const kind of ["users", "lists"]) {
@@ -1158,14 +1157,14 @@ test("list roles project child permissions and roll back invalid replacement and
   });
   expect(createApi.status).toBe(200);
   const api = (
-    (await createApi.json()) as { data: { id: number; username: string; password: string } }
+    await readJson<{ data: { id: number; username: string; password: string } }>(createApi)
   ).data;
   const authorization = `token ${api.username}:${api.password}`;
   expect(
     (
-      (await (
-        await call(f, `/fixture/list-permission/${list}`, { auth: authorization })
-      ).json()) as { data: boolean }
+      await readJson<{ data: boolean }>(
+        await call(f, `/fixture/list-permission/${list}`, { auth: authorization }),
+      )
     ).data,
   ).toBe(true);
   const bad = await call(f, `/api/roles/lists/${role}`, {
@@ -1193,13 +1192,13 @@ test("list roles project child permissions and roll back invalid replacement and
   });
   expect(duplicate.status).toBe(500);
   const roles = (
-    (await (await call(f, "/api/roles/lists", { session: admin })).json()) as {
+    await readJson<{
       data: Array<{
         id: number;
         name: string;
         lists: Array<{ id: number; name: string; permissions: Array<string> }>;
       }>;
-    }
+    }>(await call(f, "/api/roles/lists", { session: admin }))
   ).data;
   expect(roles.find((entry) => entry.id === role)).toMatchObject({
     name: "Synthetic list role",
@@ -1207,9 +1206,9 @@ test("list roles project child permissions and roll back invalid replacement and
   });
   expect(
     (
-      (await (
-        await call(f, `/fixture/list-permission/${list}`, { auth: authorization })
-      ).json()) as { data: boolean }
+      await readJson<{ data: boolean }>(
+        await call(f, `/fixture/list-permission/${list}`, { auth: authorization }),
+      )
     ).data,
   ).toBe(true);
   for (const variant of ["omitted", "null", "empty"] as const) {
@@ -1221,9 +1220,9 @@ test("list roles project child permissions and roll back invalid replacement and
     expect(restored.status).toBe(200);
     const permission = async () =>
       (
-        (await (
-          await call(f, `/fixture/list-permission/${list}`, { auth: authorization })
-        ).json()) as { data: boolean }
+        await readJson<{ data: boolean }>(
+          await call(f, `/fixture/list-permission/${list}`, { auth: authorization }),
+        )
       ).data;
     expect(await permission()).toBe(true);
     const cleared = await call(f, `/api/roles/lists/${role}`, {
@@ -1241,9 +1240,9 @@ test("list roles project child permissions and roll back invalid replacement and
     });
     expect(cleared.status).toBe(200);
     const entries = (
-      (await (await call(f, "/api/roles/lists", { session: admin })).json()) as {
+      await readJson<{
         data: Array<{ id: number; lists: Array<unknown> }>;
-      }
+      }>(await call(f, "/api/roles/lists", { session: admin }))
     ).data;
     expect(entries.find((entry) => entry.id === role)?.lists).toEqual([]);
     expect(await permission()).toBe(false);
@@ -1328,7 +1327,7 @@ for (const scenario of ["password", "type", "status", "factor"] as const) {
     expect((await call(f, "/fixture/gate-release", { method: "POST" })).status).toBe(200);
     expect((await pending).status).toBe(403);
     const after = await call(f, `/api/users/${user.id}`, { session: admin });
-    expect(((await after.json()) as { data: { twofa_type: string } }).data.twofa_type).toBe(
+    expect((await readJson<{ data: { twofa_type: string } }>(after)).data.twofa_type).toBe(
       // An API user has no second factor (D84): the conversion cleared the key.
       scenario === "type" ? "none" : "totp",
     );
@@ -1343,7 +1342,7 @@ test("user creation revalidates a role deleted during password hashing", async (
     session: admin,
     body: { name: "Ephemeral", permissions: [] },
   });
-  const role = ((await response.json()) as { data: { id: number } }).data.id;
+  const role = (await readJson<{ data: { id: number } }>(response)).data.id;
   const pending = call(f, "/fixture/gated-create-user", {
     method: "POST",
     session: admin,
@@ -1365,7 +1364,7 @@ test("user creation revalidates a role deleted during password hashing", async (
   expect((await call(f, "/fixture/gate-release", { method: "POST" })).status).toBe(200);
   const created = await pending;
   expect(created.status).toBe(400);
-  expect(((await created.json()) as { message: string }).message).toBe("invalid role");
+  expect((await readJson<{ message: string }>(created)).message).toBe("invalid role");
 });
 
 test("an unrelated account update does not cancel a password proof", async () => {

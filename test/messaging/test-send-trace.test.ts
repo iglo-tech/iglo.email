@@ -13,6 +13,7 @@ import { campaignsFixture } from "@/test/campaigns/fixture";
 import { schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 import { wireNotices } from "@/test/messaging/notice-fixture";
+import { asBody } from "@/test/read-body";
 
 const DELIVERED = "delivered@example.test";
 const BLOCKED = "blocked@example.test";
@@ -90,10 +91,13 @@ const notice = (f: Requests & { clock: { now(): Date } }, message: string) =>
   post(f, JSON.stringify(envelope(f, { Message: message })));
 
 /** Bounces the API lists: the rows the bounce path recorded. */
-const bounceTotal = async (f: Api) => (await f.json("/api/bounces")).body.data.total as number;
+const bounceTotal = async (f: Api) =>
+  asBody<number>((await f.json("/api/bounces")).body.data.total);
 
 const logLines = async (f: Api, text: string) =>
-  ((await f.json("/api/logs")).body.data as Array<string>).filter((line) => line.includes(text));
+  asBody<Array<string>>((await f.json("/api/logs")).body.data).filter((line) =>
+    line.includes(text),
+  );
 
 /** A step test to one address: the Message-ID it used, once the sink has it. */
 async function stepTest(f: SchedulerFixture, to: string) {
@@ -226,7 +230,7 @@ test("a campaign test's bounce is named once with its campaign, and records noth
   const lines = await logLines(f, "A test send bounced");
   expect(lines).toHaveLength(1);
   expect(errors).toHaveLength(1);
-  const text = (errors[0] as Error).message;
+  const text = asBody<Error>(errors[0]).message;
   expect(text).toContain(`campaign ${campaign.id}`);
   expect(text).toContain(DELIVERED);
   expect(await bounceTotal(f)).toBe(0);
@@ -261,7 +265,7 @@ test("a deleted subscriber's address stays in no record B108 keeps", async () =>
     expect(line).not.toContain("wipe-me@example.test");
   }
   // The one table read: no route lists `test_sends`, so its stored values are read directly.
-  const rows = f.db.query("SELECT * FROM test_sends").all() as Array<Record<string, unknown>>;
+  const rows = asBody<Array<Record<string, unknown>>>(f.db.query("SELECT * FROM test_sends").all());
   expect(rows).toHaveLength(1);
   const values = rows.flatMap((row) => Object.values(row).map(String)).join("\n");
   expect(values).not.toContain("wipe-me@example.test");

@@ -18,6 +18,7 @@ import { registerSendRoutes } from "@/messaging/routes";
 import { TestClock } from "@/test/server/fixture";
 import { createSettings } from "@/settings/store";
 import { createHash } from "node:crypto";
+import { readJson } from "@/test/read-body";
 
 const directory = process.env.SENDS_FIXTURE_DIR!;
 const port = Number(process.env.SENDS_FIXTURE_SMTP_PORT);
@@ -113,14 +114,14 @@ let loop: ReturnType<typeof startOutbox> | undefined;
 const router = createRouter();
 registerSendRoutes(router, sends, auth);
 router.route("POST", "/fixture/enqueue", async ({ request }) => {
-  const input = (await request.json()) as {
+  const input = await readJson<{
     subject: string;
     kind: "marketing" | "transactional";
     cc?: string;
     mutation?: boolean;
     large?: boolean;
     alternate?: boolean;
-  };
+  }>(request);
   const body = input.large
     ? Buffer.alloc(1024 * 1024, 65)
     : Buffer.from(
@@ -246,7 +247,7 @@ router.route("GET", "/fixture/session", () =>
   ok({ cookie: `session=${login.id}`, csrf: login.csrf }),
 );
 router.route("POST", "/fixture/authority", async ({ request }) => {
-  const input = (await request.json()) as { id: number };
+  const input = await readJson<{ id: number }>(request);
   const role = roles.mutate(
     "user",
     null,
@@ -371,7 +372,7 @@ router.route("POST", "/fixture/authority", async ({ request }) => {
   return ok(statuses);
 });
 router.route("POST", "/fixture/failed", async ({ request }) => {
-  const input = (await request.json()) as { id: number };
+  const input = await readJson<{ id: number }>(request);
   // Arrange a historical terminal state in this test-only database.
   db.run("UPDATE sends SET status='failed' WHERE id=?", [BigInt(input.id)]);
   return ok(true);

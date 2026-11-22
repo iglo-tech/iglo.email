@@ -11,6 +11,7 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials, Mode } from "@/test/contract/types";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 
 type Campaign = Record<string, any> & { id: number; uuid: string };
 const fields = [
@@ -52,7 +53,7 @@ const check = (condition: unknown, label: string) => {
     throw new Error(`FAIL campaigns-${label}`);
   }
 };
-const message = (response: { body: any }) => response.body?.message as string | undefined;
+const message = (response: { body: any }) => asBody<string | undefined>(response.body?.message);
 
 export async function runCampaignsContract(target: {
   mode: Mode;
@@ -139,17 +140,18 @@ export async function runCampaignsContract(target: {
     const response = await call("/api/campaigns", "POST", input, auth);
     check(response.status === 200, `${label}-status`);
     owned.campaigns.push(response.body.data.id);
-    return response.body.data as Campaign;
+    return asBody<Campaign>(response.body.data);
   };
-  const get = async (id: number) => (await call(`/api/campaigns/${id}`)).body.data as Campaign;
+  const get = async (id: number) =>
+    asBody<Campaign>((await call(`/api/campaigns/${id}`)).body.data);
 
   try {
     // Authentication and route permissions.
     check((await call("/api/campaigns", "GET", undefined, "")).status === 403, "auth");
 
     const settings = (await call("/api/settings")).body.data;
-    const fromEmail = settings["app.from_email"][0] as string;
-    const rootUrl = (settings["app.root_url"] as string).replace(/\/+$/, "");
+    const fromEmail = asBody<string>(settings["app.from_email"][0]);
+    const rootUrl = asBody<string>(settings["app.root_url"]).replace(/\/+$/, "");
     if (!reference) {
       const smtp = [
         {
@@ -166,16 +168,17 @@ export async function runCampaignsContract(target: {
       ];
       check((await call("/api/settings/smtp", "PUT", smtp)).status === 200, "smtp-settings");
     }
-    const templates = (await call("/api/templates?no_body=true")).body.data as Array<any>;
-    const defaultTemplate = templates.find((t) => t.is_default).id as number;
-    const archiveTemplate = templates.find((t) => t.name === "Default archive template")
-      .id as number;
+    const templates = asBody<Array<{ id: number; name: string; is_default: boolean }>>(
+      (await call("/api/templates?no_body=true")).body.data,
+    );
+    const defaultTemplate = templates.find((t) => t.is_default)!.id;
+    const archiveTemplate = templates.find((t) => t.name === "Default archive template")!.id;
 
     const list = async (name: string, type: string, optin: string) => {
       const response = await call("/api/lists", "POST", { name: `${marker} ${name}`, type, optin });
       check(response.status === 200, "list-create");
       owned.lists.push(response.body.data.id);
-      return response.body.data as { id: number; uuid: string; name: string };
+      return asBody<{ id: number; uuid: string; name: string }>(response.body.data);
     };
     const subscriber = async (name: string, lists: Array<number>) => {
       const response = await call("/api/subscribers", "POST", {
@@ -186,7 +189,7 @@ export async function runCampaignsContract(target: {
       });
       check(response.status === 200, "subscriber-create");
       owned.subscribers.push(response.body.data.id);
-      return response.body.data as { id: number; uuid: string; email: string };
+      return asBody<{ id: number; uuid: string; email: string }>(response.body.data);
     };
     const news = await list("news", "public", "single");
     const other = await list("other", "public", "single");
@@ -267,7 +270,8 @@ export async function runCampaignsContract(target: {
         // Upstream replaces a nonzero archive template with the campaign template.
         full.archive_template_id === defaultTemplate &&
         JSON.stringify(full.archive_meta) === '{"a":1}' &&
-        JSON.stringify(full.lists.map((l: any) => l.id)) === JSON.stringify([news.id, other.id]),
+        JSON.stringify(asBody<Array<{ id: number }>>(full.lists).map((l) => l.id)) ===
+          JSON.stringify([news.id, other.id]),
       "create-full-projection",
     );
     const noTemplate = await create(
@@ -316,13 +320,14 @@ export async function runCampaignsContract(target: {
       { name: `${marker} optin`, subject: "Confirm", lists: [news.id, double.id], type: "optin" },
       "optin",
     );
+    const optinBody = asBody<string>(optin.body);
     check(
       optin.type === "optin" &&
         optin.lists.length === 2 &&
-        optin.body.includes(`l=${double.uuid}`) &&
-        !optin.body.includes(news.uuid) &&
-        optin.body.includes("<li>Private list</li>") &&
-        optin.body.includes(reference ? "{{ OptinURL }}" : "{{ optin_url }}"),
+        optinBody.includes(`l=${double.uuid}`) &&
+        !optinBody.includes(news.uuid) &&
+        optinBody.includes("<li>Private list</li>") &&
+        optinBody.includes(reference ? "{{ OptinURL }}" : "{{ optin_url }}"),
       "optin-body",
     );
 
@@ -335,15 +340,15 @@ export async function runCampaignsContract(target: {
 
     // Collection search, filters, ordering and paging.
     const collection = async (query: string) =>
-      (await call(`/api/campaigns?${query}`)).body.data as {
+      asBody<{
         results: Array<Campaign>;
         query: string;
         total: number;
         per_page: number;
         page: number;
-      };
+      }>((await call(`/api/campaigns?${query}`)).body.data);
     const ownedNames = (rows: Array<Campaign>) =>
-      rows.map((row) => row.name.slice(marker.length + 1)).join(",");
+      rows.map((row) => asBody<string>(row.name).slice(marker.length + 1)).join(",");
     const searched = await collection(`query=${marker}&order_by=name&order=asc&per_page=all`);
     check(
       ownedNames(searched.results) === "ct,full,gone,minimal,optin" &&
@@ -428,7 +433,7 @@ export async function runCampaignsContract(target: {
             await collection(
               `query=${marker}%20rank&order_by=status&order=${order}&per_page=1&page=${page}`,
             )
-          ).results.map((row) => row.status as string),
+          ).results.map((row) => asBody<string>(row.status)),
         );
       }
       return out.join(",");
@@ -439,15 +444,17 @@ export async function runCampaignsContract(target: {
     // Updates: the request replaces sent fields; lists must always be sent.
     const noLists = await call(`/api/campaigns/${minimal.id}`, "PUT", { name: "x" });
     check(noLists.status === 400 && message(noLists) === "Invalid list IDs.", "update-no-lists");
-    const updated = (
-      await call(`/api/campaigns/${minimal.id}`, "PUT", {
-        name: `${marker} minimal2`,
-        lists: [other.id],
-        attribs: { b: 2 },
-        send_at: "2099-01-01T00:00:00Z",
-        tags: ["new tag"],
-      })
-    ).body.data as Campaign;
+    const updated = asBody<Campaign>(
+      (
+        await call(`/api/campaigns/${minimal.id}`, "PUT", {
+          name: `${marker} minimal2`,
+          lists: [other.id],
+          attribs: { b: 2 },
+          send_at: "2099-01-01T00:00:00Z",
+          tags: ["new tag"],
+        })
+      ).body.data,
+    );
     check(
       updated.name === `${marker} minimal2` &&
         updated.subject === "Minimal" &&
@@ -486,7 +493,7 @@ export async function runCampaignsContract(target: {
     const expectStatus = async (id: number, value: string, expected: string, label: string) => {
       const response = await status(id, value);
       check(response.status === 200 && response.body.data.status === expected, label);
-      return response.body.data as Campaign;
+      return asBody<Campaign>(response.body.data);
     };
     const expectRefused = async (id: number, value: string, expected: string, label: string) => {
       const response = await status(id, value);
@@ -507,12 +514,14 @@ export async function runCampaignsContract(target: {
       "status-cancel-refused",
     );
     // A scheduled campaign whose send_at is cleared becomes a draft again.
-    const unscheduled = (
-      await call(`/api/campaigns/${minimal.id}`, "PUT", {
-        lists: [other.id],
-        send_at: null,
-      })
-    ).body.data as Campaign;
+    const unscheduled = asBody<Campaign>(
+      (
+        await call(`/api/campaigns/${minimal.id}`, "PUT", {
+          lists: [other.id],
+          send_at: null,
+        })
+      ).body.data,
+    );
     check(unscheduled.status === "draft" && unscheduled.send_at === null, "update-unschedule");
     await expectRefused(
       minimal.id,
@@ -646,7 +655,10 @@ export async function runCampaignsContract(target: {
       from: "markdown",
       to: "richtext",
     });
-    check(keeps.status === 200 && keeps.body.data.includes(tpl.name), "content-keeps-template");
+    check(
+      keeps.status === 200 && asBody<string>(keeps.body.data).includes(tpl.name),
+      "content-keeps-template",
+    );
     const unknownConversion = await call(`/api/campaigns/${minimal.id}/content`, "POST", {
       body: "<p>x</p>",
       from: "html",
@@ -673,9 +685,9 @@ export async function runCampaignsContract(target: {
       previewed.status === 200 &&
         previewed.headers.get("content-type") === "text/html; charset=UTF-8" &&
         previewed.headers.get("content-security-policy")?.startsWith("sandbox") &&
-        previewed.body.includes("<title>Preview subject</title>") &&
-        previewed.body.includes("<p>Dear Demo Subscriber from Bengaluru</p>") &&
-        previewed.body.includes(`<p>${marker} preview</p>`),
+        asBody<string>(previewed.body).includes("<title>Preview subject</title>") &&
+        asBody<string>(previewed.body).includes("<p>Dear Demo Subscriber from Bengaluru</p>") &&
+        asBody<string>(previewed.body).includes(`<p>${marker} preview</p>`),
       "preview",
     );
     const plain = await form(`/api/campaigns/${preview.id}/preview`, {
@@ -685,7 +697,7 @@ export async function runCampaignsContract(target: {
     check(
       plain.status === 200 &&
         plain.headers.get("content-type") === "text/plain; charset=UTF-8" &&
-        plain.body.includes("Plain Demo Subscriber <b>"),
+        asBody<string>(plain.body).includes("Plain Demo Subscriber <b>"),
       "preview-plain",
     );
     const markdown = await form(`/api/campaigns/${preview.id}/preview`, {
@@ -701,13 +713,17 @@ export async function runCampaignsContract(target: {
       content_type: "html",
       body: "<p>Text route</p>",
     });
-    check(text.status === 200 && text.body.includes("<p>Text route</p>"), "preview-text");
+    check(
+      text.status === 200 && asBody<string>(text.body).includes("<p>Text route</p>"),
+      "preview-text",
+    );
     const archivePreview = await form(`/api/campaigns/${preview.id}/preview/archive`, {
       template_id: String(archiveTemplate),
       archive_meta: JSON.stringify({ name: "Archive Reader", email: "reader@example.test" }),
     });
     check(
-      archivePreview.status === 200 && archivePreview.body.includes("<p>Dear Archive Reader from"),
+      archivePreview.status === 200 &&
+        asBody<string>(archivePreview.body).includes("<p>Dear Archive Reader from"),
       "preview-archive",
     );
     check((await call("/api/campaigns/2000000000/preview")).status === 400, "preview-missing");
@@ -793,7 +809,9 @@ export async function runCampaignsContract(target: {
       oneClick.status === 200 && (reference || (await oneClick.text()).includes(testSendText)),
       "unsubscribe-one-click",
     );
-    const memberships = (await call(`/api/subscribers/${ada.id}`)).body.data.lists as Array<any>;
+    const memberships = asBody<Array<{ id: number; [field: string]: any }>>(
+      (await call(`/api/subscribers/${ada.id}`)).body.data.lists,
+    );
     check(
       reference
         ? memberships.find((l) => l.id === news.id)?.subscription_status === "unsubscribed" &&
@@ -983,15 +1001,16 @@ export async function runCampaignsContract(target: {
       "permission denied: campaigns:get",
       "perm-route",
     );
-    const visible = (
-      await call(`/api/campaigns?query=${marker}%20scope&per_page=all`, "GET", undefined, reader)
-    ).body.data.results as Array<Campaign>;
+    const visible = asBody<Array<Campaign>>(
+      (await call(`/api/campaigns?query=${marker}%20scope&per_page=all`, "GET", undefined, reader))
+        .body.data.results,
+    );
     check(visible.length === 1 && visible[0]!.id === scopeNews.id, "perm-collection-scope");
     const stats = await call("/api/campaigns/running/stats");
     check(
       stats.status === 200 &&
         Array.isArray(stats.body.data) &&
-        !stats.body.data.some((c: Campaign) => c.id === scopeNews.id),
+        !asBody<Array<Campaign>>(stats.body.data).some((c) => c.id === scopeNews.id),
       "running-stats",
     );
     await denied(
@@ -1009,7 +1028,7 @@ export async function runCampaignsContract(target: {
       });
       check(response.status === 200, `running-stats-${label}`);
       owned.lists.push(response.body.data.id);
-      return response.body.data.id as number;
+      return asBody<number>(response.body.data.id);
     };
     const [statsMine, statsOther] = [await statsList("stats mine"), await statsList("stats other")];
     const statsReader = await apiUser(
@@ -1023,11 +1042,12 @@ export async function runCampaignsContract(target: {
     const theirs = await statsCampaign("stats other", statsOther);
     await expectStatus(mine.id, "running", "running", "running-stats-start");
     await expectStatus(theirs.id, "running", "running", "running-stats-start-other");
-    const scoped = (await call("/api/campaigns/running/stats", "GET", undefined, statsReader)).body
-      .data as Array<Record<string, unknown>>;
-    const everything = (await call("/api/campaigns/running/stats")).body.data as Array<{
-      id: number;
-    }>;
+    const scoped = asBody<Array<Record<string, unknown>>>(
+      (await call("/api/campaigns/running/stats", "GET", undefined, statsReader)).body.data,
+    );
+    const everything = asBody<Array<{ id: number }>>(
+      (await call("/api/campaigns/running/stats")).body.data,
+    );
     await expectStatus(mine.id, "paused", "paused", "running-stats-pause");
     await expectStatus(theirs.id, "paused", "paused", "running-stats-pause-other");
     check(
@@ -1080,7 +1100,8 @@ export async function runCampaignsContract(target: {
     );
     check(
       managed.status === 200 &&
-        JSON.stringify(managed.body.data.lists.map((l: any) => l.id)) === `[${news.id}]`,
+        JSON.stringify(asBody<Array<{ id: number }>>(managed.body.data.lists).map((l) => l.id)) ===
+          `[${news.id}]`,
       "perm-update-filters-lists",
     );
     await denied(

@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { ensureProductionBuild } from "@/test/production-build";
 import { listensOn, startOnFreePort } from "@/test/serve-port";
+import { asBody } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 // Generated for these tests; see test/backup/fixtures.md.
@@ -117,7 +118,7 @@ export function apiClient(origin: string, authorization: string) {
   return (path: string, init: RequestInit = {}) =>
     fetch(`${origin}${path}`, {
       ...init,
-      headers: { authorization, ...(init.headers as Record<string, string>) },
+      headers: { authorization, ...asBody<Record<string, string>>(init.headers) },
     });
 }
 export type Client = ReturnType<typeof apiClient>;

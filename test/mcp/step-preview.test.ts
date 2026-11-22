@@ -7,6 +7,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
 import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 
 describe("D105 step preview and test send through MCP", () => {
   let production: Production;
@@ -61,18 +62,20 @@ describe("D105 step preview and test send through MCP", () => {
       headers: { authorization: adminAuth, "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
     });
-    return (await response.json()) as { result?: any; error?: { code: number; message: string } };
+    return asBody<{ result?: any; error?: { code: number; message: string } }>(
+      await response.json(),
+    );
   }
   async function callTool(name: string, args: Record<string, unknown>) {
     const reply = await rpc("tools/call", { name, arguments: args });
     if (reply.error) {
       throw new Error(`${name}: ${reply.error.message}`);
     }
-    return reply.result as {
+    return asBody<{
       isError?: boolean;
       content: Array<{ type: string; text: string }>;
       structuredContent?: any;
-    };
+    }>(reply.result);
   }
   async function api(method: string, path: string, body?: unknown) {
     const response = await fetch(`${production.origin}${path}`, {
@@ -84,7 +87,7 @@ describe("D105 step preview and test send through MCP", () => {
   }
 
   test("the step tools are listed with D98's annotations, and preview_template takes a sample", async () => {
-    const tools = (await rpc("tools/list")).result.tools as Array<any>;
+    const tools = asBody<Array<any>>((await rpc("tools/list")).result.tools);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
     expect(byName.get("preview_sequence_step")?.annotations).toMatchObject({
       readOnlyHint: true,
@@ -149,9 +152,9 @@ describe("D105 step preview and test send through MCP", () => {
   });
 
   test("test_sequence_step mails the addresses it names, labelled, and journals nothing", async () => {
-    const sequence = (await api("GET", "/api/sequences?per_page=100")).body.data.results.find(
-      (row: any) => row.name === "MCP onboarding",
-    );
+    const sequence = asBody<{ results: Array<{ id: number; name: string }> }>(
+      (await api("GET", "/api/sequences?per_page=100")).body.data,
+    ).results.find((row) => row.name === "MCP onboarding")!;
     const detail = (await api("GET", `/api/sequences/${sequence.id}`)).body.data;
     const sent = await callTool("test_sequence_step", {
       id: sequence.id,

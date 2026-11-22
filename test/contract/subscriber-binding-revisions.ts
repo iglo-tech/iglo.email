@@ -1,11 +1,20 @@
 // Reference: listmonk subscriber binding and importer at 6fcd95f.
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
     throw new Error(`FAIL binding-${label}`);
   }
 }
+
+/** A subscriber as the API returns it, or a list, read as the fields the checks use. */
+type Subscriber = {
+  id: number;
+  name: string;
+  lists: Array<{ id: number; subscription_status?: string; [field: string]: any }>;
+  [field: string]: any;
+};
 
 export async function runSubscriberBindingRevisions(target: {
   mode: Mode;
@@ -28,12 +37,12 @@ export async function runSubscriberBindingRevisions(target: {
       owned.push({ path, id: result.data.id });
     }
     check(response.status === 200 && result.data, "create");
-    return result.data;
+    return asBody<Subscriber>(result.data);
   }
   async function get(id: number) {
     const r = await request(`/api/subscribers/${id}`);
     check(r.status === 200, "get");
-    return (await r.json()).data;
+    return asBody<Subscriber>((await r.json()).data);
   }
   let cleanupFailures = 0;
   try {
@@ -42,7 +51,7 @@ export async function runSubscriberBindingRevisions(target: {
       "subscribers",
       `{"email":"binding-${suffix}@example.test","ids":"metadata","attribs":{"old":1},"lists":[${list.id}],"LISTS":[null]}`,
     );
-    check(sub.lists.length === 1 && sub.lists[0].id === list.id, "slice-reuse");
+    check(sub.lists.length === 1 && sub.lists[0]!.id === list.id, "slice-reuse");
     for (const [i, lists, expected] of [
       [0, `[${list.id},${list.id}],"lists":[0],"lists":[null,null]`, true],
       [1, `[${list.id}],"lists":null,"lists":[null]`, false],

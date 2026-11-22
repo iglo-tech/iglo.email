@@ -9,6 +9,7 @@ import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
 import { TestClock } from "@/test/server/fixture";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 
 const cors = (response: Response) =>
   Object.fromEntries(
@@ -546,7 +547,7 @@ test("wipe removes the subscriber and memberships in one step", async () => {
 });
 
 const insertSend = (f: PublicFixture, status: string, to: string, subscriber: number | null) =>
-  (
+  asBody<{ id: bigint }>(
     f.db
       .query(
         `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, status, smtp_message_id, payload, created_at)
@@ -559,7 +560,7 @@ const insertSend = (f: PublicFixture, status: string, to: string, subscriber: nu
         status,
         JSON.stringify({ message: { to: [to], subject: "Personal" } }),
         f.clock.now().toISOString(),
-      ) as { id: bigint }
+      ),
   ).id;
 const sendCounts = (f: PublicFixture) =>
   f.db.query("SELECT status, count(*) AS n FROM sends GROUP BY status ORDER BY status").all();
@@ -587,7 +588,7 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
   expect(f.db.query("SELECT * FROM sends ORDER BY id").all()).toEqual(before);
   f.db.run("DROP TRIGGER wipe_fails");
 
-  const counts = sendCounts(f) as Array<{ status: string; n: bigint }>;
+  const counts = asBody<Array<{ status: string; n: bigint }>>(sendCounts(f));
   expect((await f.fresh(await paired(f, id, "wipe"))).status).toBe(200);
   for (const send of [...Object.values(rows), unlinked]) {
     const { data } = (await f.json(`/api/sends/${send}`)).body;
@@ -599,11 +600,13 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
     f.db.query("SELECT count(*) AS n FROM sends WHERE payload IS NOT NULL AND id != ?").get(other),
   ).toEqual({ n: 0n });
   // Row counts and settled statuses stay; only queued mail is cancelled.
-  const after = f.db.query("SELECT id, status, skip_reason FROM sends ORDER BY id").all() as Array<{
-    id: bigint;
-    status: string;
-    skip_reason: string | null;
-  }>;
+  const after = asBody<
+    Array<{
+      id: bigint;
+      status: string;
+      skip_reason: string | null;
+    }>
+  >(f.db.query("SELECT id, status, skip_reason FROM sends ORDER BY id").all());
   expect(after).toHaveLength(before.length);
   expect(after.find((row) => row.id === rows.queued)).toEqual({
     id: rows.queued!,
@@ -640,12 +643,15 @@ test("a send in flight during a wipe is skipped, without its payload, and never 
     send,
   ]);
   expect((await f.fresh(await paired(f, id, "wipe"))).status).toBe(200);
-  const row = f.db.query("SELECT * FROM sends WHERE id = ?").get(send) as never;
+  const row = asBody<never>(f.db.query("SELECT * FROM sends WHERE id = ?").get(send));
   expect((await f.json(`/api/sends/${send}`)).body.data.status).toBe("sending");
-  f.sends.finish(row, {
-    status: "proven-not-accepted",
-    retry: "transient",
-  } as never);
+  f.sends.finish(
+    row,
+    asBody<never>({
+      status: "proven-not-accepted",
+      retry: "transient",
+    }),
+  );
   await f.drain();
   const { data } = (await f.json(`/api/sends/${send}`)).body;
   expect(data).toMatchObject({
@@ -722,16 +728,18 @@ test("view in browser writes nothing and escapes subscriber data", async () => {
   await api(f, email, list.uuid);
   const row = f.owners.subscribers.byEmail(email)!;
   f.db.run("UPDATE subscribers SET name = ? WHERE id = ?", ["<script>x</script>", row.id]);
-  const campaign = f.db
-    .query(
-      `INSERT INTO campaigns (uuid, name, subject, from_email, body, content_type, status, type, messenger, max_subscriber_id, last_subscriber_id, archive, archive_slug, archive_meta)
+  const campaign = asBody<{ id: bigint }>(
+    f.db
+      .query(
+        `INSERT INTO campaigns (uuid, name, subject, from_email, body, content_type, status, type, messenger, max_subscriber_id, last_subscriber_id, archive, archive_slug, archive_meta)
        VALUES (?, 'c', 'Hello', 'a@b.test', ?, 'html', 'finished', 'regular', 'email', 0, 0, 1, 'hello', ?) RETURNING id`,
-    )
-    .get(
-      "22222222-2222-4222-8222-222222222222",
-      `{{ subscriber.name }} {{ "https://example.test/a" | track_link }} {{ track_view }}`,
-      JSON.stringify({ name: "Sample" }),
-    ) as { id: bigint };
+      )
+      .get(
+        "22222222-2222-4222-8222-222222222222",
+        `{{ subscriber.name }} {{ "https://example.test/a" | track_link }} {{ track_view }}`,
+        JSON.stringify({ name: "Sample" }),
+      ),
+  );
   // The runner delivered the campaign to the subscriber, so their view in browser pairs (D126, r1).
   createRunnerStore(f.db).claim(campaign.id, row.id, f.clock.now().toISOString());
   const counts = () =>
@@ -793,9 +801,9 @@ test("embedded images are public media URLs on the campaign page and the archive
     ],
   );
   // The runner delivered it to the reader, so the view in browser pairs them (D126, r1).
-  const embedded = f.db.query("SELECT id FROM campaigns WHERE uuid = ?").get(uuid) as {
-    id: bigint;
-  };
+  const embedded = asBody<{ id: bigint }>(
+    f.db.query("SELECT id FROM campaigns WHERE uuid = ?").get(uuid),
+  );
   createRunnerStore(f.db).claim(embedded.id, reader.id, f.clock.now().toISOString());
   const pages = [`/campaign/${uuid}/${reader.uuid}`, "/archive/embedded"];
   for (const path of pages) {
@@ -814,7 +822,7 @@ test("malformed public input fails safely with no write", async () => {
   const f = await open();
   const list = await f.list("News");
   const count = () =>
-    (f.db.query("SELECT count(*) AS n FROM subscribers").get() as { n: bigint }).n;
+    asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM subscribers").get()).n;
   const before = count();
   const post = (body: string, type: string) =>
     f.peer("/api/public/subscription", `192.0.2.${50 + before.toString().length}`, {

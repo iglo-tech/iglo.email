@@ -8,6 +8,7 @@ import type { Document, Schema } from "@/test/openapi/schema";
 import type { Credentials } from "@/test/contract/types";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { startReceiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
 
 const cookie = (response: Response, name: string) =>
   response.headers
@@ -46,12 +47,8 @@ const placeholders = (key: string, id: string): Options => ({
   ),
 });
 const needed = (operation: any) => {
-  const query = (
-    operation.parameters as Array<{
-      in: string;
-      name: string;
-      required?: boolean;
-    }>
+  const query = asBody<Array<{ in: string; name: string; required?: boolean }>>(
+    operation.parameters,
   )
     .filter(({ in: at, name, required }) => at === "query" && (required || name === "id"))
     .map(({ name }) => `${name}=${name === "id" ? "999999" : "2020-01-01"}`);
@@ -213,14 +210,14 @@ export async function runOpenApiContract(target: {
 
   /** One operation by its documented path; its answer has to be what the document says. */
   const op = async (key: string, options: Options = {}): Promise<Reply> => {
-    const [method, template] = key.split(" ") as [string, string];
+    const [method, template] = asBody<[string, string]>(key.split(" "));
     const path = template.replaceAll(/\{(\w+)\}/g, (_, name: string) => {
       const value = options.params?.[name];
       check(value !== undefined, `param-${key}-${name}`);
       return encodeURIComponent(String(value));
     });
     const declared = new Set(
-      (operationOf(key).parameters as Array<{ in: string; name: string }>)
+      asBody<Array<{ in: string; name: string }>>(operationOf(key).parameters)
         .filter((parameter) => parameter.in === "query")
         .map(({ name }) => name),
     );
@@ -242,12 +239,12 @@ export async function runOpenApiContract(target: {
   };
 
   const operationOf = (key: string) => {
-    const [method, template] = key.split(" ") as [string, string];
+    const [method, template] = asBody<[string, string]>(key.split(" "));
     const operation = document.paths[template]?.[method.toLowerCase()];
     if (!operation) {
       throw new Error(`FAIL openapi-undocumented ${key}`);
     }
-    return operation;
+    return asBody<Record<string, any>>(operation);
   };
 
   /** The body an operation is sent has to fit the document too. */
@@ -267,14 +264,18 @@ export async function runOpenApiContract(target: {
     // A failure must be a status the operation names: `default` carries every code, so it cannot
     // show that the failure's own code is one its status can send (B131, D129).
     const named = operation.responses[String(reply.status)];
-    const declared = reply.status >= 400 ? named : (named ?? operation.responses.default);
+    const declared = asBody<Record<string, any> | undefined>(
+      reply.status >= 400 ? named : (named ?? operation.responses.default),
+    );
     if (!declared) {
       throw new Error(`FAIL openapi-status ${key}: ${reply.status} is not documented`);
     }
-    const response = declared.$ref
-      ? document.components.responses[declared.$ref.split("/").pop()]
-      : declared;
-    const content = response.content as Record<string, { schema?: Schema }> | undefined;
+    const response = asBody<Record<string, any>>(
+      declared.$ref
+        ? document.components.responses[asBody<string>(declared.$ref).split("/").pop()!]
+        : declared,
+    );
+    const content = asBody<Record<string, { schema?: Schema }> | undefined>(response.content);
     if (!content) {
       if (reply.text !== "") {
         throw new Error(`FAIL openapi-body ${key}: documented as empty`);
@@ -352,7 +353,7 @@ export async function runOpenApiContract(target: {
       body: true,
     });
 
-    document = (await send("GET", "/api/openapi.json")).body as Document;
+    document = asBody<Document>((await send("GET", "/api/openapi.json")).body);
     await op("GET /api/openapi.json");
     await op("GET /health", { auth: null });
 
@@ -546,13 +547,14 @@ export async function runOpenApiContract(target: {
       ["subscribers:get"],
       [{ id: list.id, permissions: ["list:get"] }],
     );
-    const masked = (
-      await op("GET /api/subscribers/{id}", {
-        params: { id: shared.id },
-        auth: narrow,
-      })
-    ).body.data.lists.find(({ id }: { id: number }) => id === bare.id);
-    check(masked.restricted === true && masked.name === "*Unknown", "subscriber-masked-list");
+    const maskedReply = await op("GET /api/subscribers/{id}", {
+      params: { id: shared.id },
+      auth: narrow,
+    });
+    const masked = asBody<{ lists: Array<{ id: number; restricted?: boolean; name?: string }> }>(
+      maskedReply.body.data,
+    ).lists.find(({ id }) => id === bare.id);
+    check(masked?.restricted === true && masked?.name === "*Unknown", "subscriber-masked-list");
     await op("GET /api/subscribers", {
       query: `?list_id=${list.id}`,
       auth: narrow,
@@ -859,17 +861,22 @@ export async function runOpenApiContract(target: {
         params: { id: sequence.id },
         body: {
           ...definition,
-          steps: stored.steps.map(({ id, wait, kind, template_id }: Record<string, unknown>) => ({
-            id,
-            wait,
-            kind,
-            template_id,
-          })),
+          steps: asBody<Array<Record<string, unknown>>>(stored.steps).map(
+            ({ id, wait, kind, template_id }) => ({
+              id,
+              wait,
+              kind,
+              template_id,
+            }),
+          ),
         },
       })
     ).body.data;
+    const keptSteps = asBody<{ steps: Array<{ id: number }> }>(kept).steps;
     check(
-      kept.steps.every(({ id }: { id: number }, index: number) => id === stored.steps[index].id),
+      keptSteps.every(
+        ({ id }, index) => id === asBody<Array<{ id: number }>>(stored.steps)[index]!.id,
+      ),
       "sequence-step-ids",
     );
     const forced = (
@@ -935,7 +942,11 @@ export async function runOpenApiContract(target: {
     ).body.data;
     for (const deadline = Date.now() + 15_000; ; await Bun.sleep(50)) {
       const timeline = await send("GET", `/api/enrollments/${running.id}/timeline`);
-      if (timeline.body.data.entries.some(({ type }: { type: string }) => type === "step")) {
+      if (
+        asBody<{ entries: Array<{ type: string }> }>(timeline.body.data).entries.some(
+          ({ type }) => type === "step",
+        )
+      ) {
         break;
       }
       check(Date.now() < deadline, "sequence-step-wait");
@@ -1114,14 +1125,12 @@ export async function runOpenApiContract(target: {
     const db = new Database(join(target.dataDir, "iglo-email.db"), {
       readonly: true,
     });
-    const link = db.query("SELECT uuid FROM links ORDER BY id DESC LIMIT 1").get() as {
-      uuid: string;
-    };
-    const sendLink = db
-      .query("SELECT uuid FROM links WHERE url = 'https://example.test/t'")
-      .get() as {
-      uuid: string;
-    };
+    const link = asBody<{ uuid: string }>(
+      db.query("SELECT uuid FROM links ORDER BY id DESC LIMIT 1").get(),
+    );
+    const sendLink = asBody<{ uuid: string }>(
+      db.query("SELECT uuid FROM links WHERE url = 'https://example.test/t'").get(),
+    );
     db.close();
     await send("GET", `/campaign/${campaign.uuid}/${subscriber.uuid}/px.png`, {
       auth: null,
@@ -1142,11 +1151,13 @@ export async function runOpenApiContract(target: {
     // A send's view and click have no campaign. Every tracked row is shown, and cleared.
     await send("GET", `/m/${send0.uuid}/px.png`, { auth: null });
     await send("GET", `/m/${send0.uuid}/link/${sendLink.uuid}`, { auth: null });
-    const tracked = (
-      await op("GET /api/subscribers/{id}/activity", {
-        params: { id: subscriber.id },
-      })
-    ).body.data;
+    const trackedReply = await op("GET /api/subscribers/{id}/activity", {
+      params: { id: subscriber.id },
+    });
+    const tracked = asBody<{
+      campaign_views: Array<{ id: unknown }>;
+      link_clicks: Array<{ campaign_id: unknown }>;
+    }>(trackedReply.body.data);
     check(
       tracked.campaign_views.some((row: { id: unknown }) => row.id === null) &&
         tracked.campaign_views.some((row: { id: unknown }) => row.id === campaign.id) &&
@@ -1512,7 +1523,7 @@ export async function runOpenApiContract(target: {
     const integerParams = new Set(["id", "step"]);
     const pathTypeProblems = (paths: Record<string, any>) =>
       Object.entries(paths).flatMap(([template, item]) =>
-        Object.entries(item as Record<string, any>).flatMap(([method, operation]) => {
+        Object.entries(asBody<Record<string, any>>(item)).flatMap(([method, operation]) => {
           // Path-level keys that are not operations (`parameters`, `summary`, ...).
           if (!httpMethods.has(method)) {
             if (["parameters", "summary", "description", "servers"].includes(method)) {
@@ -1523,8 +1534,8 @@ export async function runOpenApiContract(target: {
           if (!operation || !Array.isArray(operation.parameters)) {
             return [`${method.toUpperCase()} ${template}: no parameter list`];
           }
-          return (
-            operation.parameters as Array<{ in: string; name: string; schema?: { type?: string } }>
+          return asBody<Array<{ in: string; name: string; schema?: { type?: string } }>>(
+            operation.parameters,
           )
             .filter((parameter) => parameter.in === "path")
             .filter(({ name, schema }) => (schema?.type === "integer") !== integerParams.has(name))
@@ -1563,7 +1574,7 @@ export async function runOpenApiContract(target: {
       "openapi-path-types-names-missing-parameters",
     );
     for (const { key, operation } of operations) {
-      const names = (operation.parameters as Array<{ in: string; name: string }>)
+      const names = asBody<Array<{ in: string; name: string }>>(operation.parameters)
         .filter((parameter) => parameter.in === "path")
         .map(({ name }) => name);
       for (const tested of names.filter((name) => integerParams.has(name))) {
@@ -1619,7 +1630,7 @@ export async function runOpenApiContract(target: {
         operation.security?.length !== 0 && !operation.security?.[0]?.SessionCookie,
     );
     for (const { key, operation } of reachable) {
-      const permissions = operation["x-required-permissions"] as Array<string> | undefined;
+      const permissions = asBody<Array<string> | undefined>(operation["x-required-permissions"]);
       const query = needed(operation);
       if (permissions) {
         const reply = await op(key, {
@@ -1653,8 +1664,8 @@ export async function runOpenApiContract(target: {
       return holders.get(name)!;
     };
     for (const { key, operation } of reachable) {
-      const permissions = (operation["x-required-permissions"] ?? []) as Array<string>;
-      const also = (operation["x-also-required-permissions"] ?? []) as Array<Array<string>>;
+      const permissions = asBody<Array<string>>(operation["x-required-permissions"] ?? []);
+      const also = asBody<Array<Array<string>>>(operation["x-also-required-permissions"] ?? []);
       const query = needed(operation);
       if (!key.startsWith("GET ")) {
         continue;

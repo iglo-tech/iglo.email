@@ -205,7 +205,7 @@ try {
               }),
             ),
           },
-          (_key, value) => (typeof value === "bigint" ? String(value) : value),
+          (_key, value: unknown) => (typeof value === "bigint" ? String(value) : value),
         ),
       );
     }
@@ -215,7 +215,7 @@ try {
       for (const triggers of repetition % 2 ? [false, true] : [true, false]) {
         const result = runFtsIsolation(root, triggers, repetition, subscribers, smoke ? 200 : 3000);
         console.log(
-          JSON.stringify(result, (_key, value) =>
+          JSON.stringify(result, (_key, value: unknown) =>
             typeof value === "bigint" ? String(value) : value,
           ),
         );

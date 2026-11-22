@@ -6,6 +6,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { admin, startProduction } from "@/test/worked-example/harness";
 import type { Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 
 let production: Production;
 let adminAuth: string;
@@ -43,10 +44,10 @@ async function callTool(name: string, args: Record<string, unknown>, auth: strin
       params: { name, arguments: args },
     }),
   });
-  const reply = (await response.json()) as {
+  const reply = asBody<{
     result?: { isError?: boolean; content: Array<{ type: string; text: string }> };
     error?: { message: string };
-  };
+  }>(await response.json());
   if (reply.error) {
     throw new Error(`${name}: ${reply.error.message}`);
   }
@@ -54,16 +55,18 @@ async function callTool(name: string, args: Record<string, unknown>, auth: strin
 }
 
 test("get_subscriber_events needs subscriber_events:get, as the REST route does", async () => {
-  const list = (
-    await api("/api/lists", "POST", { name: "MCP events", type: "public", optin: "single" })
-  ).body.data.id as number;
-  const subscriber = (
-    await api("/api/subscribers", "POST", {
-      email: "mcp-events@example.test",
-      name: "Events",
-      lists: [list],
-    })
-  ).body.data.id as number;
+  const listCreated = await api("/api/lists", "POST", {
+    name: "MCP events",
+    type: "public",
+    optin: "single",
+  });
+  const list = asBody<number>(listCreated.body.data.id);
+  const subscriberCreated = await api("/api/subscribers", "POST", {
+    email: "mcp-events@example.test",
+    name: "Events",
+    lists: [list],
+  });
+  const subscriber = asBody<number>(subscriberCreated.body.data.id);
   const role = await api("/api/roles/users", "POST", {
     name: "mcp-events-reader",
     permissions: ["subscribers:get"],

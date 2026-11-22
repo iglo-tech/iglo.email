@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { admin, api, get, login } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 let f: Fixture;
 let cookie = "";
@@ -16,7 +17,7 @@ afterAll(() => f.close());
 async function settings(): Promise<Record<string, any>> {
   const res = await get(f, "/api/settings", cookie);
   expect(res.status).toBe(200);
-  return ((await res.json()) as { data: Record<string, any> }).data;
+  return (await readJson<{ data: Record<string, any> }>(res)).data;
 }
 
 // The page sends each masked secret back empty, which the API reads as "keep" (settings.js onSubmit).
@@ -62,7 +63,7 @@ test("2. a save from the settings page keeps the values of the keys that have no
     { name: "postback", root_url: "http://messenger.test", enabled: true, password: "m-secret" },
   ]);
   expect(messengers.status).toBe(200);
-  const smtp = (await settings())["smtp"] as Array<Record<string, unknown>>;
+  const smtp = asBody<Array<Record<string, unknown>>>((await settings())["smtp"]);
   expect(smtp.length).toBeGreaterThan(0);
   smtp[0]!["max_msg_retries"] = 7;
   smtp[0]!["msg_retry_delay"] = "3s";
@@ -93,7 +94,7 @@ test("2. a save from the settings page keeps the values of the keys that have no
   const before = await settings();
   expect(before["upload.s3.bucket"]).toBe("b40-bucket");
   expect(before["app.lang"]).toBe("de");
-  const added = before["smtp"].at(-1) as Record<string, unknown>;
+  const added = asBody<Array<Record<string, unknown>>>(before["smtp"]).at(-1)!;
   expect(added["host"]).toBe("smtp.b40-added.test");
   expect(typeof added["uuid"] === "string" && added["uuid"].length > 0).toBe(true);
 

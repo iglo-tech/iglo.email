@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
@@ -41,7 +42,7 @@ test("a grant on the trigger event lets a PT0S marketing first step send", async
   );
   expect(started.status).toBe(200);
   expect(started.body.data.grants).toEqual([{ list_id: news, result: "added" }]);
-  const enrollment = started.body.data.enrollments.started[0]!.id as number;
+  const enrollment = asBody<number>(started.body.data.enrollments.started[0]!.id);
   await f.pass(0);
   await delivered(f, 1);
   expect(await f.enrollment(enrollment)).toMatchObject({ status: "completed" });
@@ -58,7 +59,7 @@ test("without a grant the same event ends the enrollment unsubscribed and sends 
     "POST",
     order({ email: "plain@example.test" }),
   );
-  const enrollment = started.body.data.enrollments.started[0]!.id as number;
+  const enrollment = asBody<number>(started.body.data.enrollments.started[0]!.id);
   await f.pass(0);
   expect(await f.enrollment(enrollment)).toMatchObject({
     status: "exited",
@@ -77,7 +78,7 @@ test("after a one-click unsubscribe, a repeated grant does not revive the enroll
     "POST",
     order({ email: "gone@example.test", grant_lists: [news] }),
   );
-  const subscriberId = first.body.data.subscriber_id as number;
+  const subscriberId = asBody<number>(first.body.data.subscriber_id);
   await f.pass(0);
   await delivered(f, 1);
   const out = await f.json("/api/subscribers/lists", "PUT", {
@@ -92,7 +93,7 @@ test("after a one-click unsubscribe, a repeated grant does not revive the enroll
     order({ email: "gone@example.test", grant_lists: [news] }),
   );
   expect(repeat.body.data.grants).toEqual([{ list_id: news, result: "unsubscribed" }]);
-  const enrollment = repeat.body.data.enrollments.started[0]!.id as number;
+  const enrollment = asBody<number>(repeat.body.data.enrollments.started[0]!.id);
   await f.pass(0);
   expect(await f.enrollment(enrollment)).toMatchObject({
     status: "exited",

@@ -74,6 +74,7 @@ import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
 import type { Captcha } from "@/captcha/captcha";
+import { asBody } from "@/test/read-body";
 
 const open: Middleware = (_context, next) => next();
 
@@ -282,7 +283,7 @@ export async function txFixture(
       sendTarget: (uuid) => sends.bounceTarget(uuid),
       campaignID: () => null,
       recorded: webhookEffects!.bounceRecorded,
-      actions: () => settingsStore!.read()["bounce.actions"],
+      actions: () => asBody<Record<string, BounceAction>>(settingsStore!.read()["bounce.actions"]),
       testSend: (messageId) => testSends.find(messageId),
     });
     registerBounceRoutes(router, {
@@ -408,7 +409,7 @@ export async function txFixture(
       subscribers,
       mail: subscriberMail,
       settings: getPublicSettings,
-      captcha: {} as Captcha,
+      captcha: asBody<Captcha>({}),
       altchaComplexity: () => 0,
       limits: { subscribe: open, optin: open },
       clientAddress: () => "127.0.0.1",
@@ -458,14 +459,14 @@ export async function txFixture(
     if (created.status !== 200) {
       throw new Error(`template ${created.status}`);
     }
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   const subscriber = async (email: string, name = "Fixture Person", extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", { email, name, ...extra });
     if (created.status !== 200) {
       throw new Error(`subscriber ${created.status}`);
     }
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   /**
    * B123 (D126): the path of a subscriber's privacy action through a marketing send of theirs,
@@ -489,8 +490,10 @@ export async function txFixture(
     if (sent.status !== 200) {
       throw new Error(`send ${sent.status}`);
     }
-    const send = (await json(`/api/sends/${sent.body.data.sends[0].id}`)).body.data.uuid as string;
-    const who = (await json(`/api/subscribers/${subscriberId}`)).body.data.uuid as string;
+    const send = asBody<string>(
+      (await json(`/api/sends/${sent.body.data.sends[0].id}`)).body.data.uuid,
+    );
+    const who = asBody<string>((await json(`/api/subscribers/${subscriberId}`)).body.data.uuid);
     // B126 (D123): a wipe deletes only when confirmed; the bare POST answers its confirmation page.
     return `/m/${send}/${action}/${who}${action === "wipe" ? "?confirm=true" : ""}`;
   };
@@ -563,17 +566,15 @@ export async function txFixture(
       delivery = startDelivery();
       return delivery?.checked;
     },
-    count: () => Number((db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n),
+    count: () => Number(asBody<{ n: bigint }>(db.query("SELECT count(*) AS n FROM sends").get()).n),
     settings: settingsStore,
     mailTo: (address: string) => sink.messages.filter((m) => m.to.includes(address)),
     async drain() {
       for (
         let i = 0;
         i < 200 &&
-        (
-          db
-            .query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')")
-            .get() as { n: bigint }
+        asBody<{ n: bigint }>(
+          db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
         ).n > 0n;
         i++
       ) {

@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const logo = "https://brand.example.test/logo.png";
 const favicon = "https://brand.example.test/favicon.ico";
@@ -38,11 +39,12 @@ function branded(html: string) {
 
 test("the /m/ unsubscribe page, its manage view, the test send and the error and result pages are branded", async () => {
   const f = await open();
-  const list = (
-    await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })).body
+      .data.id,
+  );
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [list] });
-  const adaUuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const adaUuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const template = await f.template('<p><a href="{{ unsubscribe_url }}">unsub</a></p>', "News");
   const sent = await f.tx({
     subscriber_id: ada,
@@ -51,7 +53,7 @@ test("the /m/ unsubscribe page, its manage view, the test send and the error and
     list_id: list,
     data: {},
   });
-  const sendUuid = sent.body.data.sends[0].uuid as string;
+  const sendUuid = asBody<string>(sent.body.data.sends[0].uuid);
   const page = `/m/${sendUuid}/unsubscribe/${adaUuid}`;
 
   for (const path of [

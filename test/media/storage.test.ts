@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import { waitWall } from "@/test/wait";
+import { readJson } from "@/test/read-body";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -44,7 +45,7 @@ const upload = (f: Fixture, name: string, content: BlobPart) => {
 const stored = async (f: Fixture, name: string, content: BlobPart) => {
   const response = await upload(f, name, content);
   expect(response.status).toBe(200);
-  return (await response.json()).data as { id: number; filename: string };
+  return (await readJson<{ data: { id: number; filename: string } }>(response)).data;
 };
 /** As an anonymous client: the path of a stored file is public. */
 const served = (f: Fixture, name: string) => f.request(`/uploads/${name}`);

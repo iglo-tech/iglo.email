@@ -12,6 +12,7 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 import { TestClock } from "@/test/server/fixture";
 import { startUserFixture } from "@/test/users/fixture";
 import { txFixture } from "@/test/tx/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 const apiKey = "legacy-api-key-0123456789";
 async function legacy(
@@ -82,10 +83,12 @@ test("migration 18 clears stale TOTP keys and raises a stored zero bounce count 
     const cookie = ["session", "csrf"]
       .map((n) => set.find((v) => v.startsWith(`${n}=`))!.split(";")[0])
       .join("; ");
-    const get = async (path: string) =>
-      (await (await fetch(`${f.origin}${path}`, { headers: { cookie } })).json()).data;
-    const users = await get("/api/users");
-    const type = (name: string) => users.find((u: any) => u.username === name).twofa_type;
+    const get = async <T = Record<string, any>>(path: string) =>
+      (await readJson<{ data: T }>(await fetch(`${f.origin}${path}`, { headers: { cookie } })))
+        .data;
+    const users = await get<Array<Record<string, any>>>("/api/users");
+    const type = (name: string) =>
+      asBody<string>(users.find((u: any) => u.username === name)!.twofa_type);
     expect(type("api-user")).toBe("none");
     expect(type("no-password")).toBe("none");
     expect(type("password-user")).toBe("totp");
@@ -107,9 +110,9 @@ test("a bounce rule that is not a JSON object cannot block migration 18", async 
   try {
     const db = openDatabase(persisted.dataDir);
     runMigrations(db, persisted.dataDir, persisted.clock, productionMigrations);
-    const row = db.query("SELECT value FROM settings WHERE key = 'bounce.actions'").get() as {
-      value: string;
-    };
+    const row = asBody<{ value: string }>(
+      db.query("SELECT value FROM settings WHERE key = 'bounce.actions'").get(),
+    );
     db.close(true);
     expect(JSON.parse(row.value)).toEqual({
       soft: { count: 1, action: "unsubscribe" },
@@ -141,10 +144,10 @@ test("after the count 0 rewrite a bounce is recorded and its action fires", asyn
     });
     expect(post.status).toBe(200);
     // The rewritten soft rule is "1 bounce, blocklist"; with count 0 it recorded no row.
-    const bounces = (await f.json("/api/bounces")).body.data.results;
-    expect(bounces.map((b: any) => [b.email, b.type])).toEqual([
-      ["legacy-bounce@example.com", "soft"],
-    ]);
+    const bounces = asBody<Array<{ email: string; type: string }>>(
+      (await f.json("/api/bounces")).body.data.results,
+    );
+    expect(bounces.map((b) => [b.email, b.type])).toEqual([["legacy-bounce@example.com", "soft"]]);
     expect((await f.json(`/api/subscribers/${id}`)).body.data.status).toBe("blocklisted");
   } finally {
     await f.close();
@@ -201,8 +204,12 @@ test("password login turned back on for a migrated password-off user asks for no
       "x-csrf-token": cookies[1]!.slice("csrf=".length),
       "content-type": "application/json",
     };
-    const users = (await (await fetch(`${f.origin}/api/users`, { headers })).json()).data;
-    const target = users.find((u: any) => u.username === "no-password");
+    const users = (
+      await readJson<{ data: Array<Record<string, any>> }>(
+        await fetch(`${f.origin}/api/users`, { headers }),
+      )
+    ).data;
+    const target = users.find((u) => u.username === "no-password")!;
     expect(target.password_login).toBe(false);
     const put = await fetch(`${f.origin}/api/users/${target.id}`, {
       method: "PUT",

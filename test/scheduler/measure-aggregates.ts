@@ -246,7 +246,7 @@ for (const size of sizes) {
 console.log(
   JSON.stringify(
     { bun: Bun.version, repetitions, results },
-    (_, v) => (typeof v === "number" ? Math.round(v * 1000) / 1000 : v),
+    (_, v: unknown) => (typeof v === "number" ? Math.round(v * 1000) / 1000 : v),
     2,
   ),
 );

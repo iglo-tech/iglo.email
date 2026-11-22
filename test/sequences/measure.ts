@@ -8,6 +8,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { asBody, readJson } from "@/test/read-body";
 
 const round = (n: number) => +n.toFixed(2);
 
@@ -84,14 +85,13 @@ async function run(name: string, sequences: boolean) {
         return { status: response.status, body: text ? JSON.parse(text) : null };
       };
       if (sequences) {
-        const template = (
-          await api("/api/templates", "POST", {
-            name: "measure",
-            type: "tx",
-            subject: "Measure",
-            body: "<p>{{ subscriber.name }}</p>",
-          })
-        ).body.data.id as number;
+        const created = await api("/api/templates", "POST", {
+          name: "measure",
+          type: "tx",
+          subject: "Measure",
+          body: "<p>{{ subscriber.name }}</p>",
+        });
+        const template = asBody<number>(created.body.data.id);
         const steps = [
           { wait: "P1D", kind: "transactional", template_id: template },
           { wait: "P3D", kind: "transactional", template_id: template },
@@ -128,15 +128,10 @@ async function run(name: string, sequences: boolean) {
       }
       const reader = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
       const sample = () => ({
-        events: (reader.query("SELECT count(*) AS n FROM events").get() as { n: number }).n,
+        events: asBody<{ n: number }>(reader.query("SELECT count(*) AS n FROM events").get()).n,
         enrollments: Object.fromEntries(
-          (
-            reader
-              .query("SELECT status, count(*) AS n FROM enrollments GROUP BY status")
-              .all() as Array<{
-              status: string;
-              n: number;
-            }>
+          asBody<Array<{ status: string; n: number }>>(
+            reader.query("SELECT status, count(*) AS n FROM enrollments GROUP BY status").all(),
           ).map((row) => [row.status, row.n]),
         ),
       });
@@ -197,9 +192,9 @@ async function run(name: string, sequences: boolean) {
                 idempotency_key: `evt-${i}`,
               }),
             });
-            const body = (await response.json()) as {
+            const body = await readJson<{
               data?: { enrollments: { started: Array<unknown>; ended: Array<unknown> } };
-            };
+            }>(response);
             results.push({
               deadline,
               sent,
@@ -238,7 +233,7 @@ async function run(name: string, sequences: boolean) {
         final,
         serverRssMiB: {
           start: rssStart,
-          peak: Math.max(...samples.map((s) => (s as { rss: number | null }).rss ?? 0)),
+          peak: Math.max(...samples.map((s) => asBody<{ rss: number | null }>(s).rss ?? 0)),
           end: serverRss(executable),
         },
       };

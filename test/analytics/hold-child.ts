@@ -2,8 +2,9 @@
 // a second and a half, the way a long report does, then answers with an empty result.
 import { writeSync } from "node:fs";
 import { openReadOnly } from "@/subscribers/query-runner";
+import { asBody } from "@/test/read-body";
 
-const request = JSON.parse(await Bun.stdin.text()) as { path: string };
+const request = asBody<{ path: string }>(JSON.parse(await Bun.stdin.text()));
 const db = openReadOnly(request.path);
 db.run("BEGIN");
 db.query("SELECT COUNT(*) FROM campaigns").get();

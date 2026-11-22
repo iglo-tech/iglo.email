@@ -7,6 +7,7 @@ import { healthWhenReady, restartOnPort, startOnFreePort, stopChild } from "@/te
 import { ensureProductionBuild } from "@/test/production-build";
 import { startDbFixture } from "@/test/db/fixture";
 import { startSchemaFixture } from "@/test/schema/fixture";
+import { readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(15_000);
@@ -229,7 +230,7 @@ describe("compiled executable", () => {
         headers: { cookie: session },
       });
       expect(profile.status).toBe(200);
-      expect(((await profile.json()) as { data: { username: string } }).data.username).toBe(
+      expect((await readJson<{ data: { username: string } }>(profile)).data.username).toBe(
         adminUser,
       );
       expect((await login(port, adminUser, adminPassword)).status).toBe(302);
@@ -359,7 +360,7 @@ describe("compiled executable", () => {
         body: JSON.stringify({ action: "status" }),
         signal: AbortSignal.timeout(3000),
       });
-      const { result } = (await response.json()) as {
+      const { result } = await readJson<{
         result: {
           version: string;
           shapes: Record<string, Array<string>>;
@@ -367,7 +368,7 @@ describe("compiled executable", () => {
           foreignKeyErrors: Array<unknown>;
           backups: Array<string>;
         };
-      };
+      }>(response);
       expect(result).toMatchObject({
         version: "26",
         integrity: "ok",
@@ -380,7 +381,7 @@ describe("compiled executable", () => {
         method: "POST",
         body: JSON.stringify({ action: "read-persist" }),
       });
-      expect(((await search.json()) as { result: Array<string> }).result).toEqual([
+      expect((await readJson<{ result: Array<string> }>(search)).result).toEqual([
         "persistent@example.test",
       ]);
       expect(result.shapes.mat_list_subscriber_stats).toEqual([
@@ -424,9 +425,9 @@ describe("compiled executable", () => {
           body: JSON.stringify({ action: "status" }),
           signal: AbortSignal.timeout(3000),
         });
-        expect(
-          ((await response.json()) as { result: { integrity: string } }).result.integrity,
-        ).toBe("ok");
+        expect((await readJson<{ result: { integrity: string } }>(response)).result.integrity).toBe(
+          "ok",
+        );
       } finally {
         await fixture.close();
       }
@@ -628,7 +629,7 @@ describe("compiled executable", () => {
         headers: { authorization: `token logs-api:${token}` },
       });
       expect(response.status).toBe(200);
-      const lines = (await response.json()).data as Array<string>;
+      const lines = (await readJson<{ data: Array<string> }>(response)).data;
       // One line per process, in the fixed wording of the log buffer, with no error class.
       expect(lines.filter((line) => line.includes("X-Forwarded-For"))).toEqual([
         expect.stringMatching(

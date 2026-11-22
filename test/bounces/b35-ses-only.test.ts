@@ -15,6 +15,7 @@ import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
 import { adminLogin } from "@/test/contract/owned";
 import { TestClock } from "@/test/server/fixture";
 import { txFixture } from "@/test/tx/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const admin = { user: "b35-upgrade-admin", password: "b35-upgrade-synthetic-password" };
@@ -103,7 +104,7 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
 
   const getRes = await api("/api/settings");
   expect(getRes.status).toBe(200);
-  const body = (await getRes.json()) as { data: Record<string, unknown> };
+  const body = await readJson<{ data: Record<string, unknown> }>(getRes);
   expect(body.data["bounce.mailgun"]).toBeUndefined();
 
   // PUT round-trip succeeds
@@ -120,7 +121,7 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
   ).toBe(200);
   const getAfterPut = await api("/api/settings");
   expect(getAfterPut.status).toBe(200);
-  const bodyAfterPut = (await getAfterPut.json()) as { data: Record<string, unknown> };
+  const bodyAfterPut = await readJson<{ data: Record<string, unknown> }>(getAfterPut);
   expect(bodyAfterPut.data["bounce.mailgun"]).toBeUndefined();
 
   // Single-key PUT /api/settings/bounce.mailgun returns 400
@@ -153,7 +154,7 @@ test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces an
   // Shows in GET /api/bounces
   const listRes = await f.json("/api/bounces?source=mailgun");
   expect(listRes.status).toBe(200);
-  const bounces = listRes.body.data.results as Array<{ id: number; source: string }>;
+  const bounces = asBody<Array<{ id: number; source: string }>>(listRes.body.data.results);
   expect(bounces.some((b) => b.source === "mailgun")).toBe(true);
 
   // Also export the subscriber who owns the source='mailgun' bounce row
@@ -181,23 +182,23 @@ test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces an
   });
   expect(wipeRes.status).toBe(200);
 
-  const remaining = f.db
-    .query("SELECT count(*) as count FROM bounces WHERE subscriber_id = ?")
-    .get(subId) as { count: bigint };
+  const remaining = asBody<{ count: bigint }>(
+    f.db.query("SELECT count(*) as count FROM bounces WHERE subscriber_id = ?").get(subId),
+  );
   expect(Number(remaining.count)).toBe(0);
 });
 
 test("5. Admin settings page Bounces tab shows only SES (no Mailgun, no inert providers, no mailbox editor)", async () => {
   const i18n = createTranslation();
   const page = await settingsView({
-    context: {
+    context: asBody<never>({
       app: { i18n, logger: { error() {} } },
       url: new URL("http://fixture.test/admin/settings"),
       request: new Request("http://fixture.test/admin/settings"),
       params: {},
       peerAddress: "127.0.0.1",
-    } as any,
-    identity: { id: 1, username: "admin", type: "human" } as any,
+    }),
+    identity: asBody<never>({ id: 1, username: "admin", type: "human" }),
     site: {
       siteName: "Test Site",
       faviconUrl: "",

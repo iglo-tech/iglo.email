@@ -6,6 +6,7 @@ import { productionMigrations } from "@/db/migrations";
 import { TestClock } from "@/test/server/fixture";
 import { startUserFixture } from "@/test/users/fixture";
 import type { JsonObject } from "@/test/json-object";
+import { asBody, readJson } from "@/test/read-body";
 
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
 const fixtures: Array<Fixture> = [];
@@ -85,7 +86,9 @@ test("an operator clears a user's TOTP from the CLI and their sessions end", asy
     supportedVersion: productionMigrations.length,
   });
   const db = openDatabase(dataDir);
-  const row = db.query("SELECT twofa_type, twofa_key FROM users WHERE id = ?").get(id) as any;
+  const row = asBody<Record<string, any>>(
+    db.query("SELECT twofa_type, twofa_key FROM users WHERE id = ?").get(id),
+  );
   expect(row.twofa_type).toBe("none");
   expect(row.twofa_key).toBeNull();
   expect(db.query("SELECT count(*) AS n FROM sessions").get()).toEqual({
@@ -99,9 +102,9 @@ test("TOTP does not revive after password login is turned off and on, or after a
   const f = await fixture();
   const s = await admin(f);
   await call(f, s, "/fixture/totp-user", "POST");
-  const totp = (await (await call(f, s, "/api/users")).json()).data.find(
-    (u: any) => u.username === "fixture-totp",
-  );
+  const totp = (
+    await readJson<{ data: Array<Record<string, any>> }>(await call(f, s, "/api/users"))
+  ).data.find((u) => u.username === "fixture-totp")!;
   expect(totp.twofa_type).toBe("totp");
   const update = (extra: JsonObject) =>
     call(f, s, `/api/users/${totp.id}`, "PUT", {
@@ -119,9 +122,9 @@ test("TOTP does not revive after password login is turned off and on, or after a
   expect((await update({ password_login: true, password: "fixture-user-password" })).status).toBe(
     200,
   );
-  const after = (await (await call(f, s, "/api/users")).json()).data.find(
-    (u: any) => u.username === "fixture-totp",
-  );
+  const after = (
+    await readJson<{ data: Array<Record<string, any>> }>(await call(f, s, "/api/users"))
+  ).data.find((u) => u.username === "fixture-totp")!;
   expect(after.twofa_type).toBe("none");
 });
 

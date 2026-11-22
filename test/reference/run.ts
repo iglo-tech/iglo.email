@@ -8,6 +8,7 @@ import { command, spawnGroup, stopGroup } from "@/test/reference/command";
 import type { GroupChild } from "@/test/reference/command";
 import { cache, prepare } from "@/test/reference/prepare";
 import { startReceiver } from "@/test/reference/webhook";
+import { asBody, readJson } from "@/test/read-body";
 
 async function docker(args: Array<string>, timeout = 30_000) {
   const result = await command(["docker", ...args], { timeout });
@@ -311,10 +312,10 @@ async function run(args: Array<string>): Promise<number> {
       if (!response.ok) {
         return false;
       }
-      const config = (await response.json()) as {
+      const config = await readJson<{
         Label?: string;
         MessageRelay?: { Enabled?: boolean };
-      };
+      }>(response);
       return config.Label === id && config.MessageRelay?.Enabled === false;
     };
     await ready(mailpitReady, controller.signal, "Mailpit", mailpit);
@@ -415,9 +416,9 @@ async function run(args: Array<string>): Promise<number> {
     if (!settingsResponse.ok) {
       throw new Error(`Authenticated settings read failed: HTTP ${settingsResponse.status}`);
     }
-    const envelope = (await settingsResponse.json()) as { data: Record<string, unknown> };
+    const envelope = await readJson<{ data: Record<string, unknown> }>(settingsResponse);
     const settings = envelope.data;
-    const smtp = settings.smtp as Array<Record<string, unknown>>;
+    const smtp = asBody<Array<Record<string, unknown>>>(settings.smtp);
     if (!Array.isArray(smtp) || !smtp[0]) {
       throw new Error("Upstream did not provide default SMTP settings");
     }

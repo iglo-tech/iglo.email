@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { startReceiver } from "@/test/webhooks/receiver";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
+import { asBody } from "@/test/read-body";
 
 const placeholder = "00000000-0000-0000-0000-000000000000";
 const message =
@@ -24,20 +25,22 @@ async function open(options: Parameters<typeof txFixture>[0] = {}) {
   return f;
 }
 const membership = async (f: TxFixture, subscriber: number, list: number) =>
-  (await f.json(`/api/subscribers/${subscriber}`)).body.data.lists.find(
-    (l: { id: number }) => l.id === list,
-  )?.subscription_status;
+  asBody<Array<{ id: number; subscription_status: string }>>(
+    (await f.json(`/api/subscribers/${subscriber}`)).body.data.lists,
+  ).find((l) => l.id === list)?.subscription_status;
 const deliveries = async (f: TxFixture, hook: number) =>
-  (await f.json(`/api/webhooks/${hook}/deliveries?per_page=100`)).body.data
-    .results as Array<unknown>;
+  asBody<Array<unknown>>(
+    (await f.json(`/api/webhooks/${hook}/deliveries?per_page=100`)).body.data.results,
+  );
 
 test("the placeholder unsubscribe and manage links answer the test page for any subscriber UUID", async () => {
   const f = await open();
-  const list = (
-    await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })).body
+      .data.id,
+  );
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [list] });
-  const adaUuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const adaUuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const absent = crypto.randomUUID();
   const paths = [
     `/m/${placeholder}/unsubscribe/${adaUuid}`,
@@ -70,12 +73,13 @@ test("POST to the placeholder, as the page form or one-click, answers the same p
     events: ["subscriber.unsubscribed"],
   });
   expect(hook.status).toBe(200);
-  const hookId = hook.body.data.id as number;
-  const list = (
-    await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const hookId = asBody<number>(hook.body.data.id);
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })).body
+      .data.id,
+  );
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [list] });
-  const adaUuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const adaUuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const path = `/m/${placeholder}/unsubscribe/${adaUuid}`;
 
   for (const body of ["List-Unsubscribe=One-Click", "manage=true&blocklist=on", ""]) {
@@ -100,12 +104,13 @@ test("a real one-click on a real send still unsubscribes and queues its webhook"
     url: receiver.url(),
     events: ["subscriber.unsubscribed"],
   });
-  const hookId = hook.body.data.id as number;
-  const list = (
-    await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const hookId = asBody<number>(hook.body.data.id);
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "news", type: "public", optin: "single" })).body
+      .data.id,
+  );
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [list] });
-  const adaUuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const adaUuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const template = await f.template('<a href="{{ unsubscribe_url }}">u</a>', "News");
   const sent = await f.tx({
     subscriber_id: ada,
@@ -114,7 +119,7 @@ test("a real one-click on a real send still unsubscribes and queues its webhook"
     list_id: list,
   });
   expect(sent.body.data.sends[0].status).toBe("sent");
-  const send = sent.body.data.sends[0].uuid as string;
+  const send = asBody<string>(sent.body.data.sends[0].uuid);
 
   const response = await f.request(`/m/${send}/unsubscribe/${adaUuid}`, {
     method: "POST",

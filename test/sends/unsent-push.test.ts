@@ -5,6 +5,7 @@ import { placeRestoreHold, releaseRestoreHold, restoreHold, holdRecord } from "@
 import { HttpError } from "@/server/response";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
@@ -25,12 +26,12 @@ async function until(condition: () => boolean, f: TxFixture) {
   }
 }
 const row = (f: TxFixture) =>
-  f.db.query("SELECT status, attempts, error, claimed_until FROM sends").get() as {
+  asBody<{
     status: string;
     attempts: bigint;
     error: string | null;
     claimed_until: string | null;
-  };
+  }>(f.db.query("SELECT status, attempts, error, claimed_until FROM sends").get());
 
 test("a send refused by the restore hold goes back to queued, uncounted, and is sent once after release", async () => {
   let armed = false;

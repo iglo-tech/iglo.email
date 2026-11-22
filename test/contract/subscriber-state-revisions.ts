@@ -1,5 +1,13 @@
 // Reference: listmonk subscriber handlers/core/SQL at 6fcd95f; D41 corrections.
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
+
+/** A subscriber or list as the API returns it, read as the fields the checks use. */
+type Entity = {
+  id: number;
+  lists: Array<{ id: number; tags?: unknown; subscription_status?: string; [field: string]: any }>;
+  [field: string]: any;
+};
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -28,12 +36,12 @@ export async function runSubscriberStateRevisions(target: {
       owned.push({ path, id: data.id });
     }
     check(response.status === 200 && data, "subscriber-state-seed");
-    return data;
+    return asBody<Entity>(data);
   }
   async function get(id: number) {
     const response = await request(`/api/subscribers/${id}`);
     check(response.status === 200, "subscriber-state-get");
-    return (await response.json()).data;
+    return asBody<Entity>((await response.json()).data);
   }
   let cleanupFailures = 0;
   try {
@@ -47,11 +55,11 @@ export async function runSubscriberStateRevisions(target: {
     });
     for (const result of [sub, await get(sub.id)]) {
       check(
-        result.lists.find((l: any) => l.id === list.id).tags === null,
+        result.lists.find((l) => l.id === list.id)!.tags === null,
         "subscriber-projection-null-tags",
       );
       check(
-        JSON.stringify(result.lists.find((l: any) => l.id === tagged.id).tags) === '["kept"]',
+        JSON.stringify(result.lists.find((l) => l.id === tagged.id)!.tags) === '["kept"]',
         "subscriber-projection-nonempty-tags",
       );
     }
@@ -150,12 +158,12 @@ export async function runSubscriberStateRevisions(target: {
       );
       const after = await get(sub.id);
       check(
-        after.lists.find((l: any) => l.id === list.id).subscription_status ===
+        after.lists.find((l) => l.id === list.id)!.subscription_status ===
           (target.mode === "reference" ? "unsubscribed" : "confirmed"),
         "D41-duplicate-selector-explicit-write",
       );
       check(
-        after.lists.find((l: any) => l.id === tagged.id).subscription_status === "confirmed",
+        after.lists.find((l) => l.id === tagged.id)!.subscription_status === "confirmed",
         "D41-unrelated-membership-retained",
       );
       if (target.mode === "reference") {
@@ -193,7 +201,7 @@ export async function runSubscriberStateRevisions(target: {
       "subscriber-explicit-empty-PATCH-status",
     );
     check(
-      (await get(blocked.id)).lists[0].subscription_status === held,
+      (await get(blocked.id)).lists[0]!.subscription_status === held,
       "subscriber-empty-status-history-persisted",
     );
   } finally {

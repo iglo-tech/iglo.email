@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { permissions } from "@/roles/roles";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
@@ -55,7 +56,9 @@ async function setup(
 ) {
   const template = await f.template(body, "News {{ data.n }}");
   const list = async (name: string, optin = "single") =>
-    (await f.json("/api/lists", "POST", { name, type: "public", optin })).body.data.id as number;
+    asBody<number>(
+      (await f.json("/api/lists", "POST", { name, type: "public", optin })).body.data.id,
+    );
   return { template, list };
 }
 const marketing = (f: TxFixture, subscriber: number, template: number, list: number, n = "1") =>
@@ -67,13 +70,15 @@ const marketing = (f: TxFixture, subscriber: number, template: number, list: num
     data: { n },
   });
 const status = (response: { body: any }) =>
-  response.body.data.sends.map((row: { status: string }) => row.status);
+  asBody<Array<{ status: string }>>(response.body.data.sends).map((row) => row.status);
 const row = async (f: TxFixture, response: { body: any }, index = 0) =>
-  (await f.json(`/api/sends/${response.body.data.sends[index].id}`)).body.data;
+  asBody<Record<string, any>>(
+    (await f.json(`/api/sends/${response.body.data.sends[index].id}`)).body.data,
+  );
 const membership = async (f: TxFixture, subscriber: number, list: number) =>
-  (await f.json(`/api/subscribers/${subscriber}`)).body.data.lists.find(
-    (l: { id: number }) => l.id === list,
-  )?.subscription_status;
+  asBody<Array<{ id: number; subscription_status: string }>>(
+    (await f.json(`/api/subscribers/${subscriber}`)).body.data.lists,
+  ).find((l) => l.id === list)?.subscription_status;
 
 test("marketing consent follows list membership and opt-in type", async () => {
   const f = await open();
@@ -511,10 +516,9 @@ test("blocklist option follows privacy.allow_blocklist", async () => {
   expect(after.status).toBe("blocklisted");
   // D81: blocklisting stamps the subscriber like every other path into it.
   expect(after.updated_at).toBe(f.clock.now().toISOString());
-  expect(after.lists.map((l: { subscription_status: string }) => l.subscription_status)).toEqual([
-    "unsubscribed",
-    "unsubscribed",
-  ]);
+  expect(
+    asBody<Array<{ subscription_status: string }>>(after.lists).map((l) => l.subscription_status),
+  ).toEqual(["unsubscribed", "unsubscribed"]);
   const page = await f.request(adaPath);
   expect(page.status).toBe(200);
   expect(await page.text()).toContain("Permanently unsubscribed.");
@@ -574,7 +578,11 @@ test("forged, mismatched and non-marketing UUIDs are safe 4xx and change nothing
   }
   // Upper-case UUIDs are accepted, as Postgres UUID comparison is case-insensitive.
   expect(
-    (await f.request(`/m/${sent.toUpperCase()}/unsubscribe/${adaUuid.toUpperCase()}`)).status,
+    (
+      await f.request(
+        `/m/${asBody<string>(sent).toUpperCase()}/unsubscribe/${asBody<string>(adaUuid).toUpperCase()}`,
+      )
+    ).status,
   ).toBe(200);
 });
 

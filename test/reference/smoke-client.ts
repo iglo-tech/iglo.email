@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
+import { asBody, readJson } from "@/test/read-body";
 
 function required(name: string) {
   const value = process.env[name];
@@ -86,8 +87,8 @@ if (mode === "wait" || mode === "orphan") {
   }
   await new Promise(() => {});
 } else if (mode === "failure") {
-  const captured = (await (await request(`${receiver}/deliveries`)).json()) as Array<unknown>;
-  const mailbox = (await (await request(`${mailpit}/api/v1/messages`)).json()) as { total: number };
+  const captured = await readJson<Array<unknown>>(await request(`${receiver}/deliveries`));
+  const mailbox = await readJson<{ total: number }>(await request(`${mailpit}/api/v1/messages`));
   assert(
     captured.length === 0 && mailbox.total === 0,
     "Concurrent reference runs shared capture state",
@@ -105,10 +106,10 @@ if (mode === "wait" || mode === "orphan") {
   assert(health.headers.get("content-type") === "application/json", "health content type differs");
   assert((await health.text()) === '{"data":true}\n', "health response differs");
   const auth = { Authorization: authorization };
-  const settings = (await (
-    await request(`${reference}/api/settings`, { headers: auth })
-  ).json()) as { data: Record<string, unknown> };
-  const smtp = settings.data.smtp as Array<Record<string, unknown>>;
+  const settings = await readJson<{ data: Record<string, unknown> }>(
+    await request(`${reference}/api/settings`, { headers: auth }),
+  );
+  const smtp = asBody<Array<Record<string, unknown>>>(settings.data.smtp);
   assert(
     smtp.length === 1 &&
       smtp[0]?.host === smtpHost &&
@@ -117,9 +118,9 @@ if (mode === "wait" || mode === "orphan") {
     "SMTP is not confined to this run's Mailpit",
   );
   assert(settings.data["app.check_updates"] === false, "update checking was not disabled");
-  const templates = (await (
-    await request(`${reference}/api/templates`, { headers: auth })
-  ).json()) as { data: Array<{ id: number; name: string }> };
+  const templates = await readJson<{ data: Array<{ id: number; name: string }> }>(
+    await request(`${reference}/api/templates`, { headers: auth }),
+  );
   const template = templates.data.find((item) => item.name === "Sample transactional template");
   assert(template, "synthetic transactional template missing");
   await request(`${reference}/api/tx`, {
@@ -136,9 +137,9 @@ if (mode === "wait" || mode === "orphan") {
   const deadline = Date.now() + 10_000;
   let found = false;
   while (Date.now() < deadline) {
-    const messages = (await (await request(`${mailpit}/api/v1/messages`)).json()) as {
+    const messages = await readJson<{
       messages: Array<{ Subject: string; To: Array<{ Address: string }> }>;
-    };
+    }>(await request(`${mailpit}/api/v1/messages`));
     found = messages.messages.some(
       (message) =>
         message.Subject === "Reference smoke message" &&
@@ -163,10 +164,12 @@ if (mode === "wait" || mode === "orphan") {
     signal: AbortSignal.timeout(5000),
   });
   assert(delivery.status === 503, "webhook response status was not applied");
-  const captured = (await (await request(`${receiver}/deliveries`)).json()) as Array<{
-    headers: Record<string, string>;
-    bodyBase64: string;
-  }>;
+  const captured = await readJson<
+    Array<{
+      headers: Record<string, string>;
+      bodyBase64: string;
+    }>
+  >(await request(`${receiver}/deliveries`));
   assert(
     captured.length === 1 &&
       captured[0]?.headers["x-reference-fixture"] === "synthetic" &&
@@ -175,7 +178,7 @@ if (mode === "wait" || mode === "orphan") {
   );
   await request(`${receiver}/deliveries`, { method: "DELETE" });
   assert(
-    ((await (await request(`${receiver}/deliveries`)).json()) as Array<unknown>).length === 0,
+    (await readJson<Array<unknown>>(await request(`${receiver}/deliveries`))).length === 0,
     "webhook reset failed",
   );
   console.log("Reference health, authentication, SMTP delivery, and webhook capture passed");

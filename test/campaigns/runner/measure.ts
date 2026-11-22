@@ -12,6 +12,7 @@ import type { Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 
 const round = (n: number) => +n.toFixed(2);
 
@@ -178,7 +179,7 @@ async function availablePort() {
   await new Promise<void>((done) => {
     server.listen(0, "127.0.0.1", done);
   });
-  const address = server.address() as { port: number };
+  const address = asBody<{ port: number }>(server.address());
   await new Promise<void>((done) => {
     server.close(() => done());
   });
@@ -339,7 +340,8 @@ async function waitFor(check: () => boolean | Promise<boolean>, timeoutMs: numbe
   }
   throw new Error(`timed out waiting for ${what}`);
 }
-const campaignOf = async (api: Api, id: number) => (await api(`/api/campaigns/${id}`)).body.data;
+const campaignOf = async (api: Api, id: number) =>
+  asBody<Record<string, any>>((await api(`/api/campaigns/${id}`)).body.data);
 
 async function withRun<T>(name: string, run: (directory: string, sink: Sink) => Promise<T>) {
   const directory = mkdtempSync(join(base, `m32-${name}-`));
@@ -518,7 +520,7 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
       });
       const storedText = await stored.text();
       assert.equal(stored.status, 200, storedText);
-      const media = (JSON.parse(storedText) as { data: { id: number } }).data.id;
+      const media = asBody<{ data: { id: number } }>(JSON.parse(storedText)).data.id;
       const id = (
         await api("/api/campaigns", "POST", {
           name: "crash",
@@ -545,10 +547,8 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
         await waitFor(() => sink.held > 0, 120_000, "a held message");
       }
       const reader = new Database(join(directory, "data/iglo-email.db"), { readonly: true });
-      const cursorAtKill = (
-        reader.query("SELECT last_subscriber_id AS c FROM campaigns WHERE id = ?").get(id) as {
-          c: number;
-        }
+      const cursorAtKill = asBody<{ c: number }>(
+        reader.query("SELECT last_subscriber_id AS c FROM campaigns WHERE id = ?").get(id),
       ).c;
       reader.close();
       await app.kill();
@@ -772,6 +772,6 @@ if (mode === "crash" || mode === "all") {
 }
 if (mode === "mixed" || mode === "all") {
   for (const name of (process.env.M32_SCENARIOS ?? "events,campaign,mixed").split(",")) {
-    await mixed(name as "events" | "campaign" | "mixed");
+    await mixed(asBody<"events" | "campaign" | "mixed">(name));
   }
 }

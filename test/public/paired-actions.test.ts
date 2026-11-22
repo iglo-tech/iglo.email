@@ -6,6 +6,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
@@ -36,9 +37,9 @@ const delivered = (f: PublicFixture, list: number, subscribers: Array<number>) =
 });
 
 const uuidOf = async (f: PublicFixture, id: number) =>
-  (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
 const subscriberOf = async (f: PublicFixture, id: number) =>
-  (await f.json(`/api/subscribers/${id}`)).body.data;
+  asBody<Record<string, any>>((await f.json(`/api/subscribers/${id}`)).body.data);
 
 test("a random campaign, the placeholder campaign and the retired sub-only routes write nothing", async () => {
   const f = await open();
@@ -219,7 +220,9 @@ test("a marketing send's manage page exports and wipes through its send, for its
     data: {},
   });
   expect(sent.status).toBe(200);
-  const send = (await f.json(`/api/sends/${sent.body.data.sends[0].id}`)).body.data.uuid as string;
+  const send = asBody<string>(
+    (await f.json(`/api/sends/${sent.body.data.sends[0].id}`)).body.data.uuid,
+  );
 
   const page = await visit(f, `/m/${send}/unsubscribe/${adaUuid}?manage=true`);
   expect(page.status).toBe(200);

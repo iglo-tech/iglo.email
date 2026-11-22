@@ -5,6 +5,7 @@ import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { createLogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { MAINTENANCE_SUBSCRIBERS as BATCH } from "@/subscribers/store";
+import { asBody } from "@/test/read-body";
 
 let f: CampaignsFixture;
 let purge: ReturnType<typeof createAnalyticsPurge>;
@@ -36,7 +37,7 @@ const seed = (count: number, status = "enabled") =>
   f.db.run(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${count})
     INSERT INTO subscribers (uuid, email, name, status)
     SELECT lower(hex(randomblob(16))), 's' || lower(hex(randomblob(8))) || '@example.test', 'n', '${status}' FROM n`);
-const count = (sql: string) => Number((f.db.query(sql).get() as { n: bigint }).n);
+const count = (sql: string) => Number(asBody<{ n: bigint }>(f.db.query(sql).get()).n);
 /** Each batch awaits the injected clock; this stands in for the running event loop. */
 const run = () => {
   pump = setInterval(() => f.clock.advance(0), 0);
@@ -90,7 +91,7 @@ test("a date walk gets past rows it keeps", async () => {
   const exported = await f.json(
     "/api/maintenance/analytics/views/export?since=1999-01-01T00:00:00Z",
   );
-  expect((exported.body as string).trim().split("\n")).toHaveLength(11);
+  expect(asBody<string>(exported.body).trim().split("\n")).toHaveLength(11);
   const deleted = await f.json(
     "/api/maintenance/analytics/views?before_date=2000-02-01T00:00:00Z",
     "DELETE",
@@ -137,6 +138,6 @@ test("an export with individual tracking off holds no subscriber", async () => {
   const response = await f.json(
     "/api/maintenance/analytics/views/export?since=1999-01-01T00:00:00Z",
   );
-  const [, row] = (response.body as string).split("\n");
+  const [, row] = asBody<string>(response.body).split("\n");
   expect(row).toStartWith(`${camp.id},${camp.uuid},c,0,,,,`);
 });

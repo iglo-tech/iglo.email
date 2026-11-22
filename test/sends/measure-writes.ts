@@ -1,6 +1,7 @@
 // Identical bounded compiled list/subscriber write samples on disposable DBs.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 
 async function measure(fn: (i: number) => Promise<void>) {
   const samples: Array<number> = [];
@@ -33,7 +34,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         if (response.status !== 200) {
           throw new Error(`Unexpected status ${response.status} for ${method} ${path}`);
         }
-        return ((await response.json()) as { data: any }).data;
+        return (await readJson<{ data: Record<string, any> }>(response)).data;
       };
       const list = await call("/api/lists", "POST", { name: "measure-list" });
       const subscriber = await call("/api/subscribers", "POST", { email: "measure@example.test" });

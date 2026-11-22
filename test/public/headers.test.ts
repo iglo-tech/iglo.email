@@ -3,6 +3,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
@@ -32,7 +33,7 @@ test("every personal page answers with the hardening headers, its 404 included",
   const f = await open();
   const news = await f.list("News");
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id] });
-  const adaUuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const adaUuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const campaign = f.deliveredCampaign([ada], [news.id]);
   // A marketing send's own page, paired through its journal row.
   const template = await f.template("<p>Hi</p>", "Hi");
@@ -43,7 +44,7 @@ test("every personal page answers with the hardening headers, its 404 included",
     list_id: news.id,
     data: {},
   });
-  const send = sent.body.data.sends[0].uuid as string;
+  const send = asBody<string>(sent.body.data.sends[0].uuid);
   const pages = [
     `/subscription/optin/${adaUuid}`,
     `/m/${send}/unsubscribe/${adaUuid}`,
@@ -93,7 +94,7 @@ test("a campaign page keeps its own Content-Security-Policy and gains frame-ance
   const f = await open();
   const news = await f.list("News");
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id] });
-  const adaUuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const adaUuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const campaign = f.deliveredCampaign([ada], [news.id]);
   const response = await f.peer(`/campaign/${campaign}/${adaUuid}`, "198.51.100.2");
   const csp = response.headers.get("content-security-policy") ?? "";

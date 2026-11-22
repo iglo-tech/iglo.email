@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { command } from "@/test/reference/command";
+import { asBody } from "@/test/read-body";
 
 export const repository = resolve(import.meta.dir, "../..");
 export const cache = join(repository, "upstream", "reference");
@@ -36,7 +37,7 @@ const platforms = {
 
 // The single platform table: prepare() and mailpitBinaryPath() both read it.
 function platformFor(key: string) {
-  const platform = platforms[key as keyof typeof platforms];
+  const platform = platforms[asBody<keyof typeof platforms>(key)];
   if (!platform) {
     throw new Error(`Unsupported platform ${key}; supported: Linux x64/arm64`);
   }
@@ -67,7 +68,7 @@ async function exists(path: string): Promise<boolean> {
     await lstat(path);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (asBody<NodeJS.ErrnoException>(error).code === "ENOENT") {
       return false;
     }
     throw error;
@@ -139,7 +140,7 @@ async function prepareSource(signal?: AbortSignal) {
       try {
         await mkdir(source);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        if (asBody<NodeJS.ErrnoException>(error).code === "EEXIST") {
           throw new Error(`Source cache appeared during preparation: ${source}`, { cause: error });
         }
         throw error;
@@ -180,7 +181,7 @@ async function prepareArchive(
     try {
       await writeFile(archivePath, bytes, { flag: "wx", mode: 0o600 });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      if (asBody<NodeJS.ErrnoException>(error).code !== "EEXIST") {
         throw error;
       }
     }
@@ -210,7 +211,7 @@ async function prepareBinary(
   try {
     await writeFile(binaryPath, executable, { flag: "wx", mode: 0o755 });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+    if (asBody<NodeJS.ErrnoException>(error).code !== "EEXIST") {
       throw error;
     }
   }

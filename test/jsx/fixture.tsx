@@ -1,6 +1,7 @@
 // Specification fixture only: this executable does not register production routes.
 import { raw, render } from "@/jsx/render";
 import { jsx } from "@/jsx/jsx-runtime";
+import { asBody } from "@/test/read-body";
 
 const hostile = `<tag attr="x">&'`;
 function Plain() {
@@ -29,7 +30,8 @@ const invalid: Record<string, () => unknown> = {
   "object-child": () => jsx("p", { children: { html: "<b>fake</b>" } }),
   "forged-raw": () =>
     jsx("p", { children: Object.create(Object.getPrototypeOf(raw("<b>trusted</b>"))) }),
-  "forged-node": () => Object.create(Object.getPrototypeOf(jsx("b", { children: "trusted" }))),
+  "forged-node": () =>
+    asBody<unknown>(Object.create(Object.getPrototypeOf(jsx("b", { children: "trusted" })))),
   "object-attribute": () => jsx("p", { title: { html: "<b>fake</b>" } }),
   "raw-attribute": () => jsx("p", { title: raw('<b>"') }),
   "event-handler": () => jsx("button", { onClick: () => {} }),

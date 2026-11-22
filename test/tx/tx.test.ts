@@ -7,6 +7,7 @@ import { imagePng } from "@/test/media/images";
 import { txFixture } from "@/test/tx/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { TxFixture } from "@/test/tx/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 const noop = () => {};
 
@@ -48,7 +49,7 @@ async function apiUser(f: TxFixture, permissions: Array<string>) {
   });
   expect(user.status).toBe(200);
   return {
-    id: user.body.data.id as number,
+    id: asBody<number>(user.body.data.id),
     headers: {
       authorization: `Basic ${btoa(`${user.body.data.username}:${user.body.data.password}`)}`,
     },
@@ -112,7 +113,7 @@ test("async returns queued rows and the outbox delivers them", async () => {
     async: true,
   });
   expect(response.status).toBe(200);
-  expect(response.body.data.sends.map((s: { status: string }) => s.status)).toEqual([
+  expect(asBody<Array<{ status: string }>>(response.body.data.sends).map((s) => s.status)).toEqual([
     "queued",
     "queued",
   ]);
@@ -135,7 +136,9 @@ test("idempotency returns the first rows under concurrency and rejects a differe
   const results = await Promise.all(Array.from({ length: 5 }, () => f.tx(body)));
   expect(results.every((r) => r.status === 200)).toBe(true);
   const ids = new Set(
-    results.map((r) => JSON.stringify(r.body.data.sends.map((s: { id: number }) => s.id))),
+    results.map((r) =>
+      JSON.stringify(asBody<Array<{ id: number }>>(r.body.data.sends).map((s) => s.id)),
+    ),
   );
   expect(ids.size).toBe(1);
   expect(f.count()).toBe(2);
@@ -323,7 +326,7 @@ test("a tx template embeds a stored image as an inline part, read for each reque
       body,
     });
     expect(stored.status).toBe(200);
-    return (await stored.json()).data as { id: number };
+    return (await readJson<{ data: { id: number } }>(stored)).data;
   };
   const logo = await upload();
   const template = await f.template(
@@ -352,7 +355,7 @@ test("a tx template embeds a stored image as an inline part, read for each reque
   // A row that lost its file refuses the request: nothing is journaled or sent.
   await upload();
   rmSync(join(f.directory, "uploads", "logo.png"));
-  const sends = () => (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n;
+  const sends = () => asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM sends").get()).n;
   const before = sends();
   expect((await send()).status).toBe(500);
   expect(sends()).toBe(before);
@@ -397,7 +400,8 @@ test("synchronous sends with an embedded image hold a bounded number of bytes", 
     });
   // A 3 MiB image is charged 33 MiB for one recipient (D87): three fit in the 128 MiB budget.
   const held = Array.from({ length: 3 }, (_, i) => send(i));
-  const journaled = () => (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n;
+  const journaled = () =>
+    asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM sends").get()).n;
   await until(() => journaled() >= 3n);
   expect(journaled()).toBe(3n);
   const refused = await f.request("/api/tx", {
@@ -439,7 +443,7 @@ test("an embedded image counts toward what a durable send can hold", async () =>
     template_id: template,
   });
   expect(refused.status).toBe(400);
-  expect((f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n).toBe(0n);
+  expect(asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM sends").get()).n).toBe(0n);
 });
 
 test("a charge that can never fit the budget is a 400, not a 429 a client would retry (D87)", async () => {
@@ -586,7 +590,7 @@ test("queued unlinked recipients and copies blocklisted later are skipped after 
     headers: [{ Bcc: "late-copy@example.test" }],
     async: true,
   });
-  expect(response.body.data.sends.map((s: { status: string }) => s.status)).toEqual([
+  expect(asBody<Array<{ status: string }>>(response.body.data.sends).map((s) => s.status)).toEqual([
     "queued",
     "queued",
   ]);
@@ -594,13 +598,12 @@ test("queued unlinked recipients and copies blocklisted later are skipped after 
     expect((await f.json(`/api/subscribers/${id}/blocklist`, "PUT", {})).status).toBe(200);
   }
   f.restartOutbox();
-  const [first, second] = response.body.data.sends as Array<{ id: number }>;
-  const status = async (id: number) => (await f.json(`/api/sends/${id}`)).body.data;
+  const [first, second] = asBody<Array<{ id: number }>>(response.body.data.sends);
+  const status = async (id: number) =>
+    asBody<{ status: string }>((await f.json(`/api/sends/${id}`)).body.data);
   const queued = () =>
-    (
-      f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get() as {
-        n: bigint;
-      }
+    asBody<{ n: bigint }>(
+      f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
     ).n;
   await until(() => f.sink.messages.length > 0 && queued() === 0n, f);
   expect(await status(first!.id)).toMatchObject({
@@ -701,7 +704,7 @@ async function postForm(f: TxFixture, form: FormData) {
   });
 }
 const journaledSends = (f: TxFixture) =>
-  (f.db.query("SELECT count(*) AS n FROM sends").get() as { n: bigint }).n;
+  asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM sends").get()).n;
 const attachmentForm = (template: number, email: string, async = false) => {
   const body = new FormData();
   body.set("data", JSON.stringify({ subscriber_emails: [email], template_id: template, async }));

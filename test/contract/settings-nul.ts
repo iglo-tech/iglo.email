@@ -2,6 +2,7 @@
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -24,7 +25,7 @@ export async function runSettingsNul(target: {
   async function read() {
     const response = await request();
     check(response.status === 200, "read");
-    return (await response.json()).data as Record<string, any>;
+    return asBody<Record<string, any>>((await response.json()).data);
   }
   const before = await read();
   function candidate() {

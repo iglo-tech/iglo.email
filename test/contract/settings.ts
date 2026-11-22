@@ -8,6 +8,7 @@ import { runSettingsCouncilFinal } from "@/test/contract/settings-council-final"
 import { runSettingsBinding } from "@/test/contract/settings-binding";
 import { invalidSettingsReadEnd, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 function check(condition: unknown, label: string): asserts condition {
   if (!condition) {
@@ -38,7 +39,7 @@ export async function runSettingsContract(target: {
   check((await request("/api/settings", "GET", undefined, "")).status === 403, "unauthenticated");
   const response = await request("/api/settings");
   check(response.status === 200, "get");
-  const snapshot = ((await response.json()) as { data: Record<string, any> }).data;
+  const snapshot = asBody<{ data: Record<string, any> }>(await response.json()).data;
   check(
     typeof snapshot["app.site_name"] === "string" && typeof snapshot["app.batch_size"] === "number",
     "scalar-types",
@@ -60,8 +61,9 @@ export async function runSettingsContract(target: {
   );
   const malformed = await request("/api/settings", "PUT", "{");
   check(malformed.status === 400, "malformed");
-  const after = ((await (await request("/api/settings")).json()) as { data: Record<string, any> })
-    .data;
+  const after = asBody<{ data: Record<string, any> }>(
+    await (await request("/api/settings")).json(),
+  ).data;
   check(JSON.stringify(after) === JSON.stringify(snapshot), "invalid-no-write");
   // Order-independent: it finds its items by host and restores the snapshot it read.
   await runSettingsNewItems(target);
@@ -102,7 +104,7 @@ export async function runSettingsContract(target: {
   check(xml.status === 200, "xml-full-write");
   check(
     JSON.stringify(
-      ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+      asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
         "app.from_email"
       ],
     ) === '["sender@example.invalid"]',
@@ -127,22 +129,23 @@ export async function runSettingsContract(target: {
   ];
   candidate["privacy.domain_blocklist"] = ["  EXAMPLE.COM ", ""];
   candidate["upload.extensions"] = [" .JPG ", "PNG"];
-  candidate.smtp = candidate.smtp.map((item: Record<string, unknown>, index: number) => ({
+  candidate.smtp = asBody<Array<Record<string, unknown>>>(candidate.smtp).map((item, index) => ({
     ...item,
     name: index === 0 ? " My Server " : "",
     password: "",
     host: ` ${item.host} `,
   }));
-  candidate["bounce.mailboxes"] = candidate["bounce.mailboxes"].map(
-    (item: Record<string, unknown>) => ({ ...item, password: "" }),
-  );
+  candidate["bounce.mailboxes"] = asBody<Array<Record<string, unknown>>>(
+    candidate["bounce.mailboxes"],
+  ).map((item) => ({ ...item, password: "" }));
   const write = await request("/api/settings", "PUT", JSON.stringify(candidate));
   check(
     write.status === 200 && JSON.stringify(await write.json()) === '{"data":true}',
     "full-write",
   );
-  const updated = ((await (await request("/api/settings")).json()) as { data: Record<string, any> })
-    .data;
+  const updated = asBody<{ data: Record<string, any> }>(
+    await (await request("/api/settings")).json(),
+  ).data;
   check(
     JSON.stringify(updated["app.from_email"]) === '["Example <sender@example.invalid>"]',
     "from-normalization",
@@ -165,8 +168,9 @@ export async function runSettingsContract(target: {
   const messengerPut = async (messengers: Array<unknown>) =>
     request("/api/settings", "PUT", JSON.stringify({ ...updated, messengers }));
   const messengerGet = async () =>
-    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data
-      .messengers as Array<Record<string, any>>;
+    asBody<{ data: { messengers: Array<Record<string, any>> } }>(
+      await (await request("/api/settings")).json(),
+    ).data.messengers;
   const postback = {
     uuid: "",
     enabled: true,
@@ -235,7 +239,7 @@ export async function runSettingsContract(target: {
     "quoted-from-address",
   );
   check(
-    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+    asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.from_email"
     ][0] === addressCandidate["app.from_email"][0],
     "quoted-from-projection",
@@ -254,7 +258,7 @@ export async function runSettingsContract(target: {
   );
   check(
     JSON.stringify(
-      ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+      asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
         "app.from_email"
       ],
     ) === JSON.stringify(addressMatrix["app.from_email"]),
@@ -309,7 +313,7 @@ export async function runSettingsContract(target: {
   );
   check((await request("/api/settings", "PUT", ordered)).status === 200, "ordered-write");
   check(
-    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+    asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.site_name"
     ] === "second",
     "ordered-alias-null",
@@ -372,7 +376,7 @@ export async function runSettingsContract(target: {
     "key-xml-write",
   );
   check(
-    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+    asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.site_name"
     ] === "XML value",
     "key-xml-projection",
@@ -401,7 +405,7 @@ export async function runSettingsContract(target: {
     "key-restore",
   );
   check(
-    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data[
+    asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.site_name"
     ] === "Synthetic settings",
     "key-read",
@@ -421,14 +425,14 @@ export async function runSettingsContract(target: {
     const finalGet = await request("/api/settings");
     check(finalGet.status === 200, "invalid-key-read-d44");
     check(
-      ((await finalGet.json()) as { data: Record<string, any> }).data["app.batch_size"] ===
+      asBody<{ data: Record<string, any> }>(await finalGet.json()).data["app.batch_size"] ===
         snapshot["app.batch_size"],
       "invalid-key-rollback",
     );
     if (target.restart) {
       await target.restart();
-      const persisted = (
-        (await (await request("/api/settings")).json()) as { data: Record<string, any> }
+      const persisted = asBody<{ data: Record<string, any> }>(
+        await (await request("/api/settings")).json(),
       ).data;
       check(
         persisted["app.site_name"] === "Synthetic settings" &&

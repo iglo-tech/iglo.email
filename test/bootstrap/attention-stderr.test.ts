@@ -13,6 +13,7 @@ import type { Captured } from "@/test/tx/sink";
 import { startSnsTunnel } from "@/test/bounces/sns-tunnel";
 import type { SnsTunnel } from "@/test/bounces/sns-tunnel";
 import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
+import { readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(30_000);
@@ -81,7 +82,7 @@ async function startServer(extra: Record<string, string> = {}) {
 }
 
 /** An API call as the API user. A body is sent as JSON. */
-async function api(port: number, method: string, path: string, body?: unknown) {
+async function api<T = unknown>(port: number, method: string, path: string, body?: unknown) {
   const response = await fetch(`http://127.0.0.1:${port}${path}`, {
     method,
     headers: {
@@ -90,12 +91,12 @@ async function api(port: number, method: string, path: string, body?: unknown) {
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  return { status: response.status, data: ((await response.json()) as { data: any }).data };
+  return { status: response.status, data: (await readJson<{ data: T }>(response)).data };
 }
 
 /** Saves `changes` over the current settings, as the admin form does: a full save, not a partial one. */
 async function changeSettings(port: number, changes: Record<string, unknown>) {
-  const current = (await api(port, "GET", "/api/settings")).data;
+  const current = (await api<Record<string, unknown>>(port, "GET", "/api/settings")).data;
   return api(port, "PUT", "/api/settings", { ...current, ...changes });
 }
 
@@ -113,21 +114,19 @@ async function until<T>(read: () => Promise<T | undefined>, what: string): Promi
 
 /** The buffer's lines that contain `text`, read through GET /api/logs. */
 const logLines = async (port: number, text: string) =>
-  ((await api(port, "GET", "/api/logs")).data as Array<string>).filter((line) =>
-    line.includes(text),
-  );
+  (await api<Array<string>>(port, "GET", "/api/logs")).data.filter((line) => line.includes(text));
 
 /**
  * A campaign on an empty list, run to its end. Its finish notifies the administrators
  * (`app.notify_emails`), so this is what an administrator's campaign does.
  */
 async function finishEmptyCampaign(port: number) {
-  const list = await api(port, "POST", "/api/lists", {
+  const list = await api<{ id: number }>(port, "POST", "/api/lists", {
     name: "Attention",
     type: "public",
     optin: "single",
   });
-  const campaign = await api(port, "POST", "/api/campaigns", {
+  const campaign = await api<{ id: number }>(port, "POST", "/api/campaigns", {
     name: "Empty",
     subject: "S",
     lists: [list.data.id],
@@ -142,7 +141,11 @@ async function finishEmptyCampaign(port: number) {
       .status,
   ).toBe(200);
   await until(async () => {
-    const current = await api(port, "GET", `/api/campaigns/${campaign.data.id}`);
+    const current = await api<{ status: string }>(
+      port,
+      "GET",
+      `/api/campaigns/${campaign.data.id}`,
+    );
     return current.data.status === "finished" ? true : undefined;
   }, "the campaign to finish");
 }
@@ -211,7 +214,7 @@ test("a test-send bounce through the SES fixture is one plain stderr line, with 
           })
         ).status,
       ).toBe(200);
-      const list = await api(port, "POST", "/api/lists", {
+      const list = await api<{ id: number }>(port, "POST", "/api/lists", {
         name: "Bounce",
         type: "public",
         optin: "single",
@@ -233,7 +236,7 @@ test("a test-send bounce through the SES fixture is one plain stderr line, with 
         messenger: "email",
         body: "Hi",
       };
-      const sent = await api(port, "POST", "/api/campaigns", campaign);
+      const sent = await api<{ id: number }>(port, "POST", "/api/campaigns", campaign);
       expect(
         (
           await api(port, "POST", `/api/campaigns/${sent.data.id}/test`, {

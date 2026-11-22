@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
+import { readJson } from "@/test/read-body";
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const base = process.env.REFERENCE_URL!,
@@ -94,7 +95,7 @@ try {
         body: form,
       });
       assert.equal(uploaded.status, 200);
-      media = ((await uploaded.json()) as { data: { id: number; filename: string } }).data;
+      media = (await readJson<{ data: { id: number; filename: string } }>(uploaded)).data;
       bodyText = item.body.replace("fixture.svg", media.filename);
     }
     const templateResponse = await fetch(`${base}/api/templates`, {
@@ -103,7 +104,7 @@ try {
       body: JSON.stringify({ name: subject, type: "tx", subject, body: bodyText }),
     });
     assert.equal(templateResponse.status, 200);
-    const template = ((await templateResponse.json()) as { data: { id: number } }).data;
+    const template = (await readJson<{ data: { id: number } }>(templateResponse)).data;
     const headers = [
       {
         "Message-ID": messageId,

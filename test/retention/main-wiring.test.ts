@@ -13,6 +13,7 @@ import {
   startServer,
   temporaryDirectory,
 } from "@/test/backup/fixture";
+import { readJson } from "@/test/read-body";
 
 setDefaultTimeout(120_000);
 
@@ -38,7 +39,7 @@ test("the server's first retention pass runs every owner's purge", async () => {
     const first = await startServer(executable, dataDir);
     const client = apiClient(first.origin, await provisionAuthorization(first.origin));
     const created = await createSubscriber(client, 1);
-    const subscriber = ((await created.json()) as { data: { id: number } }).data.id;
+    const subscriber = (await readJson<{ data: { id: number } }>(created)).data.id;
     await first.stop();
 
     const db = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });

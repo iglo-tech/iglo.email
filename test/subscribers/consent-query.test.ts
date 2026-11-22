@@ -3,6 +3,7 @@ import { afterEach, expect, test } from "bun:test";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { QueryFixture } from "@/test/subscribers/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<QueryFixture> = [];
 afterEach(async () => {
@@ -16,26 +17,26 @@ async function open() {
   return f;
 }
 const list = async (f: QueryFixture, name: string) =>
-  (await f.json("/api/lists", "POST", { name })).body.data.id as number;
+  asBody<number>((await f.json("/api/lists", "POST", { name })).body.data.id);
 const person = async (
   f: QueryFixture,
   email: string,
   lists: Array<number>,
   extra: JsonObject = {},
 ) =>
-  (
-    await f.json("/api/subscribers", "POST", {
-      email,
-      name: "P",
-      lists,
-      ...extra,
-    })
-  ).body.data.id as number;
+  asBody<number>(
+    (
+      await f.json("/api/subscribers", "POST", {
+        email,
+        name: "P",
+        lists,
+        ...extra,
+      })
+    ).body.data.id,
+  );
 const statuses = async (f: QueryFixture, id: number) =>
-  (
-    (await f.json(`/api/subscribers/${id}`)).body.data.lists as Array<{
-      subscription_status: string;
-    }>
+  asBody<Array<{ subscription_status: string }>>(
+    (await f.json(`/api/subscribers/${id}`)).body.data.lists,
   ).map((l) => l.subscription_status);
 
 test("add by query keeps an unsubscribed member unsubscribed, with or without a status", async () => {
@@ -101,11 +102,8 @@ test("blocklisting by query stamps only the memberships that change", async () =
   });
   const stamp = async () =>
     Object.fromEntries(
-      (
-        (await f.json(`/api/subscribers/${id}`)).body.data.lists as Array<{
-          id: number;
-          subscription_updated_at: string;
-        }>
+      asBody<Array<{ id: number; subscription_updated_at: string }>>(
+        (await f.json(`/api/subscribers/${id}`)).body.data.lists,
       ).map((l) => [l.id, l.subscription_updated_at]),
     );
   const before = await stamp();

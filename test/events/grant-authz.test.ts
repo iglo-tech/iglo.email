@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { eventsFixture } from "@/test/events/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { EventsFixture } from "@/test/events/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
@@ -42,8 +43,8 @@ async function grantUser(f: EventsFixture, name: string, lists: Array<number>) {
   });
   expect(user.status).toBe(200);
   return {
-    roleId: role.body.data.id as number,
-    listRoleId: listRole.body.data.id as number,
+    roleId: asBody<number>(role.body.data.id),
+    listRoleId: asBody<number>(listRole.body.data.id),
     headers: { authorization: `Basic ${btoa(`${name}:${user.body.data.password}`)}` },
   };
 }
@@ -135,7 +136,7 @@ test("a replayed token that lost the granted list is 403 and writes nothing, wit
   const keyed = { ...subscriberBody, idempotency_key: "k-lost-list" };
   const first = await f.post(keyed, user.headers);
   expect(first.body.data.grants).toEqual([{ list_id: news, result: "added" }]);
-  const id = first.body.data.subscriber_id as number;
+  const id = asBody<number>(first.body.data.subscriber_id);
 
   // The role keeps its permissions but its list role no longer manages the list.
   const shrunk = await f.json(`/api/roles/lists/${user.listRoleId}`, "PUT", {

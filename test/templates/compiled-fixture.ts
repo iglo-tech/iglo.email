@@ -14,6 +14,7 @@ import {
   loopModifierControls,
   coercionCases,
 } from "@/test/templates/budget-cases";
+import { asBody, readJson } from "@/test/read-body";
 
 const renderer = createRenderer(createRealClock(), createTranslation());
 const canary = join(process.cwd(), "template-canary.txt");
@@ -31,7 +32,7 @@ const fixture = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
   fetch: async (request) => {
-    const value = (await request.json()) as { body: string; data: unknown; layout?: string };
+    const value = await readJson<{ body: string; data: unknown; layout?: string }>(request);
     try {
       return new Response(
         (
@@ -143,7 +144,7 @@ try {
     [],
     null,
   ]) {
-    const data = value as string;
+    const data = asBody<string>(value);
     assert.throws(() => renderer.renderSync({ body: "ok", mode: "plain", data }));
     assert.throws(() => compiled.renderSync(data));
     await assert.rejects(renderer.render({ body: "ok", mode: "plain", data }));
@@ -292,7 +293,7 @@ try {
   assert.throws(() => plain.renderSync(JSON.stringify({ value: deep })));
   assert.throws(() =>
     plain.renderSync(
-      JSON.stringify({ value: Array.from({ length: 10 }, () => Array(1024).fill(0)) }),
+      JSON.stringify({ value: Array.from({ length: 10 }, () => Array<number>(1024).fill(0)) }),
     ),
   );
   assert.throws(() =>
@@ -332,7 +333,7 @@ try {
   };
   for (const [name, marker] of Object.entries(expected)) {
     const result = renderer.renderSync({
-      body: systemTemplates[name as keyof typeof systemTemplates],
+      body: systemTemplates[asBody<keyof typeof systemTemplates>(name)],
       mode: "html",
       data: builtInData,
     });

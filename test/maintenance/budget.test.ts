@@ -8,6 +8,7 @@ import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { MAINTENANCE_SUBSCRIBERS as BATCH } from "@/subscribers/store";
 import { txFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
 
 const passLeft = async (_left: number) => {};
 
@@ -28,7 +29,7 @@ async function open(afterBatch: (left: number) => Promise<void>) {
   const purge = createAnalyticsPurge(f.db, f.db);
   cleanups.push(() => purge.close());
   const count = (sql: string) =>
-    Number((f.db.query(`SELECT count(*) AS n FROM ${sql}`).get() as { n: bigint }).n);
+    Number(asBody<{ n: bigint }>(f.db.query(`SELECT count(*) AS n FROM ${sql}`).get()).n);
   const routes = registerMaintenanceRoutes(f.owners.router, {
     subscribers: f.owners.subscribers,
     analytics: purge,
@@ -52,7 +53,7 @@ async function open(afterBatch: (left: number) => Promise<void>) {
       enabled,
     });
     expect(created.status).toBe(200);
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   for (let i = 0; i < 19; i++) {
     await hook(true);

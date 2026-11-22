@@ -6,6 +6,7 @@ import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { signatureCount, signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import type { Receiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -30,14 +31,16 @@ function receiver() {
 async function hook(f: TxFixture, r: Receiver): Promise<{ id: number; secret: string }> {
   const created = await f.json("/api/webhooks", "POST", { url: r.url(), events: all });
   expect(created.status).toBe(200);
-  return created.body.data;
+  return asBody<{ id: number; secret: string }>(created.body.data);
 }
 async function rotate(f: TxFixture, id: number, body?: unknown) {
   return f.json(`/api/webhooks/${id}/rotate-secret`, "POST", body);
 }
 async function listed(f: TxFixture, id: number) {
   const page = await f.json("/api/webhooks");
-  return page.body.data.results.find((w: { id: number }) => w.id === id);
+  return asBody<{ results: Array<{ id: number; previous_secret_until: string | null }> }>(
+    page.body.data,
+  ).results.find((w) => w.id === id)!;
 }
 /** A blocklisted subscriber queues one `subscriber.blocklisted` delivery. */
 async function deliver(f: TxFixture, email: string) {
@@ -224,11 +227,9 @@ test("rotating needs webhooks:manage and the usual auth", async () => {
 /** The webhook's deliveries, as the API lists them. */
 async function deliveries(f: TxFixture, id: number) {
   const page = await f.json(`/api/webhooks/${id}/deliveries?per_page=100`);
-  return page.body.data.results as Array<{
-    attempts: number;
-    status: string;
-    claimed_until: string | null;
-  }>;
+  return asBody<Array<{ attempts: number; status: string; claimed_until: string | null }>>(
+    page.body.data.results,
+  );
 }
 /** Until the row has made `attempts` attempts and waits, unclaimed, for its next one. */
 const waitingAfter = (f: TxFixture, id: number, attempts: number) =>
@@ -276,7 +277,7 @@ test("the retention pass ends a window once it has passed, and not before", asyn
   const r = receiver();
   const created = await hook(f, r);
   await rotate(f, created.id, { overlap_hours: 1 });
-  const windowEnd: string = (await listed(f, created.id)).previous_secret_until;
+  const windowEnd: string = (await listed(f, created.id)).previous_secret_until!;
   const logger = {
     error: (e: unknown) => f.errors.push(e),
     attention: (m: string) => f.errors.push(new Error(m)),

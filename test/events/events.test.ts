@@ -6,6 +6,7 @@ import { MAX_SINGLES_IN_FLIGHT } from "@/events/routes";
 import { eventsFixture } from "@/test/events/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { EventsFixture } from "@/test/events/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
@@ -359,7 +360,7 @@ test("malformed and hostile input fails safely without writes", async () => {
     String.raw`{"subscriber":{"email":"p@example.com","attribs":{"__proto__":{"admin":true},"s":"\ud800"}},"name":"x","data":{"__proto__":1}}`,
   );
   expect(proto.status).toBe(200);
-  const id = ((await proto.json()) as { data: { subscriber_id: number } }).data.subscriber_id;
+  const id = (await readJson<{ data: { subscriber_id: number } }>(proto)).data.subscriber_id;
   expect((await f.subscriber(id)).attribs).toEqual(
     JSON.parse('{"__proto__":{"admin":true},"s":"�"}'),
   );
@@ -421,7 +422,7 @@ test("a batch returns per-item results; each item is atomic and a bad item drops
   });
   expect(r.status).toBe(200);
   const results = r.body.data.results;
-  expect(results.map((x: { status: number }) => x.status)).toEqual([
+  expect(asBody<Array<{ status: number }>>(results).map((x) => x.status)).toEqual([
     200, 200, 200, 400, 409, 404, 200,
   ]);
   expect(results[1]).toEqual(results[0]);

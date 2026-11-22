@@ -3,6 +3,7 @@
 // into a checkout of another commit to compare; it uses only the shared fixture surface.
 import { publicFixture } from "@/test/public/fixture";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 
 const median = (values: Array<number>) => [...values].sort((a, b) => a - b)[values.length >> 1]!;
 const p95 = (values: Array<number>) =>
@@ -89,7 +90,7 @@ try {
 
   // Storage and a wipe against a large journal.
   const pragma = (name: string) =>
-    Number(Object.values(f.db.query(`PRAGMA ${name}`).get() as object)[0]);
+    Number(Object.values(asBody<object>(f.db.query(`PRAGMA ${name}`).get()))[0]);
   const size = () => pragma("page_count") * pragma("page_size");
   f.db.run("PRAGMA wal_checkpoint(TRUNCATE)");
   const emptyBytes = size();

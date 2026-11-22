@@ -6,6 +6,7 @@ import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { percentile } from "@/test/perf/runtime-compat/metrics";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import { readJson } from "@/test/read-body";
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const admin = { user: "m21-measure-admin", password: "m21-measure-password" };
@@ -42,9 +43,9 @@ try {
         }
       }
       const query = new URLSearchParams({ query: `to:${marker}@example.test`, limit: "100" });
-      const list = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
+      const list = await readJson<{
         messages: Array<{ ID: string; MessageID: string }>;
-      };
+      }>(await fetch(`${sink.api}/api/v1/search?${query}`));
       assert.equal(list.messages.length, 35);
       assert.equal(new Set(list.messages.map((entry) => entry.MessageID)).size, 35);
       const removed = await fetch(`${sink.api}/api/v1/messages`, {

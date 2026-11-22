@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
 import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
+import { readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(60_000);
@@ -80,7 +81,7 @@ async function up(dataDir: string) {
 }
 
 /** An API call as the API user. */
-async function api(port: number, method: string, path: string, body?: unknown) {
+async function api<T = unknown>(port: number, method: string, path: string, body?: unknown) {
   const response = await fetch(`http://127.0.0.1:${port}${path}`, {
     method,
     headers: {
@@ -89,14 +90,12 @@ async function api(port: number, method: string, path: string, body?: unknown) {
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  return { status: response.status, data: ((await response.json()) as { data: any }).data };
+  return { status: response.status, data: (await readJson<{ data: T }>(response)).data };
 }
 
 /** The log buffer's lines that contain `text`. */
 const logLines = async (port: number, text: string) =>
-  ((await api(port, "GET", "/api/logs")).data as Array<string>).filter((line) =>
-    line.includes(text),
-  );
+  (await api<Array<string>>(port, "GET", "/api/logs")).data.filter((line) => line.includes(text));
 
 /** Waits until this process has named a refused webhook in its log buffer. */
 async function noticed(port: number) {
@@ -163,7 +162,9 @@ test("an upgrade turns the stored false on, and every restart names the refused 
 
   const upgraded = await up(dataDir);
   await noticed(upgraded.port);
-  expect((await api(upgraded.port, "GET", "/api/settings")).data[key]).toBe(true);
+  expect(
+    (await api<Record<string, unknown>>(upgraded.port, "GET", "/api/settings")).data[key],
+  ).toBe(true);
   // The public webhook, id 2, is never named.
   expect(await stopped(upgraded.child)).toEqual([refusedLine]);
   expect(userVersion(dataDir)).toBe(26);
@@ -198,7 +199,9 @@ test("setting the block off stops the line, and a later restart keeps it off", a
 
   const off = await up(dataDir);
   await settle();
-  expect((await api(off.port, "GET", "/api/settings")).data[key]).toBe(false);
+  expect((await api<Record<string, unknown>>(off.port, "GET", "/api/settings")).data[key]).toBe(
+    false,
+  );
   expect(await logLines(off.port, fixed)).toHaveLength(0);
   expect(await stopped(off.child)).toEqual([]);
 });

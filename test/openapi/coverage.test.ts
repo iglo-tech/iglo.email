@@ -7,6 +7,8 @@ import { buildDocument } from "@/openapi/document";
 import { differences } from "@/openapi/differences";
 import { excluded } from "@/openapi/excluded";
 import { validate } from "@/test/openapi/schema";
+import type { Document, Schema } from "@/test/openapi/schema";
+import { asBody } from "@/test/read-body";
 
 const areas = async () => {
   const text = await readFile(join(repository, "docs/design/07-api-and-ui.md"), "utf-8");
@@ -22,13 +24,12 @@ const areas = async () => {
 };
 
 const repository = resolve(import.meta.dir, "../..");
-const document = JSON.parse(buildDocument());
+const document = asBody<Document>(JSON.parse(buildDocument()));
 const methods = new Set(["get", "post", "put", "patch", "delete"]);
-const documented = Object.entries(document.paths as Record<string, object>).flatMap(
-  ([path, item]) =>
-    Object.keys(item)
-      .filter((method) => methods.has(method))
-      .map((method) => `${method.toUpperCase()} ${path.replaceAll(/\{(\w+)\}/g, ":$1")}`),
+const documented = Object.entries(document.paths).flatMap(([path, item]) =>
+  Object.keys(item)
+    .filter((method) => methods.has(method))
+    .map((method) => `${method.toUpperCase()} ${path.replaceAll(/\{(\w+)\}/g, ":$1")}`),
 );
 const skipped = excluded.flatMap(({ routes }) => routes);
 const exact = skipped.filter((route) => !route.endsWith("/*"));
@@ -49,7 +50,7 @@ async function registered(): Promise<Array<string>> {
     if (code !== 0) {
       throw new Error(`Route listing failed: ${errors}`);
     }
-    return (JSON.parse(text) as Array<{ method: string; path: string }>).map(
+    return asBody<Array<{ method: string; path: string }>>(JSON.parse(text)).map(
       ({ method, path }) => `${method} ${path}`,
     );
   } finally {
@@ -94,9 +95,8 @@ describe("coverage", () => {
 });
 
 describe("document", () => {
-  const operations = Object.entries(document.paths as Record<string, Record<string, any>>).flatMap(
-    ([path, item]) =>
-      Object.entries(item).map(([method, operation]) => ({ path, method, operation })),
+  const operations = Object.entries(document.paths).flatMap(([path, item]) =>
+    Object.entries(item).map(([method, operation]) => ({ path, method, operation })),
   );
 
   test("is OpenAPI 3.1 with the size the design states", () => {
@@ -108,14 +108,14 @@ describe("document", () => {
     expect(document.servers).toEqual([{ url: "/" }]);
   });
   test("operation IDs are unique", () => {
-    const ids = operations.map(({ operation }) => operation.operationId);
+    const ids = operations.map(({ operation }) => asBody<string>(operation.operationId));
     expect(new Set(ids).size).toBe(ids.length);
   });
   test("each path parameter is declared", () => {
     for (const { path, operation } of operations) {
-      const declared = operation.parameters
-        .filter((parameter: any) => parameter.in === "path")
-        .map((parameter: any) => parameter.name);
+      const declared = asBody<Array<{ in: string; name: string }>>(operation.parameters)
+        .filter((parameter) => parameter.in === "path")
+        .map((parameter) => parameter.name);
       expect(declared).toEqual([...path.matchAll(/\{(\w+)\}/g)].map(([, name]) => name!));
     }
   });
@@ -145,14 +145,12 @@ describe("document", () => {
     expect(validate(document, envelope, { message: "x", code: 1 })).not.toEqual([]);
   });
   test("a response names the codes its status can send, and a 409 may name a conflict", () => {
-    const operation = (document.paths as Record<string, Record<string, any>>)[
-      "/api/subscriber-events"
-    ]!.post;
+    const operation = document.paths["/api/subscriber-events"]!.post;
     expect(operation.responses[409]).toEqual({ $ref: "#/components/responses/Error409" });
     const named = (status: number) =>
-      (document.components.responses as Record<string, any>)[`Error${status}`].content[
-        "application/json"
-      ].schema;
+      asBody<Schema>(
+        document.components.responses[`Error${status}`].content["application/json"].schema,
+      );
     const conflict = named(409);
     expect(
       validate(document, conflict, {
@@ -167,10 +165,10 @@ describe("document", () => {
     expect(validate(document, missing, { message: "x", code: "not_found" })).toEqual([]);
   });
   test("an analytics read names its refusals, and each carries the code of its status", () => {
-    const paths = document.paths as Record<string, Record<string, any>>;
-    const responses = document.components.responses as Record<string, any>;
+    const paths = document.paths;
+    const responses = document.components.responses;
     const schemaOf = (status: number) =>
-      responses[`Error${status}`].content["application/json"].schema;
+      asBody<Schema>(responses[`Error${status}`].content["application/json"].schema);
     const read = paths["/api/sends/analytics"]!.get;
     expect(read.responses[422]).toEqual({ $ref: "#/components/responses/Error422" });
     expect(read.responses[499]).toEqual({ $ref: "#/components/responses/Error499" });
@@ -181,28 +179,30 @@ describe("document", () => {
     expect(validate(document, schemaOf(499), { message: "x", code: "client_closed" })).toEqual([]);
   });
   test("a bad ID in a subscriber route is documented as a 400 not_found", () => {
-    const paths = document.paths as Record<string, Record<string, any>>;
+    const paths = document.paths;
     expect(paths["/api/subscribers/{id}"]!.put.responses[400]).toEqual({
       $ref: "#/components/responses/Error400",
     });
-    const schema = (document.components.responses as Record<string, any>).Error400.content[
-      "application/json"
-    ].schema;
+    const schema = asBody<Schema>(
+      document.components.responses.Error400.content["application/json"].schema,
+    );
     expect(validate(document, schema, { message: "x", code: "not_found" })).toEqual([]);
   });
 });
 
 describe("deliberate differences", () => {
   test("every row of 07 is in the document", async () => {
-    const shown = (document["x-deliberate-differences"] as Array<{ area: string }>).map(
+    const shown = asBody<Array<{ area: string }>>(document["x-deliberate-differences"]).map(
       ({ area }) => area,
     );
     expect(shown.sort()).toEqual((await areas()).sort());
   });
   test("each named operation selector matches something", () => {
     const named = new Set(
-      Object.values(document.paths as Record<string, Record<string, any>>).flatMap((item) =>
-        Object.values(item).flatMap((operation) => operation["x-differences"] ?? []),
+      Object.values(document.paths).flatMap((item) =>
+        Object.values(item).flatMap((operation) =>
+          asBody<Array<string>>(operation["x-differences"] ?? []),
+        ),
       ),
     );
     for (const { area, applies } of differences) {

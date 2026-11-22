@@ -6,6 +6,7 @@ import { createLogBuffer } from "@/maintenance/log-buffer";
 import type { LogBuffer, SafeMessage } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createErrorLogger } from "@/app";
+import { asBody } from "@/test/read-body";
 
 let f: CampaignsFixture;
 let logs: LogBuffer;
@@ -36,7 +37,7 @@ afterEach(async () => {
 const lines = async () => {
   const response = await f.json("/api/logs");
   expect(response.status).toBe(200);
-  return response.body.data as Array<string>;
+  return asBody<Array<string>>(response.body.data);
 };
 const logged = (error: unknown) => {
   const error_ = console.error;
@@ -133,7 +134,7 @@ test("nothing secret or personal reaches a reader of the buffer", async () => {
   logged(new Error("first\nsecond\tthird"));
   logged(Object.assign(new Error("short"), { cause: new Error("ada@example.com") }));
   logged("ada@example.com");
-  attended("ada@example.com", "ada@example.com" as SafeMessage);
+  attended("ada@example.com", asBody<SafeMessage>("ada@example.com"));
   const [multiline, withCause, notAnError, unknownMark] = logs.lines().slice(-4);
   expect(multiline).toEndWith("*: unexpected error (Error)");
   expect(withCause).toEndWith("*: unexpected error (Error)");
@@ -198,7 +199,10 @@ const brokenImage = async (filename: string) => {
   }
   const read = await f.json("/api/logs", "GET", undefined, { authorization });
   expect(read.status).toBe(200);
-  return { lines: read.body.data as Array<string>, stderr: stderr.map(String).join(" ") };
+  return {
+    lines: asBody<Array<string>>(read.body.data),
+    stderr: stderr.map(String).join(" "),
+  };
 };
 
 test("a settings:get reader sees that an image is missing, not whose it was", async () => {

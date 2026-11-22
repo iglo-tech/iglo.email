@@ -6,6 +6,7 @@ import { afterEach, expect, test } from "bun:test";
 import { schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
@@ -63,24 +64,23 @@ test("a self-wiped person gets no marketing again, and their transactional mail 
   const first = await order();
   expect(first.status).toBe(200);
   expect(first.body.data.grants).toEqual([{ list_id: news, result: "added" }]);
-  const subscriber = first.body.data.subscriber_id as number;
+  const subscriber = asBody<number>(first.body.data.subscriber_id);
   await f.until(() => sent(f, "marketing") === 1, "the marketing mail");
   await f.until(() => sent(f, "transactional") === 1, "the receipt of the first event");
 
   // 2. The person wipes through the paired link of their marketing mail.
-  const uuid = (await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid as string;
-  const send = (
-    f.db.query("SELECT uuid FROM sends WHERE to_email = ? AND kind = 'marketing'").get(address) as {
-      uuid: string;
-    }
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid);
+  const send = asBody<{ uuid: string }>(
+    f.db.query("SELECT uuid FROM sends WHERE to_email = ? AND kind = 'marketing'").get(address),
   ).uuid;
   expect((await f.request(`/m/${send}/wipe/${uuid}?confirm=true`, { method: "POST" })).status).toBe(
     200,
   );
   expect((await f.json(`/api/subscribers/${subscriber}`)).status).not.toBe(200);
   // The table is read only to prove the absence: a row names the person by keyed hashes.
-  const rows = JSON.stringify(f.db.query("SELECT * FROM suppressions").all(), (_key, value) =>
-    typeof value === "bigint" ? value.toString() : value,
+  const rows = JSON.stringify(
+    f.db.query("SELECT * FROM suppressions").all(),
+    (_key, value: unknown) => (typeof value === "bigint" ? value.toString() : value),
   );
   expect(rows).toContain("email_hash");
   expect(rows).not.toContain(address);
@@ -100,16 +100,20 @@ test("a self-wiped person gets no marketing again, and their transactional mail 
   expect(again.status).toBe(200);
   expect(again.body.data.grants).toEqual([{ list_id: news, result: "suppressed" }]);
   expect(
-    again.body.data.enrollments.started.map((s: { sequence_id: number }) => s.sequence_id),
+    asBody<{ started: Array<{ sequence_id: number }> }>(again.body.data.enrollments).started.map(
+      (s) => s.sequence_id,
+    ),
   ).toEqual([receipt.id]);
-  const person = again.body.data.subscriber_id as number;
+  const person = asBody<number>(again.body.data.subscriber_id);
   await f.until(() => sent(f, "transactional") === 2, "the transactional mail after the wipe");
   await f.pass();
   await f.pass();
   expect(sent(f, "marketing")).toBe(1);
-  const marketingEnrollments = f.db
-    .query("SELECT count(*) AS n FROM enrollments WHERE sequence_id = ? AND subscriber_id = ?")
-    .get(marketing.id, person) as { n: number | bigint };
+  const marketingEnrollments = asBody<{ n: number | bigint }>(
+    f.db
+      .query("SELECT count(*) AS n FROM enrollments WHERE sequence_id = ? AND subscriber_id = ?")
+      .get(marketing.id, person),
+  );
   expect(Number(marketingEnrollments.n)).toBe(0);
 
   // 5. A repeat under an idempotency key replays the suppressed answer, and changes nothing.
@@ -135,7 +139,7 @@ test("a blocklisted subscriber keeps the blocklisted answer rather than the supp
   const f = await open();
   const news = await f.list("News");
   const created = await f.json("/api/subscribers", "POST", { email: "blocked@example.test" });
-  const id = created.body.data.id as number;
+  const id = asBody<number>(created.body.data.id);
   await f.json("/api/subscribers/blocklist", "PUT", { ids: [id] });
   const r = await f.json("/api/subscriber-events", "POST", {
     subscriber: { email: "blocked@example.test", grant_lists: [news] },

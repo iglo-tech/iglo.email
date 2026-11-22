@@ -5,6 +5,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
@@ -27,10 +28,10 @@ test("a public signup after a wipe grants nothing on single opt-in, and its own 
   const double = await f.list("Double", "public", "double");
   const ada = await f.subscriber(address, "Ada", { lists: [news.id] });
   const camp = f.deliveredCampaign([ada], [news.id]);
-  const uuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   const current = () => Number(f.owners.subscribers.byEmail(address)!.id);
   const suppressions = () =>
-    Number((f.db.query("SELECT count(*) AS n FROM suppressions").get() as { n: bigint }).n);
+    Number(asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM suppressions").get()).n);
 
   // The person wipes through the campaign they were delivered.
   expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}?confirm=true`)).status).toBe(200);
@@ -88,7 +89,7 @@ test("an import row of a suppressed address is imported with no list, and other 
   const news = await f.list("News");
   const ada = await f.subscriber(address, "Ada", { lists: [news.id] });
   const camp = f.deliveredCampaign([ada], [news.id]);
-  const uuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}?confirm=true`)).status).toBe(200);
 
   // The importer's batch is the store's own `importSubscribe`, which it calls for each batch of
@@ -118,13 +119,13 @@ test("an unsubscribing import ends the membership of a suppressed address, since
   const news = await f.list("News");
   const ada = await f.subscriber(address, "Ada", { lists: [news.id] });
   const camp = f.deliveredCampaign([ada], [news.id]);
-  const uuid = (await f.json(`/api/subscribers/${ada}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${ada}`)).body.data.uuid);
   expect((await f.fresh(`/subscription/${camp}/wipe/${uuid}?confirm=true`)).status).toBe(200);
 
   // An operator puts the address back on the list by hand (the override is not gated), so the
   // suppressed person now has a confirmed membership for the unsubscribing import to end.
   const again = await f.json("/api/subscribers", "POST", { email: address, name: "Ada" });
-  const id = again.body.data.id as number;
+  const id = asBody<number>(again.body.data.id);
   const added = await f.json("/api/subscribers/lists", "PUT", {
     ids: [id],
     action: "add",

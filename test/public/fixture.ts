@@ -18,6 +18,7 @@ import { createClientAddress } from "@/server/client-address";
 import { createSettings } from "@/settings/store";
 import { txFixture } from "@/test/tx/fixture";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
+import { asBody } from "@/test/read-body";
 
 const unsetSettings = (): PublicSettings => {
   throw new Error("unset");
@@ -82,7 +83,7 @@ export async function publicFixture() {
   const limit = (limit: number) =>
     rateLimited(f.clock, { limit, windowMs: 60_000, maxPeers: 100 }, settings, clientAddress);
   const hcaptcha = { url: "http://127.0.0.1:1/siteverify" };
-  const captchaOptions = () => store.read()["security.captcha"];
+  const captchaOptions = (): any => store.read()["security.captcha"];
   const captcha = await createCaptcha({
     clock: f.clock,
     options: captchaOptions,
@@ -98,7 +99,7 @@ export async function publicFixture() {
     mail,
     settings,
     captcha,
-    altchaComplexity: () => captchaOptions().altcha.complexity,
+    altchaComplexity: () => asBody<number>(captchaOptions().altcha.complexity),
     limits: { subscribe: limit(5), optin: limit(5) },
     clientAddress,
   });
@@ -186,14 +187,13 @@ export async function publicFixture() {
     /** Each call a new peer, so behavior tests stay under the limits. */
     fresh: (path: string, body = "") => post(path, body, `198.51.100.${++peers}`),
     list: async (name: string, type = "public", optin = "single") =>
-      (await f.json("/api/lists", "POST", { name, type, optin })).body.data as {
-        id: number;
-        uuid: string;
-      },
+      asBody<{ id: number; uuid: string }>(
+        (await f.json("/api/lists", "POST", { name, type, optin })).body.data,
+      ),
     status: async (id: number, list: number) =>
-      (await f.json(`/api/subscribers/${id}`)).body.data.lists.find(
-        (item: { id: number }) => item.id === list,
-      )?.subscription_status as string | undefined,
+      asBody<Array<{ id: number; subscription_status: string }>>(
+        (await f.json(`/api/subscribers/${id}`)).body.data.lists,
+      ).find((item) => item.id === list)?.subscription_status,
     mailTo: (address: string) => f.sink.messages.filter((m) => m.to.includes(address)),
     async drain() {
       // The outbox also polls on the clock; a wake during its previous batch waits for that.
@@ -213,9 +213,7 @@ export async function publicFixture() {
   };
 }
 const pending = async (f: { db: { query(sql: string): { get(): unknown } } }) =>
-  (
-    f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get() as {
-      n: bigint;
-    }
+  asBody<{ n: bigint }>(
+    f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
   ).n > 0n;
 export type PublicFixture = Awaited<ReturnType<typeof publicFixture>>;

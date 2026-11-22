@@ -7,6 +7,7 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { asBody } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "..");
 // One lock per checkout: builds in different checkouts write different `dist` directories.
@@ -23,7 +24,7 @@ function alive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return asBody<NodeJS.ErrnoException>(error).code === "EPERM";
   }
 }
 
@@ -75,7 +76,7 @@ async function acquire(): Promise<void> {
       writeFileSync(ownerFile, String(process.pid));
       return;
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
+      const code = asBody<NodeJS.ErrnoException>(error).code;
       if (code === "EEXIST") {
         if (stale() && takeOver()) {
           continue;
@@ -87,7 +88,7 @@ async function acquire(): Promise<void> {
         }
       } else if (Date.now() - start > faultLimitMs) {
         throw new Error(
-          `Cannot create production build lock ${lock}: ${(error as Error).message}`,
+          `Cannot create production build lock ${lock}: ${asBody<Error>(error).message}`,
           { cause: error },
         );
       }

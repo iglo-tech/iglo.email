@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { startSink } from "@/test/tx/sink";
+import { asBody } from "@/test/read-body";
 
 export const admin = { user: "worked-admin", password: "worked-example-admin-password" };
 
@@ -208,13 +209,13 @@ export async function apiClient(origin: string) {
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
   /** A call that must succeed; returns `data`. */
-  const ok = async (path: string, method = "GET", body?: unknown) => {
+  const ok = async <T = unknown>(path: string, method = "GET", body?: unknown): Promise<T> => {
     const response = await call(path, method, body);
     check(
       response.status === 200,
       `${method} ${path} → ${response.status} ${JSON.stringify(response.body)}`,
     );
-    return response.body.data;
+    return asBody<T>(response.body.data);
   };
   return { call, ok };
 }

@@ -6,6 +6,7 @@ import { expect, test } from "bun:test";
 import { createRealClock } from "@/clock";
 import { createTranslation } from "@/i18n/i18n";
 import { createRenderer } from "@/templates/renderer";
+import { asBody } from "@/test/read-body";
 
 const renderer = () => createRenderer(createRealClock(), createTranslation());
 const LIMIT = 64 * 1024;
@@ -53,7 +54,7 @@ test.each(cases)("$name answers within a second", async ({ source }) => {
   try {
     await renderer().render({ body: source, data: "{}", mode: "markdown" });
   } catch (error) {
-    outcome = (error as Error).message;
+    outcome = asBody<Error>(error).message;
     // A refusal is only a budget's (D112; D54's 4 MiB emission budget, which nested quotes copy into, and
     // its nesting depth of 32); any other error fails the case.
     expect(["Work limit", "Markdown output limit", "Nesting limit", "Render limit"]).toContain(

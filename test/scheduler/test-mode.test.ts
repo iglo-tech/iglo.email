@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import { day, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { asBody } from "@/test/read-body";
 
 const tab = (id: number, path: string) => `/api/subscribers/${id}/${path}`;
 
@@ -30,8 +31,9 @@ const testEnroll = (f: SchedulerFixture, sequence: number, subscriber: number) =
     subscriber_id: subscriber,
     test: true,
   });
+type Entry = { type: string; [field: string]: unknown };
 const entries = async (f: SchedulerFixture, id: number) =>
-  (await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries as Array<Record<string, any>>;
+  asBody<Array<Entry>>((await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries);
 
 test("a test enrollment shortens every wait to a minute and sends labelled mail", async () => {
   const f = await open();
@@ -44,7 +46,7 @@ test("a test enrollment shortens every wait to a minute and sends labelled mail"
 
   const started = await testEnroll(f, sequence.id, subscriber);
   expect(started.status).toBe(200);
-  const id = started.body.data.id as number;
+  const id = asBody<number>(started.body.data.id);
   expect(started.body.data.test).toBe(true);
   const dueIn = (at: string) => Date.parse(at) - f.clock.now().getTime();
   expect(dueIn(started.body.data.due_at)).toBe(minute);
@@ -73,8 +75,10 @@ test("a test enrollment shortens every wait to a minute and sends labelled mail"
   }
 
   // The definition is as it was.
-  const after = (await f.json(`/api/sequences/${sequence.id}`)).body.data;
-  expect(after.steps.map((s: { wait: string }) => s.wait)).toEqual(["P1D", "PT0S", "P3D"]);
+  const after = asBody<{ steps: Array<{ wait: string }>; updated_at: string }>(
+    (await f.json(`/api/sequences/${sequence.id}`)).body.data,
+  );
+  expect(after.steps.map((s) => s.wait)).toEqual(["P1D", "PT0S", "P3D"]);
   expect(after.updated_at).toBe(sequence.updated_at);
 
   const decisions = await entries(f, id);
@@ -98,7 +102,8 @@ test("a test leaves real enrollments, reentry and counts alone", async () => {
   expect((await testEnroll(f, sequence.id, started.subscriber_id)).status).toBe(409);
   expect((await f.json(`/api/sequences/${sequence.id}`)).body.data.active_enrollments).toBe(1);
   const listed = await f.json(`/api/enrollments?sequence_id=${sequence.id}`);
-  expect(listed.body.data.results.map((e: { test: boolean }) => e.test)).toEqual([true, false]);
+  const rows = asBody<{ results: Array<{ test: boolean }> }>(listed.body.data).results;
+  expect(rows.map((e) => e.test)).toEqual([true, false]);
   await f.json(`/api/enrollments/${during.body.data.id}`, "DELETE");
 
   // A test ignores history, and a later real trigger does not see it.
@@ -263,7 +268,7 @@ test("a timeline never reads history from the current definition", async () => {
   const waiting = (await f.event("waiting@example.test")).enrollments.started[0]!.id;
   await f.pass(0);
   await f.until(async () => (await entries(f, waiting)).at(-1)?.type === "waiting", "wait");
-  const [first, second] = appended.body.data.steps.map((s: { id: number }) => s.id);
+  const [first, second] = asBody<Array<{ id: number }>>(appended.body.data.steps).map((s) => s.id);
   const inserted = await put([
     { ...steps[0], id: first },
     step(template, "PT0S"),
@@ -303,7 +308,9 @@ async function expectAnonymous(
 ) {
   const list = await read(`/api/enrollments?sequence_id=${sequence}&per_page=100`);
   expect(list.status).toBe(200);
-  const row = list.body.data.results.find((e: { id: number }) => e.id === subject.enrollment);
+  const row = asBody<Array<{ id: number }>>(list.body.data.results).find(
+    (e) => e.id === subject.enrollment,
+  );
   const detail = await read(`/api/enrollments/${subject.enrollment}`);
   expect(detail.status).toBe(200);
   const timeline = await read(`/api/enrollments/${subject.enrollment}/timeline`);
@@ -316,7 +323,7 @@ async function expectAnonymous(
     });
     expect(enrollment).not.toHaveProperty("subscriber_email");
   }
-  const found = timeline.body.data.entries as Array<Record<string, any>>;
+  const found = asBody<Array<Entry>>(timeline.body.data.entries);
   expect(found.map((e) => e.type)).toEqual(["enrolled", "step", "waiting"]);
   expect(found[1]).toMatchObject({ removed: false, kind: "transactional" });
   expect(found[1]).not.toHaveProperty("position");
@@ -348,11 +355,11 @@ test("a list role decides each enrollment row, whatever the subscriber permissio
 
     // The same page still addresses the subscriber the role can read.
     const page = await read(`/api/enrollments?sequence_id=${sequence.id}`);
-    const addressed = page.body.data.results.filter(
-      (e: Record<string, unknown>) => "subscriber_email" in e,
-    );
-    expect(addressed.map((e: { id: number }) => e.id)).toEqual([shown.enrollment]);
-    expect(addressed[0].subscriber_email).toBe("shown@example.test");
+    const addressed = asBody<Array<{ id: number; subscriber_email?: string }>>(
+      page.body.data.results,
+    ).filter((e) => "subscriber_email" in e);
+    expect(addressed.map((e) => e.id)).toEqual([shown.enrollment]);
+    expect(addressed[0]!.subscriber_email).toBe("shown@example.test");
     const detail = await read(`/api/enrollments/${shown.enrollment}`);
     expect(detail.body.data.subscriber_email).toBe("shown@example.test");
     const timeline = await read(`/api/enrollments/${shown.enrollment}/timeline`);
@@ -370,9 +377,10 @@ test("a global list grant reads every enrollment's person", async () => {
   const { sequence, hidden } = await scoped(f);
   const read = await f.apiUser("all-lists", ["sequences:get", "subscribers:get", "lists:get_all"]);
   const page = await read(`/api/enrollments?sequence_id=${sequence.id}`);
-  expect(
-    page.body.data.results.map((e: { subscriber_email: string }) => e.subscriber_email),
-  ).toEqual(["hidden@example.test", "shown@example.test"]);
+  const emails = asBody<Array<{ subscriber_email: string }>>(page.body.data.results).map(
+    (e) => e.subscriber_email,
+  );
+  expect(emails).toEqual(["hidden@example.test", "shown@example.test"]);
   const timeline = await read(`/api/enrollments/${hidden.enrollment}/timeline`);
   expect(timeline.body.data.entries[0]).toMatchObject({ type: "trigger", name: "order_paid" });
 });

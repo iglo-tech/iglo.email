@@ -3,6 +3,7 @@
 import { expect, test } from "bun:test";
 import { plainText } from "@/messaging/plain";
 import { createMessageBudget } from "@/templates/renderer";
+import { asBody } from "@/test/read-body";
 
 const time = async (n: number) => {
   const html = nested.b(n);
@@ -226,7 +227,7 @@ const bytesPerLevel: Record<keyof typeof nested, number> = {
   li: 18,
   td: 34,
 };
-for (const kind of Object.keys(nested) as Array<keyof typeof nested>) {
+for (const kind of asBody<Array<keyof typeof nested>>(Object.keys(nested))) {
   test(`1 MiB of nested ${kind} is under 1 s, and past the 1024 cap it has no text part`, async () => {
     const html = nested[kind](Math.floor(MIB / bytesPerLevel[kind]));
     const started = performance.now();

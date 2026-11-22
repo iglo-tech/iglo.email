@@ -11,6 +11,7 @@ import first from "@/test/db/assets/0001.sql" with { type: "text" };
 import second from "@/test/db/assets/0002.sql" with { type: "text" };
 import failing from "@/test/db/assets/failing.sql" with { type: "text" };
 import queries from "@/test/db/assets/queries.sql" with { type: "text" };
+import { asBody, readJson } from "@/test/read-body";
 
 const one = { version: 1, sql: first };
 const two = { version: 2, sql: second };
@@ -95,7 +96,7 @@ export function startDbFixture(dataDir: string) {
           backups: names(),
         };
       case "migrate":
-        runMigrations(db, dataDir, clock, catalogs[input.catalog as keyof typeof catalogs]);
+        runMigrations(db, dataDir, clock, catalogs[asBody<keyof typeof catalogs>(input.catalog)]);
         return { backups: names() };
       case "insert": {
         const prepared = prepareNamedQueries(db, [{ name: "fixture", sql: queries }]);
@@ -130,25 +131,37 @@ export function startDbFixture(dataDir: string) {
               writeTransaction(db, () => undefined);
             });
           } else if (input.mode === "async") {
-            writeTransaction(db, (async () => {
-              insert();
-            }) as never);
+            writeTransaction(
+              db,
+              asBody<never>(async () => {
+                insert();
+              }),
+            );
           } else if (input.mode === "thenable") {
-            writeTransaction(db, (() => {
-              insert();
-              return Promise.resolve(1);
-            }) as never);
+            writeTransaction(
+              db,
+              asBody<never>(() => {
+                insert();
+                return Promise.resolve(1);
+              }),
+            );
           } else if (input.mode === "thenable-object") {
-            writeTransaction(db, (() => {
-              insert();
-              // This deliberately malformed callback exercises runtime protection.
-              return { then() {} };
-            }) as never);
+            writeTransaction(
+              db,
+              asBody<never>(() => {
+                insert();
+                // This deliberately malformed callback exercises runtime protection.
+                return { then() {} };
+              }),
+            );
           } else if (input.mode === "rejected") {
-            writeTransaction(db, (() => {
-              insert();
-              return Promise.reject(new Error("rejected promise"));
-            }) as never);
+            writeTransaction(
+              db,
+              asBody<never>(() => {
+                insert();
+                return Promise.reject(new Error("rejected promise"));
+              }),
+            );
           } else {
             writeTransaction(db, () => {
               insert();
@@ -218,7 +231,7 @@ export function startDbFixture(dataDir: string) {
     port: 0,
     async fetch(request) {
       try {
-        const result = await action((await request.json()) as Record<string, any>);
+        const result = await action(await readJson<Record<string, any>>(request));
         return new Response(
           JSON.stringify({ result }, (_key, value: unknown) =>
             typeof value === "bigint" ? value.toString() : value,

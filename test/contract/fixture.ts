@@ -8,6 +8,7 @@ import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { createTranslation } from "@/i18n/i18n";
 import type { Middleware } from "@/server/context";
+import { asBody } from "@/test/read-body";
 import { HttpError, ok } from "@/server/response";
 import { publicNotFound } from "@/public/message";
 import { createRouter, startServer } from "@/server/server";
@@ -76,7 +77,7 @@ export function startContractFixture(credentials: Credentials) {
       async (context) => {
         const value = await bindJSON(context.request);
         const input =
-          typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+          typeof value === "object" && value !== null ? asBody<Record<string, unknown>>(value) : {};
         if (typeof input.name !== "string" || !strHasLen(input.name, 1, 2000)) {
           throw new HttpError(400, context.app.i18n.T("globals.messages.invalidName"));
         }

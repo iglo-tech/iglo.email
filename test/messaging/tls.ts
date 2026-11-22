@@ -11,6 +11,7 @@ import { createEmailer } from "@/messaging/email";
 import type { SMTPServer } from "@/messaging/email";
 import { mailpitBinaryPath } from "@/test/reference/prepare";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import { readJson } from "@/test/read-body";
 
 const reference = referenceMailpit(process.env);
 await assertOwnedMailpit(reference);
@@ -177,7 +178,7 @@ try {
         const response = await fetch(`${sink.api}/api/v1/messages`, {
           signal: AbortSignal.timeout(5000),
         });
-        const list = (await response.json()) as { messages: Array<{ Subject: string }> };
+        const list = await readJson<{ messages: Array<{ Subject: string }> }>(response);
         assert.equal(list.messages.filter((entry) => entry.Subject === message.subject).length, 1);
       } finally {
         await emailer.close();

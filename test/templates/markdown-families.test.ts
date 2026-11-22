@@ -4,6 +4,7 @@
 import { expect, test } from "bun:test";
 import { createMarkdownBudget, markdownOutputBound, renderMarkdown } from "@/templates/markdown";
 import { families, source } from "@/test/templates/measure-markdown";
+import { asBody } from "@/test/read-body";
 
 test.each(Object.keys(families))(
   "the %s family at 128 KiB renders or is refused within a second",
@@ -17,7 +18,7 @@ test.each(Object.keys(families))(
         createMarkdownBudget(() => {}),
       );
     } catch (error) {
-      refused = (error as Error).message;
+      refused = asBody<Error>(error).message;
     }
     expect(performance.now() - started).toBeLessThan(1000);
     if (refused !== null) {

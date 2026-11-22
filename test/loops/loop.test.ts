@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startLoopFixture } from "@/test/loops/fixture";
+import { readJson } from "@/test/read-body";
 
 async function request(origin: string, input: unknown) {
   const response = await fetch(origin, {
@@ -12,7 +13,7 @@ async function request(origin: string, input: unknown) {
   });
   return {
     status: response.status,
-    ...((await response.json()) as { result?: any; error?: string }),
+    ...(await readJson<{ result?: any; error?: string }>(response)),
   };
 }
 async function withFixture(fn: (origin: string) => Promise<void>) {

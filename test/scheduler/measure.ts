@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import { seed, startRuntime } from "@/test/scheduler/runtime";
 import { startSink } from "@/test/tx/sink";
+import { asBody } from "@/test/read-body";
 
 const enrollments = Number(process.argv[2] ?? 10_000);
 const repetitions = Number(process.argv[3] ?? 3);
@@ -16,7 +17,7 @@ const sendLoad = 2000;
 const clock = createRealClock();
 const sink = await startSink({});
 
-const count = (db: Database, sql: string) => Number((db.query(sql).get() as { n: bigint }).n);
+const count = (db: Database, sql: string) => Number(asBody<{ n: bigint }>(db.query(sql).get()).n);
 async function until(check: () => boolean, label: string, ms = 600_000) {
   const deadline = Date.now() + ms;
   while (!check()) {
@@ -141,7 +142,7 @@ await sink.close();
 console.log(
   JSON.stringify(
     { bun: Bun.version, enrollments, sendLoad, repetitions, results },
-    (_, v) => (typeof v === "number" ? Math.round(v * 100) / 100 : v),
+    (_, v: unknown) => (typeof v === "number" ? Math.round(v * 100) / 100 : v),
     2,
   ),
 );

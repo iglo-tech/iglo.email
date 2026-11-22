@@ -27,6 +27,7 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
+import { asBody } from "@/test/read-body";
 
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
@@ -171,17 +172,18 @@ export async function eventsFixture(
   };
   const batch = (body: unknown, headers: Record<string, string> = api) =>
     json("/api/subscriber-events/batch", "POST", body, headers);
-  const subscriber = async (id: number) => (await json(`/api/subscribers/${id}`)).body?.data;
+  const subscriber = async (id: number) =>
+    asBody<Record<string, any>>((await json(`/api/subscribers/${id}`)).body?.data);
   /** A list of the given opt-in kind, created through the admin API. */
   const list = async (name: string, optin = "single") => {
     const created = await json("/api/lists", "POST", { name, type: "public", optin });
     if (created.status !== 200) {
       throw new Error(`list ${created.status}`);
     }
-    return created.body.data.id as number;
+    return asBody<number>(created.body.data.id);
   };
   const count = (table: "events" | "subscribers") =>
-    Number((current.db.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: bigint }).n);
+    Number(asBody<{ n: bigint }>(current.db.query(`SELECT count(*) AS n FROM ${table}`).get()).n);
   const close = () => {
     current.events.close();
     current.subscribers.close();

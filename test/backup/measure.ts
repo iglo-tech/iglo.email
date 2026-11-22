@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { asBody } from "@/test/read-body";
 import {
   apiClient,
   buildExecutable,
@@ -58,12 +59,12 @@ function seed() {
   const now = new Date().toISOString();
   const lists = [1, 2].map(
     (i) =>
-      (
+      asBody<{ id: number }>(
         db
           .query(
             "INSERT INTO lists (uuid, name, type, optin) VALUES (?, ?, 'public', 'single') RETURNING id",
           )
-          .get(crypto.randomUUID(), `measure ${i}`) as { id: number }
+          .get(crypto.randomUUID(), `measure ${i}`),
       ).id,
   );
   const subscriber = db.prepare(
