@@ -71,7 +71,7 @@ A sequence step sends a transactional template and may override its subject. Ste
 
 #### Content types
 
-`richtext` (Squire editor, stored as HTML), `html`, `markdown` (rendered with Bun's Markdown API after Liquid, D113), and `plain`. There is no visual editor; template editing for agents is via MCP.
+`richtext` (Squire editor, stored as HTML), `html`, `markdown` (rendered with Bun's Markdown API after Liquid, D113), and `plain`. There is no visual editor; template editing for agents is via MCP. An HTML message without an alternative body gets a generated `text/plain` part; its lists are numbered when they are ordered (a Markdown `1.` list renders as an ordered list, so it is numbered too), and its named references decode as [07-api-and-ui](07-api-and-ui.md) lists.
 
 #### Example: Campaign template (layout)
 
