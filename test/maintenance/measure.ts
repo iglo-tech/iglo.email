@@ -7,6 +7,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody, readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const executable = join(repository, "dist/iglo.email");
@@ -155,12 +156,12 @@ try {
     const db = new Database(file);
     const seeded = seed(db);
     console.log(`seeded in ${seeded} s, ${Math.round(statSync(file).size / 1_048_576)} MiB`);
-    const { uuid: campaign } = db.query("SELECT uuid FROM campaigns LIMIT 1").get() as {
-      uuid: string;
-    };
-    const { uuid: reader } = db.query("SELECT uuid FROM subscribers WHERE id = 5").get() as {
-      uuid: string;
-    };
+    const { uuid: campaign } = asBody<{ uuid: string }>(
+      db.query("SELECT uuid FROM campaigns LIMIT 1").get(),
+    );
+    const { uuid: reader } = asBody<{ uuid: string }>(
+      db.query("SELECT uuid FROM subscribers WHERE id = 5").get(),
+    );
     db.close();
     const { origin, stop } = await serve();
     running.stop = stop;
@@ -218,7 +219,7 @@ try {
         method: "DELETE",
         headers: { authorization },
       });
-      const body = (await response.json()) as { data: { count: number } | true; message?: string };
+      const body = await readJson<{ data: { count: number } | true; message?: string }>(response);
       if (response.status !== 200) {
         throw new Error(`${path}: ${response.status} ${body.message}`);
       }
@@ -232,7 +233,7 @@ try {
       );
       let lines = 0;
       for await (const chunk of response.body!) {
-        for (let at = -1; (at = (chunk as Buffer).indexOf(10, at + 1)) >= 0;) {
+        for (let at = -1; (at = asBody<Buffer>(chunk).indexOf(10, at + 1)) >= 0;) {
           lines++;
         }
       }

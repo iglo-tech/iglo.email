@@ -4,6 +4,7 @@ import type { AdminShellProps } from "@/admin/layout/shell";
 import { createTranslation } from "@/i18n/i18n";
 import { assetVersion } from "@/server/asset-manifest";
 import { assetResponse } from "@/server/assets";
+import { asBody } from "@/test/read-body";
 
 const payload = "</script><script>globalThis.fixtureInjected=true</script>&\u2028\u2029";
 const translation = createTranslation().Load({ "fixture.hostile": payload });
@@ -31,7 +32,10 @@ const server = Bun.serve({
       if (path === "/invalid-navigation") {
         renderAdminShell({ ...props, navigation: [{ label: "bad", href: "//example.invalid" }] });
       } else if (path === "/invalid-config") {
-        renderAdminShell({ ...props, config: { bad: (() => {}) as never } });
+        renderAdminShell({
+          ...props,
+          config: { bad: asBody<AdminShellProps["config"][string]>(() => {}) },
+        });
       } else if (path === "/") {
         return new Response(renderAdminShell(props), {
           headers: { "content-type": "text/html; charset=utf-8" },

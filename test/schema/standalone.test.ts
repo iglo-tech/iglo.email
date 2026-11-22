@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { readJson } from "@/test/read-body";
 
 test("compiled schema fixture installs embedded production SQL with an empty PATH", async () => {
   const directory = await mkdtemp(join(tmpdir(), "iglo-embedded-schema-"));
@@ -37,9 +38,9 @@ test("compiled schema fixture installs embedded production SQL with an empty PAT
       body: JSON.stringify({ action: "migrate" }),
       signal: AbortSignal.timeout(3000),
     });
-    const { result } = (await response.json()) as {
+    const { result } = await readJson<{
       result: { version: string; integrity: string; shapes: Record<string, Array<string>> };
-    };
+    }>(response);
     expect(response.status).toBe(200);
     expect(result.version).toBe("25");
     expect(result.integrity).toBe("ok");

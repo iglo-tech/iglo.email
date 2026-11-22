@@ -10,6 +10,7 @@ import { createRouter } from "@/server/server";
 import { placeRestoreHold, refuseWhileHeld } from "@/settings/hold";
 import { eventsFixture } from "@/test/events/fixture";
 import type { EventsFixture } from "@/test/events/fixture";
+import { readJson } from "@/test/read-body";
 
 const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
@@ -115,7 +116,7 @@ test("a sending hold answers 503 held, and says when to retry", async () => {
   const r = await router.handle(f.app, new Request(url("/api/fixture/send"), { method: "POST" }));
   expect(r.status).toBe(503);
   expect(r.headers.get("Retry-After")).toBe("30");
-  const body = (await r.json()) as { message: string; code: string };
+  const body = await readJson<{ message: string; code: string }>(r);
   expect(body.code).toBe("held");
   expect(body.message.startsWith("Sending is held.")).toBe(true);
 });

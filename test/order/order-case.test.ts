@@ -44,6 +44,9 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
    * Checks the names one endpoint returns for each spelling of `order`: every ascending spelling gives
    * `ascending`, every descending spelling gives its reverse. `path` ends before the order parameter.
    */
+  // The listings below: a paged `results` list, or a plain list, of rows that carry the field the order is checked by.
+  type Paged<R> = { data: { results: Array<R> } };
+  type Plain<R> = { data: Array<R> };
   async function expectOrder(
     path: string,
     rows: (json: any) => Array<{ name: string }>,
@@ -65,11 +68,11 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
     for (const name of ["B80 Lists Zeta", "B80 Lists Alpha", "B80 Lists Mid"]) {
       expect((await api("POST", "/api/lists", { name, type: "public" })).status).toBe(200);
     }
-    await expectOrder("/api/lists?query=B80%20Lists&order_by=name", (json) => json.data.results, [
-      "B80 Lists Alpha",
-      "B80 Lists Mid",
-      "B80 Lists Zeta",
-    ]);
+    await expectOrder(
+      "/api/lists?query=B80%20Lists&order_by=name",
+      (json: Paged<{ name: string }>) => json.data.results,
+      ["B80 Lists Alpha", "B80 Lists Mid", "B80 Lists Zeta"],
+    );
   });
 
   test("GET /api/templates", async () => {
@@ -81,10 +84,11 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
       });
       expect(created.status).toBe(200);
     }
-    await expectOrder("/api/templates?query=B80%20Tpl&order_by=name", (json) => json.data, [
-      "B80 Tpl Alpha",
-      "B80 Tpl Zeta",
-    ]);
+    await expectOrder(
+      "/api/templates?query=B80%20Tpl&order_by=name",
+      (json: Plain<{ name: string }>) => json.data,
+      ["B80 Tpl Alpha", "B80 Tpl Zeta"],
+    );
   });
 
   test("GET /api/campaigns", async () => {
@@ -101,7 +105,7 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
     }
     await expectOrder(
       "/api/campaigns?query=B80%20Camp&order_by=name",
-      (json) => json.data.results,
+      (json: Paged<{ name: string }>) => json.data.results,
       ["B80 Camp Alpha", "B80 Camp Zeta"],
     );
   });
@@ -117,7 +121,7 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
     }
     await expectOrder(
       "/api/subscribers?search=b80ord&order_by=email",
-      (json) => json.data.results.map((row: { email: string }) => ({ name: row.email })),
+      (json: Paged<{ email: string }>) => json.data.results.map((row) => ({ name: row.email })),
       ["alpha-b80ord@example.test", "zeta-b80ord@example.test"],
     );
   });
@@ -140,7 +144,8 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
     // Only the two users above, so the administrator and the bootstrap users stay out of the list.
     await expectOrder(
       "/api/users?order_by=username",
-      (json) => json.data.filter((row: { username: string }) => row.username.startsWith("b80-")),
+      (json: Plain<{ name: string; username: string }>) =>
+        json.data.filter((row) => row.username.startsWith("b80-")),
       ["b80-alpha", "b80-zeta"],
     );
   });
@@ -152,7 +157,7 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
     }
     await expectOrder(
       "/api/roles/lists?query=B80%20List%20Role&order_by=name",
-      (json) => json.data,
+      (json: Plain<{ name: string }>) => json.data,
       ["B80 List Role Alpha", "B80 List Role Zeta"],
     );
   });
@@ -177,7 +182,7 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
     }
     await expectOrder(
       "/api/bounces?source=b80-order&order_by=email",
-      (json) => json.data.results.map((row: { email: string }) => ({ name: row.email })),
+      (json: Paged<{ email: string }>) => json.data.results.map((row) => ({ name: row.email })),
       ["alpha-b80bnc@example.test", "zeta-b80bnc@example.test"],
     );
   });
@@ -190,9 +195,10 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
       });
       expect(created.status).toBe(200);
     }
-    await expectOrder("/api/roles/users?query=B80%20Role&order_by=name", (json) => json.data, [
-      "B80 Role Alpha",
-      "B80 Role Zeta",
-    ]);
+    await expectOrder(
+      "/api/roles/users?query=B80%20Role&order_by=name",
+      (json: Plain<{ name: string }>) => json.data,
+      ["B80 Role Alpha", "B80 Role Zeta"],
+    );
   });
 });

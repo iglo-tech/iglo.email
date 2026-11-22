@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { startDbFixture } from "@/test/db/fixture";
+import { readJson } from "@/test/read-body";
 
 async function bounded<T>(operation: Promise<T>, message: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -64,7 +65,7 @@ test("BEGIN IMMEDIATE serializes writers in separate processes", async () => {
       body: JSON.stringify({ action: "get", id: "20" }),
       signal: AbortSignal.timeout(3000),
     });
-    expect(((await response.json()) as { result: { value: string } }).result.value).toBe("second");
+    expect((await readJson<{ result: { value: string } }>(response)).result.value).toBe("second");
   } finally {
     for (const child of children) {
       if (child.exitCode === null) {

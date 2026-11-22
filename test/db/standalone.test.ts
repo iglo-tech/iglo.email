@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { readJson } from "@/test/read-body";
 
 test("compiled fixture embeds migration and named SQL outside the checkout with empty PATH", async () => {
   const directory = await mkdtemp(join(tmpdir(), "iglo-embedded-db-"));
@@ -38,7 +39,7 @@ test("compiled fixture embeds migration and named SQL outside the checkout with 
         body: JSON.stringify(input),
         signal: AbortSignal.timeout(3000),
       });
-      return { status: response.status, ...((await response.json()) as { result?: any }) };
+      return { status: response.status, ...(await readJson<{ result?: any }>(response)) };
     }
     expect((await request({ action: "migrate", catalog: "both" })).status).toBe(200);
     expect(

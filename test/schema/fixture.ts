@@ -6,6 +6,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { writeTransaction } from "@/db/transaction";
 import { TestClock } from "@/test/server/fixture";
+import { readJson } from "@/test/read-body";
 
 export const tables = [
   "subscribers",
@@ -413,7 +414,7 @@ export function startSchemaFixture(directory: string) {
     port: 0,
     async fetch(request) {
       try {
-        const input = (await request.json()) as { action: string };
+        const input = await readJson<{ action: string }>(request);
         let result: unknown;
         switch (input.action) {
           case "status":

@@ -4,6 +4,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import { startStalledSink } from "@/test/tx/sink";
+import { readJson } from "@/test/read-body";
 
 const mebibyte = 1024 * 1024;
 const held = () => {
@@ -58,7 +59,7 @@ for (const s of scenarios) {
         headers: f.sessionHeaders,
         body,
       });
-      return (await response.json()).data.id as number;
+      return (await readJson<{ data: { id: number } }>(response)).data.id;
     };
     const shared = s.shared ? await upload(0) : 0;
     const ids: Array<number> = [];
