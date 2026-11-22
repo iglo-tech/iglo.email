@@ -306,7 +306,16 @@ async function main(args: Array<string>, signal: AbortSignal): Promise<void> {
       // The bounces contract sends about 7,000 requests to measure the provider webhook budget.
       args[1] === "bounces" ? 120_000 : undefined,
       tunnel?.environment,
-    ).finally(() => tunnel?.close());
+    ).then(
+      async (result) => {
+        await tunnel?.close();
+        return result;
+      },
+      async (error: unknown) => {
+        await tunnel?.close();
+        throw error;
+      },
+    );
     if (!passed) {
       process.exitCode = 1;
     }

@@ -30,8 +30,7 @@ const server = Bun.serve({
 console.log(
   JSON.stringify({ origin: `http://127.0.0.1:${server.port}`, campaign: campaign.id, headers }),
 );
-process.on("SIGTERM", async () => {
+process.on("SIGTERM", () => {
   server.stop(true);
-  await f.close();
-  process.exit(0);
+  void f.close().then(() => process.exit(0));
 });

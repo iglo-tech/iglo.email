@@ -194,7 +194,7 @@ export async function faultRelay(
         }
       }
     });
-    upstream.on("data", async (chunk: Buffer) => {
+    const relay = async (chunk: Buffer) => {
       if (fault === "hold") {
         await release;
         if (client.destroyed) {
@@ -247,7 +247,8 @@ export async function faultRelay(
         }
         client.write(`${line}\r\n`, "latin1");
       }
-    });
+    };
+    upstream.on("data", (chunk: Buffer) => void relay(chunk));
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

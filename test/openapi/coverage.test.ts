@@ -44,9 +44,9 @@ async function registered(): Promise<Array<string>> {
   }
 }
 
-describe("coverage", async () => {
-  const routes = await registered();
+const routes = await registered();
 
+describe("coverage", () => {
   test("the router is the production composition", () => {
     expect(routes.length).toBeGreaterThan(200);
     expect(routes).toContain("GET /api/openapi.json");
