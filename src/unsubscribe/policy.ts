@@ -3,6 +3,7 @@
 // `unsubscribed`. The frequency cap is native (docs/design/04-sending.md).
 import type { ListReferences } from "@/lists/references";
 import type { MarketingPolicy } from "@/messaging/sends";
+import { must } from "@/invariant";
 import { intervalStart } from "@/settings/duration";
 import type { SubscriberStore } from "@/subscribers/store";
 
@@ -67,7 +68,9 @@ export function createMarketingPolicy(deps: {
     capStart(now) {
       const start = intervalStart(deps.settings().minInterval, now);
       // Settings validation rejects invalid values; a corrupt stored one keeps the default.
-      return start === undefined ? intervalStart(fallbackInterval, now)! : start;
+      return start === undefined
+        ? must(intervalStart(fallbackInterval, now), "fallback interval")
+        : start;
     },
     lastCampaignDelivery(subscriberId) {
       const last = deps.campaignDeliveries?.lastDelivery(subscriberId);

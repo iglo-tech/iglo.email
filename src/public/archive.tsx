@@ -8,6 +8,7 @@ import { writable } from "@/campaigns/routes";
 import type { CampaignRow, CampaignStore } from "@/campaigns/store";
 import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
+import { must } from "@/invariant";
 import type { PublicImages } from "@/media/embed";
 import { PublicShell } from "@/public/layout";
 import { publicMessage, publicNotFound } from "@/public/message";
@@ -106,12 +107,12 @@ export function registerArchiveRoutes(
     const { ids, total } = deps.store.archived(limit, offset);
     const root = deps.settings().rootUrl;
     const results = ids.map((id) => {
-      const row = deps.store.get(id)!;
+      const row = must(deps.store.get(id), "archived campaign");
       const rendered = content || /\{[{%]/.test(row.subject) ? archiveMessage(row) : null;
       return {
         uuid: row.uuid,
         subject: rendered?.subject ?? row.subject,
-        content: content ? rendered!.body : "",
+        content: content ? must(rendered, "archived message").body : "",
         created_at: row.created_at,
         send_at: row.send_at,
         url: `${root}/archive/${encodeURIComponent(row.archive_slug ?? row.uuid)}`,
@@ -327,7 +328,7 @@ ${items}  </channel>
       return hidden(context);
     }
     const t = context.app.i18n;
-    const key = context.params.id!;
+    const key = must(context.params.id, "archive id");
     const id = deps.store.archivedId(uuidPattern.test(key) ? key.toLowerCase() : key);
     const row = id === null ? null : deps.store.get(id);
     if (!row) {

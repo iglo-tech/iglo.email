@@ -36,7 +36,11 @@ export function createRateLimit(clock: Clock, policy: LimitPolicy) {
     }
     if (!current) {
       if (peers.size >= policy.maxPeers) {
-        peers.delete(peers.keys().next().value!);
+        // The oldest peer is the map's first key; an empty map has none, and nothing is deleted.
+        const oldest = peers.keys().next().value;
+        if (oldest !== undefined) {
+          peers.delete(oldest);
+        }
       }
       current = { start: time, count: 0 };
       peers.set(peer, current);

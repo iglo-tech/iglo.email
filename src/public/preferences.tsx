@@ -5,6 +5,7 @@ import type { Database } from "bun:sqlite";
 import { writeTransaction } from "@/db/transaction";
 import type { Translation } from "@/i18n/i18n";
 import { raw, render } from "@/jsx/render";
+import { must } from "@/invariant";
 import { trimSpace } from "@/lists/store";
 import type { PreferenceForm } from "@/public/form";
 import { PublicShell, siteText } from "@/public/layout";
@@ -192,10 +193,12 @@ export function subscriptionPage(
               <div>
                 {transactional ? (
                   <p>
-                    {memberships!.pendingNames.length
+                    {must(memberships, "transactional memberships").pendingNames.length
                       ? t
                           .T("public.pendingNamed")
-                          .replaceAll("{lists}", () => memberships!.pendingNames.join(", "))
+                          .replaceAll("{lists}", () =>
+                            must(memberships, "transactional memberships").pendingNames.join(", "),
+                          )
                       : t.T("public.pendingGeneric")}
                   </p>
                 ) : (

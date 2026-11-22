@@ -1,5 +1,6 @@
 // Public form binding, adapted from Echo's DefaultBinder as listmonk's public handlers use it
 // (cmd/public.go) at 6fcd95f: url-encoded, multipart or JSON bodies within the shared limit.
+import { must } from "@/invariant";
 import { readBodyBytes } from "@/users/input";
 
 export interface Fields {
@@ -49,7 +50,7 @@ export async function readFields(request: Request): Promise<Fields> {
   if (media === "multipart/form-data") {
     const form = await new Request("http://form.invalid", {
       method: "POST",
-      headers: { "content-type": request.headers.get("content-type")! },
+      headers: { "content-type": must(request.headers.get("content-type"), "content type") },
       body: Uint8Array.from(bytes),
     }).formData();
     return {
