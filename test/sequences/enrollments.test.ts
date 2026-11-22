@@ -825,8 +825,6 @@ test("concurrent triggers and manual enrolls never create two active enrollments
         sequence_id: always.id,
         subscriber_id: id,
       }),
-    );
-    work.push(
       f.json("/api/enrollments", "POST", {
         sequence_id: afterExit.id,
         subscriber_id: id,

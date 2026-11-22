@@ -475,6 +475,5 @@ export default defineConfig({
     "quality/no-reflect-get": "off", // B134c
     "quality/no-unknown-type-aliases": "off", // B134c
     "unicorn/prefer-native-coercion-functions": "off", // B134c
-    "unicorn/prefer-single-call": "off", // B134c
   },
 });
