@@ -573,3 +573,130 @@ export function sizeOf(value: unknown, b: FilterBudget): number {
   }
   return 0;
 }
+
+/** A number a filter reads: a finite number, or a text that holds one (data often carries numbers as text). */
+function numberOf(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string" && value.length <= 64 && /^\s*-?\d+(\.\d+)?\s*$/.test(value)) {
+    return Number(value);
+  }
+  return undefined;
+}
+
+/** A result is a number when it is finite; otherwise it is empty. */
+const finite = (result: number): number | "" => (Number.isFinite(result) ? result : "");
+
+/**
+ * `plus`, `minus`, `times` and `divided_by` (D134): the input and the argument, read as numbers. A nil input
+ * is empty. An input that is not a number is a value failure, and so is an argument that is not one, or a
+ * division by zero: a literal one of these is refused at save. An integer divided by an integer rounds down,
+ * as LiquidJS does. A result that is not finite is empty.
+ */
+export function arithmetic(
+  operator: "plus" | "minus" | "times" | "divided_by",
+  value: unknown,
+  argument: unknown,
+  b: FilterBudget,
+): number | "" {
+  b.step();
+  const right = numberOf(argument);
+  if (right === undefined) {
+    throw new ValueError(`${operator} needs a number argument, got ${kindOf(argument)}`);
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  const left = numberOf(value);
+  if (left === undefined) {
+    throw new ValueError(`${operator} needs a number, got ${kindOf(value)}`);
+  }
+  if (operator === "plus") {
+    return finite(left + right);
+  }
+  if (operator === "minus") {
+    return finite(left - right);
+  }
+  if (operator === "times") {
+    return finite(left * right);
+  }
+  if (right === 0) {
+    throw new ValueError("divided_by cannot divide by zero");
+  }
+  return finite(
+    Number.isInteger(left) && Number.isInteger(right) ? Math.floor(left / right) : left / right,
+  );
+}
+
+/**
+ * `round`: a number to `digits` places (none when not given, and at most 15), with halves rounded away
+ * from zero. A nil input is empty; any other value that is not a number is a value failure.
+ */
+export function round(value: unknown, digits: unknown, b: FilterBudget): number | "" {
+  b.step();
+  const places = digits === undefined ? 0 : integer(digits);
+  if (places < 0 || places > 15) {
+    throw new ValueError("round needs whole digits from 0 to 15");
+  }
+  if (value === null || value === undefined) {
+    return "";
+  }
+  const n = numberOf(value);
+  if (n === undefined) {
+    throw new ValueError(`round needs a number, got ${kindOf(value)}`);
+  }
+  const scale = 10 ** places;
+  return finite(Math.sign(n) * (Math.round(Math.abs(n) * scale) / scale));
+}
+
+/**
+ * `first` and `last`: the first or last item of a list, as it is, or the first or last character of a text.
+ * Any other value, and an empty list or text, is empty.
+ */
+export function first(value: unknown, b: FilterBudget) {
+  b.step();
+  if (Array.isArray(value)) {
+    const items: Array<unknown> = value;
+    return items.length > 0 ? items[0] : "";
+  }
+  if (typeof value === "string") {
+    const [head] = value;
+    return head ?? "";
+  }
+  return "";
+}
+
+export function last(value: unknown, b: FilterBudget) {
+  b.step();
+  if (Array.isArray(value)) {
+    const items: Array<unknown> = value;
+    return items.length > 0 ? items.at(-1) : "";
+  }
+  if (typeof value === "string") {
+    // The characters are walked once, a step per KiB of the text, so the walk is charged.
+    b.step(Math.ceil(byteLength(value) / 1024));
+    let tail = "";
+    for (const character of value) {
+      tail = character;
+    }
+    return tail;
+  }
+  return "";
+}
+
+/**
+ * `url_encode`: the text percent-encoded as `encodeURIComponent` writes it, with a space written as `+`, as
+ * LiquidJS does. A lone surrogate is written as U+FFFD first, so the encoding never throws. The bytes are
+ * counted before the text is built: a character outside the unreserved set takes three bytes per byte.
+ */
+export function urlEncode(value: unknown, b: FilterBudget): string {
+  b.step();
+  const text = scalar(value, b).toWellFormed();
+  let bytes = 0;
+  for (const character of text) {
+    bytes += /[A-Za-z0-9\-_.!~*'() ]/.test(character) ? 1 : 3 * byteLength(character);
+  }
+  b.charge(bytes);
+  return encodeURIComponent(text).replaceAll("%20", "+");
+}

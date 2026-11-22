@@ -321,9 +321,9 @@ async function save(f: TxFixture, body: string) {
 
 test("a save names an unknown filter and points to template_reference", async () => {
   const f = await open();
-  const refused = await save(f, "{{ data.list | first }}");
+  const refused = await save(f, "{{ data.list | sort }}");
   expect(refused.status).toBe(400);
-  expect(refused.body.message).toContain('unknown filter "first" (see template_reference)');
+  expect(refused.body.message).toContain('unknown filter "sort" (see template_reference)');
 });
 
 test("a save refuses a for loop whose collection has a filter, which would be dropped", async () => {

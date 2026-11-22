@@ -10,15 +10,19 @@ import type { TemplateData } from "@/templates/data";
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 import {
   append,
+  arithmetic,
   byteLength,
   capitalize,
   downcase,
+  first,
   join,
   json,
   kindOf,
+  last,
   prepend,
   replace,
   replaceFirst,
+  round,
   scalar,
   sizeOf,
   slice,
@@ -26,6 +30,7 @@ import {
   stripHtml,
   truncate,
   truncatewords,
+  urlEncode,
   ValueError,
 } from "@/templates/filters";
 import type { FilterBudget } from "@/templates/filters";
@@ -61,6 +66,15 @@ const filterArguments = new Map([
   ["truncate", 2],
   ["truncatewords", 2],
   ["strip_html", 0],
+  ["plus", 1],
+  ["minus", 1],
+  ["times", 1],
+  ["divided_by", 1],
+  ["round", 1],
+  ["first", 0],
+  ["last", 0],
+  ["newline_to_br", 0],
+  ["url_encode", 0],
 ]);
 /** The filters the renderer registers, in the order of its arity table (the documented allow-list). */
 export const registeredFilters: ReadonlyArray<string> = [...filterArguments.keys()];
@@ -294,6 +308,20 @@ export interface RenderTracking {
   readonly link?: (url: string) => string;
 }
 const attribute = (value: string) => value.replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+/** The bytes an HTML output of `text` takes, counted before it is escaped (D54). */
+function escapedBytes(text: string): number {
+  let size = 0;
+  for (const c of text) {
+    size += c === "&" ? 5 : c === "<" || c === ">" ? 4 : c === '"' || c === "'" ? 5 : byteLength(c);
+  }
+  return size;
+}
+/** `text` with the characters HTML escapes written as references, as the HTML output does. */
+function escapeHtml(text: string): string {
+  return text.replaceAll(/[&<>"']/g, (c) =>
+    must({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" }[c], "escape"),
+  );
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const MONTHS = [
@@ -492,16 +520,10 @@ export function createRenderer(clock: Clock, translation: Translation) {
     // The HTML engine escapes output; the plain-text engine has no escape option at all.
     if (html) {
       options.outputEscape = function outputEscape(this: { context: Context }, value: unknown) {
-        const input = scalar(value, budget(this.context));
-        let size = 0;
-        for (const c of input) {
-          size +=
-            c === "&" ? 5 : c === "<" || c === ">" ? 4 : c === '"' || c === "'" ? 5 : byteLength(c);
-        }
-        budget(this.context).charge(size);
-        return input.replaceAll(/[&<>"']/g, (c) =>
-          must({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" }[c], "escape"),
-        );
+        const b = budget(this.context);
+        const input = scalar(value, b);
+        b.charge(escapedBytes(input));
+        return escapeHtml(input);
       };
     }
     const liquid = new Liquid(options);
@@ -687,6 +709,50 @@ export function createRenderer(clock: Clock, translation: Translation) {
     );
     liquid.registerFilter("strip_html", function (value: unknown) {
       return stripHtml(value, budget(this.context));
+    });
+    liquid.registerFilter("plus", function (value: unknown, argument: unknown) {
+      return arithmetic("plus", value, argument, budget(this.context));
+    });
+    liquid.registerFilter("minus", function (value: unknown, argument: unknown) {
+      return arithmetic("minus", value, argument, budget(this.context));
+    });
+    liquid.registerFilter("times", function (value: unknown, argument: unknown) {
+      return arithmetic("times", value, argument, budget(this.context));
+    });
+    liquid.registerFilter("divided_by", function (value: unknown, argument: unknown) {
+      return arithmetic("divided_by", value, argument, budget(this.context));
+    });
+    liquid.registerFilter("round", function (value: unknown, digits: unknown) {
+      return round(value, digits, budget(this.context));
+    });
+    liquid.registerFilter("first", function (value: unknown) {
+      return first(value, budget(this.context));
+    });
+    liquid.registerFilter("last", function (value: unknown) {
+      return last(value, budget(this.context));
+    });
+    liquid.registerFilter("url_encode", function (value: unknown) {
+      return urlEncode(value, budget(this.context));
+    });
+    // A raw filter: its output is not escaped again, so it escapes its own text in an HTML output (as
+    // every other value is escaped there) before it writes each line break as `<br />`.
+    liquid.registerFilter("newline_to_br", {
+      raw: true,
+      handler(value) {
+        const b = budget(this.context);
+        b.step();
+        const text = scalar(value, b);
+        let breaks = 0;
+        for (const c of text) {
+          if (c === "\n") {
+            breaks++;
+          }
+        }
+        b.step(breaks);
+        // Each break grows to `<br />` and its newline, seven bytes; the escaped text is charged first.
+        b.charge((html ? escapedBytes(text) : byteLength(text)) + breaks * 7);
+        return (html ? escapeHtml(text) : text).replaceAll(/\r?\n/g, "<br />\n");
+      },
     });
     liquid.registerFilter("number", function (value: unknown) {
       const b = budget(this.context);
