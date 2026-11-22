@@ -232,7 +232,6 @@ export default defineConfig({
         curly: "off",
         "typescript/array-type": "off",
         "unicorn/numeric-separators-style": "off",
-        "unicorn/prefer-number-properties": "off",
         "no-useless-assignment": "off",
         "typescript/require-array-sort-compare": "off",
         "unicorn/prefer-top-level-await": "off",
