@@ -372,36 +372,58 @@ function unsupportedDirective(format: string): string | undefined {
   }
   return undefined;
 }
-/** The UTC date a format writes. Every directive has been checked by `unsupportedDirective`. */
-function formatDate(format: string, date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth();
-  const day = date.getUTCDate();
+/** The text one directive writes for a UTC date. Only the directive asked for is computed. */
+function directive(key: string, date: Date): string {
   const hour = date.getUTCHours();
+  const month = date.getUTCMonth();
   const weekday = date.getUTCDay();
-  const startOfYear = Date.UTC(year, 0, 1);
-  const dayOfYear = Math.floor((Date.UTC(year, month, day) - startOfYear) / 86_400_000) + 1;
-  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-  const values = new Map<string, string>([
-    ["%", "%"],
-    ["Y", String(year)],
-    ["y", pad(year % 100)],
-    ["m", pad(month + 1)],
-    ["d", pad(day)],
-    ["-d", String(day)],
-    ["e", String(day).padStart(2, " ")],
-    ["H", pad(hour)],
-    ["I", pad(hour12)],
-    ["M", pad(date.getUTCMinutes())],
-    ["S", pad(date.getUTCSeconds())],
-    ["p", hour < 12 ? "AM" : "PM"],
-    ["b", must(MONTHS[month], "month").slice(0, 3)],
-    ["B", must(MONTHS[month], "month")],
-    ["a", must(WEEKDAYS[weekday], "weekday").slice(0, 3)],
-    ["A", must(WEEKDAYS[weekday], "weekday")],
-    ["j", String(dayOfYear).padStart(3, "0")],
-  ]);
-  return format.replaceAll(/%(-d|.)/g, (_, key: string) => must(values.get(key), "date directive"));
+  switch (key) {
+    case "%":
+      return "%";
+    case "Y":
+      return String(date.getUTCFullYear());
+    case "y":
+      return pad(date.getUTCFullYear() % 100);
+    case "m":
+      return pad(month + 1);
+    case "d":
+      return pad(date.getUTCDate());
+    case "-d":
+      return String(date.getUTCDate());
+    case "e":
+      return String(date.getUTCDate()).padStart(2, " ");
+    case "H":
+      return pad(hour);
+    case "I":
+      return pad(hour % 12 === 0 ? 12 : hour % 12);
+    case "M":
+      return pad(date.getUTCMinutes());
+    case "S":
+      return pad(date.getUTCSeconds());
+    case "p":
+      return hour < 12 ? "AM" : "PM";
+    case "b":
+      return must(MONTHS[month], "month").slice(0, 3);
+    case "B":
+      return must(MONTHS[month], "month");
+    case "a":
+      return must(WEEKDAYS[weekday], "weekday").slice(0, 3);
+    case "A":
+      return must(WEEKDAYS[weekday], "weekday");
+    case "j": {
+      const year = date.getUTCFullYear();
+      const startOfYear = Date.UTC(year, 0, 1);
+      const day = Date.UTC(year, month, date.getUTCDate());
+      return String(Math.floor((day - startOfYear) / 86_400_000) + 1).padStart(3, "0");
+    }
+    default:
+      // Every directive has been checked by `unsupportedDirective`, so this is not reached.
+      return key;
+  }
+}
+/** The UTC date a format writes, one directive at a time. */
+function formatDate(format: string, date: Date): string {
+  return format.replaceAll(/%(-d|.)/g, (_, key: string) => directive(key, date));
 }
 function hasContent(templates: Array<Template>): boolean {
   for (const tpl of templates) {
