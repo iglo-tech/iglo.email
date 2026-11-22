@@ -307,6 +307,53 @@ export default defineConfig({
       ],
       rules: { "typescript/no-unsafe-member-access": "off" },
     },
+    // Exceptions, for the lead to decide at review (no-unsafe-assignment). Settings values are `any` per key (D132:
+    // a per-key schema is a separate design); these files assign single settings values or the settings record.
+    {
+      files: [
+        "src/main.ts",
+        "src/public/settings.ts",
+        "src/settings/routes.ts",
+        "src/settings/validate.ts",
+        "src/settings/xml.ts",
+        "src/unsubscribe/policy.ts",
+      ],
+      rules: { "typescript/no-unsafe-assignment": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-assignment). These parse stored JSON columns, request
+    // bodies, a journal payload or SQL rows, which are `any` until the handler or check that owns them validates
+    // them. A per-payload schema is a separate design, and a new guard would change how stored data that the writer
+    // already accepted is read.
+    {
+      files: [
+        "src/analytics/store.ts",
+        "src/bounces/routes.ts",
+        "src/campaigns/routes.ts",
+        "src/campaigns/runner/runner.ts",
+        "src/lists/store.ts",
+        "src/messaging/payload.ts",
+        "src/messaging/test.ts",
+        "src/public/archive.tsx",
+        "src/public/mail.ts",
+        "src/subscribers/email.ts",
+        "src/subscribers/store.ts",
+        "src/tx/routes.ts",
+      ],
+      rules: { "typescript/no-unsafe-assignment": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-unsafe-assignment). `Object.create` is typed as returning `any`,
+    // so a null-prototype dictionary (the one that keeps lookups such as `constructor` from resolving) takes its type
+    // from the declaration, and the object is built with the same keys in the same order.
+    {
+      files: [
+        "src/i18n/i18n.ts",
+        "src/server/router.ts",
+        "src/templates/data.ts",
+        "src/templates/renderer.ts",
+        "src/tx/input.ts",
+      ],
+      rules: { "typescript/no-unsafe-assignment": "off" },
+    },
     // Exceptions, for the lead to decide at review (no-unsafe-return). `main.ts` returns single settings values
     // (`Record<string, any>`, one type per key: D132's per-key schema is a separate design). `validate.ts` binds a
     // settings value to its shape, which is `any` by design.
@@ -339,7 +386,6 @@ export default defineConfig({
     // B134d/B134e: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed:
     // B134e takes the typescript/no-unsafe-* rules, B134d takes the rest.
     "typescript/no-non-null-assertion": "off", // B134d
-    "typescript/no-unsafe-assignment": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
 
     // B134c: findings remain only in test/.
