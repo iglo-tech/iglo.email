@@ -8,6 +8,7 @@ import type { Translation } from "@/i18n/i18n";
 import { parseTemplateData } from "@/templates/data";
 import type { TemplateData } from "@/templates/data";
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
+import { byteLength, scalar, sizeOf } from "@/templates/filters";
 
 const SOURCE_LIMIT = 64 * 1024;
 const OUTPUT_LIMIT = 1024 * 1024;
@@ -26,8 +27,10 @@ const filterArguments = new Map([
   ["date", 1],
   ["track_link", 0],
   ["number", 0],
+  ["size", 0],
 ]);
-const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
+/** The filters the renderer registers, in the order of its arity table (the documented allow-list). */
+export const registeredFilters: ReadonlyArray<string> = [...filterArguments.keys()];
 
 export class TemplateSourceError extends Error {
   constructor(readonly field: "body" | "subject" | "slot") {
@@ -88,18 +91,6 @@ class BoundedEmitter implements Emitter {
     this.bytes += n;
     this.buffer += string;
   }
-}
-function scalar(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
-    return String(value);
-  }
-  throw new Error("Invalid value");
 }
 function url(value: unknown): string {
   const text = scalar(value);
@@ -392,6 +383,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
       const out = fmt.replaceAll(/%(.)/g, (_, key: string) => String(values.get(key)));
       b.charge(byteLength(out));
       return out;
+    });
+    liquid.registerFilter("size", function (value: unknown) {
+      return sizeOf(value, budget(this.context));
     });
     liquid.registerFilter("number", function (value: unknown) {
       const b = budget(this.context);
