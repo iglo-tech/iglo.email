@@ -164,7 +164,7 @@ export function createWebhookEffects(
      * A bounce of an address the send's subscriber has left names no list: the row is stored
      * for no subscriber, so their wipe could not clear it.
      */
-    bounceRecorded(bounce: RecordedBounce) {
+    bounceRecorded: (bounce: RecordedBounce) => {
       webhooks.queueWebhook("bounce.recorded", () => {
         const { id, type, source, subscriber_id, campaign_uuid, send } = bounce;
         const row = subscriber_id === null ? null : subscribers().get(subscriber_id);
@@ -182,7 +182,7 @@ export function createWebhookEffects(
       });
     },
     /** A send became `failed` or `unknown`. An unlinked address stays out of the payload. */
-    sendEnded(send: EndedSend) {
+    sendEnded: (send: EndedSend) => {
       webhooks.queueWebhook("send.failed", () => {
         const id = send.subscriber_id;
         const row = id === null ? null : subscribers().get(id);

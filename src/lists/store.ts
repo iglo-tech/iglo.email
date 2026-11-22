@@ -203,7 +203,7 @@ export function createListStore(
       });
     },
     /** update-lists-date. */
-    touch(ids: Array<bigint>) {
+    touch: (ids: Array<bigint>) => {
       queries.get("lists-touch").run(clock.now().toISOString(), `[${ids.join(",")}]`);
     },
     close: () => queries.close(),

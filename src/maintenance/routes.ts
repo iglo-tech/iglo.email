@@ -46,8 +46,8 @@ export function registerMaintenanceRoutes(
     auth: Authentication;
     clock: Clock;
     /** Keeps the HTTP server from closing this request as idle while the work goes on. */
-    keepOpen(request: Request): void;
-    individualTracking(): boolean;
+    keepOpen: (request: Request) => void;
+    individualTracking: () => boolean;
   },
 ) {
   const { subscribers, analytics, logs, auth, clock, keepOpen, individualTracking } = deps;

@@ -327,7 +327,7 @@ export function createWebhookStore(db: Database, clock: Clock) {
         : null;
     },
     /** Delete up to `limit` finished deliveries past retention, oldest first. */
-    purge(now: Date, limit: number) {
+    purge: (now: Date, limit: number) => {
       const before = new Date(now.getTime() - DELIVERY_RETENTION_MS).toISOString();
       return q.get("delivery-purge").all(before, limit);
     },

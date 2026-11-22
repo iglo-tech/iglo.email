@@ -229,7 +229,7 @@ export interface BackupOptions {
   available?: (path: string) => number;
   /** Runs at the moment of publication; a test's way to race it. The command line never sets it. */
   beforePublish?: () => void;
-  warn(message: string): void;
+  warn: (message: string) => void;
 }
 
 function freeBytes(path: string): number {

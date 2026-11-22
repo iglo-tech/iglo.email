@@ -115,7 +115,10 @@ export function createEventAggregates(db: Database) {
      * Values are JSON numbers and are never truncated: an aggregate that cannot be computed
      * exactly within its bounds returns `{ ok: false, limit: true }` and no total at all.
      */
-    evaluate(aggregates: Record<string, Aggregate>, context: ConditionContext): AggregateResult {
+    evaluate: (
+      aggregates: Record<string, Aggregate>,
+      context: ConditionContext,
+    ): AggregateResult => {
       let id: bigint, now: number;
       try {
         id = subscriberID(context.subscriberId);

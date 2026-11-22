@@ -59,9 +59,9 @@ export interface AdminRequest {
   readonly identity: Identity;
   readonly site: AdminSite;
   /** True for any of the permissions; a trailing `*` matches a prefix, as upstream's `Can`. */
-  can(...permissions: Array<string>): boolean;
+  can: (...permissions: Array<string>) => boolean;
   /** The lists this user holds a list permission on. */
-  listScope(permission: "list:get" | "list:manage"): { all: boolean; ids: Array<bigint> };
+  listScope: (permission: "list:get" | "list:manage") => { all: boolean; ids: Array<bigint> };
 }
 /** A view answers with a page, or a Response for what is not one (a redirect). */
 export type AdminView = (

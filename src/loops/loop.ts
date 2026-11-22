@@ -14,7 +14,7 @@ export interface LoopOptions<T> {
   /** The wait after a nonempty batch, for loops that must leave the writer to others. */
   readonly pauseMs?: number | undefined;
   readonly signal?: AbortSignal | undefined;
-  claim(now: Date, leaseUntil: Date, batchSize: number): ReadonlyArray<T>;
+  claim: (now: Date, leaseUntil: Date, batchSize: number) => ReadonlyArray<T>;
   process(item: T): Promise<void> | void;
 }
 

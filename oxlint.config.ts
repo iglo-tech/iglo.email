@@ -170,7 +170,6 @@ export default defineConfig({
     "typescript/no-unsafe-member-access": "off", // B134e
     "typescript/no-unsafe-return": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
-    "typescript/unbound-method": "off", // B134d
     "quality/no-conditional-empty-object-spread": "off", // B134d
     "quality/no-known-value-widening": "off", // B134d
     "quality/no-unsafe-dictionary-type": "off", // B134d
