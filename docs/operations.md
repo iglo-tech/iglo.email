@@ -1246,7 +1246,9 @@ The first two are what a reader can do on a public page; the last is an operator
   blocklist: a person who ticks it still receives receipts, payment reminders and password resets. It writes the same
   suppression a self-wipe writes (keyed hashes, no address), so a later event, create or import does not put the person
   back on a marketing list, until they confirm through a double opt-in mail or an operator removes it with
-  `DELETE /api/suppressions`. It is offered only while `privacy.allow_blocklist` is on. The admin blocklist, which an
+  `DELETE /api/suppressions`. It is offered only while `privacy.allow_blocklist` is on. That key keeps listmonk's name, but it
+  now only switches this option on or off: the admin's label reads "Offer unsubscribe from all lists", and nothing it does
+  blocklists anyone. The admin blocklist, which an
   operator sets on the subscriber, still stops every mail, transactional included.
 - **For integrators.** The all-lists option writes the marketing suppression, and that suppression stays until the
   person confirms through a double opt-in mail or an operator runs `DELETE /api/suppressions`. While it stands:
