@@ -375,7 +375,8 @@ describe("B79 hand-written MCP tools take every field of their operations (D98)"
     });
     expect(sent.isError).toBeFalsy();
 
-    const mail = await mailbox.one(email, "B79 Test Send Subject");
+    // D124: a campaign test's subject starts with "[Test] ".
+    const mail = await mailbox.one(email, "[Test] B79 Test Send Subject");
     expect(mail.body).toContain("B79-LAYOUT-CHOSEN");
     expect(mail.body).not.toContain("B79-LAYOUT-STORED");
   }, 60_000);

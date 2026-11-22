@@ -42,8 +42,10 @@ export class Mailpit {
       }>(await this.request(`/api/v1/search?${query}`));
       const messages = result.messages ?? [];
       for (const message of messages) {
+        // The search matches the marker anywhere in a subject; a campaign test's subject starts with
+        // `[Test] ` (D124), so the marker is checked as contained, not as a prefix.
         assert.ok(
-          message.Subject.startsWith(this.marker),
+          message.Subject.includes(this.marker),
           "search returned a message outside this invocation",
         );
         found.push(message);

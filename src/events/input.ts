@@ -15,6 +15,12 @@ const MAX_DATA_BYTES = 32 * 1024;
 const MAX_DEPTH = 32;
 /** Most lists one event may grant (D99). */
 export const MAX_GRANT_LISTS = 20;
+/**
+ * How far an event's `occurred_at` may lie ahead of the server clock (D124). Within it the time is
+ * accepted as given; beyond it the event is refused, since a time far ahead would hold its first
+ * step back for days.
+ */
+export const MAX_OCCURRED_AHEAD_MS = 15 * 60_000;
 
 export interface EventInput {
   subscriber: EventSubscriber;
@@ -195,8 +201,11 @@ function grantedLists(value: unknown): Array<bigint> {
   return value.map(BigInt);
 }
 
-/** Validate one event object without touching storage. */
-export function eventInput(value: unknown): EventInput {
+/**
+ * Validate one event object without touching storage. `receivedAt` is the server clock at receipt:
+ * an `occurred_at` more than MAX_OCCURRED_AHEAD_MS after it is refused (D124).
+ */
+export function eventInput(value: unknown, receivedAt: Date): EventInput {
   if (!isObject(value)) {
     throw new EventInputError("event");
   }
@@ -261,7 +270,7 @@ export function eventInput(value: unknown): EventInput {
   const event: EventInput = { subscriber, grantLists, name, data };
   if (!optional(value.occurred_at)) {
     const at = typeof value.occurred_at === "string" && parseOccurredAt(value.occurred_at);
-    if (!at) {
+    if (!at || Date.parse(at) > receivedAt.getTime() + MAX_OCCURRED_AHEAD_MS) {
       throw new EventInputError("occurred_at");
     }
     event.occurredAt = at;

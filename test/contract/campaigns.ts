@@ -738,6 +738,8 @@ export async function runCampaignsContract(target: {
       { name: `${marker} test`, subject: "Stored", lists: [news.id], body: "<p>Stored</p>" },
       "test-create",
     );
+    // D124: a production test's mail subject starts with `[Test] `; upstream's is the subject given.
+    const mailSubject = (subject: string) => (reference ? subject : `[Test] ${subject}`);
     const testSubject = `${marker} Hi ${tpl.name}`;
     const testBody = `<p>Dear ${tpl.first} <a href="${tpl.track("https://example.test/x?a=1&b=2")}">x</a> <a href="${tpl.unsubscribe}">Leave</a></p>`;
     const sent = await call(`/api/campaigns/${testCampaign.id}/test`, "POST", {
@@ -753,7 +755,7 @@ export async function runCampaignsContract(target: {
       subscribers: [` ${ada.email.toUpperCase()} `],
     });
     check(sent.status === 200 && sent.body.data === true, "test-send");
-    const mails = await received(`${marker} Hi Ada Lovelace`);
+    const mails = await received(mailSubject(`${marker} Hi Ada Lovelace`));
     check(mails.length === 1, "test-received");
     const mail = await mailpit.message(mails[0]!.ID);
     const raw = await mailpit.raw(mails[0]!.ID);
@@ -858,7 +860,7 @@ export async function runCampaignsContract(target: {
       subscribers: [bob.email],
     });
     check(plainSent.status === 200, "test-plain");
-    const plainMail = await received(`${marker} Plain`);
+    const plainMail = await received(mailSubject(`${marker} Plain`));
     check(plainMail.length === 1, "test-plain-received");
     const plainMessage = await mailpit.message(plainMail[0]!.ID);
     check(
