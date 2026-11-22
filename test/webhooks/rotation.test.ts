@@ -162,6 +162,24 @@ test("overlap_hours is an integer from 0 to 168, and a bad body changes nothing"
   );
 });
 
+test("the body holds only overlap_hours: a supplied secret or any other key is refused, and nothing rotates", async () => {
+  const f = await open();
+  const r = receiver();
+  const created = await hook(f, r);
+  for (const { body, key } of [
+    { body: { overlap_hours: 1, secret: "x".repeat(32) }, key: "secret" },
+    { body: { secret: "x".repeat(32) }, key: "secret" },
+    { body: { overlap_hours: 1, unknown: true }, key: "unknown" },
+    { body: { overlap_hours: 1, overlap: 2 }, key: "overlap" },
+  ]) {
+    const refused = await rotate(f, created.id, body);
+    expect(refused.status).toBe(400);
+    expect(refused.body.code).toBe("invalid_fields");
+    expect(refused.body.message).toBe(`Invalid fields: ${key}`);
+  }
+  expect((await listed(f, created.id)).previous_secret_until).toBeNull();
+});
+
 test("an empty body uses the default window, and a missing webhook is 404", async () => {
   const f = await open();
   const r = receiver();

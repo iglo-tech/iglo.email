@@ -70,7 +70,10 @@ const validEvents = (c: RequestContext, value: unknown) => {
   }
   return [...new Set(value)];
 };
-/** The optional body of a rotation: nothing, or a JSON object. */
+/**
+ * The optional body of a rotation: nothing, or a JSON object whose only key is `overlap_hours`. The
+ * new secret is generated here, so a supplied `secret` is refused, as PUT refuses it (D130).
+ */
 const rotation = async (c: RequestContext) => {
   const bytes = await readBounded(c.request, BODY_BYTES);
   if (!bytes.length) {
@@ -79,6 +82,10 @@ const rotation = async (c: RequestContext) => {
   const value = parseJson(c.request, bytes);
   if (!isObject(value)) {
     throw invalid(c, "body");
+  }
+  const unknown = Object.keys(value).find((key) => key !== "overlap_hours");
+  if (unknown !== undefined) {
+    throw invalid(c, unknown);
   }
   return value;
 };
