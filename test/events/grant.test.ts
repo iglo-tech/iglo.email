@@ -3,6 +3,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { createTranslation } from "@/i18n/i18n";
 import { eventsFixture } from "@/test/events/fixture";
+import type { JsonObject, JsonValue } from "@/test/json-object";
 import type { EventsFixture } from "@/test/events/fixture";
 
 const fixtures: Array<EventsFixture> = [];
@@ -16,7 +17,7 @@ async function open(language = "en") {
   fixtures.push(f);
   return f;
 }
-const order = (subscriber: object, extra: object = {}) => ({
+const order = (subscriber: JsonObject, extra: JsonObject = {}) => ({
   subscriber,
   name: "order_paid",
   ...extra,
@@ -139,7 +140,7 @@ test("invalid grant lists are a 400 with no write", async () => {
   const news = await f.list("news");
   const double = await f.list("double", "double");
   const many = Array.from({ length: 21 }, (_, i) => news + i);
-  const cases: Array<unknown> = [
+  const cases: Array<JsonValue> = [
     [],
     [news, news],
     [news, 1.5],

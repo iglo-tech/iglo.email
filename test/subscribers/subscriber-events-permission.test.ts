@@ -6,6 +6,8 @@ import { afterEach, expect, test } from "bun:test";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
 
+const path = (id: number) => `/api/subscribers/${id}/subscriber-events`;
+
 const fixtures: Array<QueryFixture> = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
@@ -48,7 +50,6 @@ test("subscriber events need subscriber_events:get on REST, with the subscriber 
   );
   const eventsOnly = await f.apiUser("events-only", ["subscriber_events:get"], scope);
 
-  const path = (id: number) => `/api/subscribers/${id}/subscriber-events`;
   // The permission is missing: refused whatever the list scope.
   const refused = await f.json(path(inside), "GET", undefined, reader);
   expect([refused.status, refused.body.message]).toEqual([

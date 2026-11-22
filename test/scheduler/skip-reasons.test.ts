@@ -4,6 +4,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { ascending } from "@/test/order";
 import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
 const fixtures: Array<SchedulerFixture> = [];
@@ -17,19 +18,20 @@ async function open() {
   fixtures.push(f);
   return f;
 }
-const tx = (template: number, extra: object = {}) => ({
+const tx = (template: number, extra: JsonObject = {}) => ({
   wait: "PT0S",
   kind: "transactional",
   template_id: template,
   ...extra,
 });
-const mk = (template: number, extra: object = {}) => ({
+const mk = (template: number, extra: JsonObject = {}) => ({
   wait: "PT0S",
   kind: "marketing",
   template_id: template,
   ...extra,
 });
-const event = (f: SchedulerFixture, body: object) => f.json("/api/subscriber-events", "POST", body);
+const event = (f: SchedulerFixture, body: JsonObject) =>
+  f.json("/api/subscriber-events", "POST", body);
 
 test("a blocklisted person's event names each sequence it would start, marketing or transactional, and starts none", async () => {
   const f = await open();

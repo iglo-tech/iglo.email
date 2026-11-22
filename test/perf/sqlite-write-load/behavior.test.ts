@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { startSpikeFixture } from "@/test/perf/sqlite-write-load/fixture";
 
-async function request(origin: string, input: object) {
+async function request(origin: string, input: unknown) {
   const response = await fetch(`${origin}/synthetic/write-load`, {
     method: "POST",
     body: JSON.stringify(input),

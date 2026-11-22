@@ -7,6 +7,12 @@ import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 import { startSink } from "@/test/tx/sink";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL bounces-${label}`);
+  }
+};
+
 export async function runBouncesContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -16,11 +22,6 @@ export async function runBouncesContract(target: {
 }) {
   const reference = target.mode === "reference";
   const suffix = crypto.randomUUID().slice(0, 8);
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL bounces-${label}`);
-    }
-  };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
     path: string,

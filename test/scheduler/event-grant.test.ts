@@ -2,6 +2,7 @@
 // first step sends when granted and ends unsubscribed when the grant is missing or refused.
 import { afterEach, expect, test } from "bun:test";
 import { schedulerFixture } from "@/test/scheduler/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
 const fixtures: Array<SchedulerFixture> = [];
@@ -16,7 +17,7 @@ async function open() {
   return f;
 }
 const mk = (template: number) => ({ wait: "PT0S", kind: "marketing", template_id: template });
-const order = (subscriber: object) => ({ subscriber, name: "order_paid" });
+const order = (subscriber: JsonObject) => ({ subscriber, name: "order_paid" });
 
 /** Wait until the outbox has journaled every send and `count` messages reached the sink. */
 async function delivered(f: SchedulerFixture, count: number) {

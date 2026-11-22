@@ -1,30 +1,12 @@
 // Raw-query time limit, admission and large-selection limits through the HTTP API.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { childPids } from "@/test/host-processes";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
 
 const q = (fragment: string) => encodeURIComponent(fragment);
 
-// Child processes of this test process, from /proc.
-function children(): Array<number> {
-  const out: Array<number> = [];
-  for (const entry of readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) {
-      continue;
-    }
-    try {
-      const status = readFileSync(`/proc/${entry}/status`, "utf-8");
-      if (new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(status)) {
-        out.push(Number(entry));
-      }
-    } catch {
-      /* exited meanwhile */
-    }
-  }
-  return out;
-}
 const get = (f: QueryFixture, path: string) => f.request(path, { headers: f.sessionHeaders });
 /** The response, or "pending" if it has not arrived within `ms`. */
 const within = <T>(promise: Promise<T>, ms: number) =>
@@ -52,12 +34,12 @@ describe("raw-query time limit and admission", () => {
   });
 
   test("the deadline holds while the reader is paused and ends the response", async () => {
-    const before = children().length;
+    const before = childPids().length;
     // Both exports start (their statements are validated), then nobody reads them.
     const first = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     const second = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     expect([first.status, second.status]).toEqual([200, 200]);
-    expect(children().length).toBe(before + 2);
+    expect(childPids().length).toBe(before + 2);
     // A third raw query does not queue indefinitely behind them.
     const started = performance.now();
     const third = await within(f.json(`/api/subscribers?query=${q("1=1")}`), 3000);
@@ -67,7 +49,7 @@ describe("raw-query time limit and admission", () => {
     });
     expect(performance.now() - started).toBeLessThan(900);
     // At the deadline both children are killed and reaped without any read.
-    const reaped = await until(() => children().length === before, 3000);
+    const reaped = await until(() => childPids().length === before, 3000);
     try {
       expect(reaped).toBe(true);
       expect(
@@ -113,12 +95,12 @@ describe("large selections and unread responses", () => {
   });
 
   test("unread raw exports release their child slots when the children exit", async () => {
-    const before = children().length;
+    const before = childPids().length;
     const first = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     const second = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     try {
       expect([first.status, second.status]).toEqual([200, 200]);
-      expect(await until(() => children().length === before, 3000)).toBe(true);
+      expect(await until(() => childPids().length === before, 3000)).toBe(true);
       // Child slots are free: a raw page query runs at once.
       const page = await within(f.json(`/api/subscribers?query=${q("1=1")}`), 3000);
       expect(page === "pending" ? page : [page.status, page.body.data.total]).toEqual([200, 3]);

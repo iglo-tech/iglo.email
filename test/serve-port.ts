@@ -25,7 +25,12 @@ export async function stderrDrained(child: ChildProcess): Promise<void> {
   if (!stream || stream.readableEnded || stream.destroyed) {
     return;
   }
-  await Promise.race([new Promise((done) => stream.once("end", done)), Bun.sleep(1000)]);
+  await Promise.race([
+    new Promise((done) => {
+      stream.once("end", done);
+    }),
+    Bun.sleep(1000),
+  ]);
 }
 
 async function freeLoopbackPort(): Promise<number> {
@@ -38,9 +43,9 @@ async function freeLoopbackPort(): Promise<number> {
   if (!address || typeof address === "string") {
     throw new Error("Unable to reserve a loopback port");
   }
-  await new Promise<void>((resolve, reject) =>
-    socket.close((error) => (error ? reject(error) : resolve())),
-  );
+  await new Promise<void>((resolve, reject) => {
+    socket.close((error) => (error ? reject(error) : resolve()));
+  });
   return address.port;
 }
 
@@ -93,8 +98,27 @@ export async function restartOnPort<T>(
   }
 }
 
-/** Whether process `pid` itself listens on loopback `port`. Linux only, like the MVP. */
+/**
+ * Whether process `pid` itself listens on loopback `port`. Linux reads /proc; macOS, the owner's
+ * workstation, asks lsof for the listening sockets of that one process.
+ */
 export function listensOn(pid: number, port: number): boolean {
+  return process.platform === "darwin" ? listensOnWithLsof(pid, port) : listensOnProc(pid, port);
+}
+
+/** macOS: lsof lists the TCP listeners of `pid` on `port`; it prints that pid only if it has one. */
+function listensOnWithLsof(pid: number, port: number): boolean {
+  const result = Bun.spawnSync({
+    cmd: ["/usr/sbin/lsof", "-nP", "-a", "-p", String(pid), `-iTCP:${port}`, "-sTCP:LISTEN", "-t"],
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const printed = result.stdout.toString().split("\n");
+  return printed.some((line) => line.trim() === String(pid));
+}
+
+/** Linux: /proc/net/tcp* lists the sockets listening on `port`, and the pid's fds map to them. */
+function listensOnProc(pid: number, port: number): boolean {
   try {
     const hex = port.toString(16).toUpperCase().padStart(4, "0");
     const inodes = new Set<string>();

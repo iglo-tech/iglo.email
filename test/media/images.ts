@@ -1,19 +1,20 @@
 // Small valid images, built byte by byte, for media tests.
 import { crc32, deflateSync } from "node:zlib";
 
+const chunk = (type: string, data: Buffer) => {
+  const body = Buffer.concat([Buffer.from(type), data]);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const check = Buffer.alloc(4);
+  check.writeUInt32BE(crc32(body));
+  return Buffer.concat([length, body, check]);
+};
+
 const bytes = (hex: string) => Buffer.from(hex.replaceAll(/\s/g, ""), "hex");
 
 export const imagePngSize = { width: 3, height: 2 };
 export const imagePng = Uint8Array.from(
   (() => {
-    const chunk = (type: string, data: Buffer) => {
-      const body = Buffer.concat([Buffer.from(type), data]);
-      const length = Buffer.alloc(4);
-      length.writeUInt32BE(data.length);
-      const check = Buffer.alloc(4);
-      check.writeUInt32BE(crc32(body));
-      return Buffer.concat([length, body, check]);
-    };
     const header = Buffer.alloc(13);
     header.writeUInt32BE(imagePngSize.width, 0);
     header.writeUInt32BE(imagePngSize.height, 4);

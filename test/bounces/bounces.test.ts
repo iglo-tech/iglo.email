@@ -7,6 +7,7 @@ import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import { bounceMessage, envelope, network, post } from "@/test/bounces/ses-fixture";
+import type { JsonObject } from "@/test/json-object";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -200,7 +201,7 @@ test("the provider route takes its rate limit before reading the body", async ()
   expect(rowsOf(f).length).toBe(0);
 });
 
-const sendTo = async (f: TxFixture, body: object) => {
+const sendTo = async (f: TxFixture, body: JsonObject) => {
   const sent = await f.tx({
     template_id: await f.template("<p>x</p>"),
     ...body,
@@ -308,7 +309,7 @@ test("an external send to a subscriber's address stays unlinked and acts on nobo
 
 test("POST /webhooks/bounce: a send_uuid is authoritative, and only then is the address bound", async () => {
   const f = await open();
-  const post = (body: object) =>
+  const post = (body: JsonObject) =>
     f.json("/webhooks/bounce", "POST", {
       type: "complaint",
       source: "api",

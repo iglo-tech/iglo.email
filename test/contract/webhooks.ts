@@ -15,17 +15,18 @@ const events = [
   "send.failed",
 ];
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL webhooks-${label}`);
+  }
+};
+
 export async function runWebhooksContract(target: {
   baseUrl: string;
   credentials: Credentials;
   restart: () => Promise<void>;
   dataDir: string;
 }) {
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL webhooks-${label}`);
-    }
-  };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
     path: string,

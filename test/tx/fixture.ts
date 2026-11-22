@@ -1,5 +1,6 @@
 // In-process production owners for POST /api/tx, with a loopback SMTP sink.
 import { fixturePageSite } from "@/test/public/site";
+import type { JsonObject } from "@/test/json-object";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,6 +74,8 @@ import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
 import type { Captcha } from "@/captcha/captcha";
+
+const open: Middleware = (_context, next) => next();
 
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
@@ -399,7 +402,6 @@ export async function txFixture(
       logger: app.logger,
       settings: getPublicSettings,
     });
-    const open: Middleware = (_context, next) => next();
     registerPublicRoutes(router, {
       db,
       lists,
@@ -458,7 +460,7 @@ export async function txFixture(
     }
     return created.body.data.id as number;
   };
-  const subscriber = async (email: string, name = "Fixture Person", extra: object = {}) => {
+  const subscriber = async (email: string, name = "Fixture Person", extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", { email, name, ...extra });
     if (created.status !== 200) {
       throw new Error(`subscriber ${created.status}`);

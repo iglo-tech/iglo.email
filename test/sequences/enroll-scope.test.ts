@@ -3,6 +3,7 @@
 // nothing. Through the HTTP API with scoped API users and an all-access reader for the checks.
 import { afterEach, expect, test } from "bun:test";
 import { sequencesFixture } from "@/test/sequences/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SequencesFixture } from "@/test/sequences/fixture";
 
 const fixtures: Array<SequencesFixture> = [];
@@ -18,7 +19,7 @@ async function open() {
 }
 const absent = { status: 404, body: { message: "Subscriber not found", code: "not_found" } };
 
-async function sequence(f: SequencesFixture, extra: object = {}) {
+async function sequence(f: SequencesFixture, extra: JsonObject = {}) {
   const tx = await f.template();
   const created = await f.json("/api/sequences", "POST", {
     name: "Scoped",

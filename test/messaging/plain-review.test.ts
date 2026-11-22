@@ -4,6 +4,17 @@ import { expect, test } from "bun:test";
 import { plainText } from "@/messaging/plain";
 import { createMessageBudget } from "@/templates/renderer";
 
+const time = async (n: number) => {
+  const html = nested.b(n);
+  const samples: Array<number> = [];
+  for (let run = 0; run < 3; run++) {
+    const started = performance.now();
+    await text(html);
+    samples.push(performance.now() - started);
+  }
+  return samples.sort((a, b) => a - b)[1]!;
+};
+
 const text = (html: string) => plainText(html, createMessageBudget());
 
 // B1: character references in an href decode once. `&amp;` is the HTML form of `&`, and the URL
@@ -225,16 +236,6 @@ for (const kind of Object.keys(nested) as Array<keyof typeof nested>) {
 }
 
 test("quadrupling nested <b> input costs at most about 6x: the cost is not the square", async () => {
-  const time = async (n: number) => {
-    const html = nested.b(n);
-    const samples: Array<number> = [];
-    for (let run = 0; run < 3; run++) {
-      const started = performance.now();
-      await text(html);
-      samples.push(performance.now() - started);
-    }
-    return samples.sort((a, b) => a - b)[1]!;
-  };
   const small = await time(Math.floor(MIB / 4 / 7));
   const large = await time(Math.floor(MIB / 7));
   expect(large / Math.max(small, 1)).toBeLessThan(6);

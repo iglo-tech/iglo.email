@@ -9,6 +9,10 @@ import { createSendCompaction } from "@/messaging/retention";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
+import type { JsonObject } from "@/test/json-object";
+
+const noop = () => {};
+const cookie = (id: string) => ({ cookie: `session=${id}` });
 
 const day = 86_400_000;
 const cleanups: Array<() => unknown> = [];
@@ -49,7 +53,7 @@ function paced(f: TxFixture, left: () => number, holdAfter = Infinity) {
   const yields: Array<number> = [];
   const pauses = new Set<number>();
   let idle = Promise.withResolvers<void>();
-  let resume = () => {};
+  let resume = noop;
   const clock: Clock = {
     now: () => f.clock.now(),
     sleep(milliseconds, signal) {
@@ -103,7 +107,7 @@ async function compactAll(f: TxFixture) {
   await pace.idle();
   await loop.stop();
 }
-function addSession(f: TxFixture, id: string, data: object, createdAt = f.clock.now()) {
+function addSession(f: TxFixture, id: string, data: JsonObject, createdAt = f.clock.now()) {
   f.db.run("INSERT INTO sessions(id, data, created_at) VALUES (?, ?, ?)", [
     id,
     JSON.stringify(data),
@@ -143,7 +147,6 @@ test("expired sessions go and valid ones stay", async () => {
     csrf: "c".repeat(43),
     expires_at: f.clock.now().getTime() + 1,
   });
-  const cookie = (id: string) => ({ cookie: `session=${id}` });
   expect((await f.json("/api/profile", "GET", undefined, cookie(old.id))).status).not.toBe(200);
   expect((await f.json("/api/profile", "GET", undefined, cookie(fresh.id))).status).toBe(200);
 

@@ -9,7 +9,19 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials, Mode } from "@/test/contract/types";
 
+const failed = async (response: Response, label: string, status = 400) => {
+  check(response.status === status, `${label}-status`);
+  const body = (await response.json()) as { message?: unknown };
+  check(typeof body.message === "string" && body.message.length > 0, `${label}-message`);
+};
+
 type SendRow = { id: number; uuid: string; status: string; smtp_message_id: string };
+
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL tx-${label}`);
+  }
+};
 
 export async function runTxContract(target: {
   mode: Mode;
@@ -23,11 +35,6 @@ export async function runTxContract(target: {
   const marker = `m08${randomBytes(10).toString("hex")}`;
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL tx-${label}`);
-    }
-  };
   const api = (path: string, method = "GET", body?: unknown) =>
     fetch(`${target.baseUrl}${path}`, {
       method,
@@ -97,11 +104,6 @@ export async function runTxContract(target: {
       );
     }
     return data.sends;
-  };
-  const failed = async (response: Response, label: string, status = 400) => {
-    check(response.status === status, `${label}-status`);
-    const body = (await response.json()) as { message?: unknown };
-    check(typeof body.message === "string" && body.message.length > 0, `${label}-message`);
   };
 
   const owned = {

@@ -921,7 +921,9 @@ describe("B37: send rate cap", () => {
         data: {},
         messenger: "email",
       });
-      await new Promise<void>((r) => setImmediate(r));
+      await new Promise<void>((r) => {
+        setImmediate(r);
+      });
 
       // Advance by 100ms (t=100)
       h.clock.advance(100);
@@ -1147,7 +1149,9 @@ describe("B37: send rate cap", () => {
       });
 
       // Let p2 queue in the limiter
-      await new Promise<void>((r) => setImmediate(r));
+      await new Promise<void>((r) => {
+        setImmediate(r);
+      });
 
       // Close emailer while p2 is waiting
       await h.emailer.close();
@@ -1305,7 +1309,9 @@ describe("B37: send rate cap", () => {
         data: {},
         messenger: "email",
       });
-      await new Promise<void>((r) => setImmediate(r));
+      await new Promise<void>((r) => {
+        setImmediate(r);
+      });
 
       // Main shutdown order: runner, outbox, emailer stop concurrently
       await Promise.allSettled([h.runner.stop(), h.outbox.stop(), h.emailer.close()]);

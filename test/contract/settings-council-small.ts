@@ -4,6 +4,12 @@ import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL settings-council-small-${label}`);
+  }
+}
+
 export async function runSettingsCouncilSmall(target: {
   mode: Mode;
   baseUrl: string;
@@ -20,11 +26,6 @@ export async function runSettingsCouncilSmall(target: {
       },
       target.mode === "reference",
     );
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL settings-council-small-${label}`);
-    }
-  }
   async function read() {
     const response = await request();
     check(response.status === 200, "read");

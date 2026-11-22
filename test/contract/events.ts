@@ -5,17 +5,18 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import type { Credentials } from "@/test/contract/types";
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL events-${label}`);
+  }
+};
+
 export async function runEventsContract(target: {
   baseUrl: string;
   credentials: Credentials;
   restart: () => Promise<void>;
   dataDir: string;
 }) {
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL events-${label}`);
-    }
-  };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
     path: string,

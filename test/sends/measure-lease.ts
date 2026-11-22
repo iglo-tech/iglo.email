@@ -62,7 +62,9 @@ for (let repetition = 1; repetition <= 3; repetition++) {
   const count = () =>
     db.query<{ n: number }, []>("SELECT count(*) AS n FROM sends WHERE status='sent'").get()!.n;
   while (count() < rows) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 5);
+    });
   }
   const ms = performance.now() - start;
   await outbox.stop();

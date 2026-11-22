@@ -3,6 +3,32 @@ import { createHmac, randomUUID } from "node:crypto";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { AuthTarget } from "@/test/contract/auth";
 
+function responseCookie(response: Response, name: string): string {
+  return (
+    response.headers
+      .getSetCookie()
+      .find((v) => v.startsWith(`${name}=`))
+      ?.split(";", 1)[0] ?? ""
+  );
+}
+function totp(secret: string): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const character of secret.replace(/=+$/, "")) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) {
+      throw new Error("FAIL factor-secret-format");
+    }
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((v) => Number.parseInt(v, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", key).update(counter).digest();
+  const offset = digest[19]! & 15;
+  return String((digest.readUInt32BE(offset) & 0x7f_ff_ff_ff) % 1_000_000).padStart(6, "0");
+}
+
 function check(value: unknown, name: string): asserts value {
   if (!value) {
     throw new Error(`FAIL ${name}`);
@@ -52,31 +78,6 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     check(Number.isSafeInteger(data.id) && data.id > 1, `role-create-${kind}-id`);
     owned.push(data.id);
     return data.id;
-  }
-  function responseCookie(response: Response, name: string): string {
-    return (
-      response.headers
-        .getSetCookie()
-        .find((v) => v.startsWith(`${name}=`))
-        ?.split(";", 1)[0] ?? ""
-    );
-  }
-  function totp(secret: string): string {
-    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    let bits = "";
-    for (const character of secret.replace(/=+$/, "")) {
-      const index = alphabet.indexOf(character);
-      if (index < 0) {
-        throw new Error("FAIL factor-secret-format");
-      }
-      bits += index.toString(2).padStart(5, "0");
-    }
-    const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((v) => Number.parseInt(v, 2)));
-    const counter = Buffer.alloc(8);
-    counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
-    const digest = createHmac("sha1", key).update(counter).digest();
-    const offset = digest[19]! & 15;
-    return String((digest.readUInt32BE(offset) & 0x7f_ff_ff_ff) % 1_000_000).padStart(6, "0");
   }
   async function login(username: string, password: string) {
     const page = await fetch(`${target.baseUrl}/admin/login`);

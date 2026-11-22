@@ -3,6 +3,21 @@ import { createConnection } from "node:net";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
+async function denied(response: Response, subject: string, label: string) {
+  check(
+    response.status === 403 &&
+      JSON.stringify(listmonkEnvelope(await response.json())) ===
+        JSON.stringify({ message: `Permission denied: ${subject}` }),
+    label,
+  );
+}
+
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL ${label}`);
+  }
+}
+
 export async function runSubscriberScope(target: {
   mode: Mode;
   baseUrl: string;
@@ -13,19 +28,6 @@ export async function runSubscriberScope(target: {
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const resources: Array<{ kind: string; id: number }> = [];
   let cleanupFailures = 0;
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL ${label}`);
-    }
-  }
-  async function denied(response: Response, subject: string, label: string) {
-    check(
-      response.status === 403 &&
-        JSON.stringify(listmonkEnvelope(await response.json())) ===
-          JSON.stringify({ message: `Permission denied: ${subject}` }),
-      label,
-    );
-  }
   const request = (
     path: string,
     method = "GET",

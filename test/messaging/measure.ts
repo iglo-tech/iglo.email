@@ -31,7 +31,12 @@ const proxy = createServer((client) => {
   peak = Math.max(peak, live);
   const upstream = createConnection({ host: sink.host, port: sink.port });
   if (client.remotePort) {
-    relayClosed.set(client.remotePort, new Promise<void>((done) => client.once("close", done)));
+    relayClosed.set(
+      client.remotePort,
+      new Promise<void>((done) => {
+        client.once("close", done);
+      }),
+    );
   }
   sockets.add(client);
   sockets.add(upstream);
@@ -51,7 +56,9 @@ const proxy = createServer((client) => {
     client.destroy();
   });
 });
-await new Promise<void>((done) => proxy.listen(0, "127.0.0.1", done));
+await new Promise<void>((done) => {
+  proxy.listen(0, "127.0.0.1", done);
+});
 const address = proxy.address();
 if (!address || typeof address === "string") {
   throw new Error("Missing relay port");
@@ -126,7 +133,9 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
                   callback: (error: Error | null, result: false | { connection: Socket }) => void,
                 ) {
                   const socket = createConnection({ host: config.host, port: config.port });
-                  socketClosed = new Promise<void>((done) => socket.once("close", done));
+                  socketClosed = new Promise<void>((done) => {
+                    socket.once("close", done);
+                  });
                   socket.once("error", (error) => callback(error, false));
                   socket.once("connect", () => {
                     localPort = socket.localPort;
@@ -247,5 +256,7 @@ try {
   for (const socket of sockets) {
     socket.destroy();
   }
-  await new Promise<void>((done) => proxy.close(() => done()));
+  await new Promise<void>((done) => {
+    proxy.close(() => done());
+  });
 }

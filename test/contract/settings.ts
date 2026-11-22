@@ -9,6 +9,12 @@ import { runSettingsBinding } from "@/test/contract/settings-binding";
 import { invalidSettingsReadEnd, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 
+function check(condition: unknown, label: string): asserts condition {
+  if (!condition) {
+    throw new Error(`FAIL settings-${label}`);
+  }
+}
+
 export async function runSettingsContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -29,11 +35,6 @@ export async function runSettingsContract(target: {
       },
       target.mode === "reference",
     );
-  function check(condition: unknown, label: string): asserts condition {
-    if (!condition) {
-      throw new Error(`FAIL settings-${label}`);
-    }
-  }
   check((await request("/api/settings", "GET", undefined, "")).status === 403, "unauthenticated");
   const response = await request("/api/settings");
   check(response.status === 200, "get");

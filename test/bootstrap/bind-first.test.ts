@@ -117,7 +117,12 @@ async function occupy(): Promise<{ port: number; server: NetServer }> {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
-  cleanup.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  cleanup.push(
+    () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      }),
+  );
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("occupied address");

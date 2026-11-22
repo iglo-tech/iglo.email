@@ -9,6 +9,7 @@ import { imagePng } from "@/test/media/images";
 import { startStalledSink } from "@/test/tx/sink";
 import { imageSize } from "@/media/image";
 import { makeFilename } from "@/media/filesystem";
+import type { JsonObject } from "@/test/json-object";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -248,7 +249,7 @@ function carriedBuffers() {
   const seen = new WeakSet<object>();
   let count = 0;
   return {
-    note(buffer: object) {
+    note(buffer: ArrayBufferLike) {
       if (seen.has(buffer)) {
         return;
       }
@@ -259,7 +260,7 @@ function carriedBuffers() {
     carried: () => count,
   };
 }
-const campaignInput = (lists: Array<number>, extra: object) => ({
+const campaignInput = (lists: Array<number>, extra: JsonObject) => ({
   subject: "S",
   lists,
   content_type: "plain",

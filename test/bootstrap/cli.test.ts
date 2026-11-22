@@ -431,7 +431,9 @@ describe("compiled executable", () => {
         await fixture.close();
       }
     } finally {
-      await new Promise<void>((resolveClose) => socket.close(() => resolveClose()));
+      await new Promise<void>((resolveClose) => {
+        socket.close(() => resolveClose());
+      });
     }
   });
 

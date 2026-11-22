@@ -1,6 +1,18 @@
 // Identical bounded compiled list/subscriber write samples on disposable DBs.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+
+async function measure(fn: (i: number) => Promise<void>) {
+  const samples: Array<number> = [];
+  for (let i = 0; i < 25; i++) {
+    const start = performance.now();
+    await fn(i);
+    if (i >= 5) {
+      samples.push(performance.now() - start);
+    }
+  }
+  return samples.reduce((a, b) => a + b, 0) / samples.length;
+}
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 for (let repetition = 1; repetition <= 3; repetition++) {
   await withProduction(
@@ -25,17 +37,6 @@ for (let repetition = 1; repetition <= 3; repetition++) {
       };
       const list = await call("/api/lists", "POST", { name: "measure-list" });
       const subscriber = await call("/api/subscribers", "POST", { email: "measure@example.test" });
-      async function measure(fn: (i: number) => Promise<void>) {
-        const samples: Array<number> = [];
-        for (let i = 0; i < 25; i++) {
-          const start = performance.now();
-          await fn(i);
-          if (i >= 5) {
-            samples.push(performance.now() - start);
-          }
-        }
-        return samples.reduce((a, b) => a + b, 0) / samples.length;
-      }
       const listUpdate = await measure(async (i) => {
         await call(`/api/lists/${list.id}`, "PUT", { ...list, name: `measure-${i}` });
       });

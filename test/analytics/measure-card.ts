@@ -9,9 +9,11 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { seed } from "@/test/analytics/seed";
 
+const idle = async () => Bun.sleep(100);
+
 const directory = resolve(process.env.ANALYTICS_MEASURE_DIR ?? "dist/analytics-card");
 const runs = Number(process.env.ANALYTICS_RUNS ?? 5);
-const report = (values: object) => process.stdout.write(`${JSON.stringify(values)}\n`);
+const report = (values: unknown) => process.stdout.write(`${JSON.stringify(values)}\n`);
 const stats = (times: Array<number>) => {
   const sorted = [...times].sort((a, b) => a - b);
   return {
@@ -116,7 +118,6 @@ try {
     };
   };
   // The control: the first commits after seeding pay for the file, not for any read.
-  const idle = async () => Bun.sleep(100);
   report({ name: "pixel inserts, no read", ...(await lagDuring(idle)) });
   report({ name: "pixel inserts, no read, again", ...(await lagDuring(idle)) });
   report({

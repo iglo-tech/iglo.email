@@ -151,7 +151,9 @@ async function waitingOnSecondStep(page, started) {
 async function pastDueAndTwoTicks(...waiting) {
   const latest = Math.max(...waiting.map((item) => Date.parse(item.due_at)));
   const until = latest + 2 * SCHEDULER_TICK_MS;
-  await new Promise((resolve) => setTimeout(resolve, Math.max(0, until - Date.now())));
+  await new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, until - Date.now()));
+  });
 }
 
 // Mail the sink received for one address, waited for up to `timeout`. A sequence step waits for

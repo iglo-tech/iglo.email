@@ -11,6 +11,9 @@ import { createServer } from "node:net";
 import type { Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import type { JsonObject } from "@/test/json-object";
+
+const round = (n: number) => +n.toFixed(2);
 
 const repository = resolve(import.meta.dir, "../../..");
 const executable = join(repository, "dist/iglo.email");
@@ -34,7 +37,7 @@ const free = () =>
 const head = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: repository })
   .stdout.toString()
   .trim();
-function record(entry: object) {
+function record(entry: Record<string, unknown>) {
   appendFileSync(results, JSON.stringify({ at: new Date().toISOString(), head, ...entry }) + "\n");
   console.log(JSON.stringify(entry, null, 2));
 }
@@ -44,7 +47,6 @@ function stats(values: Array<number>) {
   }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
-  const round = (n: number) => +n.toFixed(2);
   return {
     n: values.length,
     p50: round(at(0.5)),
@@ -133,7 +135,9 @@ async function startSink() {
       }
     });
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  await new Promise<void>((done) => {
+    server.listen(0, "127.0.0.1", done);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("sink address");
@@ -161,7 +165,9 @@ async function startSink() {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((done) => server.close(() => done()));
+      await new Promise<void>((done) => {
+        server.close(() => done());
+      });
     },
   };
 }
@@ -169,9 +175,13 @@ type Sink = Awaited<ReturnType<typeof startSink>>;
 
 async function availablePort() {
   const server = createServer();
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  await new Promise<void>((done) => {
+    server.listen(0, "127.0.0.1", done);
+  });
   const address = server.address() as { port: number };
-  await new Promise<void>((done) => server.close(() => done()));
+  await new Promise<void>((done) => {
+    server.close(() => done());
+  });
   return address.port;
 }
 
@@ -296,7 +306,7 @@ async function seed(
   prefix: string,
   count: number,
   lists: Array<number>,
-  extra: object = { preconfirm_subscriptions: true },
+  extra: JsonObject = { preconfirm_subscriptions: true },
   parallel = 8,
 ) {
   const ids: Array<number> = Array.from({ length: count }, () => 0);

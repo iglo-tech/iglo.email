@@ -6,6 +6,8 @@ import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 import { createSends } from "@/messaging/sends";
 import { createMarketingPolicy } from "@/unsubscribe/policy";
 
+const smtpMs = (i: number) => ((i * 7) % 10) * 30;
+
 let f: RunnerFixture;
 afterEach(async () => {
   await f?.close();
@@ -145,7 +147,6 @@ test("D59 pacing never exceeds the per-worker rate in any one-second window", as
   await f.status(c.id, "running");
   f.start();
   // SMTP time varies from 0 to 270 ms, standing in for a busy shared thread.
-  const smtpMs = (i: number) => ((i * 7) % 10) * 30;
   await f.drive(async () => {
     f.pushes.forEach((push, i) => {
       if (f.clock.now().getTime() - push.at >= smtpMs(i)) {
@@ -597,7 +598,9 @@ test("a runner whose heartbeat stalled keeps its campaign from a second pipe in 
   await f.status(c.id, "running");
   // The first runner's timers stall, as in a blocked event loop, so it misses its renewals.
   let resume!: () => void;
-  const stalled = new Promise<void>((done) => (resume = done));
+  const stalled = new Promise<void>((done) => {
+    resume = done;
+  });
   let stall = false;
   const stallable = {
     now: () => f.clock.now(),
@@ -707,7 +710,10 @@ test("a wait that never completes fails with the stuck state, not at the test ti
     .drive(() => false, 10, 50)
     .then(
       () => "",
-      (error_: unknown) => (error_ instanceof Error ? error_.message : String(error_)),
+      (error_: unknown) => {
+        expect(error_).toBeInstanceOf(Error);
+        return error_ instanceof Error ? error_.message : String(error_);
+      },
     );
   expect(error).toContain("condition not reached after 50 iterations");
   expect(error).toContain("last condition value false");
@@ -730,7 +736,10 @@ test("a wait with no iteration limit ends at the wall bound and names it", async
     .drive(() => false, 50, undefined, 200)
     .then(
       () => "",
-      (error_: unknown) => (error_ instanceof Error ? error_.message : String(error_)),
+      (error_: unknown) => {
+        expect(error_).toBeInstanceOf(Error);
+        return error_ instanceof Error ? error_.message : String(error_);
+      },
     );
   expect(performance.now() - started).toBeLessThan(2000);
   expect(error).toContain("wall limit 200 ms");

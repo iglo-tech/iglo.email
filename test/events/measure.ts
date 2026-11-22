@@ -10,6 +10,8 @@ import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { variantIdentity } from "@/test/perf/variant";
 
+const round = (n: number) => +n.toFixed(2);
+
 const repository = resolve(import.meta.dir, "../..");
 const WINDOW_MS = Number(process.env.EVENTS_MEASURE_WINDOW_MS ?? 60_000);
 const EVENT_MS = 10; // 100 events/s
@@ -44,7 +46,6 @@ function stats(values: Array<number>) {
   }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
-  const round = (n: number) => +n.toFixed(2);
   return {
     n: values.length,
     p50: round(at(0.5)),
@@ -98,7 +99,9 @@ async function sink() {
     });
     socket.on("error", () => {});
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  await new Promise<void>((done) => {
+    server.listen(0, "127.0.0.1", done);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("sink address");
@@ -110,7 +113,9 @@ async function sink() {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((done) => server.close(() => done()));
+      await new Promise<void>((done) => {
+        server.close(() => done());
+      });
     },
   };
 }

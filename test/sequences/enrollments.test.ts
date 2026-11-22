@@ -5,7 +5,11 @@
 import { afterEach, expect, test } from "bun:test";
 import { ascending } from "@/test/order";
 import { sequencesFixture } from "@/test/sequences/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SequencesFixture } from "@/test/sequences/fixture";
+
+const ids = (list: Array<{ sequence_id: number }>) =>
+  list.map((e) => e.sequence_id).sort(ascending);
 
 const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
@@ -20,7 +24,7 @@ async function open() {
 }
 const day = 86_400_000;
 
-async function sequence(f: SequencesFixture, extra: object = {}, status = "active") {
+async function sequence(f: SequencesFixture, extra: JsonObject = {}, status = "active") {
   const tx = await f.template();
   const created = await f.json("/api/sequences", "POST", {
     name: "Onboarding",
@@ -41,7 +45,7 @@ async function sequence(f: SequencesFixture, extra: object = {}, status = "activ
 }
 const enrollments = async (f: SequencesFixture, query = "") =>
   (await f.json(`/api/enrollments${query}`)).body.data.results as Array<Record<string, any>>;
-const paid = (email: string, extra: object = {}) => ({
+const paid = (email: string, extra: JsonObject = {}) => ({
   subscriber: { email },
   name: "order_paid",
   ...extra,
@@ -121,7 +125,7 @@ test("trigger.where filters on event data and the subscriber after the event's u
       },
     },
   });
-  const started = async (body: object) =>
+  const started = async (body: JsonObject) =>
     (
       (await f.event(body)).body.data.enrollments.started as Array<{
         sequence_id: number;
@@ -339,8 +343,6 @@ test("reentry never, after_exit and always", async () => {
   const always = await sequence(f, { reentry: "always" });
   const send = async (name = "order_paid") =>
     (await f.event({ subscriber: { email: "r@example.test" }, name })).body.data.enrollments;
-  const ids = (list: Array<{ sequence_id: number }>) =>
-    list.map((e) => e.sequence_id).sort(ascending);
   const first = await send();
   expect(ids(first.started)).toEqual([never.id, afterExit.id, always.id].sort(ascending));
   // While running: never and after_exit do nothing; always replaces the running one.
@@ -713,7 +715,7 @@ test("manual enroll respects reentry unless forced; cancel ends with manual", as
   const always = await sequence(f, { reentry: "always" });
   const draft = await sequence(f, {}, "draft");
   const id = await f.subscriber("m@example.test");
-  const enroll = (body: object) => f.json("/api/enrollments", "POST", body);
+  const enroll = (body: JsonObject) => f.json("/api/enrollments", "POST", body);
   const first = await enroll({ sequence_id: never.id, subscriber_id: id });
   expect(first.status).toBe(200);
   expect(first.body.data).toMatchObject({

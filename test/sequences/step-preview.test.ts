@@ -3,6 +3,7 @@
 // with time on the injected clock. Nothing is enrolled, journaled or counted by a preview.
 import { afterEach, expect, test } from "bun:test";
 import { day, hour, schedulerFixture } from "@/test/scheduler/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
 const fixtures: Array<SchedulerFixture> = [];
@@ -89,7 +90,7 @@ async function eventId(
   email: string,
   name: string,
   occurredAt?: string,
-  data?: object,
+  data?: JsonObject,
 ) {
   const r = await f.json("/api/subscriber-events", "POST", {
     subscriber: { email },
@@ -443,16 +444,20 @@ test("a sample names the template data as its refusal field when it is too deep"
 async function heldPost(
   f: SchedulerFixture,
   path: string,
-  body: object,
+  body: JsonObject,
   headers: Record<string, string>,
   between: () => Promise<void>,
 ) {
   const payload = JSON.stringify(body);
   const encoder = new TextEncoder();
   let release!: () => void;
-  const gate = new Promise<void>((resolve) => (release = resolve));
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   let reading!: () => void;
-  const consumed = new Promise<void>((resolve) => (reading = resolve));
+  const consumed = new Promise<void>((resolve) => {
+    reading = resolve;
+  });
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(encoder.encode(payload.slice(0, 10)));

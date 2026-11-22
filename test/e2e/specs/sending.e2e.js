@@ -25,7 +25,10 @@ const row = (page, name) =>
   rows(page).filter({ has: page.getByRole("link", { name, exact: true }) });
 const button = (scope, name) => scope.getByRole("button", { name, exact: true });
 const sum = (counts) => counts.reduce((total, count) => total + count, 0);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 // Sending one message at a time, four a second, so a pause, a cancel or a schedule lands while
 // mail is still going out. The app's defaults (ten workers at ten a second) finish a 40-reader

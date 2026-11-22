@@ -4,6 +4,7 @@ import { afterEach, expect, test } from "bun:test";
 import type { RecordedEvent } from "@/events/store";
 import { MAX_SINGLES_IN_FLIGHT } from "@/events/routes";
 import { eventsFixture } from "@/test/events/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { EventsFixture } from "@/test/events/fixture";
 
 const fixtures: Array<EventsFixture> = [];
@@ -18,7 +19,7 @@ async function open(options: Parameters<typeof eventsFixture>[0] = {}) {
   return f;
 }
 const day = 86_400_000;
-const event = (subscriber: object, extra: object = {}) => ({
+const event = (subscriber: JsonObject, extra: JsonObject = {}) => ({
   subscriber,
   name: "order_paid",
   ...extra,

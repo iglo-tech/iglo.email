@@ -80,7 +80,9 @@ export function startLoopFixture(dataDir: string) {
       }
       case "wait-started":
         if (started.length < input.count) {
-          await new Promise<void>((resolve) => waiters.push(resolve));
+          await new Promise<void>((resolve) => {
+            waiters.push(resolve);
+          });
         }
         return started;
       case "sleeping":

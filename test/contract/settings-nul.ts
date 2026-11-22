@@ -3,6 +3,12 @@ import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL settings-D46-${label}`);
+  }
+}
+
 export async function runSettingsNul(target: {
   mode: Mode;
   baseUrl: string;
@@ -15,11 +21,6 @@ export async function runSettingsNul(target: {
       headers: { Authorization: auth, "Content-Type": "application/json" },
       ...(body === undefined ? {} : { body }),
     });
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL settings-D46-${label}`);
-    }
-  }
   async function read() {
     const response = await request();
     check(response.status === 200, "read");

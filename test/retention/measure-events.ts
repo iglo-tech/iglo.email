@@ -27,7 +27,7 @@ mkdirSync(base, { recursive: true });
 const head = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: repository })
   .stdout.toString()
   .trim();
-const record = (entry: object) => {
+const record = (entry: Record<string, unknown>) => {
   const line = JSON.stringify({ at: new Date().toISOString(), head, ...entry });
   console.log(line);
   appendFileSync(output, `${line}\n`);

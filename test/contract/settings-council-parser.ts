@@ -4,6 +4,16 @@ import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL settings-council-parser-${label}`);
+  }
+};
+const candidate = (snapshot: Record<string, any>) => {
+  const value = withBlankPasswords(snapshot);
+  return value;
+};
+
 export async function runSettingsCouncilParser(target: {
   mode: Mode;
   baseUrl: string;
@@ -20,21 +30,12 @@ export async function runSettingsCouncilParser(target: {
       },
       target.mode === "reference",
     );
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL settings-council-parser-${label}`);
-    }
-  };
   const read = async () => {
     const response = await request();
     check(response.status === 200, "read");
     return (await response.json()).data as Record<string, any>;
   };
   const original = await read();
-  const candidate = (snapshot: Record<string, any>) => {
-    const value = withBlankPasswords(snapshot);
-    return value;
-  };
   async function accepted(key: string, value: unknown, label: string) {
     const before = await read();
     const next = candidate(before);

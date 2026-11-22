@@ -302,9 +302,9 @@ export async function runMessagingContract(target: {
       throw new Error("Missing refusal port");
     }
     const refusedPort = address.port;
-    await new Promise<void>((resolve, reject) =>
-      refusedSocket.close((error) => (error ? reject(error) : resolve())),
-    );
+    await new Promise<void>((resolve, reject) => {
+      refusedSocket.close((error) => (error ? reject(error) : resolve()));
+    });
     const refused = await request(
       JSON.stringify({
         email: recipient,
@@ -357,9 +357,9 @@ export async function runMessagingContract(target: {
       const held = Array.from({ length: 4 }, () => request(body));
       await Promise.race([
         relay.entered,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Held SMTP tests did not connect")), 4000),
-        ),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("Held SMTP tests did not connect")), 4000);
+        }),
       ]);
       const overflow = await request(body);
       assert.equal(overflow.status, 429);
@@ -390,9 +390,9 @@ export async function runMessagingContract(target: {
         );
         await Promise.race([
           heldFinal.atFinal,
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("SMTP final barrier failed")), 4000),
-          ),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("SMTP final barrier failed")), 4000);
+          }),
         ]);
         const restarting = target.restart();
         const outcome = await pending;

@@ -2,9 +2,9 @@
 // Reference: listmonk cmd/subscribers.go and queries/subscribers.sql at 6fcd95f.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ascending } from "@/test/order";
-import { readdirSync, readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { openReadOnly } from "@/subscribers/query-runner";
+import { childPids } from "@/test/host-processes";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
 
@@ -16,25 +16,6 @@ const emails = (body: { data: { results: Array<{ email: string }> | null } }) =>
   (body.data.results ?? []).map((row) => row.email.split("-")[0]);
 const spin =
   "(WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT count(*) FROM c) > 0";
-
-// Child processes of this test process, from /proc.
-function children(): Array<number> {
-  const out: Array<number> = [];
-  for (const entry of readdirSync("/proc")) {
-    if (!/^\d+$/.test(entry)) {
-      continue;
-    }
-    try {
-      const status = readFileSync(`/proc/${entry}/status`, "utf-8");
-      if (new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(status)) {
-        out.push(Number(entry));
-      }
-    } catch {
-      /* exited meanwhile */
-    }
-  }
-  return out;
-}
 
 async function seed() {
   listA = (await f.json("/api/lists", "POST", { name: "list-a" })).body.data.id;
@@ -236,22 +217,30 @@ describe("GET /api/subscribers", () => {
   });
 
   test("a raw query has a real time limit that stops the SQLite work", async () => {
-    const before = children().length;
+    const before = childPids().length;
     const started = performance.now();
     const response = await f.json(`/api/subscribers?query=${q(spin)}`);
     const elapsed = performance.now() - started;
     expect(response.status).toBe(500);
     expect(response.body.message).toBe("Error fetching Subscribers: query timed out");
     expect(elapsed).toBeLessThan(QUERY_TIMEOUT_MS + 3500);
-    expect(children().length).toBe(before);
-    // Memory: SQLite's allocations in the child are capped.
-    const big = await f.json(`/api/subscribers?query=${q("length(randomblob(1000000000)) > 0")}`);
-    expect(big.body).toEqual({
-      message: "Error fetching Subscribers: query exceeded the memory limit",
-      code: "internal_error",
-    });
-    expect(children().length).toBe(before);
+    expect(childPids().length).toBe(before);
   });
+
+  // The memory cap reads the child's resident size from /proc, which only Linux has.
+  test.skipIf(process.platform !== "linux")(
+    "a raw query has a memory limit that stops the SQLite allocations",
+    async () => {
+      const before = childPids().length;
+      // Memory: SQLite's allocations in the child are capped.
+      const big = await f.json(`/api/subscribers?query=${q("length(randomblob(1000000000)) > 0")}`);
+      expect(big.body).toEqual({
+        message: "Error fetching Subscribers: query exceeded the memory limit",
+        code: "internal_error",
+      });
+      expect(childPids().length).toBe(before);
+    },
+  );
 
   test("requires subscriber read permission and sql_query for fragments", async () => {
     const reader = await f.apiUser("reader", ["subscribers:get_all"]);

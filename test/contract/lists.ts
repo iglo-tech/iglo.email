@@ -2,6 +2,18 @@
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
+function check(condition: unknown, label: string): asserts condition {
+  if (!condition) {
+    throw new Error(`FAIL ${label}`);
+  }
+}
+const bytes = (prefix: string, middle: Array<number>, suffix: string) =>
+  new Uint8Array([
+    ...new TextEncoder().encode(prefix),
+    ...middle,
+    ...new TextEncoder().encode(suffix),
+  ]).buffer;
+
 export async function runListsContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -22,11 +34,6 @@ export async function runListsContract(target: {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  function check(condition: unknown, label: string): asserts condition {
-    if (!condition) {
-      throw new Error(`FAIL ${label}`);
-    }
-  }
   async function create(name: string, fields: Record<string, unknown> = {}) {
     const response = await request("/api/lists", "POST", { name, ...fields });
     const data = (await response.json()) as { data?: Record<string, any> };
@@ -424,12 +431,6 @@ export async function runListsContract(target: {
       "<List><Name>changed</Name><Ignored>abc]]>def</Ignored></List>",
       '<?xml version="1.1"?><List><Name>changed</Name></List>',
     ];
-    const bytes = (prefix: string, middle: Array<number>, suffix: string) =>
-      new Uint8Array([
-        ...new TextEncoder().encode(prefix),
-        ...middle,
-        ...new TextEncoder().encode(suffix),
-      ]).buffer;
     const invalidXmlBytes = [
       bytes("<List><Name>changed</Name><Description>", [255], "</Description></List>"),
       bytes("<List><Name>changed</Name><Ignored>", [255], "</Ignored></List>"),

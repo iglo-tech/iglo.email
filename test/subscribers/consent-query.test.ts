@@ -1,6 +1,7 @@
 // B19 (D81): the query-selected membership actions keep upstream's results and never revive consent.
 import { afterEach, expect, test } from "bun:test";
 import { queryFixture } from "@/test/subscribers/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { QueryFixture } from "@/test/subscribers/fixture";
 
 const fixtures: Array<QueryFixture> = [];
@@ -16,7 +17,12 @@ async function open() {
 }
 const list = async (f: QueryFixture, name: string) =>
   (await f.json("/api/lists", "POST", { name })).body.data.id as number;
-const person = async (f: QueryFixture, email: string, lists: Array<number>, extra: object = {}) =>
+const person = async (
+  f: QueryFixture,
+  email: string,
+  lists: Array<number>,
+  extra: JsonObject = {},
+) =>
   (
     await f.json("/api/subscribers", "POST", {
       email,

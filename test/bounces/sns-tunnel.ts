@@ -113,7 +113,9 @@ export async function startSnsTunnel(
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
       rmSync(dir, { recursive: true, force: true });
     },
   };

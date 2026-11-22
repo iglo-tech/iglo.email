@@ -3,6 +3,13 @@
 // written from the documented type rules rather than from the compiler.
 import type { ModelSubscriber } from "@/test/conditions/fixture";
 
+const at = (value: string | null | undefined) => {
+  if (!value) {
+    throw new Error("missing context time");
+  }
+  return Date.parse(value);
+};
+
 type Context = {
   triggerAt?: string;
   enrolledAt?: string;
@@ -64,12 +71,6 @@ function lowerBound(since: string | undefined, context: Context): number | undef
   if (since === undefined) {
     return undefined;
   }
-  const at = (value: string | null | undefined) => {
-    if (!value) {
-      throw new Error("missing context time");
-    }
-    return Date.parse(value);
-  };
   if (since === "trigger") {
     return at(context.triggerAt);
   }

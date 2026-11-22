@@ -8,6 +8,19 @@ import { differences } from "@/openapi/differences";
 import { excluded } from "@/openapi/excluded";
 import { validate } from "@/test/openapi/schema";
 
+const areas = async () => {
+  const text = await readFile(join(repository, "docs/design/07-api-and-ui.md"), "utf-8");
+  const table = text.slice(
+    text.indexOf("Deliberate differences:"),
+    text.indexOf("## New endpoints"),
+  );
+  return table
+    .split("\n")
+    .filter((line) => line.startsWith("| "))
+    .map((line) => line.split(" | ", 1)[0]!.slice(2).trim())
+    .filter((area) => area !== "Area" && !/^-+$/.test(area));
+};
+
 const repository = resolve(import.meta.dir, "../..");
 const document = JSON.parse(buildDocument());
 const methods = new Set(["get", "post", "put", "patch", "delete"]);
@@ -156,19 +169,6 @@ describe("document", () => {
 });
 
 describe("deliberate differences", () => {
-  const areas = async () => {
-    const text = await readFile(join(repository, "docs/design/07-api-and-ui.md"), "utf-8");
-    const table = text.slice(
-      text.indexOf("Deliberate differences:"),
-      text.indexOf("## New endpoints"),
-    );
-    return table
-      .split("\n")
-      .filter((line) => line.startsWith("| "))
-      .map((line) => line.split(" | ", 1)[0]!.slice(2).trim())
-      .filter((area) => area !== "Area" && !/^-+$/.test(area));
-  };
-
   test("every row of 07 is in the document", async () => {
     const shown = (document["x-deliberate-differences"] as Array<{ area: string }>).map(
       ({ area }) => area,

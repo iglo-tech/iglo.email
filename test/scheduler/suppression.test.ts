@@ -4,6 +4,7 @@
 // transactional still sent), a replay under an idempotency key, and an operator's explicit removal.
 import { afterEach, expect, test } from "bun:test";
 import { schedulerFixture } from "@/test/scheduler/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
 const fixtures: Array<SchedulerFixture> = [];
@@ -46,7 +47,7 @@ test("a self-wiped person gets no marketing again, and their transactional mail 
     trigger: { event: "order_paid" },
     steps: [{ wait: "PT0S", kind: "transactional", template_id: template }],
   });
-  const order = (extra: object = {}) =>
+  const order = (extra: JsonObject = {}) =>
     f.json("/api/subscriber-events", "POST", {
       subscriber: {
         email: address,

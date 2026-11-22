@@ -61,7 +61,9 @@ async function launch(dir: string, smtpPort = sink.port) {
   return { child, call, get: (id: number) => call(`/api/sends/${id}`, "GET", undefined, headers) };
 }
 async function kill(child: ChildProcessWithoutNullStreams) {
-  const done = new Promise<void>((resolveExit) => child.once("exit", () => resolveExit()));
+  const done = new Promise<void>((resolveExit) => {
+    child.once("exit", () => resolveExit());
+  });
   child.kill("SIGKILL");
   await done;
   if (active === child) {
@@ -111,7 +113,9 @@ async function dataBarrier() {
       }
     });
   });
-  await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+  await new Promise<void>((resolveListen) => {
+    server.listen(0, "127.0.0.1", resolveListen);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("Missing relay address");
@@ -123,9 +127,9 @@ async function dataBarrier() {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((resolveClose, reject) =>
-        server.close((error) => (error ? reject(error) : resolveClose())),
-      );
+      await new Promise<void>((resolveClose, reject) => {
+        server.close((error) => (error ? reject(error) : resolveClose()));
+      });
     },
   };
 }

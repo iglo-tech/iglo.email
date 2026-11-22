@@ -236,7 +236,9 @@ router.route("GET", "/fixture/committed", async () => {
 router.route("GET", "/fixture/finished", async (context) => {
   const count = Number(context.url.searchParams.get("count"));
   while (finishedCount < count) {
-    await new Promise<void>((resolve) => waiters.push(resolve));
+    await new Promise<void>((resolve) => {
+      waiters.push(resolve);
+    });
   }
   return ok(finishedCount);
 });

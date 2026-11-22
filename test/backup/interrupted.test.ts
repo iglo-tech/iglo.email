@@ -1,8 +1,9 @@
 // A `backup` killed midway through a large snapshot: nothing that looks complete is left. Its own
 // file so that the slow cases run in a parallel worker beside the rest of test/backup/backup.test.ts.
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { commandLines } from "@/test/host-processes";
 import {
   buildExecutable,
   removeDirectory,
@@ -71,14 +72,7 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const) {
     expect(await child.exited).not.toBe(0);
 
     // The helper that syncs the snapshot goes with it.
-    const helperRunning = () =>
-      readdirSync("/proc").some((entry) => {
-        try {
-          return readFileSync(`/proc/${entry}/cmdline`, "utf-8").includes(partial!);
-        } catch {
-          return false;
-        }
-      });
+    const helperRunning = () => commandLines().some((line) => line.includes(partial!));
     for (const deadline = Date.now() + 5000; helperRunning() && Date.now() < deadline;) {
       await Bun.sleep(25);
     }

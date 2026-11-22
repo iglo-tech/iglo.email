@@ -9,6 +9,8 @@ import { MAINTENANCE_SUBSCRIBERS as BATCH } from "@/subscribers/store";
 import { txFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 
+const passLeft = async (_left: number) => {};
+
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) {
@@ -70,7 +72,7 @@ async function open(afterBatch: (left: number) => Promise<void>) {
 }
 
 test("a webhook enabled and disabled during a delete cannot carry it over the budget", async () => {
-  let toggle = async (_left: number) => {};
+  let toggle = passLeft;
   const { setExtra, remove, count } = await open((left) => toggle(left));
   toggle = async (left) => {
     if (left === SELECTED - BATCH) {

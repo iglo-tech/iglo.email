@@ -1,6 +1,18 @@
 // Bounded synthetic compiled HTTP workload for M1.2; no external services.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+
+const measure = async (count: number, warm: number, action: (i: number) => Promise<void>) => {
+  const samples: Array<number> = [];
+  for (let i = 0; i < count + warm; i++) {
+    const start = performance.now();
+    await action(i);
+    if (i >= warm) {
+      samples.push(performance.now() - start);
+    }
+  }
+  return mean(samples);
+};
 const admin = { user: "m12-measure-admin", password: "m12-measure-password" };
 const mean = (values: Array<number>) => values.reduce((a, b) => a + b, 0) / values.length;
 for (let repetition = 1; repetition <= 3; repetition++) {
@@ -23,17 +35,6 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           throw new Error(`Unexpected HTTP status ${response.status}`);
         }
         return (await response.json()).data;
-      };
-      const measure = async (count: number, warm: number, action: (i: number) => Promise<void>) => {
-        const samples: Array<number> = [];
-        for (let i = 0; i < count + warm; i++) {
-          const start = performance.now();
-          await action(i);
-          if (i >= warm) {
-            samples.push(performance.now() - start);
-          }
-        }
-        return mean(samples);
       };
       const health = await measure(50, 5, async () => {
         await request("/health");

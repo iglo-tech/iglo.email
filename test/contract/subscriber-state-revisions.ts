@@ -1,6 +1,12 @@
 // Reference: listmonk subscriber handlers/core/SQL at 6fcd95f; D41 corrections.
 import type { Credentials, Mode } from "@/test/contract/types";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL ${label}`);
+  }
+}
+
 export async function runSubscriberStateRevisions(target: {
   mode: Mode;
   baseUrl: string;
@@ -15,11 +21,6 @@ export async function runSubscriberStateRevisions(target: {
       headers: { Authorization: auth, "Content-Type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL ${label}`);
-    }
-  }
   async function create(path: string, body: unknown) {
     const response = await request(`/api/${path}`, "POST", body);
     const data = (await response.json()).data;
