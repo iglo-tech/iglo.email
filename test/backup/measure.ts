@@ -170,7 +170,7 @@ try {
         peakWal = Math.max(peakWal, statSync(wal, { throwIfNoEntry: false })?.size ?? 0);
         lowestFree = Math.min(lowestFree, available());
         try {
-          const peak = /VmHWM:\s+(\d+) kB/.exec(readFileSync(`/proc/${child.pid}/status`, "utf8"));
+          const peak = /VmHWM:\s+(\d+) kB/.exec(readFileSync(`/proc/${child.pid}/status`, "utf-8"));
           peakRss = Math.max(peakRss, Number(peak?.[1] ?? 0) * 1024);
         } catch {
           // It exited between the check and the read.

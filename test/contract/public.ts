@@ -923,7 +923,7 @@ export async function runPublicContract(target: {
             `/api/v1/message/${encodeURIComponent(noaMail!.ID)}/part/${encodeURIComponent(attachment.PartID)}`,
           )
         ).arrayBuffer(),
-      ).toString("utf8"),
+      ).toString("utf-8"),
     );
     check(
       data.profile[0].email === noa.email &&

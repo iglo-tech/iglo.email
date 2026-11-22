@@ -958,7 +958,7 @@ describe("B34 MCP endpoint tests", () => {
 
     // Read doc section from docs/design/06-templates.md
     const docPath = resolve(import.meta.dir, "../../docs/design/06-templates.md");
-    const docContent = await readFile(docPath, "utf8");
+    const docContent = await readFile(docPath, "utf-8");
 
     // The tool's text must match the documentation section: Liquid variables, tags and filters table and examples
     const startMarker = "### Template reference for agents";

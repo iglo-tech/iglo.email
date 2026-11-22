@@ -61,7 +61,7 @@ test("continuous overlap forces a gap after the window, by the injected clock", 
     const log = join(directory, "log");
     const go = join(directory, "go");
     writeFileSync(log, "");
-    const lines = () => readFileSync(log, "utf8").split("\n").filter(Boolean);
+    const lines = () => readFileSync(log, "utf-8").split("\n").filter(Boolean);
     let time = 0;
     const reader = createAnalyticsReader({
       path: "x",

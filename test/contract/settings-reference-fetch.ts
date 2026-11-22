@@ -7,7 +7,7 @@ function upstreamLogTail(): string {
     return "";
   }
   try {
-    let text = readFileSync(path, "utf8").slice(-600);
+    let text = readFileSync(path, "utf-8").slice(-600);
     for (const secret of [process.env.REFERENCE_API_TOKEN, process.env.REFERENCE_API_USER]) {
       if (secret) text = text.split(secret).join("[redacted]");
     }
@@ -76,7 +76,7 @@ function upstreamLogHas(text: string): boolean {
     return false;
   }
   try {
-    return readFileSync(path, "utf8").includes(text);
+    return readFileSync(path, "utf-8").includes(text);
   } catch {
     return false;
   }

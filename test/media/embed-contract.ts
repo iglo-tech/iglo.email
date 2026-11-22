@@ -12,7 +12,7 @@ import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { imagePng } from "@/test/media/images";
 
 const repository = resolve(import.meta.dir, "../..");
-const fixtures = await readFile(resolve(repository, "test/users/fixtures.md"), "utf8");
+const fixtures = await readFile(resolve(repository, "test/users/fixtures.md"), "utf-8");
 const admin = {
   user: /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixtures)![1]!,
   password: /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixtures)![1]!,

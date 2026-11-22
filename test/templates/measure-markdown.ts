@@ -87,7 +87,7 @@ export function source(family: string, bytes: number): string {
   return (prefix + body).slice(0, bytes);
 }
 
-const utf8 = (value: string) => Buffer.byteLength(value, "utf8");
+const utf8 = (value: string) => Buffer.byteLength(value, "utf-8");
 
 /**
  * One render: its time and outcome, the output bound with no limit, and the real `html()` size with no

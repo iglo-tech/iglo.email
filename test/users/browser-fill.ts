@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const fixture = await readFile(resolve(import.meta.dir, "fixtures.md"), "utf8");
+const fixture = await readFile(resolve(import.meta.dir, "fixtures.md"), "utf-8");
 const lookup = (name: string) => new RegExp(`^${name}=(.+)$`, "m").exec(fixture)?.[1];
 const username = lookup("IGLO_EMAIL_ADMIN_USER");
 const password = lookup(

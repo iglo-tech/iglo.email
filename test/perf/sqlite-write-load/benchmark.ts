@@ -30,7 +30,7 @@ if ([0x01_02_19_94, 0x85_84_58_f6].includes(filesystemType)) {
   );
 }
 function command(program: string, args: Array<string>) {
-  const result = spawnSync(program, args, { encoding: "utf8" });
+  const result = spawnSync(program, args, { encoding: "utf-8" });
   return result.status === 0
     ? result.stdout.trim()
     : `unavailable: ${result.error?.message ?? result.stderr.trim()}`;

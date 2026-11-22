@@ -222,7 +222,7 @@ describe("messaging absolute deadlines", () => {
 test("a temporary implicit TLS connection is physically closed at its deadline", async () => {
   const { readFile } = await import("node:fs/promises");
   const { createServer: createTLS } = await import("node:tls");
-  const fixture = await readFile("test/messaging/tls-fixture.md", "utf8");
+  const fixture = await readFile("test/messaging/tls-fixture.md", "utf-8");
   const blocks = [...fixture.matchAll(/```pem\n([\s\S]*?)```/g)].map((match) => match[1]!);
   let entered!: () => void;
   let disconnected!: () => void;

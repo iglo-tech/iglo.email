@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
 
 const repository = resolve(import.meta.dir, "../..");
-const fixture = await readFile(resolve(repository, "test/users/fixtures.md"), "utf8");
+const fixture = await readFile(resolve(repository, "test/users/fixtures.md"), "utf-8");
 const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1];
 const password = /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixture)?.[1];
 if (!user || !password) {

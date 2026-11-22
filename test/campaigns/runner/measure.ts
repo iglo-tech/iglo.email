@@ -21,7 +21,7 @@ if (/tmpfs|ramfs/.test(fsType)) {
   throw new Error(`Refusing ${fsType} measurement directory`);
 }
 const results = join(repository, "docs/perf/M3.2-results.jsonl");
-const fixtures = readFileSync(join(repository, "test/users/fixtures.md"), "utf8");
+const fixtures = readFileSync(join(repository, "test/users/fixtures.md"), "utf-8");
 const admin = {
   user: /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixtures)![1]!,
   password: /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(fixtures)![1]!,

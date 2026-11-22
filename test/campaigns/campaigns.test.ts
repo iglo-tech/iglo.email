@@ -37,7 +37,7 @@ const decode = (data: string) =>
         String.fromCharCode(Number.parseInt(hex, 16)),
       ),
     "latin1",
-  ).toString("utf8");
+  ).toString("utf-8");
 
 test("send_at must be after the injected clock, and timestamps use it", async () => {
   const f = await open();

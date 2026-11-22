@@ -165,7 +165,7 @@ async function playwright(
   ]);
   const tests: Outcome["tests"] = [];
   try {
-    const parsed = JSON.parse(await readFile(report, "utf8")) as { suites: Array<JsonSuite> };
+    const parsed = JSON.parse(await readFile(report, "utf-8")) as { suites: Array<JsonSuite> };
     for (const suite of parsed.suites) {
       collect(suite, [], tests);
     }

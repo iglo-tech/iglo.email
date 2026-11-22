@@ -112,7 +112,7 @@ export async function faultRelay(
             client.write("501 5.7.0 authentication cancelled\r\n");
             continue;
           }
-          const decoded = Buffer.from(line, "base64").toString("utf8");
+          const decoded = Buffer.from(line, "base64").toString("utf-8");
           if (authState === "plain") {
             const parts = decoded.split("\0");
             check(parts[1] ?? "", parts[2] ?? "");
@@ -145,7 +145,7 @@ export async function faultRelay(
           if (method?.toUpperCase() === "PLAIN") {
             authState = "plain";
             if (initial) {
-              const parts = Buffer.from(initial, "base64").toString("utf8").split("\0");
+              const parts = Buffer.from(initial, "base64").toString("utf-8").split("\0");
               check(parts[1] ?? "", parts[2] ?? "");
             } else {
               client.write("334 \r\n");

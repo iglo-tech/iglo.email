@@ -14,7 +14,7 @@ const mb = (bytes: number) => Math.round((bytes / 1_048_576) * 10) / 10;
 const report = (name: string, values: Record<string, unknown>) =>
   process.stdout.write(`${JSON.stringify({ name, ...values })}\n`);
 const cpuSeconds = (pid: number) => {
-  const fields = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]!.split(" ");
+  const fields = readFileSync(`/proc/${pid}/stat`, "utf-8").split(") ")[1]!.split(" ");
   return (Number(fields[11]) + Number(fields[12])) / 100;
 };
 const children = () =>
@@ -24,7 +24,7 @@ const children = () =>
     }
     try {
       return new RegExp(`^PPid:\\s+${process.pid}$`, "m").test(
-        readFileSync(`/proc/${entry}/status`, "utf8"),
+        readFileSync(`/proc/${entry}/status`, "utf-8"),
       );
     } catch {
       return false;

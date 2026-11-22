@@ -136,7 +136,7 @@ describe("document", () => {
 
 describe("deliberate differences", () => {
   const areas = async () => {
-    const text = await readFile(join(repository, "docs/design/07-api-and-ui.md"), "utf8");
+    const text = await readFile(join(repository, "docs/design/07-api-and-ui.md"), "utf-8");
     const table = text.slice(
       text.indexOf("Deliberate differences:"),
       text.indexOf("## New endpoints"),

@@ -31,7 +31,7 @@ function alive(pid: number): boolean {
 // fresh `mkdir` whose owner has not written its PID: stale only after a few seconds.
 function stale(dir = lock): boolean {
   try {
-    const pid = Number(readFileSync(join(dir, "owner"), "utf8"));
+    const pid = Number(readFileSync(join(dir, "owner"), "utf-8"));
     if (Number.isInteger(pid) && pid > 0) {
       return !alive(pid);
     }

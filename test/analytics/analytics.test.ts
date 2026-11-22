@@ -755,7 +755,7 @@ const recorded = () => {
   return {
     command: ["sh", "-c", `echo $$ >> ${file}; exec sleep 30`],
     pids: () =>
-      existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map(Number) : [],
+      existsSync(file) ? readFileSync(file, "utf-8").split("\n").filter(Boolean).map(Number) : [],
   };
 };
 const alive = (pid: number) => {

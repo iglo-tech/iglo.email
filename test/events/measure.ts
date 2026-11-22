@@ -136,7 +136,7 @@ function serverRss(executable: string): number | null {
       if (readlinkSync(`/proc/${pid}/exe`) !== executable) {
         continue;
       }
-      const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
+      const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf-8"))?.[1];
       return kb ? Math.round(Number(kb) / 1024) : null;
     } catch {
       /* process gone or not ours */
@@ -146,7 +146,7 @@ function serverRss(executable: string): number | null {
 }
 
 async function run(name: string, events: boolean, sends: boolean) {
-  const text = readFileSync(join(repository, "test/users/fixtures.md"), "utf8");
+  const text = readFileSync(join(repository, "test/users/fixtures.md"), "utf-8");
   const admin = {
     user: /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(text)![1]!,
     password: /^IGLO_EMAIL_ADMIN_PASSWORD=(.+)$/m.exec(text)![1]!,

@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { decodePayload, encodePayload } from "@/messaging/payload";
 
 const peak = () =>
-  Number(/VmHWM:\s+(\d+) kB/.exec(readFileSync("/proc/self/status", "utf8"))![1]) * 1024;
+  Number(/VmHWM:\s+(\d+) kB/.exec(readFileSync("/proc/self/status", "utf-8"))![1]) * 1024;
 const content = new Uint8Array(4 * 1024 * 1024);
 crypto.getRandomValues(content.subarray(0, 65_536));
 const payload = encodePayload(

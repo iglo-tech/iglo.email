@@ -74,7 +74,7 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const) {
     const helperRunning = () =>
       readdirSync("/proc").some((entry) => {
         try {
-          return readFileSync(`/proc/${entry}/cmdline`, "utf8").includes(partial!);
+          return readFileSync(`/proc/${entry}/cmdline`, "utf-8").includes(partial!);
         } catch {
           return false;
         }

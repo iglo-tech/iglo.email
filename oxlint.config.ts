@@ -232,7 +232,6 @@ export default defineConfig({
         curly: "off",
         "no-promise-executor-return": "off",
         "quality/no-object-parameters": "off",
-        "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
         "quality/no-unknown-returns": "off", // B134g: test/ still has the rule's findings.
         "quality/no-known-value-widening": "off", // B134g: test/ still has the rule's findings.
         "quality/no-conditional-empty-object-spread": "off", // B134g: test/ still has the rule's findings.

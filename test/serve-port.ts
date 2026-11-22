@@ -101,7 +101,7 @@ export function listensOn(pid: number, port: number): boolean {
     for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
       let text = "";
       try {
-        text = readFileSync(table, "utf8");
+        text = readFileSync(table, "utf-8");
       } catch {
         // A table this host does not have (no IPv6) lists no sockets.
       }

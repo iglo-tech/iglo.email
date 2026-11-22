@@ -32,7 +32,7 @@ export function rawRequest(origin: string, path: string, options: RawOptions = {
       },
       (response) => {
         let body = "";
-        response.setEncoding("utf8");
+        response.setEncoding("utf-8");
         response.on("data", (chunk: string) => {
           body += chunk;
           if (body.length > 1_000_000) {

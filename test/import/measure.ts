@@ -40,7 +40,7 @@ const summary = (values: Array<number>) => ({
   max: +Math.max(...values).toFixed(1),
 });
 const peak = (pid: string) =>
-  Number(/VmHWM:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1]) / 1024;
+  Number(/VmHWM:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf-8"))?.[1]) / 1024;
 
 async function overHttp() {
   return withProduction(

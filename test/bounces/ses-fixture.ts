@@ -90,8 +90,8 @@ commonName = supplied
       notAfter,
     );
     return {
-      key: readFileSync(join(dir, "leaf.key"), "utf8"),
-      pem: readFileSync(join(dir, "leaf.pem"), "utf8"),
+      key: readFileSync(join(dir, "leaf.key"), "utf-8"),
+      pem: readFileSync(join(dir, "leaf.pem"), "utf-8"),
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });

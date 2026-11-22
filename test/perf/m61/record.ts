@@ -64,7 +64,7 @@ export function rssOf(pid: number | undefined): number | null {
     return null;
   }
   try {
-    const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
+    const kb = /VmRSS:\s+(\d+)/.exec(readFileSync(`/proc/${pid}/status`, "utf-8"))?.[1];
     return kb ? Math.round(Number(kb) / 1024) : null;
   } catch {
     return null;

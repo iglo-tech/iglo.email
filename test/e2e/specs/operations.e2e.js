@@ -459,7 +459,7 @@ function attachedJSON(mail, name) {
   const rest = mail.body.slice(start);
   const body = rest.slice(rest.search(/\r?\n\r?\n/)).replace(/^\r?\n\r?\n/, "");
   const encoded = /^[A-Za-z0-9+/=\s]*/.exec(body)[0];
-  return JSON.parse(Buffer.from(encoded.replaceAll(/\s+/g, ""), "base64").toString("utf8"));
+  return JSON.parse(Buffer.from(encoded.replaceAll(/\s+/g, ""), "base64").toString("utf-8"));
 }
 
 test("the privacy page e-mails a person's data and wipes it, after which no campaign reaches them", async ({
