@@ -336,7 +336,6 @@ export default defineConfig({
         "src/messaging/test.ts",
         "src/public/archive.tsx",
         "src/public/mail.ts",
-        "src/subscribers/email.ts",
         "src/subscribers/store.ts",
         "src/tx/routes.ts",
       ],
