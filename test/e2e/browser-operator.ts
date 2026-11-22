@@ -85,7 +85,7 @@ const seed = `(async () => {
     txStatus: plainTx.sends[0].status });
 })()`;
 
-process.exitCode = await withStack(async ({ origin, dataDir }) => {
+process.exitCode = await withStack(async ({ origin, dataDir, errors }) => {
   // Each screen at a width; the layout must not scroll sideways at 390 px.
   const visit = (path: string, name: string, width: number) => {
     browser("set", "viewport", String(width), width === 390 ? "844" : "900");
@@ -199,6 +199,7 @@ process.exitCode = await withStack(async ({ origin, dataDir }) => {
       see("dashboard stats", text(".stat-card"));
     });
     see("hostile text ran", value("window.pwned === undefined ? 'no' : 'YES'"));
+    see("server stderr", errors());
     return 0;
   } finally {
     Bun.spawnSync(["agent-browser", "--session", session, "close"], { timeout: 15_000 });
