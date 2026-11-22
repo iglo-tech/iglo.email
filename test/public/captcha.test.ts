@@ -58,7 +58,7 @@ test("without a provider the challenge is 404 and the form has no widget", async
   await f.list("News");
   const response = await f.peer("/api/public/captcha/altcha", "192.0.2.50");
   expect(response.status).toBe(404);
-  expect(await response.json()).toEqual({ message: "captcha not enabled" });
+  expect(await response.json()).toEqual({ message: "captcha not enabled", code: "not_found" });
   const page = await (await f.peer("/subscription/form", "192.0.2.50")).text();
   expect(page).not.toContain("altcha-widget");
   expect(page).not.toContain("h-captcha");

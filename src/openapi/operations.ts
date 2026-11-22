@@ -76,6 +76,11 @@ const analytics: Array<Parameter> = [
   { name: "interval", schema: { enum: ["hour", "day", "week", "month"] } },
   { name: "unique", schema: boolean },
 ];
+/**
+ * What the analytics reader refuses a read with: too large (422), busy (429), the client gone (499,
+ * which nobody reads) and the server shutting down or still sending (503).
+ */
+const readRefusals = [422, 429, 499, 503];
 const subscriberSelection: Array<Parameter> = [
   {
     name: "query",
@@ -370,6 +375,7 @@ const lists: Array<Operation> = [
       "`subscriptions` and `unsubscriptions` need only the list. The campaign permissions are for the other types.",
     permissions: readList,
     alsoPermissions: [["campaigns:get", "campaigns:get_all"], ["campaigns:get_analytics"]],
+    errors: readRefusals,
     query: analytics,
     data: array({ anyOf: [ref("ListCount"), ref("LinkCount")] }),
   },
@@ -391,6 +397,7 @@ const subscribers: Array<Operation> = [
     tag: "Subscribers",
     summary: "Create a subscriber.",
     permissions: ["subscribers:manage"],
+    errors: [400, 409],
     body: ref("SubscriberInput"),
     data: ref("Subscriber"),
   },
@@ -812,6 +819,7 @@ const sending: Array<Operation> = [
     summary: "Sends with views and clicks, by template or sequence step.",
     native: true,
     permissions: ["sends:get"],
+    errors: readRefusals,
     query: [...range, { name: "group_by", schema: { enum: ["template", "step"] } }],
     data: array({ anyOf: [ref("SendsByTemplate"), ref("SendsByStep")] }),
   },
@@ -841,9 +849,10 @@ const sending: Array<Operation> = [
     tag: "Events",
     summary: "Record an event, upsert its subscriber, grant list consent, start and end sequences.",
     description:
-      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list, and for an existing subscriber on a list it already has a membership on (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe.",
+      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list, and for an existing subscriber on a list it already has a membership on (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe. An `email` another subscriber holds: when that subscriber has no `external_id` and this event's `external_id` is free, the event claims it (the holder keeps its lists and history); otherwise the answer is 409 `email_conflict`, naming the holder's `conflict.external_id` where the caller manages it (D129).",
     native: true,
     permissions: ["subscriber_events:create"],
+    errors: [400, 404, 409, 413, 429],
     body: ref("EventInput"),
     data: ref("EventResult"),
   },
@@ -853,9 +862,10 @@ const sending: Array<Operation> = [
     tag: "Events",
     summary: "Record at most 500 events; each has its own result.",
     description:
-      "Each item has its own `subscriber.grant_lists` check (D99): a refused grant fails that item only.",
+      "Each item has its own `subscriber.grant_lists` check (D99): a refused grant fails that item only. Each item's address conflict is its own result too, with the same `code` and `conflict` as a single event (D129).",
     native: true,
     permissions: ["subscriber_events:create"],
+    errors: [400, 413, 429],
     body: object({ events: array(ref("EventInput")) }),
     data: object({ results: array(ref("BatchEventResult")) }),
   },
@@ -888,6 +898,7 @@ const sending: Array<Operation> = [
     summary: "Enrollments and sends per step, for at most 100 sequences.",
     native: true,
     permissions: ["sequences:get"],
+    errors: readRefusals,
     query: [{ ...ids, required: true }],
     data: ref("SequenceCounts"),
   },
@@ -1107,6 +1118,7 @@ const campaigns: Array<Operation> = [
     tag: "Analytics",
     summary: "Counts per campaign.",
     permissions: ["campaigns:get_analytics"],
+    errors: readRefusals,
     query: analytics,
     data: array({ anyOf: [ref("CampaignCount"), ref("LinkCount")] }),
   },
@@ -1219,6 +1231,7 @@ const campaigns: Array<Operation> = [
     id: "getDashboardCounts",
     tag: "Analytics",
     summary: "Instance totals.",
+    errors: readRefusals,
     data: ref("DashboardCounts"),
   },
   {
@@ -1226,6 +1239,7 @@ const campaigns: Array<Operation> = [
     id: "getDashboardCharts",
     tag: "Analytics",
     summary: "Views and clicks per day.",
+    errors: readRefusals,
     data: ref("DashboardCharts"),
   },
   {
@@ -1233,6 +1247,7 @@ const campaigns: Array<Operation> = [
     id: "getDashboardCampaigns",
     tag: "Analytics",
     summary: "The latest campaigns the caller may read; null when there are none.",
+    errors: readRefusals,
     data: nullable(array(ref("Campaign"))),
   },
 ];

@@ -7,6 +7,7 @@ import { faultRelay } from "@/test/messaging/fault-relay";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { verifyFixtureDkim } from "@/test/perf/runtime-compat/dkim-check";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials } from "@/test/contract/types";
 
 export async function runDKIMSettings(target: {
@@ -112,7 +113,9 @@ export async function runDKIMSettings(target: {
     invalid[0].dkim.private_key = "invalid";
     const bad = await request("/api/settings/smtp", "PUT", invalid);
     assert.equal(bad.status, 400);
-    assert.deepEqual(await bad.json(), { message: "Invalid DKIM configuration." });
+    assert.deepEqual(listmonkEnvelope(await bad.json(), "normal"), {
+      message: "Invalid DKIM configuration.",
+    });
     assert.deepEqual((await read()).smtp[0].dkim, saved.smtp[0].dkim);
     const full = await read();
     for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
@@ -186,7 +189,9 @@ export async function runDKIMSettings(target: {
           kind === "key" ? snapshot.smtp : snapshot,
         );
         assert.equal(response.status, 400);
-        assert.deepEqual(await response.json(), { message: "Invalid DKIM configuration." });
+        assert.deepEqual(listmonkEnvelope(await response.json(), "normal"), {
+          message: "Invalid DKIM configuration.",
+        });
         assert.deepEqual(await read(), baseline);
       }
     }
@@ -200,14 +205,18 @@ export async function runDKIMSettings(target: {
         kind === "key" ? snapshot.smtp : snapshot,
       );
       assert.equal(response.status, 400);
-      assert.deepEqual(await response.json(), { message: "Invalid DKIM configuration." });
+      assert.deepEqual(listmonkEnvelope(await response.json(), "normal"), {
+        message: "Invalid DKIM configuration.",
+      });
       assert.deepEqual(await read(), baseline);
     }
     full["app.site_name"] = "candidate that must roll back";
     full.smtp[0].dkim.key_selector = "invalid selector";
     const invalidFull = await request("/api/settings", "PUT", full);
     assert.equal(invalidFull.status, 400);
-    assert.deepEqual(await invalidFull.json(), { message: "Invalid DKIM configuration." });
+    assert.deepEqual(listmonkEnvelope(await invalidFull.json(), "normal"), {
+      message: "Invalid DKIM configuration.",
+    });
     const afterInvalid = await read();
     assert.equal(afterInvalid["app.site_name"], saved["app.site_name"]);
     assert.deepEqual(afterInvalid.smtp[0].dkim, saved.smtp[0].dkim);

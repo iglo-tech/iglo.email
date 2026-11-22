@@ -45,7 +45,7 @@ describe("raw-query time limit and admission", () => {
     const third = await within(f.json(`/api/subscribers?query=${q("1=1")}`), 3000);
     expect(third).toEqual({
       status: 429,
-      body: { message: "Too many subscriber queries in progress." },
+      body: { message: "Too many subscriber queries in progress.", code: "rate_limited" },
     });
     expect(performance.now() - started).toBeLessThan(900);
     // At the deadline both children are killed and reaped without any read.

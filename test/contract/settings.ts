@@ -1,4 +1,5 @@
 // Reference: listmonk cmd/settings.go, models/settings.go and queries/misc.sql at 6fcd95f.
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import { runSettingsCouncilParser } from "@/test/contract/settings-council-parser";
 import { runSettingsNul } from "@/test/contract/settings-nul";
 import { runSettingsCouncilSmall } from "@/test/contract/settings-council-small";
@@ -53,7 +54,7 @@ export async function runSettingsContract(target: {
   const bad = await request("/api/settings", "PUT", "{}");
   check(
     bad.status === 400 &&
-      JSON.stringify(await bad.json()) ===
+      JSON.stringify(listmonkEnvelope(await bad.json(), target.mode)) ===
         JSON.stringify({ message: "at least one `from` address is required" }),
     "empty-full",
   );
@@ -83,7 +84,7 @@ export async function runSettingsContract(target: {
   );
   check(
     form.status === 400 &&
-      JSON.stringify(await form.json()) ===
+      JSON.stringify(listmonkEnvelope(await form.json(), target.mode)) ===
         JSON.stringify({ message: "at least one `from` address is required" }),
     "form-no-tags",
   );
@@ -389,7 +390,9 @@ export async function runSettingsContract(target: {
     target.mode === "reference",
   );
   check(
-    formKey.status === 400 && JSON.stringify(await formKey.json()) === '{"message":"Bad Request"}',
+    formKey.status === 400 &&
+      JSON.stringify(listmonkEnvelope(await formKey.json(), target.mode)) ===
+        '{"message":"Bad Request"}',
     "key-form-bad-request",
   );
   check(

@@ -6,12 +6,35 @@ import { differences } from "@/openapi/differences";
 import { excluded } from "@/openapi/excluded";
 import { operations } from "@/openapi/operations";
 import type { Operation } from "@/openapi/operations";
-import { schemas } from "@/openapi/schemas";
+import { nullable, object, schemas } from "@/openapi/schemas";
+import { errorCodesFor } from "@/server/error-codes";
 
 const error = { $ref: "#/components/responses/Error" };
 const errorContent = {
   "application/json": { schema: { $ref: "#/components/schemas/Error" } },
 };
+/**
+ * What a client does with a failure (B131). A permanent status fails the same way again until the
+ * request changes; a transient one is worth retrying with backoff, after `Retry-After` when sent.
+ * A write that carries an `idempotency_key` replays its first answer, so a retry of it is safe.
+ */
+const retryGuidance =
+  "The error envelope. Permanent, so retry only after the request changes: 400, 401, 403, 404, 409, 413 and 422, except the 409s `subscriber_changed`, `test_running` and `upload_changed`, which name a race. Worth retrying with backoff: 429, 503, other 5xx, network errors and those three 409s. Every 429 and 503 sends `Retry-After` in seconds. A 403 `invalid_credentials` is a wrong or unknown credential, and stays so until it is replaced. A write that carries an `idempotency_key` (`POST /api/subscriber-events`, its batch, `POST /api/tx`) is safe to retry: the first answer is replayed.";
+/**
+ * The envelope of one status (B131): `code` is the enum of the codes that status can send. A 409
+ * may also name the holder of an address it refused (D129).
+ */
+const errorSchema = (status: number) =>
+  object(
+    {
+      message: { type: "string" },
+      code: { type: "string", enum: [...errorCodesFor(status)] },
+      ...(status === 409
+        ? { conflict: object({ external_id: nullable({ type: "string" }) }) }
+        : {}),
+    },
+    status === 409 ? ["conflict"] : [],
+  );
 const refused = new Map<number, string>([
   [400, "Invalid input."],
   [401, "No valid credential."],
@@ -21,8 +44,10 @@ const refused = new Map<number, string>([
   [406, "Refused, without a retry."],
   [409, "Conflict."],
   [413, "Too large."],
+  [422, "The result is too large for this read."],
   [429, "Too many requests."],
-  [503, "The feature is off."],
+  [499, "The client closed the request before the answer."],
+  [503, "Unavailable: the feature is off, the server is shutting down, or a restore hold is on."],
 ]);
 
 function applies(entry: string, operation: Operation): boolean {
@@ -48,7 +73,8 @@ const pathParameters = ({ route, path }: Operation) =>
       (name === "id" ? { type: "integer", minimum: 1 } : { type: "string" }),
   }));
 
-function build(operation: Operation) {
+/** The statuses an operation documents by name, beside the envelope every failure takes. */
+function statusesOf(operation: Operation): Array<number> {
   const statuses = new Set(operation.errors);
   if (!operation.anonymous) {
     statuses.add(403);
@@ -56,6 +82,10 @@ function build(operation: Operation) {
   if (/\{id\}/.test(operation.route)) {
     statuses.add(400);
   }
+  return [...statuses].sort((a, b) => a - b);
+}
+
+function build(operation: Operation) {
   const content = operation.answer
     ? Object.fromEntries(
         Object.entries(operation.answer).map(([type, schema]) => [type, { schema }]),
@@ -106,9 +136,10 @@ function build(operation: Operation) {
     responses: {
       ...(content ? { 200: { description: "OK", content } } : {}),
       ...Object.fromEntries(
-        [...statuses]
-          .sort((a, b) => a - b)
-          .map((status) => [status, { description: refused.get(status), content: errorContent }]),
+        statusesOf(operation).map((status) => [
+          status,
+          { $ref: `#/components/responses/Error${status}` },
+        ]),
       ),
       default: error,
     },
@@ -122,6 +153,18 @@ export function buildDocument(): string {
     const [method = "", path = ""] = operation.route.split(" ");
     (paths[path] ??= {})[method.toLowerCase()] = build(operation);
   }
+  // One named response per status, shared by every operation that documents it (B131). Its
+  // envelope is inline: the codes a status can send are its own, not a schema of their own.
+  const documented = [...new Set(operations.flatMap(statusesOf))].sort((a, b) => a - b);
+  const statusResponses = Object.fromEntries(
+    documented.map((status) => [
+      `Error${status}`,
+      {
+        description: refused.get(status) ?? "Failed.",
+        content: { "application/json": { schema: errorSchema(status) } },
+      },
+    ]),
+  );
   return JSON.stringify({
     openapi: "3.1.0",
     info: {
@@ -147,7 +190,8 @@ export function buildDocument(): string {
         SessionCookie: { type: "apiKey", in: "cookie", name: "session" },
       },
       responses: {
-        Error: { description: "The error envelope.", content: errorContent },
+        Error: { description: retryGuidance, content: errorContent },
+        ...statusResponses,
       },
       schemas,
     },

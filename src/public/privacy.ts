@@ -32,10 +32,15 @@ export function createPrivacy(deps: {
   /** The site's branding and the privacy options, read for each answer. */
   page: () => PageOptions;
 }): Privacy {
-  const message = (t: Translation, status: number, title: string, text: string) =>
-    publicMessage(t, { status, title, message: text, site: deps.page() });
-  const failed = (t: Translation, status: number, text: string) =>
-    message(t, status, t.T("globals.terms.error"), text);
+  const message = (
+    t: Translation,
+    status: number,
+    title: string,
+    text: string,
+    headers: Record<string, string> = {},
+  ) => publicMessage(t, { status, title, message: text, site: deps.page() }, headers);
+  const failed = (t: Translation, status: number, text: string, headers = {}) =>
+    message(t, status, t.T("globals.terms.error"), text, headers);
   return {
     export(context, current) {
       const t = context.app.i18n;
@@ -47,7 +52,7 @@ export function createPrivacy(deps: {
         return failed(t, 400, t.T("public.invalidFeature"));
       }
       if (sendingHeld(context.app.db)) {
-        return failed(t, 503, t.T("public.errorProcessingRequest"));
+        return failed(t, 503, t.T("public.errorProcessingRequest"), { "Retry-After": "30" });
       }
       try {
         deps.mail().exportData(sub);

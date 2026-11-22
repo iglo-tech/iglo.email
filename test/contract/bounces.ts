@@ -1,6 +1,7 @@
 // Reference: listmonk cmd/bounce.go, internal/core/bounces.go and queries/bounces.sql at 6fcd95f.
 // The shared corpus runs against both targets; send links, outbound webhooks and the signed
 // Amazon SES cases are native, so that part runs against the compiled production executable only.
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 import { startSink } from "@/test/tx/sink";
@@ -216,7 +217,9 @@ export async function runBouncesContract(target: {
     const refusedSns = async (body: unknown, type?: string) => {
       const response = await sns(body, type);
       return (
-        response.status === 400 && JSON.stringify(response.body) === '{"message":"Invalid data"}'
+        response.status === 400 &&
+        JSON.stringify(listmonkEnvelope(response.body, target.mode)) ===
+          '{"message":"Invalid data"}'
       );
     };
     check(await refusedSns(sesBody), "ses-no-type");

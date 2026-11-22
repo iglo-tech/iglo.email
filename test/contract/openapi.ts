@@ -264,7 +264,10 @@ export async function runOpenApiContract(target: {
 
   const conforms = (key: string, reply: Reply) => {
     const operation = operationOf(key);
-    const declared = operation.responses[String(reply.status)] ?? operation.responses.default;
+    // A failure must be a status the operation names: `default` carries every code, so it cannot
+    // show that the failure's own code is one its status can send (B131, D129).
+    const named = operation.responses[String(reply.status)];
+    const declared = reply.status >= 400 ? named : (named ?? operation.responses.default);
     if (!declared) {
       throw new Error(`FAIL openapi-status ${key}: ${reply.status} is not documented`);
     }
@@ -290,6 +293,23 @@ export async function runOpenApiContract(target: {
             `FAIL openapi-schema ${key} ${reply.status}: ${problems.slice(0, 8).join("; ")}`,
           );
         }
+      }
+    }
+    // Every JSON failure is also the error envelope, which the operations' default response
+    // documents (B131, D129): a status names its own copy of it, so the envelope is checked here.
+    if (reply.status >= 400 && reply.type === "application/json") {
+      const problems = validate(
+        document,
+        { $ref: "#/components/schemas/Error" },
+        reply.body,
+        "$",
+        0,
+        checked,
+      );
+      if (problems.length) {
+        throw new Error(
+          `FAIL openapi-envelope ${key} ${reply.status}: ${problems.slice(0, 8).join("; ")}`,
+        );
       }
     }
     if (!seen.has(key)) {
@@ -484,6 +504,11 @@ export async function runOpenApiContract(target: {
         },
       })
     ).body.data;
+    // A duplicate address answers 409 in the documented envelope (B131, D129).
+    await op("POST /api/subscribers", {
+      body: { email: "two@fixture.test", name: "Again", status: "enabled" },
+      expect: 409,
+    });
     const external = (
       await op("POST /api/subscribers", {
         body: {

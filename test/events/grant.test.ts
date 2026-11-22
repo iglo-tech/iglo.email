@@ -189,7 +189,7 @@ test("a batch with one bad grant records the other events and reports the bad on
   expect(r.status).toBe(200);
   const [first, second, third] = r.body.data.results;
   expect(first).toMatchObject({ status: 200, grants: [{ list_id: news, result: "added" }] });
-  expect(second).toEqual({ status: 400, message: invalid });
+  expect(second).toEqual({ status: 400, message: invalid, code: "invalid_fields" });
   expect(third).toMatchObject({ status: 200, grants: [{ list_id: news, result: "added" }] });
   expect(f.count("events")).toBe(2);
   expect(f.count("subscribers")).toBe(2);
@@ -426,7 +426,11 @@ test("in a batch, an existing subscriber outside the token's lists refuses only 
   );
   expect(r.status).toBe(200);
   const [outside, inside] = r.body.data.results;
-  expect(outside).toEqual({ status: 403, message: expect.any(String) });
+  expect(outside).toEqual({
+    status: 403,
+    message: expect.any(String),
+    code: "permission_denied",
+  });
   expect(inside).toMatchObject({ status: 200, grants: [{ list_id: news, result: "added" }] });
   expect(f.count("events")).toBe(1);
   expect(f.count("subscribers")).toBe(2);

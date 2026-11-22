@@ -1,8 +1,12 @@
 // The document's schemas. Upstream's docs/swagger/collections.yaml is where the ported ones started;
 // each is corrected to what the server answers, which the OpenAPI contract checks.
+import { ERROR_CODES } from "@/server/error-codes";
+
 export type Schema = Record<string, unknown>;
 
 const string = { type: "string" };
+/** The stable error `code` (B131): every code the server can send. */
+export const errorCode = { type: "string", enum: [...ERROR_CODES] };
 const integer = { type: "integer" };
 const number = { type: "number" };
 const boolean = { type: "boolean" };
@@ -278,8 +282,9 @@ const settings = (smtp: string, mailbox: string): Schema =>
 
 export const schemas = {
   Error: {
-    ...object({ message: string }),
-    description: "Every failure under `/api/` and `/webhooks/`.",
+    ...object({ message: string, code: errorCode }),
+    description:
+      "Every failure under `/api/` and `/webhooks/`: `message` as upstream words it, and a stable `code` to branch on. The codes an answer can carry are listed on its response.",
   },
   UserRoleSummary: object({ id: integer, name: string, permissions: array(string) }),
   ListRoleSummary: object({ id: integer, name: string, lists: nullable(array(roleList)) }),
@@ -682,7 +687,15 @@ export const schemas = {
         enrollments: ref("EventEnrollments"),
         grants: ref("EventGrants"),
       }),
-      object({ status: integer, message: string }),
+      object(
+        {
+          status: integer,
+          message: string,
+          code: errorCode,
+          conflict: object({ external_id: nullable(string) }),
+        },
+        ["conflict"],
+      ),
     ],
   },
   SubscriberEvent: object({

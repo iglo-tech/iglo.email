@@ -102,7 +102,7 @@ test("an unknown subscriber without email is a safe 404 with no write", async ()
   const f = await open();
   const r = await f.post(event({ external_id: "missing" }));
   expect(r.status).toBe(404);
-  expect(r.body).toEqual({ message: "Subscriber not found" });
+  expect(r.body).toEqual({ message: "Subscriber not found", code: "not_found" });
   expect(f.count("subscribers")).toBe(0);
   expect(f.count("events")).toBe(0);
   const none = await f.post(event({ name: "only a name" }));
@@ -139,7 +139,12 @@ test("conflicts are 409 with no partial write", async () => {
     event({ external_id: "a", email: "b@example.com", name: "Changed", attribs: { k: 2 } }),
   );
   expect(taken.status).toBe(409);
-  expect(taken.body).toEqual({ message: "E-mail already exists." });
+  // The holder has an external_id and the caller manages it, so the answer names it.
+  expect(taken.body).toEqual({
+    message: "E-mail already exists.",
+    code: "email_conflict",
+    conflict: { external_id: "b" },
+  });
   // external_id and email naming different subscribers.
   const crossed = await f.post(event({ external_id: "b", email: "a@example.com" }));
   expect(crossed.status).toBe(409);
@@ -343,7 +348,10 @@ test("malformed and hostile input fails safely without writes", async () => {
     expect([r.status, r.body.message]).toEqual([400, `Invalid fields: ${field}`]);
   }
   const blocked = await f.post(event({ email: "x@blocked.test" }));
-  expect(blocked).toEqual({ status: 400, body: { message: "The e-mail domain is blocklisted." } });
+  expect(blocked).toEqual({
+    status: 400,
+    body: { message: "The e-mail domain is blocklisted.", code: "invalid_fields" },
+  });
   expect(f.count("subscribers")).toBe(0);
   expect(f.count("events")).toBe(0);
   // `__proto__` is an ordinary key, and lone surrogates in values are made well-formed.
@@ -367,7 +375,10 @@ test("merged attributes are bounded unless an event shrinks them", async () => {
   const over = await f.post(
     event({ email: "big@example.com", attribs: { c: "x".repeat(10_000) } }),
   );
-  expect(over).toEqual({ status: 400, body: { message: "Invalid attributes." } });
+  expect(over).toEqual({
+    status: 400,
+    body: { message: "Invalid attributes.", code: "invalid_fields" },
+  });
   expect(await f.subscriber(id)).toEqual(before);
   expect(f.events.list(BigInt(id))).toHaveLength(2);
   const removed = await f.post(event({ email: "big@example.com", attribs: { a: null } }));
@@ -383,7 +394,7 @@ test("the subscriber_events:create permission is required and revalidated", asyn
   const denied = await f.post(body, other);
   expect(denied).toEqual({
     status: 403,
-    body: { message: "permission denied: subscriber_events:create" },
+    body: { message: "permission denied: subscriber_events:create", code: "permission_denied" },
   });
   expect((await f.batch({ events: [body] }, other)).status).toBe(403);
   // A cookie session needs its CSRF token.
@@ -415,8 +426,17 @@ test("a batch returns per-item results; each item is atomic and a bad item drops
   ]);
   expect(results[1]).toEqual(results[0]);
   expect(results[2].subscriber_id).toBe(results[0].subscriber_id);
-  expect(results[3]).toEqual({ status: 400, message: "Invalid fields: subscriber" });
-  expect(results[4]).toEqual({ status: 409, message: "E-mail already exists." });
+  expect(results[3]).toEqual({
+    status: 400,
+    message: "Invalid fields: subscriber",
+    code: "invalid_fields",
+  });
+  // The holder of b1 has no external_id, and this item's external_id is another subscriber's: a refusal.
+  expect(results[4]).toEqual({
+    status: 409,
+    message: "E-mail already exists.",
+    code: "email_conflict",
+  });
   expect((await f.subscriber(taken)).attribs).toEqual({});
   expect((await f.subscriber(results[0].subscriber_id)).attribs).toEqual({ n: 2 });
   expect(f.count("subscribers")).toBe(3);
@@ -430,6 +450,7 @@ test("batch limits: 1 to 500 events and a bounded body", async () => {
   expect((await f.batch({ events: [] })).status).toBe(400);
   expect((await f.batch({ events: many(501) })).body).toEqual({
     message: "Invalid fields: events",
+    code: "invalid_fields",
   });
   expect((await f.batch([event({ email: "a@example.com" })])).status).toBe(400);
   expect((await f.batch({ events: many(1), more: 1 })).status).toBe(400);

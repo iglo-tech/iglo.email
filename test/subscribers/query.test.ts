@@ -128,6 +128,7 @@ describe("GET /api/subscribers", () => {
     expect(emails(disabled.body)).toEqual(["carol"]);
     expect((await f.json("/api/subscribers?list_id=1&list_id=abc")).body).toEqual({
       message: "Invalid ID(s)",
+      code: "invalid_fields",
     });
     expect((await f.json("/api/subscribers?list_id=")).body.data.total).toBe(4);
     expect((await f.json("/api/subscribers?status=bogus")).status).toBe(400);
@@ -235,6 +236,7 @@ describe("GET /api/subscribers", () => {
       const big = await f.json(`/api/subscribers?query=${q("length(randomblob(1000000000)) > 0")}`);
       expect(big.body).toEqual({
         message: "Error fetching Subscribers: query exceeded the memory limit",
+        code: "internal_error",
       });
       expect(childPids().length).toBe(before);
     },
@@ -246,7 +248,7 @@ describe("GET /api/subscribers", () => {
     const denied = await f.json(`/api/subscribers?query=${q("1=1")}`, "GET", undefined, reader);
     expect(denied).toEqual({
       status: 403,
-      body: { message: "Permission denied: subscribers:sql_query" },
+      body: { message: "Permission denied: subscribers:sql_query", code: "permission_denied" },
     });
     const nobody = await f.apiUser("nobody", ["lists:get_all"]);
     expect((await f.json("/api/subscribers", "GET", undefined, nobody)).status).toBe(403);

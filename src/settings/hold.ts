@@ -61,7 +61,7 @@ export const sendingHeld = (db: Database): boolean => restoreHold(db) !== null;
 export function refuseWhileHeld(db: Database): void {
   const hold = restoreHold(db);
   if (hold) {
-    throw new HttpError(503, `Sending is held. ${hold.reason}`);
+    throw new HttpError(503, `Sending is held. ${hold.reason}`, {}, "held");
   }
 }
 

@@ -211,7 +211,10 @@ test("5. a new SMTP server with a blank DKIM key is refused, and no other server
   ];
   const response = await save(body);
   expect(response.status).toBe(400);
-  expect(await response.json()).toEqual({ message: "Invalid DKIM configuration." });
+  expect(await response.json()).toEqual({
+    message: "Invalid DKIM configuration.",
+    code: "invalid_fields",
+  });
   expect(await read()).toEqual(before);
 });
 

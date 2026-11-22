@@ -83,7 +83,10 @@ export function registerArchiveRoutes(
     message(t, 404, t.T("globals.terms.notFound"), t.T("public.campaignNotFound"), headers);
   const fetchFailed = (t: Translation, error: unknown, headers = {}) =>
     error instanceof RenderCapacityError
-      ? message(t, 429, t.T("globals.terms.error"), t.T("public.errorFetchingCampaign"), headers)
+      ? message(t, 429, t.T("globals.terms.error"), t.T("public.errorFetchingCampaign"), {
+          ...headers,
+          "Retry-After": "1",
+        })
       : message(t, 500, t.T("globals.terms.error"), t.T("public.errorFetchingCampaign"), headers);
   const templateBody = (id: bigint | null) =>
     (id === null ? undefined : deps.templates.get(id)?.body) ??

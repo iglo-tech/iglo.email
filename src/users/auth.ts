@@ -65,20 +65,32 @@ function parseAuthorization(header: string) {
       throw new HttpError(
         403,
         "code=400, message=invalid Base64 value in Basic Authorization header",
+        {},
+        "invalid_credentials",
       );
     }
     pair = Buffer.from(encoded, "base64").toString("utf-8");
   } else {
-    throw new HttpError(403, "code=400, message=unknown Authorization scheme");
+    throw new HttpError(
+      403,
+      "code=400, message=unknown Authorization scheme",
+      {},
+      "invalid_credentials",
+    );
   }
   const separator = pair.indexOf(":");
   if (separator === -1) {
-    throw new HttpError(403, "code=400, message=api_key:token missing");
+    throw new HttpError(403, "code=400, message=api_key:token missing", {}, "invalid_credentials");
   }
   const user = pair.slice(0, separator),
     token = pair.slice(separator + 1);
   if (!user || !token) {
-    throw new HttpError(403, "code=400, message=empty `api_key` or `token`");
+    throw new HttpError(
+      403,
+      "code=400, message=empty `api_key` or `token`",
+      {},
+      "invalid_credentials",
+    );
   }
   return { user, token };
 }
@@ -290,28 +302,28 @@ export async function createAuthentication(
         /^[a-f0-9]{64}$/.test(user.password ?? "");
       const stored = eligible ? must(user?.password, "API key digest") : "0".repeat(64);
       if (!equal(digest, stored) || !eligible) {
-        throw new HttpError(403, "invalid API credentials");
+        throw new HttpError(403, "invalid API credentials", {}, "invalid_credentials");
       }
       transport = "header";
     } else {
       sessionId = cookie(request, "session");
       if (!/^[A-Za-z0-9_-]{43}$/.test(sessionId)) {
-        throw new HttpError(403, "invalid session");
+        throw new HttpError(403, "invalid session", {}, "invalid_credentials");
       }
       const session = store.session(sessionId);
       if (!session) {
-        throw new HttpError(403, "invalid session");
+        throw new HttpError(403, "invalid session", {}, "invalid_credentials");
       }
       user = session.user;
       csrf = session.csrf;
       transport = "session";
     }
     if (!user) {
-      throw new HttpError(403, "invalid session");
+      throw new HttpError(403, "invalid session", {}, "invalid_credentials");
     }
     const role = roles.userRole(user.user_role_id);
     if (!role) {
-      throw new HttpError(403, "invalid session");
+      throw new HttpError(403, "invalid session", {}, "invalid_credentials");
     }
     // The session fields are present only when they hold a value, so each combination is its own literal.
     if (sessionId && csrf) {
@@ -365,7 +377,7 @@ export async function createAuthentication(
         current.transport !== prior.transport ||
         current.sessionId !== prior.sessionId
       ) {
-        throw new HttpError(403, "invalid session");
+        throw new HttpError(403, "invalid session", {}, "invalid_credentials");
       }
       context.identity = current;
     },

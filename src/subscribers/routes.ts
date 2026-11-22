@@ -74,8 +74,9 @@ const identity = (c: RequestContext) => {
   return c.identity;
 };
 const missingExternal = () => new HttpError(404, "Subscriber not found.");
+// listmonk answers a missing numeric ID with a 400; its code still says what happened (B131).
 const notFound = (c: RequestContext, name: string) =>
-  new HttpError(400, c.app.i18n.Ts("globals.messages.notFound", "name", name));
+  new HttpError(400, c.app.i18n.Ts("globals.messages.notFound", "name", name), {}, "not_found");
 const selector = (c: RequestContext) => {
   let value: string;
   if (c.url.pathname === "/api/subscribers/external") {

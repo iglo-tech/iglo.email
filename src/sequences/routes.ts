@@ -838,7 +838,12 @@ export function registerSequenceRoutes(
         throw new HttpError(409, "The sequence has no steps.");
       }
       if (outcome.error === "test_running") {
-        throw new HttpError(409, "A test of this sequence is already running for this subscriber.");
+        throw new HttpError(
+          409,
+          "A test of this sequence is already running for this subscriber.",
+          {},
+          "test_running",
+        );
       }
       if (outcome.error === "no_consent") {
         throw new HttpError(
