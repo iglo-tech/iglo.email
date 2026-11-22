@@ -1,6 +1,8 @@
 // B127: the operator screens. The send log is a page of its own and filters by status; a subscriber's
 // sends and events name each message's subject, sequence and reason; an exact external ID finds its
 // subscriber on the list; and the subscriber's tabs fit a phone without the page scrolling sideways.
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { expect } from "@playwright/test";
 import { api, signIn, test, unique } from "../helpers.js";
 
@@ -186,7 +188,12 @@ test("an enrollment that an event exited names that event, on its timeline and t
     .first()
     .getByRole("link", { name: made.body.data.name });
   await expect(exitedLink).toHaveAttribute("href", `/admin/sequences/${made.body.data.id}`);
-  await expect(exitedLink).toHaveCSS("text-decoration-line", /underline/);
+  // A link takes the primary colour; an unstyled one would read in its line's muted text colour.
+  const [linkColor, lineColor] = await exitedLink.evaluate((a) => [
+    getComputedStyle(a).color,
+    getComputedStyle(a.parentElement).color,
+  ]);
+  expect(linkColor).not.toBe(lineColor);
 });
 
 // B127 r2: a wiped send keeps its labels. Deleting the subscriber takes the address and the message,
@@ -264,6 +271,83 @@ test("an enrollment a step condition ended names the condition, on its timeline 
   );
 });
 
+// B127 r2: a marketing wait the frequency cap holds says so, and until when, on the subscriber's tab.
+test("a cap-held wait names the cap and when it frees the step, on the subscriber's enrollments tab", async ({
+  page,
+}) => {
+  await signIn(page);
+  const list = await audience(page);
+  const tx = await template(page);
+  const event = unique("op-hold");
+  const made = await api(page, "/api/sequences", "POST", {
+    name: unique("Held"),
+    status: "active",
+    trigger: { event },
+    reentry: "always",
+    list_id: list.id,
+    steps: [
+      { wait: "PT0S", kind: "marketing", template_id: tx.id },
+      { wait: "PT1H", kind: "marketing", template_id: tx.id, max_late: "P8D" },
+    ],
+  });
+  expect(made.status).toBe(200);
+  const began = await api(page, "/api/subscriber-events", "POST", {
+    subscriber: { email: `${unique("op")}@example.com`, name: "Held", grant_lists: [list.id] },
+    name: event,
+  });
+  expect(began.status).toBe(200);
+  const { subscriber_id: subscriber } = began.body.data;
+  // The first marketing message goes at once, so the cap holds the second for a week from then.
+  await expect
+    .poll(async () => {
+      const sends = await api(page, `/api/subscribers/${subscriber}/sends?per_page=100`);
+      return sends.body.data.results.some((send) => send.status === "sent");
+    })
+    .toBe(true);
+
+  await page.goto(`/admin/subscribers/${subscriber}/enrollments`);
+  await expect(page.getByTestId("enrollment-held").first()).toContainText(
+    "Held by frequency cap until ",
+  );
+});
+
+// B127 r2: the sends whose sent time is missing or whose subject the thirty-day retention dropped say
+// so. The pass cannot run in a test, so the payload of a finished send is cleared as the pass clears
+// it; the address and the status stay, and the send log must read the same as after a real pass.
+test("a sent send past the thirty-day retention says its subject is no longer kept", async ({
+  page,
+}) => {
+  await signIn(page);
+  const list = await audience(page);
+  const email = `${unique("op")}@example.com`;
+  const { subscriber, subject } = await started(page, list, email);
+  let sendID = null;
+  await expect
+    .poll(async () => {
+      const sends = await api(page, `/api/subscribers/${subscriber}/sends?per_page=100`);
+      sendID = sends.body.data.results.find((send) => send.status === "sent")?.id ?? null;
+      return sendID;
+    })
+    .not.toBeNull();
+  const db = new DatabaseSync(join(process.env.E2E_DATA_DIR, "iglo-email.db"), { timeout: 5000 });
+  try {
+    db.prepare("UPDATE sends SET payload = NULL WHERE id = ?").run(sendID);
+  } finally {
+    db.close();
+  }
+
+  await page.goto("/admin/sends");
+  const row = page.locator(`[data-testid="send-row"][data-id="${sendID}"]`);
+  await expect(row).toContainText("Subject no longer kept (30-day retention)");
+  await expect(row).not.toContainText(subject);
+  await expect(row).toContainText(email);
+  await expect(row.locator('td[data-label="Sent"]')).not.toHaveText("—");
+  await page.goto(`/admin/subscribers/${subscriber}/sends`);
+  await expect(page.getByTestId("send-row").first()).toContainText(
+    "Subject no longer kept (30-day retention)",
+  );
+});
+
 test("a send with no subject says why: a refused one was never prepared, a wiped one lost its address", async ({
   page,
 }) => {
@@ -324,6 +408,47 @@ test("a send with no subject says why: a refused one was never prepared, a wiped
 
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
+
+  // B127 r2: a value that wraps on a phone reads from the left under its label, every line from the
+  // same edge (a right-aligned wrap would start each line further in).
+  test("a wrapped value in a card starts every line at the same left edge", async ({ page }) => {
+    await signIn(page);
+    const list = await audience(page);
+    const tx = await template(page);
+    const event = unique("op-wrap");
+    const made = await api(page, "/api/sequences", "POST", {
+      name: `${unique("Onboarding")} for everyone who joins the operator news list this season`,
+      status: "active",
+      trigger: { event },
+      reentry: "always",
+      list_id: list.id,
+      steps: [{ wait: "P1D", kind: "transactional", template_id: tx.id }],
+    });
+    expect(made.status).toBe(200);
+    const began = await api(page, "/api/subscriber-events", "POST", {
+      subscriber: { email: `${unique("op")}@example.com`, name: "Wrap", grant_lists: [list.id] },
+      name: event,
+    });
+    expect(began.status).toBe(200);
+    await page.goto(`/admin/subscribers/${began.body.data.subscriber_id}/enrollments`);
+    const sequence = page.getByTestId("enrollment-row").first().locator("td").nth(1);
+    await expect(sequence).toContainText("for everyone who joins");
+    const lines = await sequence.evaluate((cell) => {
+      const range = document.createRange();
+      range.selectNodeContents(cell);
+      const leftOf = new Map();
+      for (const rect of range.getClientRects()) {
+        if (rect.width === 0) {
+          continue;
+        }
+        const top = Math.round(rect.top);
+        leftOf.set(top, Math.min(leftOf.get(top) ?? Infinity, Math.round(rect.left)));
+      }
+      return [...leftOf.values()];
+    });
+    expect(lines.length).toBeGreaterThan(1);
+    expect(new Set(lines).size).toBe(1);
+  });
 
   // B127 r2: the send log's card names the column the table's header names.
   test("the send log's card for a sequence send is labelled Sequence / template", async ({
