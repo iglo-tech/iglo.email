@@ -48,6 +48,8 @@ const DESTRUCTIVE_IDS = new Set([
   "blocklistSubscriberById",
   "blocklistSubscribers",
   "blocklistBouncedSubscribers",
+  // With overlap_hours 0 the old secret stops signing at once, so receivers still on it are cut off.
+  "rotateWebhookSecret",
 ]);
 
 const snake = (id: string): string => id.replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();

@@ -195,6 +195,11 @@ describe("B78 MCP covers every operation (D98)", () => {
       openWorldHint: true,
     });
     expect(hint("update_setting_by_key")).toMatchObject({ destructiveHint: true });
+    // A rotation with overlap_hours 0 cuts off receivers still on the old secret.
+    expect(hint("rotate_webhook_secret")).toMatchObject({
+      destructiveHint: true,
+      readOnlyHint: false,
+    });
     expect(hint("delete_subscriber_activity")).toMatchObject({ destructiveHint: true });
     // Mail or an outside call.
     expect(hint("send_campaign_test")).toMatchObject({ openWorldHint: true });
