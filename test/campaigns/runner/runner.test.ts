@@ -710,7 +710,10 @@ test("a wait that never completes fails with the stuck state, not at the test ti
     .drive(() => false, 10, 50)
     .then(
       () => "",
-      (error_: unknown) => (error_ instanceof Error ? error_.message : String(error_)),
+      (error_: unknown) => {
+        expect(error_).toBeInstanceOf(Error);
+        return error_ instanceof Error ? error_.message : String(error_);
+      },
     );
   expect(error).toContain("condition not reached after 50 iterations");
   expect(error).toContain("last condition value false");
@@ -733,7 +736,10 @@ test("a wait with no iteration limit ends at the wall bound and names it", async
     .drive(() => false, 50, undefined, 200)
     .then(
       () => "",
-      (error_: unknown) => (error_ instanceof Error ? error_.message : String(error_)),
+      (error_: unknown) => {
+        expect(error_).toBeInstanceOf(Error);
+        return error_ instanceof Error ? error_.message : String(error_);
+      },
     );
   expect(performance.now() - started).toBeLessThan(2000);
   expect(error).toContain("wall limit 200 ms");
