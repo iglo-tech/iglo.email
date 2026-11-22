@@ -45,7 +45,7 @@ async function setup(f: SchedulerFixture) {
 }
 
 /** The Message-ID the sink received for the message to `to`: the one the test send used. */
-function messageIdFor(messages: Array<{ to: string[]; data: string }>, to: string) {
+function messageIdFor(messages: Array<{ to: Array<string>; data: string }>, to: string) {
   const message = messages.find((m) => m.to.includes(to));
   const match = /^Message-ID: (.+)$/im.exec(message?.data ?? "");
   if (!match) {

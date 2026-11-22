@@ -220,7 +220,7 @@ export async function runImportContract(target: {
     check(dup.name === "First" && membership(dup, a) === "unconfirmed", "duplicate-first-wins");
 
     // Bad rows are skipped and logged; a bad attribute cell costs only the attributes.
-    const bytes = (...parts: Array<string | number[]>) =>
+    const bytes = (...parts: Array<string | Array<number>>) =>
       Buffer.concat(
         parts.map((part) => (typeof part === "string" ? Buffer.from(part) : Buffer.from(part))),
       );

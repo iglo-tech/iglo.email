@@ -279,7 +279,7 @@ export async function sequencesFixture(
   let roleCount = 0;
   const apiUser = async (
     permissions: Array<string>,
-    listPermissions?: Array<{ id: number; permissions: string[] }>,
+    listPermissions?: Array<{ id: number; permissions: Array<string> }>,
   ) => {
     const name = `api-${++roleCount}`;
     const role = await json("/api/roles/users", "POST", { name, permissions });

@@ -1242,7 +1242,7 @@ test("list roles project child permissions and roll back invalid replacement and
     expect(cleared.status).toBe(200);
     const entries = (
       (await (await call(f, "/api/roles/lists", { session: admin })).json()) as {
-        data: Array<{ id: number; lists: unknown[] }>;
+        data: Array<{ id: number; lists: Array<unknown> }>;
       }
     ).data;
     expect(entries.find((entry) => entry.id === role)?.lists).toEqual([]);

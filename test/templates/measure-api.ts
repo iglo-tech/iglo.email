@@ -28,8 +28,8 @@ for (const [kind, executable] of executables) {
             throw new Error(`HTTP ${response.status} in ${method} ${path.split("?")[0]}`);
           return ((await response.json()) as { data: any }).data;
         }
-        const samples: number[] = [];
-        const restartSamples: number[] = [];
+        const samples: Array<number> = [];
+        const restartSamples: Array<number> = [];
         for (let i = 0; i < 25; i++) {
           const start = performance.now();
           await request("/api/health");
@@ -65,7 +65,7 @@ for (const [kind, executable] of executables) {
           restartMs: restartSamples[0],
         };
         if (kind === "candidate") {
-          const times: number[] = [];
+          const times: Array<number> = [];
           for (let i = 0; i < 25; i++) {
             const begin = performance.now();
             const item = await request("/api/templates", "POST", {

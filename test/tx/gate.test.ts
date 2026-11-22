@@ -15,7 +15,7 @@ const gate = (
 test("reservations are granted in arrival order and freed by release", async () => {
   const g = gate();
   const first = (await g.acquire(60))!;
-  const order: string[] = [];
+  const order: Array<string> = [];
   const second = g.acquire(60).then((r) => (order.push("second"), r));
   // A small request behind a waiting one does not jump the queue.
   const third = g.acquire(10).then((r) => (order.push("third"), r));

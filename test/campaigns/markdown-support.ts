@@ -10,7 +10,7 @@ export async function readerSession(
   f: CampaignsFixture,
   name: string,
   permissions: Array<string>,
-  lists: Array<{ id: number; permissions: string[] }>,
+  lists: Array<{ id: number; permissions: Array<string> }>,
 ): Promise<Record<string, string>> {
   const role = await f.json("/api/roles/users", "POST", { name, permissions });
   if (role.status !== 200) {

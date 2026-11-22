@@ -81,7 +81,7 @@ export function startSchemaFixture(directory: string) {
         .all()
         .map((row) => row.name),
     );
-    const shapes: Record<string, string[]> = {};
+    const shapes: Record<string, Array<string>> = {};
     const counts: Record<string, unknown> = {};
     for (const table of tables) {
       if (found.has(table)) {

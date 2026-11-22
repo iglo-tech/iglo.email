@@ -64,7 +64,7 @@ test("a blocklisted person's event names each sequence it would start, marketing
 
   // The subscriber's own event list shows the same outcome for that event.
   const timeline = (await f.json(`/api/subscribers/${subscriber}/subscriber-events`)).body.data
-    .results as Array<{ name: string; skipped: unknown[] }>;
+    .results as Array<{ name: string; skipped: Array<unknown> }>;
   expect(timeline.find((e) => e.name === "order_paid")?.skipped).toEqual([
     { sequence_id: marketing.id, reason: "subscriber_blocklisted" },
     { sequence_id: receipt.id, reason: "subscriber_blocklisted" },

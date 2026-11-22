@@ -72,7 +72,7 @@ test("a line has upstream's shape, and the oldest lines go first", async () => {
 });
 
 test("an attention line keeps no error class, and its stderr copy is one plain line", () => {
-  const written: Array<unknown>[] = [];
+  const written: Array<Array<unknown>> = [];
   const error_ = console.error;
   console.error = (...args: Array<unknown>) => written.push(args);
   try {

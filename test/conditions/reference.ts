@@ -89,12 +89,12 @@ export function referenceEvaluate(
   sql?: (fragment: string, subscriber: ModelSubscriber) => boolean,
 ): boolean {
   if ("all" in condition) {
-    return (condition.all as Record<string, unknown>[]).every((c) =>
+    return (condition.all as Array<Record<string, unknown>>).every((c) =>
       referenceEvaluate(c, subscriber, context, sql),
     );
   }
   if ("any" in condition) {
-    return (condition.any as Record<string, unknown>[]).some((c) =>
+    return (condition.any as Array<Record<string, unknown>>).some((c) =>
       referenceEvaluate(c, subscriber, context, sql),
     );
   }

@@ -22,7 +22,7 @@ import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 const form = { "content-type": "application/x-www-form-urlencoded" };
 
 export async function publicFixture() {
-  const calls: Array<{ inTransaction: boolean; listIds: bigint[] }> = [];
+  const calls: Array<{ inTransaction: boolean; listIds: Array<bigint> }> = [];
   let failEffect = false;
   const effects: UnsubscribeEffects = {
     unsubscribed(event) {

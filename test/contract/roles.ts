@@ -112,7 +112,10 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     const grants = await request(`/api/roles/lists?query=m14-list-${suffix}`);
     const granted = (
       (await grants.json()) as {
-        data: Array<{ id: number; lists: { id: number; name: string; permissions: string[] }[] }>;
+        data: Array<{
+          id: number;
+          lists: Array<{ id: number; name: string; permissions: Array<string> }>;
+        }>;
       }
     ).data.find((item) => item.id === list);
     check(
@@ -251,8 +254,9 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
       });
       check(replacement.status === 200, `list-child-${variant}-replacement`);
       const response = await request(`/api/roles/lists?query=${suffix}`);
-      const entries = ((await response.json()) as { data: Array<{ id: number; lists: unknown[] }> })
-        .data;
+      const entries = (
+        (await response.json()) as { data: Array<{ id: number; lists: Array<unknown> }> }
+      ).data;
       check(
         [list, cleared].every((id) =>
           entries.some((entry) => entry.id === id && entry.lists.length === 0),

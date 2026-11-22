@@ -230,7 +230,6 @@ export default defineConfig({
         // Permanent: test runners, measure and reference scripts print their own command output, which AGENTS.md allows.
         "no-console": "off",
         curly: "off",
-        "typescript/array-type": "off",
         "typescript/require-array-sort-compare": "off",
         "no-promise-executor-return": "off",
         "quality/no-object-parameters": "off",

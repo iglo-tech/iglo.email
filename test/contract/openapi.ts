@@ -1615,7 +1615,7 @@ export async function runOpenApiContract(target: {
     };
     for (const { key, operation } of reachable) {
       const permissions = (operation["x-required-permissions"] ?? []) as Array<string>;
-      const also = (operation["x-also-required-permissions"] ?? []) as Array<string>[];
+      const also = (operation["x-also-required-permissions"] ?? []) as Array<Array<string>>;
       const query = needed(operation);
       if (!key.startsWith("GET ")) {
         continue;
