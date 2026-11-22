@@ -34,7 +34,7 @@ export async function runSubscriberStateRevisions(target: {
     check(response.status === 200, "subscriber-state-get");
     return (await response.json()).data;
   }
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   try {
     const list = await create("lists", { name: `state-list-${suffix}` });
     const tagged = await create("lists", { name: `state-tagged-${suffix}`, tags: ["kept"] });
@@ -196,10 +196,10 @@ export async function runSubscriberStateRevisions(target: {
     );
   } finally {
     for (const { path, id } of owned.reverse()) {
-      if ((await request(`/api/${path}/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/${path}/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL subscriber-state-revision-cleanup");
   }
 }

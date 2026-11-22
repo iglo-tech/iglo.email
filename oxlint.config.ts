@@ -231,7 +231,6 @@ export default defineConfig({
         "no-console": "off",
         curly: "off",
         "typescript/array-type": "off",
-        "no-useless-assignment": "off",
         "typescript/require-array-sort-compare": "off",
         "no-promise-executor-return": "off",
         "quality/no-object-parameters": "off",

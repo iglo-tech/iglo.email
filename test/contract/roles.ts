@@ -18,7 +18,7 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
   const owned: Array<number> = [];
   let human = 0;
   let realList = 0;
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   async function request(path: string, method = "GET", body?: unknown, authorization = auth) {
     return fetch(`${target.baseUrl}${path}`, {
       method,
@@ -557,20 +557,20 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     if (human) {
       const response = await request(`/api/users/${human}`, "DELETE");
       if (response.status !== 200) {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       }
     }
     for (const id of owned.reverse()) {
       const response = await request(`/api/roles/${id}`, "DELETE");
       if (response.status !== 200) {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       }
     }
     if (realList && (await request(`/api/lists/${realList}`, "DELETE")).status !== 200) {
-      cleanupFailed = true;
+      cleanupFailures += 1;
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL role-cleanup");
   }
 }

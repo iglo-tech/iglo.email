@@ -12,7 +12,7 @@ export async function runSubscriberActivity(target: {
   const reference = target.mode === "reference";
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const resources: Array<{ path: string; id: number }> = [];
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   function check(value: unknown, label: string): asserts value {
     if (!value) {
       throw new Error(`FAIL ${label}`);
@@ -469,21 +469,21 @@ export async function runSubscriberActivity(target: {
     check(response.status === 200, "subscriber-activity-delete-missing");
   } finally {
     await setting("privacy.exportable", before["privacy.exportable"]).catch(() => {
-      cleanupFailed = true;
+      cleanupFailures += 1;
     });
     await setting("privacy.individual_tracking", before["privacy.individual_tracking"]).catch(
       () => {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       },
     );
     for (const { path, id } of resources.reverse()) {
       const owner = path.startsWith("/api/roles/") ? "/api/roles" : path;
       if ((await request(`${owner}/${id}`, "DELETE")).status !== 200) {
-        cleanupFailed = true;
+        cleanupFailures += 1;
       }
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL subscriber-activity-cleanup");
   }
 }

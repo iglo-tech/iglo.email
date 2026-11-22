@@ -30,7 +30,7 @@ export async function runTemplatesContract(target: {
   const suffix = crypto.randomUUID();
   const owned: Array<number> = [];
   let originalDefault = 0;
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   const request = (path: string, method = "GET", body?: unknown, auth = authorization) =>
     fetch(`${target.baseUrl}${path}`, {
       method,
@@ -547,13 +547,13 @@ export async function runTemplatesContract(target: {
       originalDefault &&
       (await request(`/api/templates/${originalDefault}/default`, "PUT")).status !== 200
     ) {
-      cleanupFailed = true;
+      cleanupFailures += 1;
     }
     for (const id of owned) {
-      if ((await request(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL templates-cleanup");
   }
 }

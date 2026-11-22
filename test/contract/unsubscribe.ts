@@ -63,7 +63,7 @@ export async function runUnsubscribeContract(target: {
     subscribers: [] as Array<number>,
     lists: [] as Array<number>,
   };
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   try {
     const current = await api("/api/settings");
     check(current.status === 200, "settings-get");
@@ -259,17 +259,17 @@ export async function runUnsubscribeContract(target: {
     }
   } finally {
     for (const id of owned.subscribers) {
-      if ((await api(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await api(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
     }
     for (const id of owned.lists) {
-      if ((await api(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await api(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
     }
     for (const id of owned.templates) {
-      if ((await api(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await api(`/api/templates/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
     }
     await mailpit.removeOwned();
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL unsubscribe-cleanup");
   }
 }

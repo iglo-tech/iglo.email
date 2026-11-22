@@ -34,7 +34,7 @@ export async function runSubscriberBindingRevisions(target: {
     check(r.status === 200, "get");
     return (await r.json()).data;
   }
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   try {
     const list = await create("lists", JSON.stringify({ name: `binding-${suffix}` }));
     const sub = await create(
@@ -416,10 +416,10 @@ export async function runSubscriberBindingRevisions(target: {
     );
   } finally {
     for (const { path, id } of owned.reverse()) {
-      if ((await request(`/api/${path}/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/${path}/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL binding-cleanup");
   }
 }

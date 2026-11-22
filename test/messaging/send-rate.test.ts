@@ -373,7 +373,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
           }),
     });
     const text = await res.text();
-    let data: any = null;
+    let data: any;
     try {
       data = JSON.parse(text);
     } catch {

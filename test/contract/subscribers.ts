@@ -16,7 +16,7 @@ export async function runSubscribersContract(target: {
   const suffix = crypto.randomUUID();
   const subscribers: Array<number> = [];
   const lists: Array<number> = [];
-  let cleanupFailed = false;
+  let cleanupFailures = 0;
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path: string, method = "GET", body?: unknown, authorization = auth) =>
     fetch(`${target.baseUrl}${path}`, {
@@ -557,13 +557,13 @@ export async function runSubscribersContract(target: {
     }
   } finally {
     for (const id of subscribers.reverse()) {
-      if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/subscribers/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
     }
     for (const id of lists.reverse()) {
-      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailed = true;
+      if ((await request(`/api/lists/${id}`, "DELETE")).status !== 200) cleanupFailures += 1;
     }
   }
-  if (cleanupFailed) {
+  if (cleanupFailures > 0) {
     throw new Error("FAIL subscriber-cleanup");
   }
 }
