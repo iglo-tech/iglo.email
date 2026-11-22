@@ -184,13 +184,15 @@ function grantedLists(value: unknown): Array<bigint> {
   if (!Array.isArray(value) || value.length < 1 || value.length > MAX_GRANT_LISTS) {
     throw field();
   }
-  if (!value.every((id) => typeof id === "number" && Number.isSafeInteger(id) && id > 0)) {
+  if (
+    !value.every((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0)
+  ) {
     throw field();
   }
   if (new Set(value).size !== value.length) {
     throw field();
   }
-  return value.map((id) => BigInt(id as number));
+  return value.map((id) => BigInt(id));
 }
 
 /** Validate one event object without touching storage. */

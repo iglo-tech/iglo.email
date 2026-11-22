@@ -74,6 +74,8 @@ const PREVIEW_BODY_BYTES = 512 * 1024;
 const MAX_TEST_EMAILS = 5;
 const MAX_TEST_SENDS = 4;
 
+const isSequenceStatus = (value: unknown): value is SequenceStatus =>
+  sequenceStatuses.some((name) => name === value);
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 /** A step or template ID as the API numbers it: a number, or a raw JSON integer beyond 2^53. */
@@ -238,7 +240,7 @@ export function registerSequenceRoutes(
     "/api/sequences",
     (c) => {
       const status = params(c).one("status");
-      if (status !== undefined && !(sequenceStatuses as ReadonlyArray<string>).includes(status)) {
+      if (status !== undefined && !isSequenceStatus(status)) {
         throw invalid(c, "status");
       }
       return ok(
@@ -293,17 +295,14 @@ export function registerSequenceRoutes(
     async (c) => {
       const value = await body(c, SMALL_BODY_BYTES);
       const status = value.status;
-      if (
-        typeof status !== "string" ||
-        !(sequenceStatuses as ReadonlyArray<string>).includes(status)
-      ) {
+      if (!isSequenceStatus(status)) {
         throw invalid(c, "status");
       }
       const id = BigInt(getID(c));
       const saved = writeTransaction(c.app.db, () => {
         auth.revalidate(c, MANAGE);
         try {
-          return sequences.setStatus(id, status as SequenceStatus);
+          return sequences.setStatus(id, status);
         } catch (error) {
           if (error instanceof SequenceConflict) {
             throw invalid(c, error.field, error.detail);

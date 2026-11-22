@@ -616,15 +616,15 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       }
       const lists = listIds
         .map((id) => deps.lists.subscriberMetadata(id))
-        .filter((l) => l !== null && l.optin === "double")
-        .sort((a, b) => a!.id - b!.id);
+        .filter((l): l is NonNullable<typeof l> => l !== null && l.optin === "double")
+        .sort((a, b) => a.id - b.id);
       if (!lists.length) {
         throw new HttpError(400, t(context).T("campaigns.noOptinLists"));
       }
       value = {
         ...value,
         type: "optin",
-        body: optinBody(t(context), lists as Array<NonNullable<(typeof lists)[number]>>),
+        body: optinBody(t(context), lists),
       };
     } else if (!input.type || input.type === "regular") {
       value.type = "regular";

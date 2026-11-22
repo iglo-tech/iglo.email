@@ -77,9 +77,9 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 // Control characters are refused on purpose: the range is the check.
 // oxlint-disable-next-line no-control-regex
 const controls = /[\u0000-\u001f\u007f-\u009f]/;
-const fail = (field: string, detail: string): never => {
+function fail(field: string, detail: string): never {
   throw new DefinitionError(field, detail);
-};
+}
 
 /** A positive JSON integer ID within the safe range, or undefined for absent/null. */
 export function idValue(value: unknown, field: string): bigint | undefined {
@@ -291,7 +291,7 @@ function step(value: unknown, i: number, context: DefinitionContext): StepInput 
   if (value.kind !== "marketing" && value.kind !== "transactional") {
     fail(`${field}.kind`, "must be marketing or transactional");
   }
-  const kind = value.kind as StepInput["kind"];
+  const kind: StepInput["kind"] = value.kind;
   const templateId = idValue(value.template_id, `${field}.template_id`);
   if (templateId === undefined) {
     return fail(`${field}.template_id`, "is required");
@@ -310,7 +310,7 @@ function step(value: unknown, i: number, context: DefinitionContext): StepInput 
     ) {
       fail(`${field}.subject`, "invalid subject");
     }
-    subject = value.subject as string;
+    subject = value.subject;
   }
   let condition: string | null = null;
   if (value.condition !== undefined && value.condition !== null) {
@@ -397,12 +397,12 @@ export function definitionInput(value: unknown, context: DefinitionContext): Def
     if (!Array.isArray(value.exit_on) || value.exit_on.length > limits.exitOn) {
       fail("exit_on", `must be an array of at most ${limits.exitOn} event names`);
     }
-    for (const [i, item] of (value.exit_on as Array<unknown>).entries()) {
+    for (const [i, item] of value.exit_on.entries()) {
       if (!validEventName(item)) {
         fail(`exit_on.${i}`, "must be an event name");
       }
-      if (!exitOn.includes(item as string)) {
-        exitOn.push(item as string);
+      if (!exitOn.includes(item)) {
+        exitOn.push(item);
       }
     }
   }
