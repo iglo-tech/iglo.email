@@ -21,6 +21,16 @@ a {
 a:hover {
   color: #111;
 }
+/* The focus ring follows the accent (B129 review, D127), so a Tab focus is never the browser's blue. */
+:focus-visible {
+  outline: 2px solid var(--brand-focus, #0055d4);
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+}
 label {
   cursor: pointer;
   color: #444;

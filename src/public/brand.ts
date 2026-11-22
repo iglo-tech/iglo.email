@@ -15,6 +15,41 @@ const systemFonts = new Map<string, string>([
 
 export type BrandHeader = "auto" | "logo" | "name" | "logo_and_name";
 
+/** The WCAG relative luminance of a validated `#rgb` or `#rrggbb` colour. */
+function luminance(hex: string): number {
+  const digits = hex.length === 4 ? [...hex.slice(1)].map((c) => c + c).join("") : hex.slice(1);
+  const [r, g, b] = [0, 2, 4].map((at) => {
+    const value = Number.parseInt(digits.slice(at, at + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** The WCAG contrast ratio of two colours, from 1 to 21. */
+function contrast(a: string, b: string): number {
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
+}
+
+/**
+ * The focus ring colour (B129 review, D127): the accent when it stands out from the white page by
+ * at least 3:1 (WCAG non-text contrast), else near-black, so a focus ring is never lost on a pale
+ * accent.
+ */
+export function focusColour(accent: string): string {
+  const colour = accent || defaultAccent;
+  return contrast(colour, "#ffffff") >= 3 ? colour : "#111";
+}
+
+/**
+ * The text colour on a button or a button-like link in the accent: black or white, whichever gives
+ * the higher contrast (WCAG, B129 adopter check). A pale accent takes black text, a dark one white.
+ */
+export function onAccentText(accent: string): string {
+  const colour = accent || defaultAccent;
+  return contrast(colour, "#111") >= contrast(colour, "#ffffff") ? "#111" : "#ffffff";
+}
+
 /** The font stack a page or mail uses for a stored font value. */
 export function fontStack(font: string): string {
   return systemFonts.get(font) ?? `"${font}", sans-serif`;

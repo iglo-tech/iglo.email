@@ -101,6 +101,21 @@ test("each header mode shows the logo, the name, or both, and the logo links onl
   }
 });
 
+test("the focus ring is the accent when it has 3:1 against white, else near-black", async () => {
+  for (const [accent, focus] of [
+    ["", "#0055d4"],
+    ["#ff0066", "#ff0066"],
+    ["#ffff00", "#111"],
+  ] as const) {
+    const f = await open({ accent });
+    const html = await (await f.request("/subscription/form")).text();
+    expect(html).toContain(`--brand-focus: ${focus};`);
+  }
+  const css = await (await (await open()).request("/public/static/style.css")).text();
+  expect(css).toContain(":focus-visible {\n  outline: 2px solid var(--brand-focus, #0055d4);");
+  expect(css).not.toContain("outline: none");
+});
+
 test("with no logo URL, the logo and logo_and_name headers show the name and no image (no bundled logo)", async () => {
   for (const header of ["logo", "logo_and_name", "auto"] as const) {
     const f = await open({ header, logoUrl: "" });

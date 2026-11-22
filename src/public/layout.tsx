@@ -2,7 +2,7 @@
 // carries no product credit, and its logo links to the operator's own site when one is set. B129
 // (D127): the brand (accent, font, header) is set on the document element as custom properties.
 import type { Child } from "@/jsx/render";
-import { defaultAccent, fontStack, googleFontUrl, headerMode } from "@/public/brand";
+import { defaultAccent, focusColour, fontStack, googleFontUrl, headerMode } from "@/public/brand";
 import type { BrandHeader } from "@/public/brand";
 
 /** The site settings the shell links to. */
@@ -83,7 +83,7 @@ export function PublicShell({
   return (
     <html
       class={site.accent ? "branded" : undefined}
-      style={`--brand-accent: ${accent}; --brand-font: ${fontStack(site.font)};`}
+      style={`--brand-accent: ${accent}; --brand-focus: ${focusColour(site.accent)}; --brand-font: ${fontStack(site.font)};`}
     >
       <head>
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
