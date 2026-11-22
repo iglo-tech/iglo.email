@@ -19,7 +19,7 @@ const errorContent = {
  * A write that carries an `idempotency_key` replays its first answer, so a retry of it is safe.
  */
 const retryGuidance =
-  "The error envelope. Permanent, so retry only after the request changes: 400, 401, 403, 404, 409, 413 and 422. Worth retrying with backoff: 429, 503, other 5xx and network errors. Every 429 and 503 sends `Retry-After` in seconds. A write that carries an `idempotency_key` (`POST /api/subscriber-events`, its batch, `POST /api/tx`) is safe to retry: the first answer is replayed.";
+  "The error envelope. Permanent, so retry only after the request changes: 400, 401, 403, 404, 409, 413 and 422, except the 409s `subscriber_changed`, `test_running` and `upload_changed`, which name a race. Worth retrying with backoff: 429, 503, other 5xx, network errors and those three 409s. Every 429 and 503 sends `Retry-After` in seconds. A 403 `invalid_credentials` is a wrong or unknown credential, and stays so until it is replaced. A write that carries an `idempotency_key` (`POST /api/subscriber-events`, its batch, `POST /api/tx`) is safe to retry: the first answer is replayed.";
 /**
  * The envelope of one status (B131): `code` is the enum of the codes that status can send. A 409
  * may also name the holder of an address it refused (D129).

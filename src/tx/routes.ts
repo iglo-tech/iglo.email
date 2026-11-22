@@ -267,13 +267,20 @@ export function registerTxRoutes(
       }
 
       if (kind === "marketing" && !deps.lists.subscriberMetadata(m.listId)) {
-        throw new HttpError(400, t.Ts("globals.messages.notFound", "name", `list ${m.listId}`));
+        throw new HttpError(
+          400,
+          t.Ts("globals.messages.notFound", "name", `list ${m.listId}`),
+          {},
+          "not_found",
+        );
       }
       const template = m.templateId > 0n ? deps.templates.get(m.templateId) : null;
       if (!template || template.type !== "tx") {
         throw new HttpError(
           400,
           t.Ts("globals.messages.notFound", "name", `template ${m.templateId}`),
+          {},
+          "not_found",
         );
       }
 
@@ -300,6 +307,8 @@ export function registerTxRoutes(
         new HttpError(
           400,
           t.Ts("globals.messages.notFound", "name", `{globals.terms.subscriber} (${label})`),
+          {},
+          "not_found",
         );
       if (m.subscriberExternalId) {
         const row = deps.subscribers.external(m.subscriberExternalId);

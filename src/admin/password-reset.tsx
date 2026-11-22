@@ -55,7 +55,12 @@ export function createPasswordReset(deps: ResetDeps) {
       headers: { "Content-Type": "text/html; charset=UTF-8", ...pageHeaders },
     });
   };
-  const message = (context: RequestContext, status: number, text: string) =>
+  const message = (
+    context: RequestContext,
+    status: number,
+    text: string,
+    headers: Record<string, string> = {},
+  ) =>
     publicMessage(
       context.app.i18n,
       {
@@ -64,7 +69,7 @@ export function createPasswordReset(deps: ResetDeps) {
         message: text,
         site: settings(),
       },
-      pageHeaders,
+      { ...pageHeaders, ...headers },
     );
   const invalidLink = (context: RequestContext) =>
     message(context, 400, context.app.i18n.T("users.invalidResetLink"));
@@ -143,7 +148,7 @@ export function createPasswordReset(deps: ResetDeps) {
     // Refused for every address alike, so this says nothing about any of them.
     const hold = restoreHold(context.app.db);
     if (hold) {
-      return message(context, 503, `Sending is held. ${hold.reason}`);
+      return message(context, 503, `Sending is held. ${hold.reason}`, { "Retry-After": "30" });
     }
     const fields = await formFields(context);
     const email = (fields.get("email") ?? "").trim().toLowerCase();

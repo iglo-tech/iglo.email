@@ -74,6 +74,8 @@ const missing = (context: RequestContext): never => {
   throw new HttpError(
     400,
     context.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.list}"),
+    {},
+    "not_found",
   );
 };
 export function registerListRoutes(

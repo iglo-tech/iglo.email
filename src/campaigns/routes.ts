@@ -249,6 +249,8 @@ const notFound = (context: RequestContext) =>
   new HttpError(
     400,
     t(context).Ts("globals.messages.notFound", "name", "{globals.terms.campaign}"),
+    {},
+    "not_found",
   );
 const translate = (context: RequestContext, error: unknown): never => {
   if (error instanceof CampaignError) {

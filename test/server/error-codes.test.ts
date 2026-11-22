@@ -157,6 +157,19 @@ test("a missing subscriber ID is listmonk's 400, with the code that says not_fou
   });
 });
 
+test("a wrong API token is a 403 invalid_credentials, and a missing list is a 400 not_found", async () => {
+  const f = await open();
+  const wrong = await f.json("/api/lists", "GET", undefined, {
+    authorization: `Basic ${btoa("events-api:not-the-token")}`,
+  });
+  expect(wrong).toEqual({
+    status: 403,
+    body: { message: "invalid API credentials", code: "invalid_credentials" },
+  });
+  const missing = await f.json("/api/lists/999999");
+  expect(missing).toEqual({ status: 400, body: { message: "List not found", code: "not_found" } });
+});
+
 test("an unknown API path answers 404 not_found", async () => {
   const f = await open();
   const r = await f.request("/api/no-such-thing");
@@ -171,8 +184,9 @@ test("the events API answers its refusals with codes: invalid, unauthenticated, 
   expect(invalid.body.code).toBe("invalid_fields");
 
   const anonymous = await f.post({ subscriber: { email: "a@example.com" }, name: "x" }, {});
+  // No credential is an invalid credential, not a missing permission; the status stays listmonk's 403.
   expect(anonymous.status).toBe(403);
-  expect(anonymous.body.code).toBe("permission_denied");
+  expect(anonymous.body.code).toBe("invalid_credentials");
 
   const large = await f.post("x".repeat(SINGLE_BODY_BYTES + 1));
   expect(large.status).toBe(413);

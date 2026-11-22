@@ -659,7 +659,12 @@ export function createSends(options: {
         if (send.subscriberId !== null && send.subscriberId !== undefined) {
           const current = subscribers.get(send.subscriberId);
           if (!current || current.uuid !== subscriberUuid || current.email !== to) {
-            throw new HttpError(409, "Subscriber changed. Retry the request.");
+            throw new HttpError(
+              409,
+              "Subscriber changed. Retry the request.",
+              {},
+              "subscriber_changed",
+            );
           }
           if (current.status === "blocklisted") {
             skip = "subscriber_blocklisted";

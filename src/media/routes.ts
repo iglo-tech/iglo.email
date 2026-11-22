@@ -136,7 +136,8 @@ const formFile = async (c: RequestContext, body: Uint8Array) => {
   }
   throw invalid("http: no such file");
 };
-const changed = () => new HttpError(409, "The upload path changed during the upload.");
+const changed = () =>
+  new HttpError(409, "The upload path changed during the upload.", {}, "upload_changed");
 export function registerMediaRoutes(
   router: Router,
   deps: {

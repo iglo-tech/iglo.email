@@ -379,13 +379,20 @@ are listed in [07-api-and-ui.md](design/07-api-and-ui.md#error-codes) and in the
 Which statuses are worth a retry:
 
 - **Permanent**, so a retry fails the same way until the request changes: `400`, `401`, `403`,
-  `404`, `409`, `413` and `422`. Fix the request, the credential or the data first.
+  `404`, `409`, `413` and `422`. Fix the request, the credential or the data first. A `409` is
+  permanent except three codes that name a race, not the request: `subscriber_changed` (a send's
+  subscriber changed as it was prepared), `test_running` (a sequence test for this subscriber is
+  still running) and `upload_changed` (the upload path changed during the upload). Retry those
+  with backoff, as a transient error.
 - **Transient**, worth retrying with backoff: `429`, `503`, the other `5xx` and network errors
   (a connection that fails or resets before an answer). Every `429` and `503` sends `Retry-After`
   in seconds; wait at least that long, and back off from there.
 
 A `503` with `code` `held` is not transient: sending is held after a restore until an operator
 reconciles the gap and releases it ([Restore](#restore)). Retrying it does nothing until then.
+A `403` with `code` `invalid_credentials` means the API token or session is wrong or unknown; it
+is permanent until the credential is replaced, and `permission_denied` is a valid credential
+without the permission.
 
 A write that carries an `idempotency_key` is safe to retry, and a retry returns the first answer
 without changing anything: `POST /api/subscriber-events` and its batch

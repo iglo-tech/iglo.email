@@ -58,6 +58,8 @@ function translateError(context: RequestContext, error: unknown): never {
         throw new HttpError(
           400,
           t.Ts("globals.messages.notFound", "name", "{globals.terms.template}"),
+          {},
+          "not_found",
         );
       case "delete":
         throw new HttpError(400, t.T("templates.cantDeleteDefault"));
