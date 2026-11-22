@@ -611,10 +611,11 @@ export function numberOf(value: unknown): number | undefined {
 const finite = (result: number): number | "" => (Number.isFinite(result) ? result : "");
 
 /**
- * `plus`, `minus`, `times` and `divided_by` (D134): the input and the argument, read as numbers. A nil input
- * is empty. An input that is not a number is a value failure, and so is an argument that is not one, or a
- * division by zero: a literal one of these is refused at save. An integer divided by an integer rounds down,
- * as LiquidJS does. A result that is not finite is empty.
+ * `plus`, `minus`, `times` and `divided_by` (D134): the input and the argument, read as numbers. A nil or empty
+ * input is empty (B135 review N6: an optional number that arrives as `""` must not fail the message). An input
+ * that is not a number is a value failure, and so is an argument that is not one, or a division by zero: a
+ * literal one of these is refused at save. An integer divided by an integer rounds down, as LiquidJS does.
+ * A result that is not finite is empty.
  */
 export function arithmetic(
   operator: "plus" | "minus" | "times" | "divided_by",
@@ -627,7 +628,7 @@ export function arithmetic(
   if (right === undefined) {
     throw new ValueError(`${operator} needs a number argument, got ${kindOf(argument)}`);
   }
-  if (value === null || value === undefined) {
+  if (value === null || value === undefined || value === "") {
     return "";
   }
   const left = numberOf(value);
@@ -653,7 +654,7 @@ export function arithmetic(
 
 /**
  * `round`: a number to `digits` places (none when not given, and at most 15), with halves rounded away
- * from zero. A nil input is empty; any other value that is not a number is a value failure.
+ * from zero. A nil or empty input is empty (B135 review N6); any other value that is not a number is a value failure.
  */
 export function round(value: unknown, digits: unknown, b: FilterBudget): number | "" {
   b.step();
@@ -661,7 +662,7 @@ export function round(value: unknown, digits: unknown, b: FilterBudget): number 
   if (places < 0 || places > 15) {
     throw new ValueError("round needs whole digits from 0 to 15");
   }
-  if (value === null || value === undefined) {
+  if (value === null || value === undefined || value === "") {
     return "";
   }
   const n = numberOf(value);

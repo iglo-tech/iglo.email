@@ -347,3 +347,16 @@ test("size keeps the work budget: a loop that sizes a large object is refused", 
   // 100 sizes of 200 keys is 20,000 steps, over the 10,000-step work budget (D54).
   expect(sent.http).toBe(400);
 });
+
+test("plus, minus, times, divided_by and round print nothing for an empty text, and the message sends (B135 review N6)", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ data.x | plus: 1 }}][{{ data.x | minus: 1 }}][{{ data.x | times: 2 }}]" +
+      "[{{ data.x | divided_by: 2 }}][{{ data.x | round: 1 }}][{{ data.n | plus: 1 }}]",
+    { x: "", n: 4 },
+  );
+  expect(sent.http).toBe(200);
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[][][][][][5]");
+});
