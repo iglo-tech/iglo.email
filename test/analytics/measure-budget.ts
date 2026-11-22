@@ -10,7 +10,7 @@ import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 
-const report = (values: object) => process.stdout.write(`${JSON.stringify(values)}\n`);
+const report = (values: unknown) => process.stdout.write(`${JSON.stringify(values)}\n`);
 const mb = (bytes: number) => Math.round((bytes / 1_048_576) * 10) / 10;
 
 async function wal(gapAfterMs: number, label: string, seconds: number, checkpoint: boolean) {

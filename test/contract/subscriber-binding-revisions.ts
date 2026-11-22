@@ -1,6 +1,12 @@
 // Reference: listmonk subscriber binding and importer at 6fcd95f.
 import type { Credentials, Mode } from "@/test/contract/types";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL binding-${label}`);
+  }
+}
+
 export async function runSubscriberBindingRevisions(target: {
   mode: Mode;
   baseUrl: string;
@@ -15,11 +21,6 @@ export async function runSubscriberBindingRevisions(target: {
       headers: { Authorization: auth, ...(body === undefined ? {} : { "Content-Type": type }) },
       ...(body === undefined ? {} : { body }),
     });
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL binding-${label}`);
-    }
-  }
   async function create(path: string, body: string, type = "application/json") {
     const response = await request(`/api/${path}`, "POST", body, type);
     const result = await response.json();

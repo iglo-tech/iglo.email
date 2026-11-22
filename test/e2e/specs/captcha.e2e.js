@@ -5,6 +5,8 @@ import { createServer } from "node:http";
 import { expect } from "@playwright/test";
 import { ORIGIN, api, test, unique, signIn } from "../helpers.js";
 
+const script = (response) => new URL(response.url()).pathname === "/public/static/altcha.umd.js";
+
 const SUB_FORM = "/subscription/form";
 let before;
 
@@ -160,7 +162,9 @@ test("a snippet pasted on a trusted site loads the widget, solves and subscribes
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     response.end(`<!doctype html><html><body>${snippet}</body></html>`);
   });
-  await new Promise((resolve) => site.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => {
+    site.listen(0, "127.0.0.1", resolve);
+  });
   const port = site.address().port;
   const trusted = `http://localhost:${port}`;
   const untrusted = `http://127.0.0.1:${port}`;
@@ -172,8 +176,6 @@ test("a snippet pasted on a trusted site loads the widget, solves and subscribes
     const context = await browser.newContext();
     const visitor = await context.newPage();
     try {
-      const script = (response) =>
-        new URL(response.url()).pathname === "/public/static/altcha.umd.js";
       const loaded = visitor.waitForResponse(script);
       await visitor.goto(`${trusted}/`);
       expect((await loaded).headers()["access-control-allow-origin"]).toBe(trusted);

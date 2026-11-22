@@ -20,9 +20,9 @@ try {
     controller.signal,
     async (origin, signal) => {
       process.stdout.write(`Browser fixture: ${origin}\n`);
-      await new Promise<void>((done) =>
-        signal.addEventListener("abort", () => done(), { once: true }),
-      );
+      await new Promise<void>((done) => {
+        signal.addEventListener("abort", () => done(), { once: true });
+      });
     },
     { user, password },
     300_000,

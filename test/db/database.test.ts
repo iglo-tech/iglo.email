@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startDbFixture } from "@/test/db/fixture";
 
-async function request(origin: string, input: object) {
+async function request(origin: string, input: unknown) {
   const response = await fetch(origin, {
     method: "POST",
     body: JSON.stringify(input),

@@ -8,6 +8,16 @@ import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hol
 import { txFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 
+const noop = () => {};
+const message = (to: string) => ({
+  from: "sender@example.test",
+  to: [to],
+  subject: "s",
+  contentType: "plain" as const,
+  body: Buffer.from("b"),
+  headers: {},
+});
+
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) {
@@ -40,7 +50,7 @@ const uuidOf = (f: Awaited<ReturnType<typeof open>>["f"], email: string) =>
 
 for (const wiped of [true, false]) {
   test(`a subscriber deleted during SMTP (wipe: ${wiped}) leaves no send.failed; a control still reports`, async () => {
-    let onReject = () => {};
+    let onReject = noop;
     const { f, r } = await open(() => {
       onReject();
       return true;
@@ -79,14 +89,6 @@ test("a restart ends a wiped in-flight send silently and an unrelated one with s
   const gone = await f.subscriber("gone@example.test", "Gone");
   const kept = await f.subscriber("kept@example.test", "Kept");
   await f.stopOutbox();
-  const message = (to: string) => ({
-    from: "sender@example.test",
-    to: [to],
-    subject: "s",
-    contentType: "plain" as const,
-    body: Buffer.from("b"),
-    headers: {},
-  });
   for (const [id, email] of [
     [gone, "gone@example.test"],
     [kept, "kept@example.test"],
@@ -126,14 +128,6 @@ test("a wiped send whose lease expires in the running loop reports nothing; an u
   const kept = await f.subscriber("kept@example.test", "Kept");
   // Held, so the loop claims nothing of its own but still expires leases each pass.
   placeRestoreHold(f.db, f.clock.now().toISOString());
-  const message = (to: string) => ({
-    from: "sender@example.test",
-    to: [to],
-    subject: "s",
-    contentType: "plain" as const,
-    body: Buffer.from("b"),
-    headers: {},
-  });
   for (const [id, email] of [
     [gone, "gone@example.test"],
     [kept, "kept@example.test"],

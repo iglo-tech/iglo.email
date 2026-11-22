@@ -1,6 +1,6 @@
 // A JSON Schema subset for checking responses against the served document. It stays in tests, and
 // a keyword it does not know fails, so a schema can never pass by being misread.
-type Schema = Record<string, unknown> | boolean;
+export type Schema = Record<string, unknown> | boolean;
 export interface Document {
   paths: Record<string, Record<string, any>>;
   components: { schemas: Record<string, Schema>; responses: Record<string, any> };
@@ -75,7 +75,7 @@ function matchesType(value: unknown, type: string): boolean {
  */
 export function validate(
   document: Document,
-  root: object | boolean,
+  root: Schema,
   value: unknown,
   path = "$",
   depth = 0,
@@ -90,7 +90,7 @@ export function validate(
   if (root === false) {
     return [`${path}: not allowed`];
   }
-  const schema = root as Record<string, unknown>;
+  const schema = root;
   for (const key of Object.keys(schema)) {
     if (!keywords.has(key) && !annotations.has(key)) {
       throw new Error(`Unknown schema keyword ${key} at ${path}`);

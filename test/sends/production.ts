@@ -23,15 +23,15 @@ const dir = await mkdtemp(join(tmpdir(), "iglo-production-outbox-"));
 const active = new Set<ChildProcessWithoutNullStreams>();
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 async function stop(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals) {
-  const done = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((ok) =>
-    child.once("exit", (code, sig) => ok({ code, signal: sig })),
-  );
+  const done = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((ok) => {
+    child.once("exit", (code, sig) => ok({ code, signal: sig }));
+  });
   child.kill(signal);
   const result = await Promise.race([
     done,
-    new Promise<never>((_, fail) =>
-      setTimeout(() => fail(new Error("Process did not exit")), 9000),
-    ),
+    new Promise<never>((_, fail) => {
+      setTimeout(() => fail(new Error("Process did not exit")), 9000);
+    }),
   ]);
   active.delete(child);
   return result;
@@ -137,7 +137,9 @@ async function localSink() {
       }
     });
   });
-  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  await new Promise<void>((ok) => {
+    server.listen(0, "127.0.0.1", ok);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("No sink port");
@@ -149,7 +151,9 @@ async function localSink() {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((ok, fail) => server.close((error) => (error ? fail(error) : ok())));
+      await new Promise<void>((ok, fail) => {
+        server.close((error) => (error ? fail(error) : ok()));
+      });
     },
   };
 }
@@ -333,9 +337,9 @@ try {
     const heldCredentials = await provisionApiUser(app.origin, admin);
     await Promise.race([
       relay.atFinal,
-      new Promise<never>((_, fail) =>
-        setTimeout(() => fail(new Error("No held SMTP boundary")), 10_000),
-      ),
+      new Promise<never>((_, fail) => {
+        setTimeout(() => fail(new Error("No held SMTP boundary")), 10_000);
+      }),
     ]);
     // Hold a real authenticated HTTP body open while shutdown starts. Its
     // completion is deliberately withheld until the mailer cancels the socket.
@@ -359,17 +363,17 @@ try {
       });
       httpSocket.once("error", fail);
     });
-    await new Promise<void>((ok, fail) =>
+    await new Promise<void>((ok, fail) => {
       httpSocket.write(
         `POST /api/sends/${held.id}/resend HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: ${authorization}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nExpect: 100-continue\r\nConnection: close\r\n\r\n`,
         (error) => (error ? fail(error) : ok()),
-      ),
-    );
+      );
+    });
     await Promise.race([
       continuing,
-      new Promise<never>((_, fail) =>
-        setTimeout(() => fail(new Error("No held HTTP body barrier")), 5000),
-      ),
+      new Promise<never>((_, fail) => {
+        setTimeout(() => fail(new Error("No held HTTP body barrier")), 5000);
+      }),
     ]);
     httpSocket.write("{");
     const start = performance.now();

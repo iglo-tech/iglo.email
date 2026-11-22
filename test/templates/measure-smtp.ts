@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+
+const normalize = (html: string) => html.replaceAll(/\s+/g, " ").trim();
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const admin = { user: "m18-measure-admin", password: "m18-measure-password" };
@@ -83,7 +85,6 @@ try {
       admin,
     );
   }
-  const normalize = (html: string) => html.replaceAll(/\s+/g, " ").trim();
   for (const variant of ["empty", "populated", "unsafe"]) {
     const control = captures.find((item) => item.label === "control" && item.variant === variant)!;
     const candidate = captures.find(

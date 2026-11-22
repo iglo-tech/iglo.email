@@ -3,6 +3,12 @@ import { createConnection } from "node:net";
 import { ascending } from "@/test/order";
 import type { Credentials } from "@/test/contract/types";
 
+function check(condition: unknown, label: string): asserts condition {
+  if (!condition) {
+    throw new Error(`FAIL ${label}`);
+  }
+}
+
 export async function runExternalContract(target: {
   baseUrl: string;
   credentials: Credentials;
@@ -21,11 +27,6 @@ export async function runExternalContract(target: {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  function check(condition: unknown, label: string): asserts condition {
-    if (!condition) {
-      throw new Error(`FAIL ${label}`);
-    }
-  }
   try {
     const goNotice = await fetch(`${target.baseUrl}/admin/static/licenses/go-1.27.2-BSD.txt`);
     const notice = await goNotice.text();

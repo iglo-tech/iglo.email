@@ -11,6 +11,23 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 
+const summed = (response: { status: number; body: any }, key: "campaign_id" | "list_id") => {
+  check(response.status === 200, `summed-status-${response.status}`);
+  const out: Record<number, number> = {};
+  for (const row of response.body.data as Array<CountRow>) {
+    out[row[key]!] = (out[row[key]!] ?? 0) + row.count;
+  }
+  return out;
+};
+const same = (actual: unknown, expected: unknown, label: string) => {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    process.stdout.write(
+      `ACTUAL ${label} ${JSON.stringify(actual)} EXPECTED ${JSON.stringify(expected)}\n`,
+    );
+  }
+  check(JSON.stringify(actual) === JSON.stringify(expected), label);
+};
+
 interface CountRow {
   list_id?: number;
   campaign_id: number;
@@ -36,6 +53,13 @@ function truncated(at: Date, interval: string): string {
   return new Date(value).toISOString().replace(".000Z", "Z");
 }
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL analytics-${label}`);
+  }
+};
+const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
+
 export async function runAnalyticsContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -49,11 +73,6 @@ export async function runAnalyticsContract(target: {
   const marker = `m08${randomBytes(10).toString("hex")}`;
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL analytics-${label}`);
-    }
-  };
   const call = async (path: string, method = "GET", body?: unknown, auth = authorization) => {
     const response = await fetch(`${target.baseUrl}${path}`, {
       method,
@@ -119,22 +138,6 @@ export async function runAnalyticsContract(target: {
     );
   };
   /** Rows reduced to id → count, whichever period each row fell in. */
-  const summed = (response: { status: number; body: any }, key: "campaign_id" | "list_id") => {
-    check(response.status === 200, `summed-status-${response.status}`);
-    const out: Record<number, number> = {};
-    for (const row of response.body.data as Array<CountRow>) {
-      out[row[key]!] = (out[row[key]!] ?? 0) + row.count;
-    }
-    return out;
-  };
-  const same = (actual: unknown, expected: unknown, label: string) => {
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-      process.stdout.write(
-        `ACTUAL ${label} ${JSON.stringify(actual)} EXPECTED ${JSON.stringify(expected)}\n`,
-      );
-    }
-    check(JSON.stringify(actual) === JSON.stringify(expected), label);
-  };
 
   const owned = {
     campaigns: [] as Array<number>,
@@ -420,7 +423,6 @@ export async function runAnalyticsContract(target: {
       call(
         `/api/campaigns/analytics/${type}?id=${camp1.id}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${extra}`,
       );
-    const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
     const hour = 3_600_000;
     for (const [from, to] of [
       ["2000-01-01", "2099-01-01"],

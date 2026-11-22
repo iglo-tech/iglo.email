@@ -2,6 +2,8 @@
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 
+const mean = (values: Array<number>) => values.reduce((a, b) => a + b, 0) / values.length;
+
 const admin = {
   user: "m15-xml-measure-admin",
   password: "m15-xml-measure-password",
@@ -53,7 +55,6 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           rejected.push(performance.now() - start);
         }
       }
-      const mean = (values: Array<number>) => values.reduce((a, b) => a + b, 0) / values.length;
       process.stdout.write(
         `${JSON.stringify({ repetition, warmup: 5, samples: 50, validXmlCreateMs: mean(valid), rejectedDeclarationMs: mean(rejected) })}\n`,
       );

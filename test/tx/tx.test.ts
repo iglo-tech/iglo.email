@@ -5,7 +5,10 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { imagePng } from "@/test/media/images";
 import { txFixture } from "@/test/tx/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { TxFixture } from "@/test/tx/fixture";
+
+const noop = () => {};
 
 const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
@@ -26,7 +29,9 @@ async function until(condition: () => boolean, f?: TxFixture) {
       throw new Error("condition not reached");
     }
     f?.clock.advance(0);
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
   }
 }
 async function apiUser(f: TxFixture, permissions: Array<string>) {
@@ -374,8 +379,10 @@ test("a burst of sends with an embedded image all go out", async () => {
 });
 
 test("synchronous sends with an embedded image hold a bounded number of bytes", async () => {
-  let release = () => {};
-  const stalled = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const stalled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const f = await open({ beforeDispatch: () => stalled });
   const body = new FormData();
   body.append("file", new File([new Uint8Array(3 * 1024 * 1024)], "brand.png"));
@@ -475,10 +482,14 @@ test("a credential revoked while the body is held writes and sends nothing", asy
   const template = await f.template("<p>x</p>");
   const user = await apiUser(f, ["tx:send"]);
   let release!: () => void;
-  const gate = new Promise<void>((resolve) => (release = resolve));
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const payload = JSON.stringify({ subscriber_emails: ["a@example.test"], template_id: template });
   let reading!: () => void;
-  const consumed = new Promise<void>((resolve) => (reading = resolve));
+  const consumed = new Promise<void>((resolve) => {
+    reading = resolve;
+  });
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new TextEncoder().encode(payload.slice(0, 10)));
@@ -625,7 +636,7 @@ test("manual resend rechecks the blocklist for unlinked recipients", async () =>
 
 test("an idempotent retry replays after its template or subscriber changes", async () => {
   const f = await open();
-  const retry = async (body: object, mutate: () => Promise<number>) => {
+  const retry = async (body: JsonObject, mutate: () => Promise<number>) => {
     const first = await f.tx(body);
     expect(first.status).toBe(200);
     expect(first.body.data.sends[0].status).toBe("sent");
@@ -699,8 +710,10 @@ const attachmentForm = (template: number, email: string, async = false) => {
 };
 
 test("synchronous multipart sends with attachments wait for room, then get a 429", async () => {
-  let release = () => {};
-  const stalled = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const stalled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   // A 1 MiB file is charged 11 MiB while parsed and while its one-recipient send is held (D87).
   const f = await open({
     beforeDispatch: () => stalled,
@@ -743,8 +756,10 @@ test("synchronous multipart sends with attachments wait for room, then get a 429
 }, 30_000);
 
 test("a send to several recipients is charged for each recipient's copy (D87)", async () => {
-  let release = () => {};
-  const stalled = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const stalled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   // One 1 MiB file to three recipients is charged 4 + 3 x 7 = 25 MiB while held; a one-recipient
   // upload is charged 11 MiB. Together they need 36 MiB, so with 30 MiB the second is refused.
   const f = await open({
@@ -797,8 +812,10 @@ test("the largest sends the request cap allows fit the shipped budget on an idle
 }, 60_000);
 
 test("a multipart request that waits is served when room frees", async () => {
-  let release = () => {};
-  const stalled = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const stalled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const f = await open({
     beforeDispatch: () => stalled,
     limits: { maxBytes: 12 * 1024 * 1024, waitMs: 60_000 },
@@ -838,8 +855,10 @@ test("a multipart body with no declared size is charged at the body cap", async 
 });
 
 test("a JSON send with an embedded image is not refused because an upload waits (B10)", async () => {
-  let release = () => {};
-  const stalled = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const stalled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const f = await open({
     beforeDispatch: () => stalled,
     limits: { maxBytes: 12 * 1024 * 1024, waitMs: 60_000 },
@@ -873,8 +892,10 @@ test("a JSON send with an embedded image is not refused because an upload waits 
 }, 30_000);
 
 test("a steady stream of small embedded-image sends cannot keep a waiting upload out (B12)", async () => {
-  let release = () => {};
-  const stalled = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const stalled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const f = await open({
     beforeDispatch: () => stalled,
     limits: { maxBytes: 12 * 1024 * 1024, waitMs: 60_000 },
@@ -930,8 +951,10 @@ test("a steady stream of small embedded-image sends cannot keep a waiting upload
 }, 30_000);
 
 test("a multipart body over the cap is a 413 even while the budget is full (B10)", async () => {
-  let release = () => {};
-  const stalled = new Promise<void>((resolve) => (release = resolve));
+  let release = noop;
+  const stalled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const f = await open({
     beforeDispatch: () => stalled,
     limits: { maxBytes: 12 * 1024 * 1024, waitMs: 1000 },

@@ -3,16 +3,17 @@
 // compiled executable's real HTTP, auth, migrations, restart and SQLite file.
 import type { Credentials } from "@/test/contract/types";
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL sequences-${label}`);
+  }
+};
+
 export async function runSequencesContract(target: {
   baseUrl: string;
   credentials: Credentials;
   restart: () => Promise<void>;
 }) {
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL sequences-${label}`);
-    }
-  };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
     path: string,

@@ -40,7 +40,9 @@ async function peer() {
     });
     entered();
   });
-  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    listener.listen(0, "127.0.0.1", resolve);
+  });
   const address = listener.address();
   if (!address || typeof address === "string") {
     throw new Error("missing address");
@@ -77,9 +79,9 @@ async function peer() {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((resolve, reject) =>
-        listener.close((e) => (e ? reject(e) : resolve())),
-      );
+      await new Promise<void>((resolve, reject) => {
+        listener.close((e) => (e ? reject(e) : resolve()));
+      });
     },
   };
 }
@@ -237,7 +239,9 @@ test("a temporary implicit TLS connection is physically closed at its deadline",
     socket.once("close", disconnected);
     entered();
   });
-  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    listener.listen(0, "127.0.0.1", resolve);
+  });
   const address = listener.address();
   if (!address || typeof address === "string") {
     throw new Error("missing address");
@@ -272,7 +276,9 @@ test("a temporary implicit TLS connection is physically closed at its deadline",
     await closed;
     await emailer.close();
   } finally {
-    await new Promise<void>((resolve) => listener.close(() => resolve()));
+    await new Promise<void>((resolve) => {
+      listener.close(() => resolve());
+    });
   }
 });
 
@@ -316,7 +322,9 @@ test("shutdown bounds an idle connection whose peer keeps its half open", async 
       }
     });
   });
-  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    listener.listen(0, "127.0.0.1", resolve);
+  });
   const address = listener.address();
   if (!address || typeof address === "string") {
     throw new Error("missing address");
@@ -345,7 +353,9 @@ test("shutdown bounds an idle connection whose peer keeps its half open", async 
   try {
     expect((await emailer.push(message).result).status).toBe("accepted");
     // Let the public transport finish returning the successful connection to its pool.
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
     const close = emailer.close();
     await peerEnded;
     clock.advance(5000);
@@ -354,6 +364,8 @@ test("shutdown bounds an idle connection whose peer keeps its half open", async 
     for (const socket of sockets) {
       socket.destroy();
     }
-    await new Promise<void>((resolve) => listener.close(() => resolve()));
+    await new Promise<void>((resolve) => {
+      listener.close(() => resolve());
+    });
   }
 });

@@ -11,7 +11,7 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 
 const directory = resolve(process.env.ANALYTICS_MEASURE_DIR ?? "dist/analytics-report");
 const compiled = resolve("dist/iglo.email");
-const report = (values: object) => process.stdout.write(`${JSON.stringify(values)}\n`);
+const report = (values: unknown) => process.stdout.write(`${JSON.stringify(values)}\n`);
 const series = (count: number) =>
   `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${count})`;
 const start = Date.parse("2025-10-30T00:00:00.000Z") / 1000;

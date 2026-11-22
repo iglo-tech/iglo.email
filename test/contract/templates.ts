@@ -19,6 +19,12 @@ type Row = {
   updated_at: string;
 };
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL templates-${label}`);
+  }
+};
+
 export async function runTemplatesContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -40,11 +46,6 @@ export async function runTemplatesContract(target: {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL templates-${label}`);
-    }
-  };
   const campaignBody = reference
     ? '<div>{{ template "content" . }}</div>'
     : "<div>{{ content | raw }}</div>";
@@ -55,7 +56,7 @@ export async function runTemplatesContract(target: {
     ((await (await request(`/api/templates${query}`)).json()) as { data: Array<Row> }).data;
   const get = async (id: number) =>
     ((await (await request(`/api/templates/${id}`)).json()) as { data: Row }).data;
-  const create = async (input: object) => {
+  const create = async (input: unknown) => {
     const response = await request("/api/templates", "POST", input);
     const item = ((await response.json()) as { data: Row }).data;
     if (response.status === 200 && item?.id) {

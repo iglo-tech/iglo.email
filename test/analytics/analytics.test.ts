@@ -14,6 +14,28 @@ import { createRouter, startServer } from "@/server/server";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 
+const lists = async () => (await data("/api/dashboard/counts")).lists.total as number;
+const at = (text: string) => new Date(text);
+const due = (spec: string, after: string, until: string) => dueBetween(spec, at(after), at(until));
+const dueZone = (zone: string) =>
+  dueBetween(
+    `TZ=${zone} 0 3 * * *`,
+    new Date("2026-01-01T02:59:00Z"),
+    new Date("2026-01-01T03:00:00Z"),
+  );
+const sends = async (from: string, to: string, group: string) =>
+  (
+    (await data(`/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`)) as Array<{
+      sends: number;
+    }>
+  ).map((row) => row.sends);
+const week = (id: number, count: number) => ({
+  list_id: id,
+  campaign_id: 0,
+  count,
+  timestamp: "2026-01-05T00:00:00Z",
+});
+
 const DAY = 86_400_000;
 let f: CampaignsFixture;
 let reader: ReturnType<typeof createAnalyticsReader>;
@@ -402,7 +424,6 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
     f.clock.advance(ms);
     await Bun.sleep(0);
   };
-  const lists = async () => (await data("/api/dashboard/counts")).lists.total as number;
   const until = async (expected: number) => {
     for (let i = 0; i < 400 && (await lists()) !== expected; i++) {
       await Bun.sleep(5);
@@ -534,9 +555,6 @@ test("the dashboard campaigns card reads through the reader", async () => {
 });
 
 test("the cron interval follows the settings' spec forms", () => {
-  const at = (text: string) => new Date(text);
-  const due = (spec: string, after: string, until: string) =>
-    dueBetween(spec, at(after), at(until));
   expect(due("TZ=UTC 0 3 * * *", "2026-01-01T02:59:00Z", "2026-01-01T03:00:00Z")).toBe(true);
   expect(due("TZ=UTC 0 3 * * *", "2026-01-01T03:00:00Z", "2026-01-01T03:01:00Z")).toBe(false);
   expect(due("TZ=UTC */15 * * * *", "2026-01-01T03:14:30Z", "2026-01-01T03:15:30Z")).toBe(true);
@@ -642,19 +660,13 @@ test("a schedule that cannot be evaluated is logged once and keeps the last snap
 });
 
 test("every zone the settings accept can be evaluated", () => {
-  const due = (zone: string) =>
-    dueBetween(
-      `TZ=${zone} 0 3 * * *`,
-      new Date("2026-01-01T02:59:00Z"),
-      new Date("2026-01-01T03:00:00Z"),
-    );
-  expect(() => due("Factory")).not.toThrow();
-  expect(due("Factory")).toBe(true);
+  expect(() => dueZone("Factory")).not.toThrow();
+  expect(dueZone("Factory")).toBe(true);
   const system = process.env.TZ;
   process.env.TZ = "Asia/Tokyo";
   try {
     // An empty location is UTC to Go's time.LoadLocation, not the system zone.
-    expect(due("")).toBe(true);
+    expect(dueZone("")).toBe(true);
   } finally {
     if (system === undefined) {
       delete process.env.TZ;
@@ -714,12 +726,6 @@ test("a send counts on the day it was delivered, not the day it was queued", asy
       "INSERT INTO sends (uuid, source, kind, to_email, template_id, step_id, status, created_at, sent_at) VALUES ('s', 'sequence', 'transactional', 'a@example.test', ?, ?, 'sent', '2026-01-01T23:59:00.000Z', '2026-01-02T00:01:00.000Z')",
     )
     .run(template, step);
-  const sends = async (from: string, to: string, group: string) =>
-    (
-      (await data(`/api/sends/analytics?from=${from}&to=${to}&group_by=${group}`)) as Array<{
-        sends: number;
-      }>
-    ).map((row) => row.sends);
   for (const group of ["template", "step"]) {
     expect(await sends("2026-01-02", "2026-01-03", group)).toEqual([1]);
     expect(await sends("2026-01-01", "2026-01-01T23:59:59Z", group)).toEqual([]);
@@ -738,12 +744,6 @@ test("rows arrive by period and then owner when days of a week merge", async () 
   await view(a, ada);
   await view(b, ada);
   await relogin();
-  const week = (id: number, count: number) => ({
-    list_id: id,
-    campaign_id: 0,
-    count,
-    timestamp: "2026-01-05T00:00:00Z",
-  });
   expect(
     await data(`/api/lists/analytics/views?id=${second}&id=${first}&${wide}&interval=week`),
   ).toEqual([week(first, 1), week(second, 2)]);
@@ -878,7 +878,8 @@ test("output over the cap is refused whole and the child is killed", async () =>
   await exact.close();
 });
 
-test("a child above the memory limit is killed", async () => {
+// The memory cap reads the child's resident size from /proc, which only Linux has (src/analytics/reader.ts).
+test.skipIf(process.platform !== "linux")("a child above the memory limit is killed", async () => {
   const hungry = createAnalyticsReader({
     path: "x",
     command: [

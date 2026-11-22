@@ -24,7 +24,9 @@ async function startSink(hold: boolean): Promise<Sink> {
   const subjects: Array<string> = [];
   const sockets = new Set<Socket>();
   let announce!: () => void;
-  const held = new Promise<void>((r) => (announce = r));
+  const held = new Promise<void>((r) => {
+    announce = r;
+  });
   let holding = hold;
   const server = createServer((socket) => {
     sockets.add(socket);
@@ -69,7 +71,9 @@ async function startSink(hold: boolean): Promise<Sink> {
       }
     });
   });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  await new Promise<void>((r) => {
+    server.listen(0, "127.0.0.1", r);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("sink address");
@@ -82,7 +86,9 @@ async function startSink(hold: boolean): Promise<Sink> {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((r) => server.close(() => r()));
+      await new Promise<void>((r) => {
+        server.close(() => r());
+      });
     },
   };
 }
@@ -97,9 +103,9 @@ function launch(dir: string, port: number, env: Record<string, string>) {
     },
     stdio: ["ignore", "pipe", "inherit"],
   });
-  const exited = new Promise<{ code: number | null; signal: string | null }>((r) =>
-    child.once("exit", (code, signal) => r({ code, signal })),
-  );
+  const exited = new Promise<{ code: number | null; signal: string | null }>((r) => {
+    child.once("exit", (code, signal) => r({ code, signal }));
+  });
   return { child, exited };
 }
 async function within<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -235,9 +241,9 @@ async function launchProduction(dir: string, port: number) {
   child.stderr.on("data", (chunk: Buffer) => {
     errors = (errors + chunk.toString()).slice(-4000);
   });
-  const exited = new Promise<{ code: number | null; signal: string | null }>((r) =>
-    child.once("exit", (code, signal) => r({ code, signal })),
-  );
+  const exited = new Promise<{ code: number | null; signal: string | null }>((r) => {
+    child.once("exit", (code, signal) => r({ code, signal }));
+  });
   const deadline = Date.now() + 20_000;
   for (;;) {
     if (child.exitCode !== null || child.signalCode !== null) {

@@ -12,6 +12,8 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PerformanceObserver, monitorEventLoopDelay } from "node:perf_hooks";
 
+const round = (x: number) => Math.round(x * 100) / 100;
+
 const dir = process.env.M61_TAIL_PROBE!;
 const LAG_MS = Number(process.env.M61_TAIL_LAG_MS ?? 8);
 let recording = false;
@@ -229,7 +231,6 @@ function finish() {
     groupTotals.set(g, c);
   }
   const windowMs = performance.now() - windowStart;
-  const round = (x: number) => Math.round(x * 100) / 100;
   const out = {
     windowMs: round(windowMs),
     lagThresholdMs: LAG_MS,

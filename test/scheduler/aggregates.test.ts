@@ -3,6 +3,7 @@
 // the Mailpit-style SMTP sink.
 import { afterEach, expect, test } from "bun:test";
 import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
+import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
 const fixtures: Array<SchedulerFixture> = [];
@@ -27,7 +28,7 @@ function decoded(data: string) {
     );
   return { body };
 }
-const tx = (template: number, extra: object = {}) => ({
+const tx = (template: number, extra: JsonObject = {}) => ({
   wait: "PT0S",
   kind: "transactional",
   template_id: template,

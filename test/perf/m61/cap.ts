@@ -17,6 +17,8 @@ import { createRunnerStore } from "@/campaigns/runner/store";
 import { createMarketingPolicy } from "@/unsubscribe/policy";
 import { measurementBase, memAvailable, record, stats } from "@/test/perf/m61/record";
 
+const old = (i: number) => new Date(Date.now() - (8 + i / 1000) * 86_400_000).toISOString();
+
 const iterations = Number(process.argv[2] ?? 2000);
 const lengths = [0, 100, 1000, 10_000];
 const clock = createRealClock();
@@ -50,7 +52,6 @@ try {
   });
 
   // Generated history, arranged in SQL: older than the 7-day window by at least a day.
-  const old = (i: number) => new Date(Date.now() - (8 + i / 1000) * 86_400_000).toISOString();
   const { list, ids } = writeTransaction(db, () => {
     const list = db
       .query<{ id: bigint }, [string]>(

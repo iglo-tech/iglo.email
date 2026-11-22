@@ -1,6 +1,7 @@
 // In-process production owners for sequences, enrollments and their event, subscriber and
 // unsubscribe seams, with a fake clock and a loopback SMTP sink, wired as src/main.ts does.
 import { fixturePageSite } from "@/test/public/site";
+import type { JsonObject } from "@/test/json-object";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -334,7 +335,7 @@ export async function sequencesFixture(
         optin: "single",
       })
     ).body.data.id as number;
-  const subscriber = async (email: string, extra: object = {}) => {
+  const subscriber = async (email: string, extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", {
       email,
       name: "Fixture",
@@ -345,7 +346,7 @@ export async function sequencesFixture(
     }
     return created.body.data.id as number;
   };
-  const event = (body: object, headers: Record<string, string> = sessionHeaders) =>
+  const event = (body: JsonObject, headers: Record<string, string> = sessionHeaders) =>
     json("/api/subscriber-events", "POST", body, headers);
   /** Rows of an owned table, for checks that nothing partial was written. */
   const count = (table: "sequences" | "sequence_steps" | "enrollments" | "events") =>

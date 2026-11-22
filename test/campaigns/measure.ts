@@ -3,6 +3,7 @@
 // about 8 KiB of HTML with Liquid fields, five tracked links, the view pixel and three
 // custom headers) for 1, 10, 100 and 1,000 recipients, then the review's ten-header case.
 import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { JsonObject } from "@/test/json-object";
 
 const runs = Number(process.env.CAMPAIGNS_MEASURE_RUNS ?? "3");
 const mib = (bytes: number) => +(bytes / 1_048_576).toFixed(1);
@@ -39,7 +40,7 @@ try {
     ],
   };
   const c = await f.campaign({ name: "Weekly", subject: "s", lists: [news] });
-  const measure = async (input: object, count: number) => {
+  const measure = async (input: JsonObject, count: number) => {
     const status: Array<number> = [];
     const response: Array<number> = [];
     const delivered: Array<number> = [];

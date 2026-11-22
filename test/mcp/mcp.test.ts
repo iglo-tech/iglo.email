@@ -9,6 +9,13 @@ import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { version } from "@/../package.json";
 
+function getTextContent(result: unknown): string {
+  const res = result as { content?: Array<{ type: string; text?: string }> };
+  return res.content?.[0]?.text ?? "";
+}
+const withoutKeys = (value: Record<string, unknown>, keys: Array<string>) =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
+
 describe("B34 MCP endpoint tests", () => {
   let production: Production;
   let mailbox: Mailbox;
@@ -69,11 +76,6 @@ describe("B34 MCP endpoint tests", () => {
       },
     });
     return { client, transport };
-  }
-
-  function getTextContent(result: unknown): string {
-    const res = result as { content?: Array<{ type: string; text?: string }> };
-    return res.content?.[0]?.text ?? "";
   }
 
   // 1. The SDK client connects, initialize negotiates a version, tools/list returns exactly the tools above with valid schemas.
@@ -1181,9 +1183,6 @@ describe("B34 MCP endpoint tests", () => {
     expect(res.status).toBe(200);
     return (await res.json()).data.id as number;
   }
-
-  const withoutKeys = (value: Record<string, unknown>, keys: Array<string>) =>
-    Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)));
 
   // 9. list_lists and list_media return what the HTTP API returns, and their query filters the items created through it.
   test("9. list_lists and list_media return what the HTTP API returns, and query filters them", async () => {

@@ -64,7 +64,9 @@ export async function startProduction(executable = resolve("dist/iglo.email")) {
         errors = (errors + chunk.toString()).slice(-8000);
       }
     });
-    exited = new Promise((r) => current.once("exit", (code) => r(code)));
+    exited = new Promise((r) => {
+      current.once("exit", (code) => r(code));
+    });
     const deadline = Date.now() + 10_000;
     for (;;) {
       if (current.exitCode !== null) {

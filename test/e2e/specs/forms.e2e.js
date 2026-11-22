@@ -16,6 +16,8 @@ import {
   signIn,
 } from "../helpers.js";
 
+const status = (s, list) => s.lists.find((l) => l.id === list.id).subscription_status;
+
 const FORMS = "/admin/lists/forms";
 const SUB_FORM = "/subscription/form";
 
@@ -188,7 +190,6 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
     const data = await ok(page, `/api/subscribers?query=${query}`);
     return data.results.find((s) => s.email === email);
   };
-  const status = (s, list) => s.lists.find((l) => l.id === list.id).subscription_status;
   const first = await sub(a);
   const second = await sub(b);
   // The form offers every public list checked, so a shared server adds others to these two.

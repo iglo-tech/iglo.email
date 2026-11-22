@@ -10,6 +10,7 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials, Mode } from "@/test/contract/types";
+import type { JsonObject } from "@/test/json-object";
 
 type Campaign = Record<string, any> & { id: number; uuid: string };
 const fields = [
@@ -46,6 +47,13 @@ const fields = [
   "archive_meta",
 ].join(",");
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL campaigns-${label}`);
+  }
+};
+const message = (response: { body: any }) => response.body?.message as string | undefined;
+
 export async function runCampaignsContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -61,11 +69,6 @@ export async function runCampaignsContract(target: {
   const marker = `m08${randomBytes(10).toString("hex")}`;
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL campaigns-${label}`);
-    }
-  };
   const call = async (
     path: string,
     method = "GET",
@@ -92,7 +95,6 @@ export async function runCampaignsContract(target: {
     }
     return { status: response.status, headers: response.headers, body: parsed };
   };
-  const message = (response: { body: any }) => response.body?.message as string | undefined;
   const form = (path: string, values: Record<string, string>, auth = authorization) =>
     call(
       path,
@@ -133,7 +135,7 @@ export async function runCampaignsContract(target: {
     templates: [] as Array<number>,
   };
   let cleanupFailures = 0;
-  const create = async (input: object, label: string, auth = authorization) => {
+  const create = async (input: unknown, label: string, auth = authorization) => {
     const response = await call("/api/campaigns", "POST", input, auth);
     check(response.status === 200, `${label}-status`);
     owned.campaigns.push(response.body.data.id);
@@ -279,7 +281,7 @@ export async function runCampaignsContract(target: {
     );
     check(unknownType.content_type === "richtext", "create-content-type-default");
 
-    const invalid = async (input: object, expected: string, label: string) => {
+    const invalid = async (input: unknown, expected: string, label: string) => {
       const response = await call("/api/campaigns", "POST", input);
       if (response.status === 200) {
         owned.campaigns.push(response.body.data.id);
@@ -845,7 +847,7 @@ export async function runCampaignsContract(target: {
       plainMessage.HTML === "" && plainMessage.Text.includes("Plain Bob Other <b>"),
       "test-plain-message",
     );
-    const testFailure = async (input: object, expected: string, label: string) => {
+    const testFailure = async (input: JsonObject, expected: string, label: string) => {
       const response = await call(`/api/campaigns/${testCampaign.id}/test`, "POST", {
         name: "t",
         subject: "t",

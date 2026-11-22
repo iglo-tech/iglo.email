@@ -10,6 +10,16 @@ import type {
 } from "@/test/contract/types";
 import { rawRequest } from "@/test/server/raw-request";
 
+const version = (value: string | null, path: string): string => {
+  const match = value?.match(
+    new RegExp(`^${path.replaceAll(".", String.raw`\.`)}\\?v=([a-f0-9]{10})$`),
+  );
+  if (!match) {
+    throw new Error(`Invalid versioned ${path}`);
+  }
+  return match[1]!;
+};
+
 const differences: Readonly<
   Record<Difference, { readonly cases: ReadonlyArray<string>; readonly reason: string }>
 > = {
@@ -282,15 +292,6 @@ async function comparePublic404(
     iconVersion = "";
   const count = (name: string) => {
     counts[name] = (counts[name] ?? 0) + 1;
-  };
-  const version = (value: string | null, path: string): string => {
-    const match = value?.match(
-      new RegExp(`^${path.replaceAll(".", String.raw`\.`)}\\?v=([a-f0-9]{10})$`),
-    );
-    if (!match) {
-      throw new Error(`Invalid versioned ${path}`);
-    }
-    return match[1]!;
   };
   // This is the specified default 404 page, not an arbitrary HTML sanitizer.
   const attributes: Readonly<Record<string, ReadonlyArray<string>>> = {
@@ -730,14 +731,20 @@ async function compareBody(
     const parse = JSON.parse as (
       text: string,
       reviver: (
-        this: object,
+        this: unknown,
         key: string,
         entry: unknown,
         context?: { source?: string },
       ) => unknown,
     ) => unknown;
     value = parse(actual, function (key, entry, context) {
-      if (typeof entry === "number" && context?.source) {
+      // JSON.parse always passes the holder as `this`, so this guard is always true; it only narrows the type.
+      if (
+        typeof entry === "number" &&
+        context?.source &&
+        typeof this === "object" &&
+        this !== null
+      ) {
         let tokens = numericTokens.get(this);
         if (!tokens) {
           tokens = new Map();

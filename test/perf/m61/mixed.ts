@@ -87,7 +87,9 @@ async function startSink() {
       }
     });
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  await new Promise<void>((done) => {
+    server.listen(0, "127.0.0.1", done);
+  });
   const port = (server.address() as { port: number }).port;
   return {
     port,
@@ -96,16 +98,22 @@ async function startSink() {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((done) => server.close(() => done()));
+      await new Promise<void>((done) => {
+        server.close(() => done());
+      });
     },
   };
 }
 
 async function availablePort() {
   const server = createServer();
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+  await new Promise<void>((done) => {
+    server.listen(0, "127.0.0.1", done);
+  });
   const port = (server.address() as { port: number }).port;
-  await new Promise<void>((done) => server.close(() => done()));
+  await new Promise<void>((done) => {
+    server.close(() => done());
+  });
   return port;
 }
 
@@ -181,7 +189,9 @@ async function startServer(directory: string) {
       if (child.exitCode !== null || child.signalCode !== null) {
         return;
       }
-      const exited = new Promise<void>((done) => child.once("exit", () => done()));
+      const exited = new Promise<void>((done) => {
+        child.once("exit", () => done());
+      });
       child.kill("SIGTERM");
       const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);
       await exited;

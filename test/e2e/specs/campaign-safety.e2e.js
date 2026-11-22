@@ -14,6 +14,9 @@ import {
   signIn,
 } from "../helpers.js";
 
+const hostile = (kind) =>
+  `<img src=x onerror="window.pwned='${kind}'"> "'\` {{ 7*7 }} \${7*7} x-on:click="window.pwned=1" ${unique(kind)}`;
+
 const CAMPAIGNS = "/admin/campaigns";
 const TEMPLATES = "/admin/templates";
 const rows = (page) => page.locator("tbody tr[data-campaign-id]");
@@ -131,8 +134,6 @@ test("hostile campaign, subject, template and tag names render as text", async (
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await signIn(page);
-  const hostile = (kind) =>
-    `<img src=x onerror="window.pwned='${kind}'"> "'\` {{ 7*7 }} \${7*7} x-on:click="window.pwned=1" ${unique(kind)}`;
   const name = hostile("campaign");
   const subject = hostile("subject").replaceAll("{{ 7*7 }}", "");
   const tag = `<b>${unique("tag")}</b>`;

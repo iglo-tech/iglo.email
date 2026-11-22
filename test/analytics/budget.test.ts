@@ -6,6 +6,51 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAnalyticsReader } from "@/analytics/reader";
 
+// Each child logs when it starts and, once released, when it ends; the order of the log says
+// whether the second read ran beside the first or waited for it. No elapsed time is measured.
+const run = async (advance: boolean) => {
+  const directory = mkdtempSync(join(tmpdir(), "iglo-gap-"));
+  const log = join(directory, "log");
+  const go = join(directory, "go");
+  writeFileSync(log, "");
+  const lines = () => readFileSync(log, "utf-8").split("\n").filter(Boolean);
+  let time = 0;
+  const reader = createAnalyticsReader({
+    path: "x",
+    command: [
+      "sh",
+      "-c",
+      `cat >/dev/null; echo start >> ${log}; while [ ! -e ${go} ]; do sleep 0.01; done; sleep 0.1; echo end >> ${log}`,
+    ],
+    concurrency: 2,
+    gapAfterMs: 10_000,
+    now: () => time,
+  });
+  try {
+    const first = reader.read("dashboardCounts", []);
+    while (lines().length < 1) {
+      await Bun.sleep(5);
+    }
+    if (advance) {
+      time = 10_000;
+    }
+    const second = reader.read("dashboardCounts", []);
+    // Within the window the second child starts beside the first; past it, it is held back
+    // until the first has finished, so there is nothing to wait for and the release comes now.
+    if (!advance) {
+      while (lines().length < 2) {
+        await Bun.sleep(5);
+      }
+    }
+    writeFileSync(go, "");
+    await Promise.all([first, second]);
+    return lines();
+  } finally {
+    await reader.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+};
+
 const bytes = (count: number) => ["head", "-c", String(count), "/dev/zero"];
 const read = (reader: ReturnType<typeof createAnalyticsReader>, signal?: AbortSignal) =>
   reader.respond("dashboardCounts", [], signal);
@@ -54,50 +99,6 @@ test("many unread near-cap responses stop at the budget", async () => {
 });
 
 test("continuous overlap forces a gap after the window, by the injected clock", async () => {
-  // Each child logs when it starts and, once released, when it ends; the order of the log says
-  // whether the second read ran beside the first or waited for it. No elapsed time is measured.
-  const run = async (advance: boolean) => {
-    const directory = mkdtempSync(join(tmpdir(), "iglo-gap-"));
-    const log = join(directory, "log");
-    const go = join(directory, "go");
-    writeFileSync(log, "");
-    const lines = () => readFileSync(log, "utf-8").split("\n").filter(Boolean);
-    let time = 0;
-    const reader = createAnalyticsReader({
-      path: "x",
-      command: [
-        "sh",
-        "-c",
-        `cat >/dev/null; echo start >> ${log}; while [ ! -e ${go} ]; do sleep 0.01; done; sleep 0.1; echo end >> ${log}`,
-      ],
-      concurrency: 2,
-      gapAfterMs: 10_000,
-      now: () => time,
-    });
-    try {
-      const first = reader.read("dashboardCounts", []);
-      while (lines().length < 1) {
-        await Bun.sleep(5);
-      }
-      if (advance) {
-        time = 10_000;
-      }
-      const second = reader.read("dashboardCounts", []);
-      // Within the window the second child starts beside the first; past it, it is held back
-      // until the first has finished, so there is nothing to wait for and the release comes now.
-      if (!advance) {
-        while (lines().length < 2) {
-          await Bun.sleep(5);
-        }
-      }
-      writeFileSync(go, "");
-      await Promise.all([first, second]);
-      return lines();
-    } finally {
-      await reader.close();
-      rmSync(directory, { recursive: true, force: true });
-    }
-  };
   expect(await run(false)).toEqual(["start", "start", "end", "end"]);
   expect(await run(true)).toEqual(["start", "end", "start", "end"]);
 });

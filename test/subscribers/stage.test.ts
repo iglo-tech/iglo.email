@@ -1,9 +1,10 @@
 // B7: selections staged on disk. More IDs than one staging chunk, so batches span chunks, and
 // no staged file outlives a success, a failure or an unread response.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { closeSync, existsSync, openSync, readdirSync, readlinkSync, unlinkSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, realpathSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { STAGE_CHUNK } from "@/subscribers/id-stage";
+import { openFilePaths } from "@/test/host-processes";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
 
@@ -15,19 +16,10 @@ let f: QueryFixture;
  * while still open (MVP targets Linux) leaves no name but keeps its disk until the process lets go.
  */
 const staged = () => {
-  const dir = join(f.db.filename, "..", "stage");
+  // The OS names an open file by its real path; on macOS the temporary folder is under /var -> /private/var.
+  const dir = join(realpathSync(f.db.filename), "..", "stage");
   const named = existsSync(dir) ? readdirSync(dir) : [];
-  const open: Array<string> = [];
-  for (const fd of readdirSync("/proc/self/fd")) {
-    try {
-      const target = readlinkSync(join("/proc/self/fd", fd));
-      if (target.startsWith(`${dir}/`)) {
-        open.push(target);
-      }
-    } catch {
-      // The descriptor that listed the directory is already closed.
-    }
-  }
+  const open = openFilePaths().filter((target) => target.startsWith(`${dir}/`));
   return [...named, ...open];
 };
 

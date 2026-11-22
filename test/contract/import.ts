@@ -9,6 +9,34 @@ import { startReceiver } from "@/test/webhooks/receiver";
 
 const IDLE = { name: "", total: 0, imported: 0, status: "none" };
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL import-${label}`);
+  }
+};
+const form = (params: unknown, content?: BlobPart, name = "subscribers.csv") => {
+  const data = new FormData();
+  if (params !== undefined) {
+    data.append("params", typeof params === "string" ? params : JSON.stringify(params));
+  }
+  if (content !== undefined) {
+    data.append("file", new File([content], name));
+  }
+  return data;
+};
+const membership = (row: any, id: number) =>
+  row.lists.find((entry: any) => entry.id === id)?.subscription_status;
+const subscribe = (ids: Array<number>, extra: Record<string, unknown> = {}) => ({
+  mode: "subscribe",
+  delim: ",",
+  lists: ids,
+  ...extra,
+});
+const bytes = (...parts: Array<string | Array<number>>) =>
+  Buffer.concat(
+    parts.map((part) => (typeof part === "string" ? Buffer.from(part) : Buffer.from(part))),
+  );
+
 export async function runImportContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -17,11 +45,6 @@ export async function runImportContract(target: {
 }) {
   const reference = target.mode === "reference";
   const suffix = crypto.randomUUID().slice(0, 8);
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL import-${label}`);
-    }
-  };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
     path: string,
@@ -47,16 +70,6 @@ export async function runImportContract(target: {
       /* Not JSON. */
     }
     return { status: response.status, body: parsed, text };
-  };
-  const form = (params: unknown, content?: BlobPart, name = "subscribers.csv") => {
-    const data = new FormData();
-    if (params !== undefined) {
-      data.append("params", typeof params === "string" ? params : JSON.stringify(params));
-    }
-    if (content !== undefined) {
-      data.append("file", new File([content], name));
-    }
-    return data;
   };
   const post = (params: unknown, content?: BlobPart, name?: string, headers?: any) =>
     call("/api/import/subscribers", "POST", form(params, content, name), headers);
@@ -100,20 +113,12 @@ export async function runImportContract(target: {
     }
     return row;
   };
-  const membership = (row: any, id: number) =>
-    row.lists.find((entry: any) => entry.id === id)?.subscription_status;
   const seed = async (email: string, body: Record<string, unknown>) => {
     const result = await call("/api/subscribers", "POST", { email, ...body });
     check(result.status === 200, "seed");
     created.push(result.body.data.id);
     return result.body.data;
   };
-  const subscribe = (ids: Array<number>, extra: Record<string, unknown> = {}) => ({
-    mode: "subscribe",
-    delim: ",",
-    lists: ids,
-    ...extra,
-  });
 
   try {
     check((await reset()).status === 200, "idle-reset");
@@ -220,10 +225,6 @@ export async function runImportContract(target: {
     check(dup.name === "First" && membership(dup, a) === "unconfirmed", "duplicate-first-wins");
 
     // Bad rows are skipped and logged; a bad attribute cell costs only the attributes.
-    const bytes = (...parts: Array<string | Array<number>>) =>
-      Buffer.concat(
-        parts.map((part) => (typeof part === "string" ? Buffer.from(part) : Buffer.from(part))),
-      );
     const rows = await run(
       subscribe([a]),
       bytes(

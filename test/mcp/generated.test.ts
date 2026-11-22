@@ -492,7 +492,9 @@ describe("B78 MCP covers every operation (D98)", () => {
       const listed = await callTool("get_subscribers", { list_id: [list.id] });
       total = listed.structuredContent.data.total;
       if (total < 3) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => {
+          setTimeout(resolve, 100);
+        });
       }
     }
     expect(total).toBe(3);

@@ -1,6 +1,18 @@
 // Bounded synthetic compiled HTTP workload; no real data or destinations.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+
+const measure = async (n: number, warmup: number, fn: (i: number) => Promise<void>) => {
+  const samples: Array<number> = [];
+  for (let i = 0; i < n + warmup; i++) {
+    const start = performance.now();
+    await fn(i);
+    if (i >= warmup) {
+      samples.push(performance.now() - start);
+    }
+  }
+  return mean(samples);
+};
 const admin = { user: "m16-measure-admin", password: "m16-measure-password" };
 const executable = resolve(process.argv[2] ?? "dist/iglo.email");
 const candidate = process.argv[3] === "candidate";
@@ -27,17 +39,6 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           throw new Error(`Unexpected ${response.status} for ${path}`);
         }
         return { data: value.data, ms: performance.now() - t };
-      };
-      const measure = async (n: number, warmup: number, fn: (i: number) => Promise<void>) => {
-        const samples: Array<number> = [];
-        for (let i = 0; i < n + warmup; i++) {
-          const start = performance.now();
-          await fn(i);
-          if (i >= warmup) {
-            samples.push(performance.now() - start);
-          }
-        }
-        return mean(samples);
       };
       const health = await measure(50, 5, async () => {
         await request("/api/health");
