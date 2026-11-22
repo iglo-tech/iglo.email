@@ -876,7 +876,14 @@ test("enrollments whose condition keeps failing do not starve healthy due work",
   };
   f.clock.advance(hour);
   f.scheduler.wake();
-  await f.until(() => reachedAfter !== null || evaluations >= 3 * backlog, "healthy or bound");
+  // The wait is for progress: every failing evaluation counts, and the 1000 of them take more than the
+  // 15 s budget on a loaded host (43 s of this test in a B137 container run). The wait fails after 15 s
+  // without a new evaluation, and the test's 60 s timeout still bounds the whole test.
+  const finished = () => reachedAfter !== null || evaluations >= 3 * backlog;
+  while (!finished()) {
+    const seen = evaluations;
+    await f.until(() => finished() || evaluations !== seen, "healthy or bound");
+  }
   // Each failing enrollment is tried at most once before the healthy one, due after them all;
   // retries queue behind it by their retry time.
   expect(reachedAfter).not.toBeNull();

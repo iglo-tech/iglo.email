@@ -667,6 +667,9 @@ test("tracked links personalized per subscriber do not accumulate across batches
   // but 27-65 s in the B137 container runs at host load 5-13, so a 60 s bound on the whole drive
   // failed about one run in six. The budget is 60 s without a new push instead: a stalled campaign
   // still fails, with its state, and the 90 s test timeout still bounds the whole run.
+  // Each push is settled once, when the wait first sees it. settle() does nothing after the first
+  // call, and settling every push on every iteration kept a core busy for the length of the wait.
+  let settled = 0;
   const done = () => {
     if (f.pushes.length >= 60 && !first) {
       first = heap();
@@ -674,18 +677,22 @@ test("tracked links personalized per subscriber do not accumulate across batches
     if (f.pushes.length === count) {
       return true;
     }
-    for (const push of f.pushes) {
-      push.settle();
+    for (; settled < f.pushes.length; settled++) {
+      f.pushes[settled]!.settle();
     }
     return false;
   };
+  // The 60 s budget can restart while pushes keep coming, but the whole wait stops at 75 s, before the
+  // test's 90 s timeout: a loop still running then would drive the next test's fixture.
+  const giveUp = Date.now() + 75_000;
   for (;;) {
     const pushed = f.pushes.length;
+    const remaining = giveUp - Date.now();
     try {
-      await f.drive(done, 0, undefined, 60_000);
+      await f.drive(done, 0, undefined, Math.max(1, Math.min(60_000, remaining)));
       break;
     } catch (error) {
-      if (f.pushes.length === pushed) {
+      if (f.pushes.length === pushed || Date.now() >= giveUp) {
         throw error;
       }
     }
