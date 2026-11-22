@@ -204,6 +204,18 @@ test("a seeded install from before this release takes the migrated bodies, and a
       archive_meta: { name: "Reader", email: "reader@example.test" },
     });
     expect(campaign.status).toBe(200);
+    // Creating a campaign copies its template into the archive template (upstream's rule), so the
+    // migrated archive layout is set the way the admin screen sets it: on the archive endpoint.
+    const archived = await api(second.port, "PUT", `/api/campaigns/${campaign.data.id}/archive`, {
+      archive: true,
+      archive_template_id: after.get(names.archive)?.id,
+      archive_slug: "credit-check",
+      archive_meta: { name: "Reader", email: "reader@example.test" },
+    });
+    expect(archived.status).toBe(200);
+    expect((await api(second.port, "PUT", "/api/settings/app.site_name", "Brand Co")).status).toBe(
+      200,
+    );
     // The archive publishes only a sent campaign, and this test sends nothing: its state is set the
     // way a finished send leaves it.
     const sent = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });
@@ -218,6 +230,8 @@ test("a seeded install from before this release takes the migrated bodies, and a
     expect(html).toContain("Archived body");
     expect(html).not.toMatch(credit);
     expect(html).toContain("#ff0066");
+    // The migrated archive layout is the one rendered: its header shows the site's name.
+    expect(html).toContain("Brand Co");
   } finally {
     await stopChild(second.child);
   }
