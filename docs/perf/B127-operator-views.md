@@ -12,8 +12,12 @@ plan and its time at a million sends.
   retention leaves them) and 50,000 `skipped`. Half are `tx`, half `sequence`; subscriber IDs cycle
   through 5,000 subscribers, so each has 200 sends.
 - Each query is run seven times after its plan is read; the median is reported, with the min and max.
-- The benchmark is a scratch script outside the repository. Its statements are the ones listed here,
+- The read benchmark is a scratch script outside the repository. Its statements are the ones listed here,
   copied from `src/messaging/sends.ts` (the list, and `capFreeAt`) and from the dashboard's request.
+- The write and analytics measurement is `test/sends/measure-status-index.ts`, run as
+  `bun test/sends/measure-status-index.ts 1000000 20000 3`: one database migrated to schema 27 and one to
+  schema 28, each filled with the same million sends (5,000 subscribers), then three repetitions of the
+  send path's write work, and the two analytics reads through the production store.
 
 ## Before and after migration 0028
 
@@ -33,9 +37,43 @@ Only the lease expiry (`status = 'sending'`) changes index, from `idx_sends_due`
 and it reads the same rows.
 
 Write cost: migration 0028 drops one status index and creates one, so each insert and status change
-updates the same number of indexes. A fresh 1,000,000-send insert took 8,898 ms on schema 27 and
-8,927 ms on schema 28 (one run each, within noise). The migration itself took 9,481 ms on the
-1,000,000-send database, including the runner's pre-migration `VACUUM INTO` snapshot.
+updates the same number of indexes. The migration itself took 9,481 ms on the 1,000,000-send database,
+including the runner's pre-migration `VACUUM INTO` snapshot.
+
+**Write path at a million sends (B127 r2).** Each repetition inserts 20,000 queued sends in one
+transaction, then claims each one (`queued` to `sending`) and settles it (`sending` to `sent`), one
+transaction per claim and per settle, with `synchronous = FULL`. Medians of three repetitions, in
+milliseconds, from three invocations of the script on the same macOS arm64 host (other agents' containers
+were running on it, so the spread between invocations is the noise):
+
+| Phase | Run A, schema 27 | Run A, schema 28 | Run B, schema 27 | Run B, schema 28 | Run C, schema 27 | Run C, schema 28 |
+|---|---|---|---|---|---|---|
+| Insert 20,000 | 673 | 573 | 577 | 578 | 945 | 757 |
+| Claim 20,000 | 3,506 | 3,324 | 3,547 | 3,327 | 4,231 | 3,789 |
+| Settle 20,000 | 4,597 | 4,553 | 4,504 | 4,136 | 5,092 | 5,074 |
+
+No phase is slower on schema 28 beyond the spread between invocations. A status change updates the same
+two status-prefixed indexes on both schemas (`idx_sends_due` and the status index, which migration 0028
+swaps), so the index count per write is unchanged.
+
+**Migration 0029 (B127 r2, `enrollments.exit_condition`).** The migration adds one nullable column with
+no default, which SQLite does not rewrite rows for: `ALTER TABLE enrollments ADD COLUMN` on one million
+enrollment rows took 14 ms (run C). A condition exit writes its text in the statement that already ends
+the enrollment, so the scheduler's write does not change except for that one column.
+
+**Analytics reads that moved to the new index.** `sends-by-template` and `sends-by-step` filter on
+`status = 'sent'` and `sent_at` in a range. On schema 27 their `SEARCH sends` used `idx_sends_due (status=?)`;
+on schema 28 it uses `idx_sends_status_id (status=?)`. The rest of each plan is unchanged: the temp B-tree
+for `GROUP BY`, the views and clicks joins, and the bloom filters. Medians of seven runs, in milliseconds,
+with the min and max, from the same three invocations:
+
+| Read | Run A, 27 | Run A, 28 | Run B, 27 | Run B, 28 | Run C, 27 | Run C, 28 |
+|---|---|---|---|---|---|---|
+| `sends-by-template` | 302 (300–305) | 311 (307–327) | 320 (316–331) | 308 (305–310) | 402 (381–436) | 425 (392–470) |
+| `sends-by-step` | 117 (114–122) | 119 (118–123) | 124 (123–127) | 118 (116–124) | 162 (153–173) | 169 (152–180) |
+
+The index is the change; these times are within the spread of the host, so they show no speed-up or
+slow-down beyond it.
 
 ## Every new read on sends and events
 
@@ -79,5 +117,7 @@ are read once, through the index that already serves the subscriber's enrollment
 ## Decision
 
 Migration 0028 is accepted: the status-filtered send log and the dashboard drop from about half a
-second to microseconds, the count stays at 25 ms, and writes cost the same. Decision D135's "no
-measurement" was wrong; this note is the measurement it needed.
+second to microseconds, the count stays at 25 ms, and writes cost the same (three repetitions, three
+invocations, above). Decision D135's "no measurement" was wrong; this note is the measurement it needed.
+Migration 0029 is accepted on the 14 ms column probe: it rewrites no row, and the send path does not
+change.
