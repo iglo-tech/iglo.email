@@ -5,8 +5,9 @@
 import type { ErrorLogger } from "@/app";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Sends } from "@/messaging/sends";
-import { safeLogo } from "@/messaging/test";
 import { parseAddress } from "@/settings/mail";
+import { mailBrand } from "@/public/brand";
+import type { BrandHeader } from "@/public/brand";
 import { systemTemplates } from "@/templates/builtins";
 import { createMessageBudget } from "@/templates/renderer";
 import type { MessageBudget, TemplateRenderer } from "@/templates/renderer";
@@ -19,6 +20,11 @@ export interface AdminNotifierSettings {
   logoUrl?: string;
   /** The site name the notification's logo and footer show (B126, D123). */
   siteName: string;
+  /** The brand a notification takes (B129, D127): the site's link, accent, font and header. */
+  siteUrl: string;
+  accent: string;
+  font: string;
+  header: BrandHeader;
 }
 
 export interface CampaignNotificationData {
@@ -143,8 +149,7 @@ export function createAdminNotifier(deps: {
 
       const subject = `${capitalize(campaign.status)}: ${campaign.name}`;
       const data = {
-        logo_url: safeLogo(current.logoUrl ?? ""),
-        site_name: current.siteName,
+        ...mailBrand({ ...current, logoUrl: current.logoUrl ?? "" }),
         root_url: current.rootUrl.replace(/\/+$/, ""),
         id: String(campaign.id),
         name: campaign.name,
@@ -181,8 +186,7 @@ export function createAdminNotifier(deps: {
 
       const subject = `${capitalize(importData.status)}: ${importData.name} import`;
       const data = {
-        logo_url: safeLogo(current.logoUrl ?? ""),
-        site_name: current.siteName,
+        ...mailBrand({ ...current, logoUrl: current.logoUrl ?? "" }),
         root_url: current.rootUrl.replace(/\/+$/, ""),
         name: importData.name,
         status: importData.status,

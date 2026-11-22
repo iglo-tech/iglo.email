@@ -6,6 +6,7 @@ import { expect, test } from "bun:test";
 import { createRealClock } from "@/clock";
 import { createTranslation } from "@/i18n/i18n";
 import { plainText } from "@/messaging/plain";
+import { mailBrand } from "@/public/brand";
 import { initialTemplates, systemTemplates } from "@/templates/builtins";
 import { createMessageBudget, createRenderer } from "@/templates/renderer";
 
@@ -21,9 +22,15 @@ const data = JSON.stringify({
   archive_url: "https://example.test/archive",
   track_view: "",
   content: "<p>Body</p>",
-  site_name: "Brand Co",
-  site_url: "",
-  logo_url: "",
+  // The brand a template reads (B129): a logo with the name beside it, a pale accent, a web font.
+  ...mailBrand({
+    logoUrl: "https://brand.example.test/logo.png",
+    siteName: "Brand Co",
+    siteUrl: "",
+    accent: "#ffeb3b",
+    font: "Lora",
+    header: "logo_and_name",
+  }),
 });
 
 function expectNoCredit(text: string) {

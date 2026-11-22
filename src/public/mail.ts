@@ -13,8 +13,7 @@ import type { EventRow } from "@/events/store";
 import type { Translation } from "@/i18n/i18n";
 import { createLoop } from "@/loops/loop";
 import type { Sends } from "@/messaging/sends";
-import { safeLogo } from "@/messaging/test";
-import { defaultAccent, fontStack, mailStack } from "@/public/brand";
+import { mailBrand } from "@/public/brand";
 import { siteText } from "@/public/layout";
 import { createThrottle } from "@/public/rate-limit";
 import type { PublicSettings } from "@/public/settings";
@@ -42,15 +41,9 @@ const exportEventBytes = 2 * 1024 * 1024;
  * logo, the site name and the operator's site. Liquid escapes each in the template.
  */
 function brand(settings: PublicSettings) {
-  return {
-    logo_url: safeLogo(settings.logoUrl),
-    site_name: settings.siteName,
-    site_url: settings.siteUrl,
-    // B129 (D127): the accent and the font as inline styles. The default font keeps the mail's own
-    // stack, and a web font is not loaded in mail (the public pages load it, see docs/operations.md).
-    brand_accent: settings.accent || defaultAccent,
-    brand_font: settings.font === "system-sans" ? "" : fontStack(settings.font, mailStack),
-  };
+  // B129 (D127): the accent and the font as inline styles. The default font keeps the mail's own
+  // stack, and a web font is not loaded in mail (the public pages load it, see docs/operations.md).
+  return mailBrand(settings);
 }
 export function createSubscriberMail(deps: {
   subscribers: SubscriberStore;

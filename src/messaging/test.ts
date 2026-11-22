@@ -10,21 +10,8 @@ import { validServer } from "@/messaging/email";
 import type { createEmailer } from "@/messaging/email";
 import { HttpError } from "@/server/response";
 import { validateDKIM } from "@/settings/dkim";
+import { mailBrand } from "@/public/brand";
 
-export function safeLogo(value: string): string {
-  if (!value) {
-    return "";
-  }
-  if (Buffer.byteLength(value, "utf-8") > 64 * 1024) {
-    throw new Error("Template data limit exceeded");
-  }
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? value : "";
-  } catch {
-    return "";
-  }
-}
 function parse(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new HttpError(400, "Invalid data.");
@@ -172,8 +159,14 @@ export function createSMTPTest(
             body: systemTemplates.smtpTest,
             mode: "html",
             data: JSON.stringify({
-              logo_url: safeLogo(current["app.logo_url"]),
-              site_name: current["app.site_name"],
+              ...mailBrand({
+                logoUrl: current["app.logo_url"],
+                siteName: current["app.site_name"],
+                siteUrl: current["app.site_url"],
+                accent: current["appearance.brand.accent"],
+                font: current["appearance.brand.font"],
+                header: current["appearance.brand.header"],
+              }),
             }),
           },
           budget,

@@ -226,6 +226,10 @@ async function createNotifyFixture(
         rootUrl: current["app.root_url"],
         logoUrl: current["app.logo_url"],
         siteName: current["app.site_name"],
+        siteUrl: current["app.site_url"],
+        accent: current["appearance.brand.accent"],
+        font: current["appearance.brand.font"],
+        header: current["appearance.brand.header"],
       };
     },
   });

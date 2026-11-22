@@ -208,6 +208,30 @@ test("the data mail carries the accent and the font inline, and no credit in eit
   expect(message!.data).not.toContain("listmonk");
 });
 
+test("a system mail's header follows the header mode: the logo, the name, or both, and the logo only when one is set", async () => {
+  const cases = [
+    ["logo", logo, true, false],
+    ["name", logo, false, true],
+    ["logo_and_name", logo, true, true],
+    ["logo_and_name", "", false, true],
+  ] as const;
+  for (const [header, logoUrl, logoShown, nameShown] of cases) {
+    const f = await open({ header, logoUrl });
+    const email = `header-${header}-${logoUrl ? "logo" : "none"}@example.test`;
+    const { uuid, send } = await sendTo(f, email);
+    expect((await f.fresh(`/m/${send}/export/${uuid}`)).status).toBe(200);
+    await f.drain();
+    const message = f
+      .mailTo(email)
+      .find((m) => decoded(m.data).header("Subject") === "Your data from Brand Co");
+    expect(message).toBeDefined();
+    const body = decoded(message!.data).body;
+    expect(body.includes(`src="${logo}"`)).toBe(logoShown);
+    // The name is the header's own element; the footer's name is plain text.
+    expect(body.includes('class="site-name"')).toBe(nameShown);
+  }
+});
+
 test("the default brand's mail keeps the built-in blue and its own font", async () => {
   const f = await open({ logoUrl: logo, siteUrl: brandUrl });
   const { uuid, send, email } = await sendTo(f, "plain@example.test");
@@ -234,7 +258,8 @@ test("the opt-in mail's button takes the accent, and the mail carries no credit"
   const [message] = f.mailTo("opt@example.test");
   expect(message).toBeDefined();
   const mail = decoded(message!.data);
-  expect(mail.body).toContain('style="background: #ff0066;"');
+  // #ff0066 gives black text (4.9:1 against 3.9:1 for white), so the button reads on the accent.
+  expect(mail.body).toContain('style="background: #ff0066; color: #111;"');
   expect(mail.body).toContain("font-family: Georgia, &#34;Times New Roman&#34;, serif;");
   for (const word of creditWords) {
     expect(mail.body).not.toContain(word);

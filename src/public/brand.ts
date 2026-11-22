@@ -6,10 +6,55 @@
 /** The colour links and buttons had before the brand setting (listmonk's public blue). */
 export const defaultAccent = "#0055d4";
 
+/** The logo a mail or template shows: an http(s) URL, or "" for none (the name shows instead). */
+export function safeLogo(value: string): string {
+  if (!value) {
+    return "";
+  }
+  if (Buffer.byteLength(value, "utf-8") > 64 * 1024) {
+    throw new Error("Template data limit exceeded");
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? value : "";
+  } catch {
+    return "";
+  }
+}
+
 /** The public pages' stack before the brand setting (the body's own stack). */
 const publicStack = `"Inter", "Open Sans", "Helvetica Neue", sans-serif`;
 /** The stack the mails' body has before the brand setting. */
 export const mailStack = `system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`;
+
+/** The site settings a mail or a campaign's brand is made from (the stored values, as they are). */
+export interface BrandSite {
+  readonly logoUrl: string;
+  readonly siteName: string;
+  readonly siteUrl: string;
+  readonly accent: string;
+  readonly font: string;
+  readonly header: BrandHeader;
+}
+
+/**
+ * The brand values a mail or a campaign template reads (B129, D127). Every system mail and the
+ * campaign and archive data take these, so a template can show the logo or name, the accent on its
+ * links and buttons, and the font. The logo passes only as an http(s) URL (safeLogo). A font that is
+ * not a system choice is a Google family, and a mail takes its stack only, never the web font.
+ */
+export function mailBrand(site: BrandSite) {
+  const logo = safeLogo(site.logoUrl);
+  return {
+    logo_url: logo,
+    site_name: site.siteName,
+    site_url: site.siteUrl,
+    brand_accent: site.accent || defaultAccent,
+    brand_on_accent: onAccentText(site.accent),
+    brand_font: site.font === "system-sans" ? "" : fontStack(site.font, mailStack),
+    brand_header: headerMode(site.header, logo !== ""),
+  };
+}
 
 /** The fixed font choices, with the stack each one uses. Any other font is a Google Fonts family. */
 const systemFonts = new Map<string, string>([
@@ -22,18 +67,26 @@ export type BrandHeader = "auto" | "logo" | "name" | "logo_and_name";
 
 /** The WCAG relative luminance of a validated `#rgb` or `#rrggbb` colour. */
 function luminance(hex: string): number {
-  const digits = hex.length === 4 ? [...hex.slice(1)].map((c) => c + c).join("") : hex.slice(1);
-  const [r, g, b] = [0, 2, 4].map((at) => {
+  const digits =
+    hex.length === 4
+      ? hex
+          .slice(1)
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : hex.slice(1);
+  const linear = (at: number) => {
     const value = Number.parseInt(digits.slice(at, at + 2), 16) / 255;
     return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  return 0.2126 * linear(0) + 0.7152 * linear(2) + 0.0722 * linear(4);
 }
 
 /** The WCAG contrast ratio of two colours, from 1 to 21. */
 function contrast(a: string, b: string): number {
-  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return ((light ?? 0) + 0.05) / ((dark ?? 0) + 0.05);
+  const la = luminance(a);
+  const lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
 /**
