@@ -132,6 +132,20 @@ test("a marketing wait the frequency cap holds names the cap and when it frees t
   expect(plainWait?.held).toBeNull();
   expect(plainWait?.held_until).toBeNull();
 
+  // The subscriber's own enrollment list names the same hold, so its Enrollments tab shows it (B127).
+  const listed = async (subscriber: number) =>
+    asBody<Array<{ id: number; held_until: string | null }>>(
+      (await f.json(`/api/subscribers/${subscriber}/enrollments`)).body.data.results,
+    );
+  const heldRow = (await listed(held.subscriber_id)).find(
+    (row) => row.id === held.enrollments.started[0]!.id,
+  );
+  expect(heldRow?.held_until).toBe(freeAt);
+  const plainRow = (await listed(plain.subscriber_id)).find(
+    (row) => row.id === plain.enrollments.started[0]!.id,
+  );
+  expect(plainRow?.held_until).toBeNull();
+
   // Once the cap frees the step, the hold ends and the second step goes.
   await f.pass(7 * day);
   await f.until(async () => (await f.sendLog("&kind=marketing&status=sent")).length === 2);

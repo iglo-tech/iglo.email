@@ -59,6 +59,7 @@ import { registerEventRoutes } from "@/events/routes";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
+import { listedWithHolds } from "@/sequences/timeline";
 import { createEventPurge } from "@/events/retention";
 import { createPurge } from "@/loops/purge";
 import { createConditionEvaluator } from "@/conditions/evaluate";
@@ -325,7 +326,14 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       {
         events: (id, page, perPage) => wired(events, "events").page(id, page, perPage),
         enrollments: (id, page, perPage) =>
-          wired(enrollments, "enrollments").list({ subscriberId: id, page, perPage }),
+          wired(enrollments, "enrollments").list({ subscriberId: id, page, perPage }, (rows) =>
+            listedWithHolds(
+              rows,
+              (sequenceId) => wired(enrollments, "enrollments").steps(sequenceId),
+              wired(sends, "sends").capFreeAt,
+              clock.now(),
+            ),
+          ),
         sends: (id, page, perPage) =>
           wired(sends, "sends").list({ subscriberId: id, page, perPage }),
       },

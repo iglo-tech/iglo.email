@@ -140,6 +140,44 @@ test("a refused sequence start is named by its sequence and its reason on the ev
   await expect(note).toContainText("blocklisted");
 });
 
+test("an enrollment that an event exited names that event, on its timeline and the subscriber's tab", async ({
+  page,
+}) => {
+  await signIn(page);
+  const list = await audience(page);
+  const tx = await template(page);
+  const start = unique("op-start");
+  const stop = unique("op-stop");
+  const made = await api(page, "/api/sequences", "POST", {
+    name: unique("Exit"),
+    status: "active",
+    trigger: { event: start },
+    exit_on: [stop],
+    reentry: "always",
+    list_id: list.id,
+    steps: [{ wait: "P1D", kind: "marketing", template_id: tx.id }],
+  });
+  expect(made.status).toBe(200);
+  const email = `${unique("op")}@example.com`;
+  const began = await api(page, "/api/subscriber-events", "POST", {
+    subscriber: { email, name: "Exit", grant_lists: [list.id] },
+    name: start,
+  });
+  expect(began.status).toBe(200);
+  const { subscriber_id: subscriber } = began.body.data;
+  const enrollment = began.body.data.enrollments.started[0].id;
+  const ended = await api(page, "/api/subscriber-events", "POST", {
+    subscriber: { email },
+    name: stop,
+  });
+  expect(ended.status).toBe(200);
+
+  await page.goto(`/admin/sequences/enrollments/${enrollment}`);
+  await expect(page.getByTestId("timeline")).toContainText(`Event ${stop}`);
+  await page.goto(`/admin/subscribers/${subscriber}/enrollments`);
+  await expect(page.getByTestId("enrollment-row").first()).toContainText(`Event ${stop} at`);
+});
+
 test("a send with no subject says why: a refused one was never prepared, a wiped one lost its address", async ({
   page,
 }) => {

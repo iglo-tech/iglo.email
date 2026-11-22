@@ -600,8 +600,16 @@ function Enrollments({ t }: { t: Translation }) {
                 <td data-label={sequence} x-text="row.sequence_name"></td>
                 <td data-label={t.T("globals.fields.status")}>
                   <span class="badge enum" x-text="row.status"></span>
+                  <template x-if="row.held_until">
+                    <div class="text-light text-8" data-testid="enrollment-held">
+                      <span x-text="heldText(row)"></span>
+                    </div>
+                  </template>
                 </td>
-                <td data-label={t.T("sequences.exitReason")} x-text="row.exit_reason || ''"></td>
+                <td
+                  data-label={t.T("sequences.exitReason")}
+                  x-text="exitText(row.exit_reason, row.finished_at)"
+                ></td>
                 <td
                   data-label={t.T("globals.fields.createdAt")}
                   x-text="niceDate(row.created_at, true)"
@@ -728,7 +736,17 @@ function Tabs({
   );
 }
 const anySubscribers = ["subscribers:get", "subscribers:get_all"];
-const keys = [...subscriberKeys, "lists.optins.single", "lists.optins.double", ...sendKeys];
+const keys = [
+  ...subscriberKeys,
+  "lists.optins.single",
+  "lists.optins.double",
+  ...sendKeys,
+  // An enrollment's exit names its event or condition, and a cap hold names its time (B127).
+  "sequences.exit.condition",
+  "sequences.exit.event",
+  "sequences.exit.eventAt",
+  "sequences.heldByCap",
+];
 
 export const newSubscriberView: AdminView = ({ context, can }) => {
   const t = context.app.i18n;

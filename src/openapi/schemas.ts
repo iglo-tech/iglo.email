@@ -854,8 +854,13 @@ export const schemas = {
         ...string,
         description: "Only when the caller may read that subscriber.",
       },
+      held_until: {
+        ...nullable(time),
+        description:
+          "Only in a subscriber's enrollment list (B127): when the frequency cap holds this enrollment's wait, the time it frees the step; null when nothing holds it.",
+      },
     },
-    ["subscriber_email"],
+    ["subscriber_email", "held_until"],
   ),
   StepSample: object(
     {

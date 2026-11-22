@@ -8,7 +8,7 @@ import {
   api, urls, config, i18n, ListTag,
 } from '@/assets/admin/js/main.js';
 import {
-  sequenceOrTemplateText, skipLabel, skipText, statusText, statusVariant, subjectText,
+  exitText, sequenceOrTemplateText, skipLabel, skipText, statusText, statusVariant, subjectText,
 } from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
@@ -239,6 +239,12 @@ function component() {
     skipLabel,
     sequenceOrTemplateText,
     subjectText,
+    exitText,
+
+    // A cap-held enrollment names the time the cap frees its step (B127), in the enrollment page's words.
+    heldText(row) {
+      return i18n.ts('sequences.heldByCap', { time: u.niceDate(row.held_until, true) });
+    },
 
     statusLabel(status) {
       return i18n.t(`globals.terms.${status}`);

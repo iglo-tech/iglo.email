@@ -6,7 +6,7 @@
 // read the subscriber.
 import type { EventRow } from "@/events/store";
 import type { EnrollmentSend, Sends } from "@/messaging/sends";
-import { numberID } from "@/sequences/enrollments";
+import { numberID, project } from "@/sequences/enrollments";
 import type { EnrollmentRow, Enrollments } from "@/sequences/enrollments";
 
 type Step = ReturnType<Enrollments["steps"]>[number];
@@ -34,6 +34,28 @@ export function frequencyHold(
   }
   const free = capFreeAt(row.subscriber_id, now);
   return free.getTime() > now.getTime() && free.getTime() >= Date.parse(row.due_at) ? free : null;
+}
+
+/**
+ * One page of a subscriber's enrollments, projected, each with `held_until`: when the frequency cap
+ * holds its wait, or null (B127). Each sequence's steps are read once for the page.
+ */
+export function listedWithHolds(
+  rows: Array<EnrollmentRow>,
+  steps: (sequenceId: bigint) => Array<Step>,
+  capFreeAt: Pick<Sends, "capFreeAt">["capFreeAt"],
+  now: Date,
+) {
+  const byRow = new Map<bigint, Array<Step>>();
+  return rows.map((row) => {
+    let sequenceSteps = byRow.get(row.sequence_id);
+    if (sequenceSteps === undefined) {
+      sequenceSteps = steps(row.sequence_id);
+      byRow.set(row.sequence_id, sequenceSteps);
+    }
+    const until = frequencyHold(row, sequenceSteps, capFreeAt, now);
+    return { ...project(row), held_until: until ? until.toISOString() : null };
+  });
 }
 
 export function timeline(

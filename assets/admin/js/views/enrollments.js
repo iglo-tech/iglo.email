@@ -7,7 +7,9 @@ import {
 import {
   api, config, i18n, urls,
 } from '@/assets/admin/js/main.js';
-import { skipLabel, statusText, statusVariant } from '@/assets/admin/js/send-labels.js';
+import {
+  exitText, skipLabel, statusText, statusVariant,
+} from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -55,6 +57,7 @@ function enrollmentsView() {
 
     statusLabel,
     niceDate: u.niceDate,
+    exitText,
 
     async onFilter() {
       this.error = '';
@@ -148,9 +151,10 @@ function enrollmentView() {
         return i18n.t('sequences.entry.enrolled');
       }
       if (entry.type === 'ended') {
+        // The exit names its event or its condition (B127); the date beside the entry is when it ended.
         const status = statusLabel(entry.status);
         return entry.reason
-          ? i18n.ts('sequences.entry.endedReason', { status, reason: entry.reason })
+          ? i18n.ts('sequences.entry.endedReason', { status, reason: exitText(entry.reason) })
           : i18n.ts('sequences.entry.ended', { status });
       }
       const kind = entry.kind ? i18n.t(`sequences.kind.${entry.kind}`) : '';
