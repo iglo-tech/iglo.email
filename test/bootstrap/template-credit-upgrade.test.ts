@@ -163,6 +163,8 @@ test("a seeded install from before this release takes the migrated bodies, and a
     // Schema 26 also has the send status index that migration 28 replaces, so it is put back here.
     db.run("DROP INDEX idx_sends_status_id");
     db.run("CREATE INDEX idx_sends_outbox ON sends(status, created_at)");
+    // Schema 26 has no enrollment exit condition either (migration 29, B127 r2), so it is dropped here.
+    db.run("ALTER TABLE enrollments DROP COLUMN exit_condition");
     db.run("PRAGMA user_version = 26");
   } finally {
     db.close(true);
@@ -172,7 +174,7 @@ test("a seeded install from before this release takes the migrated bodies, and a
   const second = await up(dataDir);
   try {
     const after = await templates(second.port);
-    expect(userVersion(dataDir)).toBe(28);
+    expect(userVersion(dataDir)).toBe(29);
     expect(after.get(names.campaign)?.body).toBe(seeded.get(names.campaign)?.body);
     expect(after.get(names.archive)?.body).toBe(seeded.get(names.archive)?.body);
     expect(after.get(names.sample)?.body).toBe(seeded.get(names.sample)?.body);

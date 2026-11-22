@@ -649,7 +649,7 @@ function Enrollments({ t }: { t: Translation }) {
                 </td>
                 <td
                   data-label={t.T("sequences.exitReason")}
-                  x-text="exitText(row.exit_reason, row.finished_at)"
+                  x-text="exitText(row.exit_reason, row.finished_at, row.exit_condition)"
                 ></td>
                 <td
                   data-label={t.T("globals.fields.createdAt")}
@@ -781,6 +781,7 @@ const keys = [
   ...sendKeys,
   // An enrollment's exit names its event or condition, and a cap hold names its time (B127).
   "sequences.exit.condition",
+  "sequences.exit.conditionText",
   "sequences.exit.event",
   "sequences.exit.eventAt",
   "sequences.heldByCap",

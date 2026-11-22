@@ -868,6 +868,10 @@ export const schemas = {
       due_at: nullable(time),
       status: enrollmentStatus,
       exit_reason: nullable(string),
+      exit_condition: {
+        ...nullable(string),
+        description: "The step condition's JSON text that a condition exit ended the enrollment with.",
+      },
       created_at: time,
       updated_at: time,
       finished_at: nullable(time),
@@ -978,6 +982,7 @@ export const schemas = {
         at: nullable(time),
         status: enrollmentStatus,
         reason: nullable(string),
+        condition: nullable(string),
       }),
     ],
   },

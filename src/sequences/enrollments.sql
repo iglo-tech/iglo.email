@@ -1,6 +1,6 @@
 -- Native sequence enrollments (docs/design/05-sequences.md, 03-data-model.md#enrollments); no upstream source.
 -- name: enrollment-by-id
-SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at, test,
+SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, exit_condition, created_at, updated_at, finished_at, test,
     (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name
   FROM enrollments WHERE id = ?;
 -- name: exit-by-event
@@ -84,7 +84,7 @@ UPDATE enrollments SET step_id = ?, due_at = ?, claimed_until = NULL, retry_at =
 UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-end
-UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
+UPDATE enrollments SET status = ?, exit_reason = ?, exit_condition = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-defer
 UPDATE enrollments SET due_at = ?, claimed_until = NULL, retry_at = NULL WHERE id = ? AND status = 'active' AND claimed_until = ?;

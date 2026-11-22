@@ -154,7 +154,10 @@ function enrollmentView() {
         // The exit names its event or its condition (B127); the date beside the entry is when it ended.
         const status = statusLabel(entry.status);
         return entry.reason
-          ? i18n.ts('sequences.entry.endedReason', { status, reason: exitText(entry.reason) })
+          ? i18n.ts('sequences.entry.endedReason', {
+            status,
+            reason: exitText(entry.reason, null, entry.condition),
+          })
           : i18n.ts('sequences.entry.ended', { status });
       }
       const kind = entry.kind ? i18n.t(`sequences.kind.${entry.kind}`) : '';

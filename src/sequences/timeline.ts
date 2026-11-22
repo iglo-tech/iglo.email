@@ -110,6 +110,15 @@ export function timeline(
             held_until: heldUntil ? heldUntil.toISOString() : null,
           },
         ]
-      : [{ type: "ended", at: row.finished_at, status: row.status, reason: row.exit_reason }]),
+      : [
+          {
+            type: "ended",
+            at: row.finished_at,
+            status: row.status,
+            reason: row.exit_reason,
+            // The step condition that ended it, as stored, for a `condition` exit (B127 r2).
+            condition: row.exit_condition,
+          },
+        ]),
   ];
 }

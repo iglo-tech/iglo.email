@@ -59,13 +59,16 @@ export function sequenceStepText(send) {
 }
 
 // An enrollment's exit reason, named (B127): the event that exited it, with the time the exit was
-// recorded when one is given, or the step condition that did. Any other reason shows as stored.
-export function exitText(reason, at = null) {
+// recorded when one is given, or the step condition that did, with its text when it is kept (B127 r2).
+// Any other reason shows as stored.
+export function exitText(reason, at = null, condition = null) {
   if (!reason) {
     return '';
   }
   if (reason === 'condition') {
-    return i18n.t('sequences.exit.condition');
+    return condition
+      ? i18n.ts('sequences.exit.conditionText', { condition })
+      : i18n.t('sequences.exit.condition');
   }
   if (reason.startsWith('event:')) {
     const name = reason.slice('event:'.length);

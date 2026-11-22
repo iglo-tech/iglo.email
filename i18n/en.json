@@ -537,6 +537,7 @@
     "sequences.exitEvents": "Exit events",
     "sequences.exitEventsHelp": "Event names that end an active enrollment, one per line.",
     "sequences.exit.condition": "Step condition not met",
+    "sequences.exit.conditionText": "Step condition not met: {condition}",
     "sequences.exit.event": "Event {name}",
     "sequences.exit.eventAt": "Event {name} at {at}",
     "sequences.exitReason": "Exit reason",

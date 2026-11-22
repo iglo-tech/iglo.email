@@ -32,6 +32,8 @@ export interface EnrollmentRow {
   due_at: string | null;
   status: string;
   exit_reason: string | null;
+  /** The condition's text that a `condition` exit ended the enrollment with (B127 r2, migration 0029). */
+  exit_condition: string | null;
   created_at: string;
   updated_at: string;
   finished_at: string | null;
@@ -69,6 +71,7 @@ export function project(row: EnrollmentRow) {
     due_at: row.due_at,
     status: row.status,
     exit_reason: row.exit_reason,
+    exit_condition: row.exit_condition,
     created_at: row.created_at,
     updated_at: row.updated_at,
     finished_at: row.finished_at,
@@ -410,7 +413,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     if (!statements) {
       statements = {
         rows: db.prepare<unknown, Array<SQLQueryBindings>>(
-          `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at, test, (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+          `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, exit_condition, created_at, updated_at, finished_at, test, (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         ),
         total: db.prepare<unknown, Array<SQLQueryBindings>>(
           `SELECT count(*) AS n FROM enrollments${where}`,
@@ -676,9 +679,16 @@ export function createEnrollments(db: Database, clock: Clock) {
       return "advanced";
     },
     /** End a claimed enrollment. The caller holds the write and has checked `owns`. */
-    endClaimed(claim: Claim, status: "canceled" | "exited", reason: string, now: Date) {
+    /** End a claimed enrollment; a `condition` exit keeps the condition's text (B127 r2). */
+    endClaimed(
+      claim: Claim,
+      status: "canceled" | "exited",
+      reason: string,
+      now: Date,
+      condition: string | null = null,
+    ) {
       const at = now.toISOString();
-      q.get("claimed-end").run(status, reason, at, at, claim.id, claim.lease);
+      q.get("claimed-end").run(status, reason, condition, at, at, claim.id, claim.lease);
     },
     /** Move a claimed enrollment's due time (frequency cap `defer`) and release it. */
     defer(claim: Claim, dueAt: Date) {

@@ -194,3 +194,45 @@ test("a marketing wait the frequency cap holds names the cap and when it frees t
   );
   expect(after).toBeUndefined();
 }, 60_000);
+
+// B127 r2: a step condition that ends an enrollment keeps its text, so the timeline and the subscriber's
+// Enrollments tab name it. A manual cancel is not a condition exit and keeps none.
+test("an enrollment a step condition exited keeps the condition's text, on its timeline and its list", async () => {
+  const f = await open();
+  const template = await f.template();
+  const condition = { attr: "plan", op: "eq", value: "subscription" };
+  await f.sequence({
+    name: "Plan gate",
+    steps: [tx(template, { wait: "PT1M", condition })],
+  });
+  const gated = await f.event("gate@example.test", "order_paid", {
+    subscriber: { email: "gate@example.test", name: "Ana", attribs: { plan: "free" } },
+  });
+  const id = gated.enrollments.started[0]!.id;
+  const cancelled = await f.event("cancel@example.test", "order_paid", {
+    subscriber: { email: "cancel@example.test", name: "Ben" },
+  });
+  const other = cancelled.enrollments.started[0]!.id;
+  expect((await f.json(`/api/enrollments/${other}`, "DELETE")).status).toBe(200);
+
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).status === "exited");
+  const row = await f.enrollment(id);
+  expect(row).toMatchObject({ exit_reason: "condition" });
+  expect(JSON.parse(String(row.exit_condition))).toEqual(condition);
+
+  const ended = asBody<Array<{ type: string; reason?: string; condition?: string | null }>>(
+    (await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries,
+  ).find((entry) => entry.type === "ended");
+  expect(ended).toMatchObject({ reason: "condition" });
+  expect(JSON.parse(String(ended?.condition))).toEqual(condition);
+
+  const listed = asBody<Array<{ id: number; exit_condition: string | null }>>(
+    (await f.json(`/api/subscribers/${gated.subscriber_id}/enrollments`)).body.data.results,
+  ).find((r) => r.id === id);
+  expect(listed?.exit_condition).toBe(row.exit_condition);
+
+  const cancelledRow = await f.enrollment(other);
+  expect(cancelledRow).toMatchObject({ status: "canceled", exit_reason: "manual" });
+  expect(cancelledRow.exit_condition).toBeNull();
+}, 60_000);

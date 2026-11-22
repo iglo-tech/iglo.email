@@ -24,6 +24,7 @@ const keys = [
   "sequences.entry.waiting",
   "sequences.entry.waitingHeld",
   "sequences.exit.condition",
+  "sequences.exit.conditionText",
   "sequences.exit.event",
   "sequences.exit.eventAt",
   "sequences.kind.marketing",
@@ -241,7 +242,7 @@ export const enrollmentsView: AdminView = ({ context, can }) => {
                     <td>
                       <StatusBadge />
                     </td>
-                    <td x-text="exitText(e.exit_reason, e.finished_at)"></td>
+                    <td x-text="exitText(e.exit_reason, e.finished_at, e.exit_condition)"></td>
                     <td x-text="niceDate(e.created_at, true)"></td>
                     {canManage ? (
                       <td class="actions align-right">
