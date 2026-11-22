@@ -2,6 +2,7 @@
 // scheduler working at the same time (docs/perf/M5.4-scheduler.md). Generated data in
 // temporary directories, a loopback SMTP sink, the production owners from runtime.ts.
 // Run with `bun run scheduler:measure [enrollments] [repetitions]`.
+import type { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,8 +16,7 @@ const sendLoad = 2000;
 const clock = createRealClock();
 const sink = await startSink({});
 
-const count = (db: { query: Function }, sql: string) =>
-  Number((db.query(sql).get() as { n: bigint }).n);
+const count = (db: Database, sql: string) => Number((db.query(sql).get() as { n: bigint }).n);
 async function until(check: () => boolean, label: string, ms = 600_000) {
   const deadline = Date.now() + ms;
   while (!check()) {

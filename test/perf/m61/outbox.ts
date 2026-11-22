@@ -3,6 +3,7 @@
 // loopback SMTP sink. The scheduler queues the sequence sends with the outbox stopped; tx sends
 // are enqueued through the journal. Then the outbox alone drains the queue while 1 s samples
 // count accepted messages. Usage: bun test/perf/m61/outbox.ts [backlog] [repetitions].
+import type { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
@@ -17,8 +18,7 @@ const base = measurementBase();
 const clock = createRealClock();
 const sink = await startSink({});
 
-const count = (db: { query: Function }, sql: string) =>
-  Number((db.query(sql).get() as { n: bigint }).n);
+const count = (db: Database, sql: string) => Number((db.query(sql).get() as { n: bigint }).n);
 async function until(check: () => boolean, label: string, ms = 900_000) {
   const deadline = Date.now() + ms;
   while (!check()) {
