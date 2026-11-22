@@ -158,5 +158,8 @@ export function seedSubscribers(dataDir: string, count: number): void {
       insert.run(crypto.randomUUID(), `seed-${i}@example.test`, `Seed ${i}`, now, now);
     }
   })();
+  // A statement still alive keeps the connection open past close(), until the garbage collector
+  // runs: the WAL stays on disk and is folded in at some later, unpredictable moment (B137).
+  insert.finalize();
   db.close();
 }
