@@ -19,10 +19,6 @@ export interface FilesystemSettings {
   uploadUri: string;
 }
 
-/**
- * Temporary files, inside the directory for an atomic rename. No stored name can start with a
- * dot, and this name says whose it is: an operator's `.tmp` is not ours to touch.
- */
 // The fs error code of a caught value: its `code` when that is a string, otherwise undefined.
 function errorCode(error: unknown): string | undefined {
   if (typeof error === "object" && error !== null && "code" in error) {
@@ -31,6 +27,10 @@ function errorCode(error: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Temporary files, inside the directory for an atomic rename. No stored name can start with a
+ * dot, and this name says whose it is: an operator's `.tmp` is not ours to touch.
+ */
 const TEMPORARY = ".iglo-email-uploading";
 const temporaryFile = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** A name fits every common filesystem's 255 bytes, with room for a unique suffix. */
