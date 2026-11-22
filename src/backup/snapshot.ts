@@ -744,8 +744,10 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     const made = openPartial(wanted, parent, folders.missing, created);
     partial = made;
     const snapshot = join(made.path, DATABASE);
-    // The directory is 0700 from mkdtemp, so no other user can reach the database while VACUUM INTO
-    // creates it with the umask mode; it is made 0600 at once, before anything else reads it.
+    // The directory is 0700 from mkdtemp, so only this user and root can reach the database while
+    // VACUUM INTO creates it with the umask mode (0644 under umask 022). It is made 0600 right after.
+    // The flusher runs as this user and may open the file during VACUUM, so the directory is what
+    // protects it in that window.
     // VACUUM INTO refuses a path that exists, even an empty file (macOS's SQLite does), so the
     // flusher may start before the file does and waits for it.
     const source = whileMade(made, () => {
