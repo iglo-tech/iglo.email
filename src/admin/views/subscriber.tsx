@@ -528,7 +528,6 @@ function SequenceName({ item }: { item: string }) {
     <>
       <template x-if="canSequences">
         <a
-          class="unstyled"
           x-bind:href={`'/admin/sequences/' + ${item}.sequence_id`}
           x-text={`sequenceLabel(${item})`}
         ></a>
@@ -539,16 +538,17 @@ function SequenceName({ item }: { item: string }) {
     </>
   );
 }
-// The sequences an event started or exited, under a label (B127); nothing when there are none.
+// The sequences an event started or exited, under a label, one per line (B127); nothing when there are
+// none. One per line keeps a name with a colon apart from the next one.
 function SequenceLinks({ list, label, testId }: { list: string; label: string; testId: string }) {
   return (
     <template x-if={`${list}.length`}>
       <div class="text-light" data-testid={testId}>
-        {label}:{" "}
+        {label}:
         <template x-for={`s in ${list}`} x-bind:key="s.sequence_id">
-          <span>
-            <SequenceName item="s" />{" "}
-          </span>
+          <div>
+            <SequenceName item="s" />
+          </div>
         </template>
       </div>
     </template>

@@ -180,6 +180,13 @@ test("an enrollment that an event exited names that event, on its timeline and t
   await page.goto(`/admin/subscribers/${subscriber}/events`);
   await expect(page.getByTestId("event-started").first()).toContainText(made.body.data.name);
   await expect(page.getByTestId("event-exited").first()).toContainText(made.body.data.name);
+  // Each sequence is a link to it, styled as one, on its own line.
+  const exitedLink = page
+    .getByTestId("event-exited")
+    .first()
+    .getByRole("link", { name: made.body.data.name });
+  await expect(exitedLink).toHaveAttribute("href", `/admin/sequences/${made.body.data.id}`);
+  await expect(exitedLink).toHaveCSS("text-decoration-line", /underline/);
 });
 
 test("a send with no subject says why: a refused one was never prepared, a wiped one lost its address", async ({
