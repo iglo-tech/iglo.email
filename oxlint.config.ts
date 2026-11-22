@@ -429,7 +429,7 @@ export default defineConfig({
         "scripts/release.ts", // the JSON response of the server the release script just started
         "src/analytics/reader.ts", // method dispatch by a name checked against a list, and a child request from the parent
         "src/backup/snapshot.ts", // a PRAGMA row and a backup manifest read from disk
-        "src/campaigns/runner/runner.ts", // a rejected Promise.allSettled result, checked for its settlement
+        "src/campaigns/runner/runner.ts", // stored subscriber attributes JSON
         "src/captcha/captcha.ts", // captcha token parameters, checked field by field before the assertion
         "src/conditions/compile.ts", // condition values, validated before compile
         "src/db/instance-lock.ts", // the shape of a thrown SQLite error (code and message)
