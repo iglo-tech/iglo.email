@@ -1721,6 +1721,20 @@ export async function runOpenApiContract(target: {
       ).length === 0,
       "skipped-delivery-shape",
     );
+    // An event's started or exited sequence (B127) is checked against the shape the events list writes.
+    // The production run starts no sequence whose link it could list here, so the item is checked alone.
+    const eventLink = { enrollment_id: 1, sequence_id: 1, sequence_name: "Onboarding" };
+    check(
+      validate(
+        document,
+        { $ref: "#/components/schemas/EventSequenceLink" },
+        eventLink,
+        "$",
+        0,
+        checked,
+      ).length === 0,
+      "event-sequence-link-shape",
+    );
     // Nothing documented went unexercised.
     for (const name of Object.keys(document.components.schemas)) {
       check(checked.has(name), `unchecked-schema-${name}`);
