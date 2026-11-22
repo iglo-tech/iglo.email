@@ -11,7 +11,7 @@ import enrollmentQueries from "@/sequences/enrollments.sql" with { type: "text" 
 
 const subscribers = 200_000;
 const otherListEnrollments = 200_000;
-const scopedEnrollments = 1_000;
+const scopedEnrollments = 1000;
 const runs = 9;
 
 const db = new Database(":memory:");
@@ -46,29 +46,20 @@ db.run(
    INSERT INTO subscribers (uuid, email, name) SELECT 'sub-' || i, 'sub' || i || '@example.test', 'Sub ' || i FROM n`,
   [subscribers],
 );
-const scoped = [
-  [1, 1],
-  [2, 2],
-  [3, 4],
-];
-for (const [sequenceId, stepId] of scoped) {
+/** `count` active enrollments of one sequence, on subscribers 1 to `count`, waiting on one step. */
+function enroll(sequenceId: number, stepId: number, count: number) {
   db.run(
     `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?2)
      INSERT INTO enrollments (sequence_id, subscriber_id, step_id, due_at, status) SELECT ?1, i, ?3, '2026-01-01T00:00:00.000Z', 'active' FROM n`,
-    [sequenceId, scopedEnrollments, stepId],
+    [sequenceId, count, stepId],
   );
 }
-for (const [sequenceId, stepId] of [
-  [4, 5],
-  [5, 6],
-  [6, 8],
-]) {
-  db.run(
-    `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?2)
-     INSERT INTO enrollments (sequence_id, subscriber_id, step_id, due_at, status) SELECT ?1, i, ?3, '2026-01-01T00:00:00.000Z', 'active' FROM n`,
-    [sequenceId, otherListEnrollments, stepId],
-  );
-}
+enroll(1, 1, scopedEnrollments);
+enroll(2, 2, scopedEnrollments);
+enroll(3, 4, scopedEnrollments);
+enroll(4, 5, otherListEnrollments);
+enroll(5, 6, otherListEnrollments);
+enroll(6, 8, otherListEnrollments);
 const active = db
   .query<{ count: number }, []>("SELECT count(*) AS count FROM enrollments WHERE status = 'active'")
   .get();

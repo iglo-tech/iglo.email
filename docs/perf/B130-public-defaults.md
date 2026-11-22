@@ -73,6 +73,12 @@ runs, each in a transaction that is rolled back, after one warm-up run.
 | `exit-marketing-by-subscriber` | Linux | `idx_enrollments_claim (status=?)`, 34.5 ms | `idx_enrollments_subscriber_sequence (subscriber_id=?)`, 0.020 ms |
 | `exit-by-subscribers` | Linux | `idx_enrollments_claim (status=?)`, 42.8 ms | `idx_enrollments_subscriber_sequence (subscriber_id=?)`, 0.041 ms |
 
+The final SQL also decides by the step the enrollment runs next (D128 item 10): the statement's step test became a
+correlated lookup, the first active step at or after the enrollment's step's position. The lookup reads the sequence
+steps' active-position index and the step's primary key, and the plan keeps the subscriber index. Measured on the
+final SQL, same workload, median of 9: macOS `exit-by-lists` 0.043 ms, `exit-marketing-by-subscriber` 0.033 ms,
+`exit-by-subscribers` 0.057 ms; Linux 0.018 ms, 0.020 ms and 0.051 ms.
+
 The Linux `exit-by-lists` before-plan is the list's sequence index, `(sequence_id, status)`. Its cost grows with the
 list's active enrollments, not one subscriber's; the scoped list is small here, so its number is low. The all-lists
 and block-list exits, without the change, read every active enrollment in the install (the status-only index), which
