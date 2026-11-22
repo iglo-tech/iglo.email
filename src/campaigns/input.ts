@@ -51,7 +51,9 @@ export async function readCampaignBody(request: Request): Promise<Record<string,
     try {
       while (true) {
         const part = await reader.read();
-        if (part.done) break;
+        if (part.done) {
+          break;
+        }
         size += part.value.length;
         if (size > LIMIT) {
           await reader.cancel();
@@ -72,7 +74,7 @@ export async function readCampaignBody(request: Request): Promise<Record<string,
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(Buffer.concat(chunks, size).toString("utf8"));
+    parsed = JSON.parse(Buffer.concat(chunks, size).toString("utf-8"));
   } catch {
     throw new HttpError(400);
   }
@@ -106,10 +108,14 @@ export function bindCampaign(input: Record<string, unknown>): CampaignRequest {
   const out: CampaignRequest = {};
   const o = out as Record<string, unknown>;
   for (const key of [...strings, "from", "to", "status"]) {
-    if (input[key] !== undefined && input[key] !== null) o[key] = text(input[key]);
+    if (input[key] !== undefined && input[key] !== null) {
+      o[key] = text(input[key]);
+    }
   }
   for (const key of nullableStrings) {
-    if (input[key] !== undefined) o[key] = input[key] === null ? null : text(input[key]);
+    if (input[key] !== undefined) {
+      o[key] = input[key] === null ? null : text(input[key]);
+    }
   }
   if (input.send_at !== undefined) {
     const value = input.send_at;
@@ -128,9 +134,13 @@ export function bindCampaign(input: Record<string, unknown>): CampaignRequest {
   }
   if (input.headers !== undefined && input.headers !== null) {
     out.headers = array(input.headers, 1024).map((set) => {
-      if (set === null) return {};
+      if (set === null) {
+        return {};
+      }
       const entries = Object.entries(object(set));
-      if (entries.length > 1024) bad();
+      if (entries.length > 1024) {
+        bad();
+      }
       return Object.fromEntries(entries.map(([k, v]) => [k, text(v)]));
     });
   }
@@ -144,14 +154,17 @@ export function bindCampaign(input: Record<string, unknown>): CampaignRequest {
     out.tags = array(input.tags, 1024).map(text);
   }
   for (const key of ["template_id", "archive_template_id"] as const) {
-    if (input[key] !== undefined) out[key] = input[key] === null ? null : integer(input[key]);
+    if (input[key] !== undefined) {
+      out[key] = input[key] === null ? null : integer(input[key]);
+    }
   }
   if (input.archive !== undefined && input.archive !== null) {
     out.archive = typeof input.archive === "boolean" ? input.archive : bad();
   }
   for (const key of ["lists", "media"] as const) {
-    if (input[key] !== undefined)
+    if (input[key] !== undefined) {
       out[key] = input[key] === null ? [] : array(input[key], 10_000).map(integer);
+    }
   }
   if (input.subscribers !== undefined) {
     out.subscribers = input.subscribers === null ? [] : array(input.subscribers, 1000).map(text);
@@ -222,16 +235,20 @@ export function validateCampaign(c: WritableCampaign, listIds: Array<bigint>, p:
     }
   }
   for (const field of [value.body, value.altbody ?? "", value.body_source ?? ""]) {
-    if (field.includes("\0")) invalid(t, "body");
+    if (field.includes("\0")) {
+      invalid(t, "body");
+    }
   }
   // Every header value is a template rendered per recipient; bound how many there are.
   if (value.headers.reduce((n, set) => n + Object.keys(set).length, 0) > MAX_HEADERS) {
     invalid(t, "headers");
   }
   for (const set of value.headers) {
-    for (const [name, header] of Object.entries(set))
-      if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,256}$/.test(name) || /[\r\n\0]/.test(header))
+    for (const [name, header] of Object.entries(set)) {
+      if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,256}$/.test(name) || /[\r\n\0]/.test(header)) {
         invalid(t, "headers");
+      }
+    }
   }
   const error = p.compile(value);
   if (error !== null) {
@@ -243,7 +260,7 @@ export function validateCampaign(c: WritableCampaign, listIds: Array<bigint>, p:
   if (JSON.stringify(value.archive_meta).length > 64 * 1024) {
     invalid(t, "archive_meta");
   }
-  if (value.tags.some((tag) => tag.includes("\0") || [...tag].length > 100)) {
+  if (value.tags.some((tag) => tag.includes("\0") || Array.from(tag).length > 100)) {
     invalid(t, "tags");
   }
   if (value.archive_slug !== null && value.archive_slug !== "") {

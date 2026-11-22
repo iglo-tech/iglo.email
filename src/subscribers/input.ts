@@ -199,7 +199,9 @@ export function parseAttributes(raw: string): Record<string, unknown> | null {
       throw new Error("nested too deeply");
     }
     if (item && typeof item === "object") {
-      for (const child of Object.values(item)) pending.push([child, depth + 1]);
+      for (const child of Object.values(item)) {
+        pending.push([child, depth + 1]);
+      }
     }
   }
   return attribs;
@@ -335,7 +337,9 @@ function jsonInput(
     }
   }
   if (out.action === "add") {
-    for (const raw of actionStatuses) set(out, "status", JSON.parse(raw));
+    for (const raw of actionStatuses) {
+      set(out, "status", JSON.parse(raw));
+    }
   }
   return out;
 }
@@ -439,7 +443,9 @@ function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
   for (let i = 0; i < body.length; i++) {
     if (body[i] === 62) {
       parser.write(decoder.decode(body.subarray(start, i + 1), { stream: true }));
-      if (complete) return out;
+      if (complete) {
+        return out;
+      }
       start = i + 1;
     }
   }
@@ -462,7 +468,7 @@ export async function subscriberInput(
       return {};
     }
     if (type === "application/json") {
-      return jsonInput(body.toString("utf8"), allowed, operation);
+      return jsonInput(body.toString("utf-8"), allowed, operation);
     }
     if (type === "application/xml" || type === "text/xml") {
       return xmlInput(body, allowed);
@@ -471,11 +477,12 @@ export async function subscriberInput(
       const out: SubscriberInput = {};
       const values: Array<[string, string]> = [];
       if (type === "application/x-www-form-urlencoded") {
-        const encoded = body.toString("utf8"),
+        const encoded = body.toString("utf-8"),
           query = context.url.search.slice(1);
         for (const part of [encoded, query]) {
-          if (/%(?![a-fA-F0-9]{2})/.test(part) || part.includes(";"))
+          if (/%(?![a-fA-F0-9]{2})/.test(part) || part.includes(";")) {
             throw new Error("invalid form");
+          }
         }
         values.push(...new URLSearchParams(encoded), ...new URLSearchParams(query));
       } else {
@@ -483,7 +490,9 @@ export async function subscriberInput(
           headers: { "Content-Type": context.request.headers.get("content-type")! },
         }).formData();
         for (const [key, value] of form) {
-          if (typeof value === "string") values.push([key, value]);
+          if (typeof value === "string") {
+            values.push([key, value]);
+          }
         }
       }
       if (operation !== "crud") {

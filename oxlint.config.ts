@@ -46,33 +46,88 @@ export default defineConfig({
       files: ["src/app.ts", "src/main.ts", "src/**/cli.ts", "scripts/**/*.ts"],
       rules: { "no-console": "off" },
     },
-    // B134b: src/messaging/notify.ts falls back to console when no logger is injected; inject the logger instead.
-    { files: ["src/messaging/notify.ts"], rules: { "no-console": "off" } },
-    // B134c: test/ still prints from its measure, runner and reference scripts.
-    { files: testFiles, rules: { "no-console": "off" } },
-    // Kept off in these five files only. The XML declaration and the charset comparisons accept the label
-    // "utf-8" as written (the rule would spell it "utf8" and refuse every UTF-8 declaration and charset), so
-    // the fix would change behaviour. The lead decides at review.
+    // Exception, for the lead to decide at review: these files test `instanceof` for their own error classes and
+    // for the values it is the only exact check for (Promise, Response, Uint8Array, liquidjs Output and Drop). A
+    // brand or duck-type check would also accept thenables and objects from other realms, which changes behaviour.
     {
       files: [
-        "src/lists/input.ts",
-        "src/settings/mail.ts",
-        "src/settings/xml.ts",
-        "src/subscribers/input.ts",
-        "src/templates/input.ts",
+        "src/admin/page.tsx",
+        "src/conditions/validate.ts",
+        "src/db/transaction.ts",
+        "src/events/store.ts",
+        "src/loops/loop.ts",
+        "src/messaging/payload.ts",
+        "src/public/routes.tsx",
+        "src/sequences/routes.ts",
+        "src/settings/validate.ts",
+        "src/subscribers/import/routes.ts",
+        "src/templates/renderer.ts",
+        "src/webhooks/delivery.ts",
       ],
-      rules: { "unicorn/text-encoding-identifier-case": "off" },
+      rules: { "@nkzw/no-instanceof": "off" },
     },
-    // The preset's TypeScript override re-enables this rule under its alias, so the root `off` below needs
-    // this override after it. B134b: src and B134c: test still have unawaited promises.
+    // Exception, for the lead to decide at review: the JSX runtime types a component's props by the component, so its
+    // props type cannot be unknown (typing it so gives 479 type errors across the admin and public pages), and the
+    // settings store is a record keyed by setting name, one value type per key (unknown gives 128 errors across the
+    // settings code; a per-key schema is a separate design).
     {
-      files: ["**/*.{ts,tsx,mts,cts}"],
+      files: [
+        "src/jsx/jsx-runtime.ts",
+        "src/jsx/render.ts",
+        "src/media/routes.ts",
+        "src/public/settings.ts",
+        "src/settings/validate.ts",
+        "src/settings/xml.ts",
+        "src/unsubscribe/policy.ts",
+      ],
+      rules: { "typescript/no-explicit-any": "off" },
+    },
+    // Exception, for the lead to decide at review: the Nodemailer envelope in messaging/email.ts carries address
+    // objects that @types/nodemailer 8 omits, so its SDK boundary cast can only be a chained one, never a checked type.
+    { files: ["src/messaging/email.ts"], rules: { "quality/no-chained-type-assertions": "off" } },
+    // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
+    // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
+    {
+      files: ["test/**"],
+      rules: {
+        "no-console": "off",
+        "prefer-const": "off",
+        curly: "off",
+        "typescript/array-type": "off",
+        "unicorn/numeric-separators-style": "off",
+        "unicorn/prefer-number-properties": "off",
+        "typescript/consistent-type-imports": "off",
+        "no-useless-assignment": "off",
+        "typescript/require-array-sort-compare": "off",
+        "unicorn/prefer-top-level-await": "off",
+        "typescript/await-thenable": "off",
+        "typescript/no-misused-promises": "off",
+        "unicorn/prefer-string-replace-all": "off",
+        "typescript/use-unknown-in-catch-callback-variable": "off",
+        "no-empty": "off",
+        "preserve-caught-error": "off",
+        "no-promise-executor-return": "off",
+        "quality/no-array-filter-map": "off",
+        "quality/no-chained-type-assertions": "off",
+        "quality/no-object-parameters": "off",
+        "typescript/no-misused-spread": "off",
+        "typescript/no-unnecessary-type-assertion": "off",
+        "@nkzw/no-instanceof": "off",
+        "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
+      },
+    },
+    // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
+    // test/ still has unawaited promises; src/ and scripts/ are fixed (B134b).
+    {
+      files: ["test/**"],
       rules: { "@typescript-eslint/no-floating-promises": "off" },
     },
   ],
   rules: {
     ...cloudflare.rules,
     "no-undef": "error",
+    // Labels are spelled as the standards write them ("utf-8"), which is what the XML declaration and charset checks accept.
+    "unicorn/text-encoding-identifier-case": ["error", { withDash: true }],
 
     // The admin and public pages render HTML strings through the in-house JSX runtime (AGENTS.md: no
     // client framework). `class`, Alpine's `x-*`, `@*` and `:*` attributes and other HTML attributes are
@@ -83,51 +138,23 @@ export default defineConfig({
     "react/rules-of-hooks": "off", // no hooks in the in-house runtime
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
-    // B134b: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed.
-    curly: "off", // B134b
-    eqeqeq: "off", // B134b
-    "no-empty": "off", // B134b
-    "no-promise-executor-return": "off", // B134b
-    "no-useless-assignment": "off", // B134b
-    "preserve-caught-error": "off", // B134b
-    "prefer-const": "off", // B134b
-    "object-shorthand": "off", // B134b
-    "typescript/array-type": "off", // B134b
-    "typescript/consistent-type-imports": "off", // B134b
-    "typescript/no-explicit-any": "off", // B134b
-    "typescript/no-floating-promises": "off", // B134b
-    "typescript/no-misused-promises": "off", // B134b
-    "typescript/no-misused-spread": "off", // B134b
-    "typescript/no-non-null-assertion": "off", // B134b
-    "typescript/no-unnecessary-type-assertion": "off", // B134b
-    "typescript/no-unsafe-argument": "off", // B134b
-    "typescript/no-unsafe-assignment": "off", // B134b
-    "typescript/no-unsafe-call": "off", // B134b
-    "typescript/no-unsafe-member-access": "off", // B134b
-    "typescript/no-unsafe-return": "off", // B134b
-    "typescript/no-unsafe-type-assertion": "off", // B134b
-    "typescript/require-array-sort-compare": "off", // B134b
-    "typescript/unbound-method": "off", // B134b
-    "typescript/use-unknown-in-catch-callback-variable": "off", // B134b
-    "@nkzw/no-instanceof": "off", // B134b
-    "quality/no-array-filter-map": "off", // B134b
-    "quality/no-chained-type-assertions": "off", // B134b
-    "quality/no-conditional-empty-object-spread": "off", // B134b
-    "quality/no-known-value-widening": "off", // B134b
-    "quality/no-object-parameters": "off", // B134b
-    "quality/no-unknown-returns": "off", // B134b
-    "quality/no-unsafe-dictionary-type": "off", // B134b
-    "unicorn/consistent-function-scoping": "off", // B134b
-    "unicorn/no-hex-escape": "off", // B134b
-    "unicorn/numeric-separators-style": "off", // B134b
-    "unicorn/prefer-at": "off", // B134b
-    "unicorn/prefer-number-properties": "off", // B134b
-    "unicorn/prefer-set-has": "off", // B134b
-    "unicorn/prefer-string-replace-all": "off", // B134b
-    "unicorn/prefer-top-level-await": "off", // B134b
+    // B134d/B134e: findings remain in src/ or scripts/. Each rule returns to the preset when its findings are fixed:
+    // B134e takes the typescript/no-unsafe-* rules, B134d takes the rest.
+    "typescript/no-non-null-assertion": "off", // B134d
+    "typescript/no-unsafe-argument": "off", // B134e
+    "typescript/no-unsafe-assignment": "off", // B134e
+    "typescript/no-unsafe-call": "off", // B134e
+    "typescript/no-unsafe-member-access": "off", // B134e
+    "typescript/no-unsafe-return": "off", // B134e
+    "typescript/no-unsafe-type-assertion": "off", // B134e
+    "typescript/unbound-method": "off", // B134d
+    "quality/no-conditional-empty-object-spread": "off", // B134d
+    "quality/no-known-value-widening": "off", // B134d
+    "quality/no-unknown-returns": "off", // B134d
+    "quality/no-unsafe-dictionary-type": "off", // B134d
+    "unicorn/consistent-function-scoping": "off", // B134d
 
     // B134c: findings remain only in test/.
-    "typescript/await-thenable": "off", // B134c
     "typescript/no-require-imports": "off", // B134c
     "typescript/no-import-type-side-effects": "off", // B134c
     "typescript/no-unsafe-function-type": "off", // B134c

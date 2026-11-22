@@ -15,7 +15,7 @@ export function safeLogo(value: string): string {
   if (!value) {
     return "";
   }
-  if (Buffer.byteLength(value, "utf8") > 64 * 1024) {
+  if (Buffer.byteLength(value, "utf-8") > 64 * 1024) {
     throw new Error("Template data limit exceeded");
   }
   try {
@@ -45,8 +45,9 @@ function parse(value: unknown): { server: SMTPServer; email: string } {
     "msg_retry_delay",
   ];
   for (const key of strings) {
-    if (item[key] !== undefined && item[key] !== null && typeof item[key] !== "string")
+    if (item[key] !== undefined && item[key] !== null && typeof item[key] !== "string") {
       throw new HttpError(400, "Invalid data.");
+    }
   }
   for (const key of ["enabled", "exclude_from_default"]) {
     if (item[key] !== undefined && item[key] !== null && typeof item[key] !== "boolean") {

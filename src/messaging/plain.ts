@@ -581,7 +581,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
       end() {
         // A document that ends with elements open closes them, so their links and markers count.
         while (stack.length > 0) {
-          close(stack[stack.length - 1]!);
+          close(stack.at(-1)!);
         }
       },
     });

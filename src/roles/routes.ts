@@ -47,14 +47,14 @@ async function input(context: RequestContext, kind: "user" | "list") {
   const invalid = (name: string): never => {
     throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
   };
-  if (data.name != null && typeof data.name !== "string") {
+  if (data.name !== null && data.name !== undefined && typeof data.name !== "string") {
     throw new HttpError(400);
   }
   const name = typeof data.name === "string" ? data.name : "";
   if (!strHasLen(name, 1, 2000)) {
     invalid("name");
   }
-  if (kind === "user" && data.permissions == null) {
+  if (kind === "user" && (data.permissions === null || data.permissions === undefined)) {
     invalid("permissions");
   }
   const granted = data.permissions ?? [];
@@ -62,13 +62,17 @@ async function input(context: RequestContext, kind: "user" | "list") {
     throw new HttpError(400);
   }
   if (kind === "user") {
-    for (const p of granted) if (!validPermissions.has(p)) invalid("permission");
+    for (const p of granted) {
+      if (!validPermissions.has(p)) {
+        invalid("permission");
+      }
+    }
   }
   const items = data.lists ?? [];
   if (!Array.isArray(items)) {
     throw new HttpError(400);
   }
-  const children: Array<{ id: bigint; permissions: string[] }> = [];
+  const children: Array<{ id: bigint; permissions: Array<string> }> = [];
   for (const item of items) {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw new HttpError(400);
@@ -85,7 +89,9 @@ async function input(context: RequestContext, kind: "user" | "list") {
       throw new HttpError(400);
     }
     for (const p of childPermissions) {
-      if (p !== "list:get" && p !== "list:manage") invalid("list permission");
+      if (p !== "list:get" && p !== "list:manage") {
+        invalid("list permission");
+      }
     }
     children.push({ id: BigInt(value.id), permissions: childPermissions as Array<string> });
   }

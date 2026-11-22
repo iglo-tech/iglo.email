@@ -167,7 +167,7 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
     if (!statSync(join(target, MANIFEST), { throwIfNoEntry: false })) {
       throw new Error(`No ${MANIFEST} in ${target}: not a backup`);
     }
-    const { uploads: directory } = JSON.parse(readFileSync(join(target, MANIFEST), "utf8")) as {
+    const { uploads: directory } = JSON.parse(readFileSync(join(target, MANIFEST), "utf-8")) as {
       uploads: string;
     };
     // What a restored server will serve: a relative setting says where, whatever the manifest says.
@@ -198,6 +198,7 @@ export async function runFlushChild(): Promise<void> {
   let running = true;
   void (async () => {
     for await (const _ of Bun.stdin.stream()) {
+      // Reading stdin to its end is the whole job: the stream ends when the parent closes it.
     }
     running = false;
   })();
@@ -254,7 +255,9 @@ function standing(path: string): "missing" | "folder" {
   try {
     stats = lstatSync(path, { throwIfNoEntry: false });
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
+    if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") {
+      throw error;
+    }
     throw new Error(`${path} is below something that is not a folder`, { cause: error });
   }
   if (!stats) {
@@ -289,12 +292,13 @@ function followed(path: string): Stats | undefined {
     return statSync(path, { throwIfNoEntry: false });
   } catch (error) {
     const { code } = error as NodeJS.ErrnoException;
-    if (code === "ENOTDIR")
+    if (code === "ENOTDIR") {
       throw new Error(`${path} is a symlink to a path below a file, not a folder`, {
         cause: error,
       });
+    }
     if (code === "ELOOP") {
-      throw new Error(`${path} is a symlink loop`);
+      throw new Error(`${path} is a symlink loop`, { cause: error });
     }
     throw error;
   }
@@ -380,9 +384,15 @@ function createFolders(folders: Array<string>, made: Array<MadeFolder>): void {
       made.push(madeAt(folder));
     } catch (error) {
       const { code } = error as NodeJS.ErrnoException;
-      if (code === "ENOENT") throw error;
-      if (code !== "EEXIST" && code !== "ENOTDIR" && code !== "ELOOP") throw error;
-      if (realFolder(folder)) continue;
+      if (code === "ENOENT") {
+        throw error;
+      }
+      if (code !== "EEXIST" && code !== "ENOTDIR" && code !== "ELOOP") {
+        throw error;
+      }
+      if (realFolder(folder)) {
+        continue;
+      }
       throw new Error(`${folder} changed meanwhile: it is not a folder`, { cause: error });
     }
   }
@@ -562,10 +572,13 @@ function publish(
   try {
     renameSync(partial.path, output);
   } catch (error) {
-    if (aside) putBack(aside, output);
+    if (aside) {
+      putBack(aside, output);
+    }
     const { code } = error as NodeJS.ErrnoException;
-    if (code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR")
+    if (code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR") {
       throw new Error(`${output} already exists; pass --force to replace it`, { cause: error });
+    }
     if (code === "ENOENT") {
       throw changedMeanwhile(partial.path);
     }
@@ -615,12 +628,15 @@ function openPartial(
       return madeAt(mkdtempSync(join(parent, PARTIAL)));
     } catch (error) {
       const { code } = error as NodeJS.ErrnoException;
-      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
-      if (attempt > 1)
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        throw error;
+      }
+      if (attempt > 1) {
         throw new Error(
           `${dirname(wanted)} changed meanwhile: a folder in it was removed or replaced`,
           { cause: error },
         );
+      }
     }
   }
 }
@@ -682,10 +698,11 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     }
     // A folder that does not exist yet has no leftovers in it.
     for (const entry of folders.missing.length === 0 ? readdirSync(parent) : []) {
-      if (entry.startsWith(PARTIAL))
+      if (entry.startsWith(PARTIAL)) {
         warn(`${join(parent, entry)} is left from an interrupted backup or is one still running`);
-      else if (entry.startsWith(REPLACED))
+      } else if (entry.startsWith(REPLACED)) {
         warn(`${join(parent, entry)} is a backup that a forced backup did not finish replacing`);
+      }
     }
 
     // Once openPartial has checked the path, output is parent joined with the basename, which is the

@@ -74,7 +74,7 @@ export function createConditionEvaluator(options: {
               fragments: compiled.fragments,
             })
           )[0]
-        : (prepared(compiled.sql).values(...args) as Array<unknown>[])[0]?.[0];
+        : (prepared(compiled.sql).values(...args) as Array<Array<unknown>>)[0]?.[0];
       if (matched === undefined) {
         return { ok: false, error: { kind: "not_found", message: "subscriber not found" } };
       }

@@ -336,7 +336,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
       notify: adminNotifier,
     });
-    await importer.sweep().catch((error) => app.logger.error(error));
+    await importer.sweep().catch((error: unknown) => app.logger.error(error));
     registerImportRoutes(router, { importer, roles, auth });
     const limiter = createSendRateLimiter({
       clock,
@@ -369,7 +369,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     });
     // A database that names a directory it must not serve from refuses media, not the server:
     // the reason is logged here, and each media operation refuses with it (D64).
-    await files.sweep().catch((error) => app.logger.error(error));
+    await files.sweep().catch((error: unknown) => app.logger.error(error));
     registerSettingsRoutes(
       router,
       settings,
@@ -762,7 +762,6 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
       },
     });
     analyticsPurge = createAnalyticsPurge(db, readonly);
-    let server: ReturnType<typeof startServer> | undefined;
     maintenance = registerMaintenanceRoutes(router, {
       subscribers: subscriberStore,
       analytics: analyticsPurge,
@@ -818,7 +817,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     inspect?.(router);
     // The port is bound before any loop starts (B52). A bind that fails throws here, with nothing
     // started, so the finally block closes the stores and releases the lock and nothing else.
-    server = startServer(app, router);
+    const server = startServer(app, router);
     const listening = server;
     await new Promise<void>((resolve, reject) => {
       let closing = false;
@@ -844,7 +843,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         const readerClose = analyticsReader!.close();
         const messagingClose = emailer!.close();
         const httpStop = listening.stop();
-        Promise.allSettled([
+        void Promise.allSettled([
           importStop,
           maintenanceStop,
           runnerStop,
@@ -956,8 +955,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
 }
 
 if (import.meta.main) {
-  main().catch((error: unknown) => {
+  try {
+    await main();
+  } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : "Failed to start server");
     process.exitCode = 1;
-  });
+  }
 }

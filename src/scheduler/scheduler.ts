@@ -467,7 +467,9 @@ export function createScheduler(options: SchedulerOptions) {
       }
       // Most decisions are synchronous: yield to I/O between them so a large due batch does
       // not starve outbox delivery and HTTP on the same thread. This waits for no time.
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
     },
   });
   return {

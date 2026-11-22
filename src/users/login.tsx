@@ -12,7 +12,7 @@ import { readBody } from "@/users/input";
 import { validPassword } from "@/users/password";
 
 function unsafeCharacters(value: string): boolean {
-  return [...value].some((character) => {
+  return Array.from(value).some((character) => {
     const code = character.charCodeAt(0);
     return code <= 31 || code === 127 || character === "\\";
   });

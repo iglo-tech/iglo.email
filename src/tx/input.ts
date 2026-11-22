@@ -52,7 +52,9 @@ async function readBounded(request: Request): Promise<Buffer<ArrayBuffer>> {
     try {
       while (true) {
         const part = await reader.read();
-        if (part.done) break;
+        if (part.done) {
+          break;
+        }
         size += part.value.length;
         if (size > BODY_LIMIT) {
           await reader.cancel();
@@ -93,8 +95,12 @@ function empty(): TxMessage {
 
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
-type Sources = WeakMap<object, Map<string, string>>;
-function int(value: unknown, holder: object, key: string, sources: Sources): bigint {
+/** A JSON object or array: the container a reviver's `this` names. */
+type JsonHolder = Record<string, unknown> | Array<unknown>;
+const isJsonRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+type Sources = WeakMap<JsonHolder, Map<string, string>>;
+function int(value: unknown, holder: JsonHolder, key: string, sources: Sources): bigint {
   if (value === null) {
     return 0n;
   }
@@ -124,7 +130,7 @@ const str = (value: unknown, key: string): string => {
 function list<T>(
   value: unknown,
   key: string,
-  item: (value: unknown, index: number) => T,
+  item: (value: unknown, index: number, holder: Array<unknown>) => T,
 ): Array<T> {
   if (value === null) {
     return [];
@@ -140,23 +146,26 @@ function bindJSON(text: string, out: TxMessage) {
   const sources: Sources = new WeakMap();
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text, function (this: object, key, value, context?: { source?: string }) {
-      if (typeof value === "number" && context?.source !== undefined) {
-        let entries = sources.get(this);
-        if (!entries) {
-          sources.set(this, (entries = new Map()));
+    parsed = JSON.parse(
+      text,
+      function (this: JsonHolder, key, value, context?: { source?: string }) {
+        if (typeof value === "number" && context?.source !== undefined) {
+          let entries = sources.get(this);
+          if (!entries) {
+            sources.set(this, (entries = new Map()));
+          }
+          entries.set(key, context.source);
         }
-        entries.set(key, context.source);
-      }
-      return value;
-    });
+        return value;
+      },
+    );
   } catch {
     throw new TxInputError("body");
   }
   if (parsed === null) {
     return;
   }
-  if (typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isJsonRecord(parsed)) {
     throw new TxInputError("body");
   }
   for (const [rawKey, value] of Object.entries(parsed)) {
@@ -169,7 +178,7 @@ function bindJSON(text: string, out: TxMessage) {
         out.subscriberEmails = list(value, key, (v) => str(v, key));
         break;
       case "subscriber_ids":
-        out.subscriberIds = list(value, key, (v, i) => int(v, value as object, String(i), sources));
+        out.subscriberIds = list(value, key, (v, i, holder) => int(v, holder, String(i), sources));
         break;
       case "subscriber_email":
         out.subscriberEmail = str(value, key);

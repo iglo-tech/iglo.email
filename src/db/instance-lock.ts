@@ -69,10 +69,11 @@ export function holdDataDirectory(
     } catch (error) {
       const { code, message } = error as { code?: string; message: string };
       if (code === "SQLITE_BUSY") {
-        if (busy++ === BUSY_RETRIES)
+        if (busy++ === BUSY_RETRIES) {
           throw new Error(`${directory} is in use by another iglo.email process: stop it first`, {
             cause: error,
           });
+        }
         pause(1 + Math.random() * BUSY_RETRY_MS);
         continue;
       }
@@ -84,13 +85,13 @@ export function holdDataDirectory(
         code === "SQLITE_CORRUPT" ||
         (code === "SQLITE_ERROR" && message === "unsupported file format");
       if (emptied || !damaged) {
-        throw new Error(`Cannot lock ${path}: ${message}`);
+        throw new Error(`Cannot lock ${path}: ${message}`, { cause: error });
       }
       emptied = true;
       try {
         truncateSync(path);
       } catch (error_) {
-        throw new Error(`Cannot lock ${path}: ${(error_ as Error).message}`);
+        throw new Error(`Cannot lock ${path}: ${(error_ as Error).message}`, { cause: error_ });
       }
     }
   }

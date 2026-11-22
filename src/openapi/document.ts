@@ -104,7 +104,7 @@ function build(operation: Operation): Record<string, unknown> {
       ...(content ? { 200: { description: "OK", content } } : {}),
       ...Object.fromEntries(
         [...statuses]
-          .sort()
+          .sort((a, b) => a - b)
           .map((status) => [status, { description: refused[status], content: errorContent }]),
       ),
       default: error,
@@ -146,7 +146,7 @@ export function buildDocument(): string {
       responses: {
         Error: { description: "The error envelope.", content: errorContent },
       },
-      schemas: schemas,
+      schemas,
     },
     "x-deliberate-differences": differences.map(({ area, summary }) => ({ area, summary })),
     "x-excluded-routes": excluded,

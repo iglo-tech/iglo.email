@@ -286,7 +286,7 @@ export function createQueryRunner(options: RunnerOptions) {
     const pid = child.pid;
     const watchdog = setInterval(() => {
       try {
-        const found = /^VmRSS:\s*(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+        const found = /^VmRSS:\s*(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, "utf-8"));
         if (found && Number(found[1]) * 1024 > limit) {
           overMemory = true;
           child.kill("SIGKILL");
@@ -302,7 +302,7 @@ export function createQueryRunner(options: RunnerOptions) {
       releaseSlot();
     });
     const pump = async () => {
-      child.stdin.write(
+      await child.stdin.write(
         JSON.stringify({
           path: options.path,
           spool: prefix,
@@ -368,7 +368,9 @@ export function createQueryRunner(options: RunnerOptions) {
         } else if (finished) {
           return;
         } else {
-          await new Promise<void>((resolve) => (wake = resolve));
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
         }
       }
     } finally {
@@ -394,8 +396,8 @@ export function createQueryRunner(options: RunnerOptions) {
     /** Where staged IDs live; built-in filters stage their large pages here too. */
     stageDir,
     /** Collect each statement's values; for statements known to return few rows. */
-    async all(statements: Array<Statement>): Promise<Array<bigint>[]> {
-      const results: Array<bigint>[] = statements.map(() => []);
+    async all(statements: Array<Statement>): Promise<Array<Array<bigint>>> {
+      const results: Array<Array<bigint>> = statements.map(() => []);
       for await (const [index, values] of run(statements)) {
         results[index]!.push(...values);
       }

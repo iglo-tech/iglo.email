@@ -47,7 +47,10 @@ export const trimSpace = (tag: string) =>
   );
 const normalize = (s: string) => trimSpace(s).replaceAll(/[\t\n\f\r ]+/g, " ");
 export const normalizeTags = (tags: Array<string>) =>
-  tags.map((tag) => trimSpace(tag).replaceAll(/[\t\n\f\r ]+/g, "-")).filter(Boolean);
+  tags.flatMap((tag) => {
+    const slug = trimSpace(tag).replaceAll(/[\t\n\f\r ]+/g, "-");
+    return slug ? [slug] : [];
+  });
 
 export function createListStore(
   db: Database,

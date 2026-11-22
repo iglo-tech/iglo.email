@@ -88,7 +88,7 @@ export function validServer(s: SMTPServer): boolean {
     !!s.host.trim() &&
     // A host with whitespace or control characters is refused on purpose.
     // oxlint-disable-next-line no-control-regex
-    !/[\s\u0000-\u001f\x7f]/.test(s.host) &&
+    !/[\s\u0000-\u001f\u007f]/.test(s.host) &&
     Number.isInteger(s.port) &&
     s.port >= 1 &&
     s.port <= 65_535 &&
@@ -243,7 +243,9 @@ function build(
     headers.set(lower, { name, value });
   };
   for (const group of s.email_headers ?? []) {
-    for (const [k, v] of Object.entries(group ?? {})) add(k, v);
+    for (const [k, v] of Object.entries(group ?? {})) {
+      add(k, v);
+    }
   }
   for (const [k, v] of Object.entries(input.headers ?? {})) {
     add(k, v);
@@ -359,11 +361,16 @@ export function newMessageId(rootUrl: string): string {
 function suppliedId(s: SMTPServer | undefined, m: Message): string | undefined {
   let result: string | undefined;
   for (const group of s?.email_headers ?? []) {
-    for (const [k, v] of Object.entries(group ?? {}))
-      if (k.toLowerCase() === "message-id") result = v;
+    for (const [k, v] of Object.entries(group ?? {})) {
+      if (k.toLowerCase() === "message-id") {
+        result = v;
+      }
+    }
   }
   for (const [k, v] of Object.entries(m.headers ?? {})) {
-    if (k.toLowerCase() === "message-id") result = Array.isArray(v) ? v[0] : v;
+    if (k.toLowerCase() === "message-id") {
+      result = Array.isArray(v) ? v[0] : v;
+    }
   }
   return m.messageId || result || undefined;
 }
@@ -478,11 +485,12 @@ export function createEmailer(options: {
   function reconcile(servers: Array<SMTPServer>) {
     const keys = new Set(servers.map((s) => JSON.stringify(s)));
     for (const table of [pools, testPools]) {
-      for (const [key, pool] of table)
+      for (const [key, pool] of table) {
         if (!keys.has(key)) {
           table.delete(key);
           retire(pool);
         }
+      }
     }
   }
   function dispatch(
@@ -556,7 +564,7 @@ export function createEmailer(options: {
       resolve(outcome);
     };
 
-    (async () => {
+    void (async () => {
       if (options.limiter) {
         // A bounded wait (the SMTP settings test) gives up with not-started; the wait itself is
         // on the injected clock and ends as soon as the grant arrives. Any other wait needs no
@@ -599,9 +607,9 @@ export function createEmailer(options: {
       const remaining = temporary ? 10_000 : 60_000;
       const timeout = new AbortController();
       timer = timeout;
-      void new Promise<void>((resolve) =>
-        resolve(options.clock.sleep(remaining, timeout.signal)),
-      ).then(
+      void new Promise<void>((resolve) => {
+        resolve(options.clock.sleep(remaining, timeout.signal));
+      }).then(
         () => {
           if (settled) {
             return;
@@ -650,9 +658,9 @@ export function createEmailer(options: {
           pool!.active++;
           // The executor turns a synchronous throw from the transport into a rejection, so
           // nothing after the hand-off to a pool can throw out of `push`.
-          void new Promise<{ accepted: Array<unknown>; rejected: Array<unknown> }>((resolve) =>
-            resolve(pool!.transport.sendMail(data)),
-          )
+          void new Promise<{ accepted: Array<unknown>; rejected: Array<unknown> }>((resolve) => {
+            resolve(pool!.transport.sendMail(data));
+          })
             .then((info) =>
               complete({
                 messageId,
@@ -833,7 +841,9 @@ export function createEmailer(options: {
         const timeout = options.clock.sleep(5000, timer.signal).then(
           () => {
             for (const pool of draining) {
-              if (retired.has(pool)) cancelPool(pool);
+              if (retired.has(pool)) {
+                cancelPool(pool);
+              }
             }
           },
           () => {},

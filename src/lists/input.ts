@@ -206,7 +206,7 @@ export async function listInput(context: RequestContext): Promise<ListInput> {
     if (!body.length) {
       value = empty();
     } else if (type === "application/json") {
-      value = jsonInput(body.toString("utf8"));
+      value = jsonInput(body.toString("utf-8"));
     } else if (type === "application/xml" || type === "text/xml") {
       value = xmlInput(body);
     } else {
@@ -226,8 +226,9 @@ export async function listInput(context: RequestContext): Promise<ListInput> {
     ["optin", value.optin, ["single", "double"]],
     ["status", value.status, ["active", "archived"]],
   ] as const) {
-    if (field && !(allowed as readonly string[]).includes(field))
+    if (field && !(allowed as ReadonlyArray<string>).includes(field)) {
       throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
+    }
   }
   if (normalizeTags(value.tags).some((tag) => Array.from(tag).length > 100)) {
     throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", "tags"));

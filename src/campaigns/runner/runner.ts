@@ -175,7 +175,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
   const stopping = new AbortController();
   // Worker pacing and the sliding window are shared by all campaigns (Manager). Each worker
   // keeps the times of its last `app.message_rate` messages (D59).
-  const workerTimes: Array<number>[] = [];
+  const workerTimes: Array<Array<number>> = [];
   let slidingStart = clock.now().getTime();
   let slidingCount = 0;
   let slidingUntil = 0;
@@ -903,7 +903,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
         registry.end(token);
         if (pipes.size) {
           writeTransaction(db, () => {
-            for (const pipe of pipes.values()) release(pipe);
+            for (const pipe of pipes.values()) {
+              release(pipe);
+            }
           });
         }
       }

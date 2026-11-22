@@ -26,7 +26,7 @@ const filterArguments: Readonly<Record<string, number>> = {
   track_link: 0,
   number: 0,
 };
-const byteLength = (value: string) => Buffer.byteLength(value, "utf8");
+const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
 
 export class TemplateSourceError extends Error {
   constructor(readonly field: "body" | "subject" | "slot") {
@@ -89,7 +89,7 @@ class BoundedEmitter implements Emitter {
   }
 }
 function scalar(value: unknown): string {
-  if (value == null) {
+  if (value === null || value === undefined) {
     return "";
   }
   if (typeof value === "string") {
@@ -189,7 +189,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
         }
         return bytes;
       }
-      return value == null ? 0 : 32;
+      return value === null || value === undefined ? 0 : 32;
     };
     for (const name of ["==", "!=", ">", "<", ">=", "<=", "contains"] as const) {
       const original = operators[name] as (left: unknown, right: unknown, ctx: Context) => unknown;
@@ -198,8 +198,11 @@ export function createRenderer(clock: Clock, translation: Translation) {
         chargeComparison(left, b);
         const rightCost = chargeComparison(right, b);
         if (name !== "==" && name !== "!=" && name !== "contains") {
-          for (const operand of [left, right])
-            if (Array.isArray(operand)) b.charge(joinedBytes(operand));
+          for (const operand of [left, right]) {
+            if (Array.isArray(operand)) {
+              b.charge(joinedBytes(operand));
+            }
+          }
         }
         if (name === "contains" && Array.isArray(left) && left.length > 1) {
           b.step((left.length - 1) * rightCost);
@@ -221,7 +224,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
             outputEscape(this: { context: Context }, value: unknown) {
               const input = scalar(value);
               let size = 0;
-              for (const c of input)
+              for (const c of input) {
                 size +=
                   c === "&"
                     ? 5
@@ -230,8 +233,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
                       : c === '"' || c === "'"
                         ? 5
                         : byteLength(c);
+              }
               budget(this.context).charge(size);
-              return input.replace(
+              return input.replaceAll(
                 /[&<>"']/g,
                 (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" })[c]!,
               );
@@ -252,8 +256,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
           "break",
           "continue",
         ].includes(tag)
-      )
+      ) {
         delete liquid.tags[tag];
+      }
     }
     for (const filter of Object.keys(liquid.filters)) {
       liquid.unregisterFilter(filter);
@@ -269,7 +274,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
       const b = budget(this.context);
       b.step();
       const out =
-        value == null || value === false || value === "" ? scalar(fallback) : scalar(value);
+        value === null || value === undefined || value === false || value === ""
+          ? scalar(fallback)
+          : scalar(value);
       b.charge(byteLength(out));
       return out;
     });
@@ -432,7 +439,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       if (
         "children" in tpl &&
         tpl.children &&
-        hasContent(toValueSync(tpl.children(false, true)) as Array<Template>)
+        hasContent(toValueSync<Array<Template>>(tpl.children(false, true)))
       ) {
         return true;
       }
@@ -480,7 +487,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       "reset_url",
       "root_url",
     ]) {
-      if (data[key] != null) {
+      if (data[key] !== null && data[key] !== undefined) {
         data[key] = url(data[key]);
       }
     }
@@ -555,7 +562,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
               args[key] = Number(value) || 0;
             }
           } else if (
-            value != null &&
+            value !== null &&
+            value !== undefined &&
             typeof value !== "boolean" &&
             !(typeof value === "number" && Number.isFinite(value))
           ) {

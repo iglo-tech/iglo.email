@@ -46,7 +46,7 @@ export interface EnrollmentFilter {
   perPage: number;
 }
 
-const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON;
+const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): { rawJSON: string } }).rawJSON;
 export const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(id) : rawJSON(id.toString());
 const nullableID = (id: bigint | null) => (id === null ? null : numberID(id));
@@ -211,7 +211,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       old.statement.finalize();
     }
     const args = filter.params.map((p) => (typeof p === "function" ? p(event) : p));
-    const value = (filter.statement.values(...args) as Array<unknown>[])[0]?.[0];
+    const value = (filter.statement.values(...args) as Array<Array<unknown>>)[0]?.[0];
     return value === 1n || value === 1;
   }
 

@@ -94,11 +94,14 @@ export class CampaignError extends Error {
   }
 }
 const sortFields = new Set(["name", "status", "created_at", "updated_at", "started_at", "send_at"]);
-const ids = (values: bigint[]) => JSON.stringify(values.map(String)).replaceAll('"', "");
+const ids = (values: Array<bigint>) => JSON.stringify(values.map(String)).replaceAll('"', "");
 
 /** listmonk normalizeTags: trim and replace whitespace runs with a dash; drop empties. */
-export function normalizeTags(tags: string[]): string[] {
-  return tags.map((t) => t.trim().replace(/\s+/g, "-")).filter(Boolean);
+export function normalizeTags(tags: Array<string>): Array<string> {
+  return tags.flatMap((t) => {
+    const slug = t.trim().replaceAll(/\s+/g, "-");
+    return slug ? [slug] : [];
+  });
 }
 
 /** Owner lookups for the tables a campaign references (templates, lists). */
@@ -118,19 +121,23 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       ? null
       : ((q.get("archive-slug-owner").get(slug) as { id: bigint } | null)?.id ?? null);
   const templateExists = (id: bigint | null) => id === null || refs.templateExists(id);
-  const setLists = (id: bigint, listIds: bigint[]) => {
+  const setLists = (id: bigint, listIds: Array<bigint>) => {
     q.get("delete-other-campaign-lists").run(id, ids(listIds));
     for (const list of listIds) {
       const name = refs.listName(list);
-      if (name !== null) q.get("insert-campaign-list").run(id, list, name);
+      if (name !== null) {
+        q.get("insert-campaign-list").run(id, list, name);
+      }
     }
   };
-  const setMedia = (id: bigint, mediaIds: bigint[]) => {
+  const setMedia = (id: bigint, mediaIds: Array<bigint>) => {
     q.get("delete-other-campaign-media").run(id, ids(mediaIds));
     // Upstream's ID filter: an ID that names no media is left out.
     for (const media of mediaIds) {
       const filename = refs.mediaFilename(media);
-      if (filename !== null) q.get("insert-campaign-media").run(id, media, filename);
+      if (filename !== null) {
+        q.get("insert-campaign-media").run(id, media, filename);
+      }
     }
   };
   const values = (c: WritableCampaign) => ({
@@ -149,23 +156,23 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
         status: string;
       } | null,
     archived(limit: number, offset: number) {
-      const rows = q.get("archived-campaigns").all(limit, offset) as {
+      const rows = q.get("archived-campaigns").all(limit, offset) as Array<{
         id: bigint;
         total: bigint;
-      }[];
+      }>;
       return { ids: rows.map((row) => row.id), total: Number(rows[0]?.total ?? 0) };
     },
     archivedId: (key: string) =>
       (q.get("archived-campaign-id").get(key) as { id: bigint } | null)?.id ?? null,
     subscriberViews: (subscriberId: bigint) =>
       (
-        q.get("subscriber-campaign-views").all(subscriberId) as {
+        q.get("subscriber-campaign-views").all(subscriberId) as Array<{
           campaign: string;
           views: bigint;
-        }[]
+        }>
       ).map((row) => ({ campaign: row.campaign, views: Number(row.views) })),
     listIds: (id: bigint) =>
-      (q.get("campaign-list-ids").all(id) as { list_id: bigint }[]).map((r) => r.list_id),
+      (q.get("campaign-list-ids").all(id) as Array<{ list_id: bigint }>).map((r) => r.list_id),
     /** D126 (r2): whether the runner has delivered this campaign to anyone. */
     hasDeliveries: (id: bigint) =>
       (q.get("campaign-has-deliveries").get(id) as { has: bigint }).has === 1n,
@@ -174,16 +181,16 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       (q.get("campaign-delivered").get(id, subscriberId) as { has: bigint }).has === 1n,
     /** GetRunningCampaignStats. */
     running() {
-      return q.get("running-campaigns").all() as {
+      return q.get("running-campaigns").all() as Array<{
         id: bigint;
         status: CampaignStatus;
         to_send: bigint;
         sent: bigint;
         started_at: string | null;
         updated_at: string | null;
-      }[];
+      }>;
     },
-    hasLists(id: bigint, listIds: bigint[]): boolean {
+    hasLists(id: bigint, listIds: Array<bigint>): boolean {
       return (q.get("campaign-has-lists").get(id, ids(listIds)) as { has: bigint }).has === 1n;
     },
     query(
@@ -193,7 +200,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       order: string,
       offset: number,
       limit: number,
-    ): { rows: CampaignRow[]; total: number } {
+    ): { rows: Array<CampaignRow>; total: number } {
       const field = sortFields.has(orderBy) ? orderBy : "created_at";
       // B80: order takes any case; anything but asc sorts descending, as before.
       const direction = order.toLowerCase() === "asc" ? "ASC" : "DESC";

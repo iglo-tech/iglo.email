@@ -18,7 +18,7 @@ export function attributeSQL(
     return existsSQL(attribs, path);
   }
   if (op === "in") {
-    return inSQL(attribs, path, value as Scalar[]);
+    return inSQL(attribs, path, value as Array<Scalar>);
   }
   if (op === "ne") {
     const eq = compareSQL(attribs, path, "eq", value as Scalar);

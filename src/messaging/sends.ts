@@ -1,5 +1,5 @@
 // Native send journal. listmonk has no equivalent outbox or send-log API.
-import type { Database } from "bun:sqlite";
+import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import type { Message, Outcome } from "@/messaging/email";
@@ -453,15 +453,22 @@ export function createSends(options: {
     ) {
       throw new Error("Invalid prepared send");
     }
-    const subscriber = input.subscriberId == null ? null : subscribers.get(input.subscriberId);
-    if (input.subscriberId != null && (!subscriber || subscriber.email !== input.message.to[0])) {
+    const subscriber =
+      input.subscriberId === null || input.subscriberId === undefined
+        ? null
+        : subscribers.get(input.subscriberId);
+    if (
+      input.subscriberId !== null &&
+      input.subscriberId !== undefined &&
+      (!subscriber || subscriber.email !== input.message.to[0])
+    ) {
       throw new Error("Invalid prepared send");
     }
     const payload = encodePayload(input.message, subscriber?.uuid ?? null);
     const uuid = crypto.randomUUID();
     const id = writeTransaction(db, () => {
       const row = db
-        .query<{ id: bigint }, Array<any>>(
+        .query<{ id: bigint }, Array<SQLQueryBindings>>(
           `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?) RETURNING id`,
         )
         .get(
@@ -509,7 +516,7 @@ export function createSends(options: {
       }
       const uuid = crypto.randomUUID();
       const inserted = db
-        .query<{ id: bigint }, Array<any>>(
+        .query<{ id: bigint }, Array<SQLQueryBindings>>(
           `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, list_id, status, smtp_message_id, payload, retry_of, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?) RETURNING id`,
         )
         .get(
@@ -600,7 +607,10 @@ export function createSends(options: {
       ) {
         throw new Error("Invalid prepared send");
       }
-      if ((send.subscriberId == null) !== (subscriberUuid === null)) {
+      if (
+        (send.subscriberId === null || send.subscriberId === undefined) !==
+        (subscriberUuid === null)
+      ) {
         throw new Error("Invalid prepared send");
       }
       if (
@@ -634,7 +644,7 @@ export function createSends(options: {
       prepared.forEach(({ send, subscriberUuid, payload }, index) => {
         const to = send.message.to[0]!;
         let skip: string | null = null;
-        if (send.subscriberId != null) {
+        if (send.subscriberId !== null && send.subscriberId !== undefined) {
           const current = subscribers.get(send.subscriberId);
           if (!current || current.uuid !== subscriberUuid || current.email !== to) {
             throw new HttpError(409, "Subscriber changed. Retry the request.");
@@ -653,7 +663,7 @@ export function createSends(options: {
         }
         const uuid = send.uuid ?? crypto.randomUUID();
         const row = db
-          .query<{ id: bigint }, Array<any>>(
+          .query<{ id: bigint }, Array<SQLQueryBindings>>(
             `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
           )
           .get(
@@ -824,7 +834,7 @@ export function createSends(options: {
       throw new Error("Invalid prepared send");
     }
     return db
-      .query<{ id: bigint }, Array<any>>(
+      .query<{ id: bigint }, Array<SQLQueryBindings>>(
         `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, 'sequence', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
       .get(
@@ -871,9 +881,12 @@ export function createSends(options: {
       if (
         send.source !== "sequence" ||
         !["transactional", "marketing"].includes(send.kind) ||
-        send.subscriberId == null ||
-        send.enrollmentId == null ||
-        send.stepId == null ||
+        send.subscriberId === null ||
+        send.subscriberId === undefined ||
+        send.enrollmentId === null ||
+        send.enrollmentId === undefined ||
+        send.stepId === null ||
+        send.stepId === undefined ||
         (send.uuid !== undefined && !uuidPattern.test(send.uuid))
       ) {
         throw new Error("Invalid prepared send");
@@ -1004,10 +1017,12 @@ export function createSends(options: {
       }
       const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
       const total = db
-        .query<{ total: bigint }, Array<any>>(`SELECT count(*) AS total FROM sends${where}`)
+        .query<{ total: bigint }, Array<SQLQueryBindings>>(
+          `SELECT count(*) AS total FROM sends${where}`,
+        )
         .get(...values)!.total;
       const rows = db
-        .query<PublicRow, Array<any>>(
+        .query<PublicRow, Array<SQLQueryBindings>>(
           `SELECT ${publicColumns} FROM sends${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         )
         .all(...values, filter.perPage, (filter.page - 1) * filter.perPage);
@@ -1073,8 +1088,11 @@ export function createSends(options: {
       }
       writeTransaction(db, () => {
         for (const result of results) {
-          if ("unsent" in result) unsent(result.row, result.unsent === "held");
-          else finish(result.row, result.outcome);
+          if ("unsent" in result) {
+            unsent(result.row, result.unsent === "held");
+          } else {
+            finish(result.row, result.outcome);
+          }
         }
       });
     },

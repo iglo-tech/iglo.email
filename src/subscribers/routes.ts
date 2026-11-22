@@ -104,11 +104,12 @@ export function registerSubscriberRoutes(
       return;
     }
     for (const id of ids) {
-      if (store.get(id) && !store.memberships(id).some((m) => s.ids.includes(m.list_id)))
+      if (store.get(id) && !store.memberships(id).some((m) => s.ids.includes(m.list_id))) {
         throw new HttpError(
           403,
           c.app.i18n.Ts("globals.messages.permissionDenied", "name", `subscriber: ${id}`),
         );
+      }
     }
   };
   // A well-formed external ID that matches no subscriber is a 404 (D101). The numeric route keeps
@@ -512,7 +513,7 @@ export function registerSubscriberRoutes(
         new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", "email"));
       let value: unknown;
       try {
-        value = JSON.parse((await readBodyBytes(c.request)).toString("utf8"));
+        value = JSON.parse((await readBodyBytes(c.request)).toString("utf-8"));
       } catch {
         throw invalid();
       }

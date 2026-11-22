@@ -140,7 +140,7 @@ function entries(value: unknown): Array<[string, unknown]> {
 const foldField = (value: string) => value.replaceAll("ſ", "s").replaceAll("K", "k").toLowerCase();
 // Folded name -> declared name for one static shape; the first declared match wins, as with find.
 const foldedNames = new WeakMap<object, Map<string, string>>();
-function lookup(shape: object, key: string): string | undefined {
+function lookup(shape: Record<string, unknown>, key: string): string | undefined {
   let names = foldedNames.get(shape);
   if (!names) {
     names = new Map();
@@ -197,7 +197,9 @@ function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
       return result;
     }
     for (const [key, fallback] of Object.entries(shape)) {
-      if (key !== "dkim" && !Object.hasOwn(result, key)) result[key] = zero(fallback);
+      if (key !== "dkim" && !Object.hasOwn(result, key)) {
+        result[key] = zero(fallback);
+      }
     }
     for (const [key, entry] of members) {
       const match = lookup(shape, key);
@@ -239,8 +241,12 @@ export function projectRaw(value: Settings, root: string): Settings {
   }
   for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
     for (const item of out[key]) {
-      if (!item.password) delete item.password;
-      if (key === "smtp" && !item.dkim) delete item.dkim;
+      if (!item.password) {
+        delete item.password;
+      }
+      if (key === "smtp" && !item.dkim) {
+        delete item.dkim;
+      }
     }
   }
   return out;
@@ -331,7 +337,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     if (!value) {
       continue;
     }
-    if ([...value].length > 2000) {
+    if (Array.from(value).length > 2000) {
       return fail("`from` address cannot exceed 2000 characters");
     }
     const opening = value.indexOf("{{");
@@ -440,9 +446,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
   // A stored rule an older build accepted must not block saving anything else: only new or changed rules are checked.
   const storedRules = (current["bounce.actions"] ?? {}) as Settings;
-  for (const [name, rule] of Object.entries(next["bounce.actions"] ?? {}) as Array<
-    [string, Settings]
-  >) {
+  for (const [name, rule] of Object.entries<Settings>(next["bounce.actions"] ?? {})) {
     if (
       Object.hasOwn(storedRules, name) &&
       JSON.stringify(storedRules[name]) === JSON.stringify(rule)
@@ -457,7 +461,9 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     }
   }
   for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
-    if (!next[key]) next[key] = current[key];
+    if (!next[key]) {
+      next[key] = current[key];
+    }
   }
   for (const [key, field] of [
     ["bounce.azure", "shared_secret"],
@@ -467,7 +473,9 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     ["security.oidc", "client_secret"],
   ] as const) {
     if (!next[key]?.[field]) {
-      if (!next[key]) return fail();
+      if (!next[key]) {
+        return fail();
+      }
       next[key][field] = current[key][field];
     }
   }
@@ -500,14 +508,17 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
   for (const url of next["security.trusted_urls"]) {
-    if (url !== "*" && !validTrustedURL(url))
+    if (url !== "*" && !validTrustedURL(url)) {
       return fail(`Invalid data: invalid trusted URL: ${url}`);
+    }
   }
   next["security.trusted_proxies"] = next["security.trusted_proxies"]
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
   for (const proxy of next["security.trusted_proxies"]) {
-    if (!parseProxy(proxy)) return fail(`Invalid data: invalid trusted proxy: ${proxy}`);
+    if (!parseProxy(proxy)) {
+      return fail(`Invalid data: invalid trusted proxy: ${proxy}`);
+    }
   }
   next["bounce.ses_topic_arns"] = next["bounce.ses_topic_arns"]
     .map((v: string) => trimSpace(v ?? ""))
@@ -516,11 +527,14 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     return fail("Invalid data: at most 100 SNS topic ARNs.");
   }
   for (const arn of next["bounce.ses_topic_arns"]) {
-    if (!validTopicArn(arn)) return fail(`Invalid data: invalid SNS topic ARN: ${arn}`);
+    if (!validTopicArn(arn)) {
+      return fail(`Invalid data: invalid SNS topic ARN: ${arn}`);
+    }
   }
   for (const budget of Object.values(next["security.public_rate_limit"] ?? {})) {
-    if (!Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 1_000_000)
+    if (!Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 1_000_000) {
       return fail("Invalid security.public_rate_limit: use whole requests per minute.");
+    }
   }
   const oidc = next["security.oidc"];
   if (!oidc) {
@@ -572,15 +586,21 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
 }
 export function masked(settings: Settings): Settings {
   const out = cloneJson(settings);
-  const mask = (value: string | undefined) => "•".repeat([...(value ?? "")].length);
+  const mask = (value: string | undefined) => "•".repeat(Array.from(value ?? "").length);
   for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
     for (const item of out[key]) {
-      if (item.password) item.password = mask(item.password);
-      if (key === "smtp" && item.dkim) item.dkim.private_key = mask(item.dkim.private_key);
+      if (item.password) {
+        item.password = mask(item.password);
+      }
+      if (key === "smtp" && item.dkim) {
+        item.dkim.private_key = mask(item.dkim.private_key);
+      }
     }
   }
   for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
-    if (out[key]) out[key] = mask(out[key]);
+    if (out[key]) {
+      out[key] = mask(out[key]);
+    }
   }
   for (const [key, field] of [
     ["bounce.azure", "shared_secret"],

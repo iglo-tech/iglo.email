@@ -28,7 +28,7 @@ function mappedIPv4(value: string): boolean {
     part
       ? part.split(":").flatMap((x) => {
           if (!x.includes(".")) {
-            return [parseInt(x, 16)];
+            return [Number.parseInt(x, 16)];
           }
           const bytes = x.split(".").map(Number);
           return [bytes[0]! * 256 + bytes[1]!, bytes[2]! * 256 + bytes[3]!];

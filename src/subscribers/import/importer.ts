@@ -145,7 +145,7 @@ export function createImporter(deps: {
       columns = new Map();
       width = record.count;
       for (let i = 0; i < width; i++) {
-        const name = trimSpace(record.field(i).toString("utf8")).replaceAll(/[^\0-\u007f]/g, "");
+        const name = trimSpace(record.field(i).toString("utf-8")).replaceAll(/[^\0-\u007f]/g, "");
         if (knownHeaders.has(name)) {
           columns.set(name, i);
         } else {
@@ -195,7 +195,9 @@ export function createImporter(deps: {
       if (rawAttributes) {
         try {
           const stored = JSON.stringify(parseAttributes(rawAttributes) ?? {});
-          if (Buffer.byteLength(stored) > EVENT_ATTRIBS_BYTES) throw new Error("too large");
+          if (Buffer.byteLength(stored) > EVENT_ATTRIBS_BYTES) {
+            throw new Error("too large");
+          }
           attribs = stored;
         } catch {
           // A parser's message quotes the text it failed on.
@@ -352,7 +354,7 @@ export function createImporter(deps: {
       }
     } finally {
       await file?.close().catch(() => {});
-      await rm(path, { force: true }).catch((error) => logger.error(error));
+      await rm(path, { force: true }).catch((error: unknown) => logger.error(error));
     }
   }
 
@@ -366,7 +368,9 @@ export function createImporter(deps: {
         return;
       }
       for (const name of await readdir(directory)) {
-        if (temporaryFile.test(name)) await rm(join(directory, name), { force: true });
+        if (temporaryFile.test(name)) {
+          await rm(join(directory, name), { force: true });
+        }
       }
     },
     /** A place for one upload, or undefined while an upload or an import holds it. */

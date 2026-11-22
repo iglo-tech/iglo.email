@@ -169,30 +169,44 @@ const aggregateFields = new Set(["event", "since", "where", "fn", "field"]);
  * Returns the normalized JSON text, or null for an absent or null value.
  */
 function aggregatesInput(value: unknown, field: string): string | null {
-  if (value === undefined || value === null) return null;
+  if (value === undefined || value === null) {
+    return null;
+  }
   const range = `must have 1 to ${limits.aggregates} aggregates`;
-  if (!isObject(value)) return fail(field, range);
-  const names: string[] = [];
+  if (!isObject(value)) {
+    return fail(field, range);
+  }
+  const names: Array<string> = [];
   for (const name in value) {
-    if (!Object.hasOwn(value, name)) continue;
-    if (names.length === limits.aggregates) return fail(field, range);
-    if (!aggregateName.test(name))
+    if (!Object.hasOwn(value, name)) {
+      continue;
+    }
+    if (names.length === limits.aggregates) {
+      return fail(field, range);
+    }
+    if (!aggregateName.test(name)) {
       return fail(
         field,
         "names must be letters, digits or underscores, starting with a letter or underscore, up to 64",
       );
+    }
     names.push(name);
   }
-  if (!names.length) return fail(field, range);
-  const entries: [string, Aggregate][] = [];
+  if (!names.length) {
+    return fail(field, range);
+  }
+  const entries: Array<[string, Aggregate]> = [];
   for (const name of names) {
     const at = `${field}.${name}`;
     const spec = value[name];
-    if (!isObject(spec)) return fail(at, "must be an aggregate object");
-    for (const key in spec)
+    if (!isObject(spec)) {
+      return fail(at, "must be an aggregate object");
+    }
+    for (const key in spec) {
       if (Object.hasOwn(spec, key) && !aggregateFields.has(key)) {
         return fail(`${at}.${key}`, "unknown field");
       }
+    }
     // An absent key is absent; a present one is checked as given, so null is refused as a condition
     // refuses it. Only `fn` defaults, as the other step fields do.
     const path = spec.field;
@@ -368,8 +382,9 @@ export function definitionInput(value: unknown, context: DefinitionContext): Def
     return fail("trigger", "must be an object");
   }
   for (const key in trigger) {
-    if (Object.hasOwn(trigger, key) && key !== "event" && key !== "where")
+    if (Object.hasOwn(trigger, key) && key !== "event" && key !== "where") {
       fail("trigger", "unknown field");
+    }
   }
   if (!validEventName(trigger.event)) {
     return fail("trigger.event", "must be an event name");

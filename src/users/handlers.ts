@@ -62,7 +62,7 @@ async function readJSON(request: Request): Promise<Input> {
   const value = data as Record<string, unknown>;
   function string(key: string): string {
     const field = value[key];
-    if (field == null) {
+    if (field === null || field === undefined) {
       return "";
     }
     if (typeof field !== "string") {
@@ -72,7 +72,7 @@ async function readJSON(request: Request): Promise<Input> {
   }
   function integer(key: string): bigint | null {
     const field = value[key];
-    if (field == null) {
+    if (field === null || field === undefined) {
       return null;
     }
     const integer =
@@ -90,7 +90,11 @@ async function readJSON(request: Request): Promise<Input> {
     }
     return integer;
   }
-  if (value.password_login != null && typeof value.password_login !== "boolean") {
+  if (
+    value.password_login !== null &&
+    value.password_login !== undefined &&
+    typeof value.password_login !== "boolean"
+  ) {
     throw new HttpError(400);
   }
   return {
@@ -120,7 +124,7 @@ function validEmail(value: string): boolean {
     !part.startsWith(".") &&
     !part.endsWith(".") &&
     !part.includes("..") &&
-    ![...part].some((character) => {
+    !Array.from(part).some((character) => {
       const code = character.codePointAt(0)!;
       return (
         code <= 32 ||
@@ -161,8 +165,12 @@ function randomToken(): string {
   let out = "";
   while (out.length < 48) {
     for (const byte of randomBytes(64)) {
-      if (byte < 248) out += alphabet[byte % 62];
-      if (out.length === 48) break;
+      if (byte < 248) {
+        out += alphabet[byte % 62];
+      }
+      if (out.length === 48) {
+        break;
+      }
     }
   }
   return out;

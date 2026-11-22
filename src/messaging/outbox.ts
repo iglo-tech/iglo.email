@@ -135,7 +135,8 @@ export function createOutbox(options: OutboxOptions) {
     }
     let settled: Array<PromiseSettledResult<Outcome | undefined>>;
     try {
-      settled = await Promise.allSettled(pending.map((p) => p.result));
+      // A refused row has no push: Promise.resolve settles it as undefined, as allSettled already did.
+      settled = await Promise.allSettled(pending.map((p) => Promise.resolve(p.result)));
     } finally {
       for (const id of ids) {
         live.delete(id);

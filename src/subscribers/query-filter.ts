@@ -101,7 +101,11 @@ function singleUpper(char: string): string | undefined {
       }
       const candidate = String.fromCodePoint(code);
       const lower = candidate.toLowerCase();
-      if (lower !== candidate && [...lower].length === 1 && [...lower.toUpperCase()].length > 1) {
+      if (
+        lower !== candidate &&
+        Array.from(lower).length === 1 &&
+        Array.from(lower.toUpperCase()).length > 1
+      ) {
         singleUpperTable.set(lower, candidate);
       }
     }
@@ -114,7 +118,7 @@ export function caseInsensitiveGlob(search: string): string {
   for (const char of search) {
     const variants = new Set([char, simpleLower(char)]);
     const upper = singleUpper(char) ?? char.toUpperCase();
-    if ([...upper].length === 1) {
+    if (Array.from(upper).length === 1) {
       variants.add(upper);
     }
     if (variants.size > 1) {
@@ -287,7 +291,9 @@ function allowedVirtualTableObjects(db: Database): Set<string> {
   for (const sql of allowedVirtualTables) {
     const explain = db.prepare(`EXPLAIN ${sql}`);
     for (const op of explain.all() as Array<{ opcode: string; p4: unknown }>) {
-      if (op.opcode === "VOpen") out.add(String(op.p4));
+      if (op.opcode === "VOpen") {
+        out.add(String(op.p4));
+      }
     }
     explain.finalize();
   }

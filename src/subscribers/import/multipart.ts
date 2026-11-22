@@ -86,7 +86,7 @@ export async function receiveForm(
   };
   const closePart = () => {
     if (target === "params") {
-      form.params = Buffer.concat(params).toString("utf8");
+      form.params = Buffer.concat(params).toString("utf-8");
     }
     target = "none";
   };
@@ -126,7 +126,7 @@ export async function receiveForm(
           }
           return;
         }
-        openPart(pending.toString("utf8", 0, at));
+        openPart(pending.toString("utf-8", 0, at));
         pending = pending.subarray(at + HEADERS_END.length);
         state = "body";
       } else {

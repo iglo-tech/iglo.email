@@ -193,7 +193,7 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
   }
   let form: URLSearchParams | FormData | null = null;
   if (media === "application/x-www-form-urlencoded") {
-    form = new URLSearchParams(Buffer.from(bytes).toString("utf8"));
+    form = new URLSearchParams(Buffer.from(bytes).toString("utf-8"));
   } else if (media === "multipart/form-data" && bytes.length) {
     try {
       form = await new Request("http://form.invalid", {
@@ -214,8 +214,9 @@ async function formValues(context: RequestContext): Promise<(key: string) => str
 /** The first Message-ID among a message's own headers (any case), or undefined when it names none. */
 function headerMessageId(headers: Record<string, string | Array<string>>): string | undefined {
   for (const [name, value] of Object.entries(headers)) {
-    if (name.toLowerCase() === "message-id")
+    if (name.toLowerCase() === "message-id") {
       return (Array.isArray(value) ? value[0] : value) || undefined;
+    }
   }
   return undefined;
 }
@@ -903,10 +904,12 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", problem));
       }
       // As listmonk, the request names the media of a test send.
-      const attachments = await deps.attachments(input.media ?? [], images).catch((error) => {
-        const reason = error instanceof UploadRootError ? error.message : "attachment";
-        throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", reason));
-      });
+      const attachments = await deps
+        .attachments(input.media ?? [], images)
+        .catch((error: unknown) => {
+          const reason = error instanceof UploadRootError ? error.message : "attachment";
+          throw new HttpError(500, t(context).Ts("campaigns.errorSendTest", "error", reason));
+        });
       const attachmentBytes = attachments.reduce((sum, a) => sum + a.content.length, 0);
       const messages: Array<Message> = [];
       let totalBytes = 0;
@@ -938,7 +941,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         totalBytes += size(out.body) + size(altBody ?? "") + size(out.subject) + size(out.from);
         totalBytes += attachmentBytes;
         for (const set of out.headers) {
-          for (const [name, header] of Object.entries(set)) totalBytes += size(name) + size(header);
+          for (const [name, header] of Object.entries(set)) {
+            totalBytes += size(name) + size(header);
+          }
         }
         // Nothing is queued until every message is rendered, so a refusal sends nothing.
         if (totalBytes > TEST_SEND_BYTES || totalWork > TEST_SEND_WORK) {

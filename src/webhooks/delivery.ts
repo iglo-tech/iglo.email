@@ -320,7 +320,7 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
       webhooks.onWake(() => loop.wake());
       loop.start();
       // Every start names the targets the block refuses now (B125 r2). The start does not wait for it.
-      targetCheck = refusedTargets().catch((error) => options.logger.error(error));
+      targetCheck = refusedTargets().catch((error: unknown) => options.logger.error(error));
     },
     /** Resolves when this start's check of refused targets has ended (B125 r2). */
     get checked() {

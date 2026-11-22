@@ -49,7 +49,7 @@ export interface StepPreview {
   links: PreparedLinks;
 }
 
-const has = (object: object | undefined, key: string) =>
+const has = (object: Record<string, unknown> | undefined, key: string) =>
   object !== undefined && Object.hasOwn(object, key);
 
 /**
@@ -68,7 +68,9 @@ export function stepPreview(
   const { sequence, step, subscriber, sample, now } = input;
   const defined = step.aggregates;
   for (const name of Object.keys(sample?.aggregates ?? {})) {
-    if (!has(defined, name)) throw new FieldError(`sample.aggregates.${name}`);
+    if (!has(defined, name)) {
+      throw new FieldError(`sample.aggregates.${name}`);
+    }
   }
 
   // The trigger: the named event, else the subscriber's latest one under the trigger's name.

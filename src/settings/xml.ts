@@ -23,14 +23,17 @@ function xmlRoot(body: Buffer): Node {
       throw new Error("depth");
     }
     const node: Node = { name: tag.name.slice(tag.name.indexOf(":") + 1), text: "", children: [] };
-    if (stack.length) stack.at(-1)!.children.push(node);
-    else {
+    if (stack.length) {
+      stack.at(-1)!.children.push(node);
+    } else {
       root = node;
     }
     stack.push(node);
   });
   const characters = (text: string) => {
-    if (stack.length) stack.at(-1)!.text += text;
+    if (stack.length) {
+      stack.at(-1)!.text += text;
+    }
   };
   parser.on("text", characters);
   parser.on("cdata", characters);

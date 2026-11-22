@@ -6,7 +6,7 @@
 /** The single-character lowercase form, as the reference database's lower() returns it. */
 function simpleLower(char: string): string {
   const lower = char.toLowerCase();
-  const points = [...lower];
+  const points = Array.from(lower);
   if (points.length === 1) {
     return lower;
   }

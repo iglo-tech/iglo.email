@@ -23,7 +23,7 @@ function rfc3339(text: string | null): string | null {
   if (!match) {
     return null;
   }
-  const [, y, mo, d, h, mi, s, fraction = "", zone] = match as unknown as Array<string>;
+  const [, y, mo, d, h, mi, s, fraction = "", zone] = match;
   const day = new Date(0);
   day.setUTCFullYear(Number(y), Number(mo) - 1, Number(d));
   if (day.getUTCMonth() !== Number(mo) - 1 || day.getUTCDate() !== Number(d)) {

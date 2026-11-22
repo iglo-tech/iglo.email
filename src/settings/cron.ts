@@ -20,7 +20,7 @@ function durationString(value: bigint): string {
     return `${sign}${decimal(n / 1000n, n % 1000n, 3)}µs`;
   }
   if (n < 1_000_000_000n) {
-    return `${sign}${decimal(n / 1000000n, n % 1000000n, 6)}ms`;
+    return `${sign}${decimal(n / 1_000_000n, n % 1_000_000n, 6)}ms`;
   }
   const hours = n / 3_600_000_000_000n;
   n %= 3_600_000_000_000n;

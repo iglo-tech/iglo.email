@@ -66,7 +66,7 @@ function parseAuthorization(header: string): { user: string; token: string } {
         "code=400, message=invalid Base64 value in Basic Authorization header",
       );
     }
-    pair = Buffer.from(encoded, "base64").toString("utf8");
+    pair = Buffer.from(encoded, "base64").toString("utf-8");
   } else {
     throw new HttpError(403, "code=400, message=unknown Authorization scheme");
   }
@@ -91,7 +91,9 @@ class PasswordWork {
       if (this.waiting.length >= this.policy.maxHashQueue) {
         throw new HttpError(429, "Too many requests");
       }
-      await new Promise<void>((resolve) => this.waiting.push(resolve));
+      await new Promise<void>((resolve) => {
+        this.waiting.push(resolve);
+      });
     } else {
       this.active++;
     }
@@ -165,7 +167,9 @@ export async function createAuthentication(
   }
   function clearChallenges(userId: bigint) {
     for (const [token, challenge] of challenges) {
-      if (challenge.user.id === userId) challenges.delete(token);
+      if (challenge.user.id === userId) {
+        challenges.delete(token);
+      }
     }
   }
   function invalidate(userId: bigint) {
@@ -174,7 +178,9 @@ export async function createAuthentication(
     }
     clearChallenges(userId);
     for (const [email, entry] of resets) {
-      if (entry.userId === userId) resets.delete(email);
+      if (entry.userId === userId) {
+        resets.delete(email);
+      }
     }
   }
   store.onIdentityMutation(invalidate);
@@ -246,7 +252,9 @@ export async function createAuthentication(
   function limit(peer: string): void {
     const time = clock.now().getTime();
     for (const [key, entry] of attempts) {
-      if (time - entry.start >= policy.loginWindowMs || time < entry.start) attempts.delete(key);
+      if (time - entry.start >= policy.loginWindowMs || time < entry.start) {
+        attempts.delete(key);
+      }
     }
     let current = attempts.get(peer);
     if (!current) {
@@ -267,7 +275,7 @@ export async function createAuthentication(
   }
   function identity(request: Request): Identity {
     const authorization = (request.headers.get("authorization") ?? "").trim();
-    let user: UserRow | null = null;
+    let user: UserRow | null;
     let transport: "header" | "session";
     let sessionId: string | undefined;
     let csrf: string | undefined;
@@ -482,7 +490,9 @@ export async function createAuthentication(
       }
       const time = clock.now().getTime();
       for (const [key, entry] of resets) {
-        if (entry.expires <= time) resets.delete(key);
+        if (entry.expires <= time) {
+          resets.delete(key);
+        }
       }
       const live = resets.get(email);
       if (live?.userId === user.id) {

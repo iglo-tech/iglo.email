@@ -35,24 +35,30 @@ export async function runAnalyticsChild(): Promise<void> {
   const request = JSON.parse(await Bun.stdin.text()) as {
     path: string;
     method: Method;
-    args: unknown[];
+    args: Array<unknown>;
   };
-  if (!methods.includes(request.method)) throw new Error("Unknown analytics read");
+  if (!methods.includes(request.method)) {
+    throw new Error("Unknown analytics read");
+  }
   let out = "";
   const flush = () => {
     let bytes = Buffer.from(out);
-    while (bytes.length) bytes = bytes.subarray(writeSync(1, bytes));
+    while (bytes.length) {
+      bytes = bytes.subarray(writeSync(1, bytes));
+    }
     out = "";
   };
   const emit = (text: string) => {
     out += text;
-    if (out.length >= 65536) flush();
+    if (out.length >= 65_536) {
+      flush();
+    }
   };
   const db = openReadOnly(request.path);
   try {
     const store = createAnalyticsStore(db);
     db.run("BEGIN");
-    const read = store[request.method] as (...args: unknown[]) => unknown;
+    const read = store[request.method] as (...args: Array<unknown>) => unknown;
     const result = read.apply(store, request.args);
     if (streamed.has(request.method)) {
       emit(`{"data":[`);
@@ -231,7 +237,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
     const tooLarge = () => new ReaderError("limit", "analytics result too large");
     const watchdog = setInterval(() => {
       try {
-        const found = /^VmRSS:\s*(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+        const found = /^VmRSS:\s*(\d+)/m.exec(readFileSync(`/proc/${pid}/status`, "utf-8"));
         if (found && Number(found[1]) * 1024 > memoryBytes) {
           stop(tooLarge());
         }
@@ -241,7 +247,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
     }, 20);
     try {
       try {
-        child.stdin.write(request);
+        await child.stdin.write(request);
         await child.stdin.end();
       } catch {
         /* A child that exited early reports through its exit code. */

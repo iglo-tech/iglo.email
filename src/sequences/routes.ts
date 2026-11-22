@@ -77,8 +77,8 @@ const MAX_TEST_SENDS = 4;
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 /** A step or template ID as the API numbers it: a number, or a raw JSON integer beyond 2^53. */
-const idOf = (value: number | object): bigint =>
-  BigInt(typeof value === "number" ? value : (value as { rawJSON: string }).rawJSON);
+const idOf = (value: number | { rawJSON: string }): bigint =>
+  BigInt(typeof value === "number" ? value : value.rawJSON);
 
 export function registerSequenceRoutes(
   router: Router,
@@ -98,8 +98,8 @@ export function registerSequenceRoutes(
     settings: () => {
       fromEmail: string;
       marketing: MarketingSettings;
-      domainAllowlist: string[];
-      domainBlocklist: string[];
+      domainAllowlist: Array<string>;
+      domainBlocklist: Array<string>;
     };
     roles: Roles;
     auth: Authentication;
@@ -118,11 +118,15 @@ export function registerSequenceRoutes(
     );
   const body = async (c: RequestContext, limit: number) => {
     const value = parseJson(c.request, await readBounded(c.request, limit));
-    if (!isObject(value)) throw invalid(c, "body");
+    if (!isObject(value)) {
+      throw invalid(c, "body");
+    }
     return value;
   };
   const identity = (c: RequestContext) => {
-    if (!c.identity) throw new Error("Identity required");
+    if (!c.identity) {
+      throw new Error("Identity required");
+    }
     return c.identity;
   };
   /** Validate a definition and write it, both inside one write transaction. */
@@ -145,8 +149,9 @@ export function registerSequenceRoutes(
         });
         return write(input);
       } catch (error) {
-        if (error instanceof DefinitionError || error instanceof SequenceConflict)
+        if (error instanceof DefinitionError || error instanceof SequenceConflict) {
           throw invalid(c, error.field, error.detail);
+        }
         throw error;
       }
     });
@@ -154,13 +159,19 @@ export function registerSequenceRoutes(
     const search = c.url.searchParams;
     const one = (key: string) => {
       const values = search.getAll(key);
-      if (values.length > 1) throw invalid(c, key);
+      if (values.length > 1) {
+        throw invalid(c, key);
+      }
       return values[0];
     };
     const positive = (key: string, max: bigint) => {
       const raw = one(key);
-      if (raw === undefined) return undefined;
-      if (!/^[1-9]\d{0,18}$/.test(raw) || BigInt(raw) > max) throw invalid(c, key);
+      if (raw === undefined) {
+        return undefined;
+      }
+      if (!/^[1-9]\d{0,18}$/.test(raw) || BigInt(raw) > max) {
+        throw invalid(c, key);
+      }
       return BigInt(raw);
     };
     return { one, positive };
@@ -172,9 +183,9 @@ export function registerSequenceRoutes(
       perPage: Number(positive("per_page", 100n) ?? 20n),
     };
   };
-  const maxID = 9223372036854775807n;
+  const maxID = 9_223_372_036_854_775_807n;
   /** Enrollments name their subscriber by ID; anything of the person follows the owner's rule. */
-  const readable = (c: RequestContext, rows: EnrollmentRow[]) =>
+  const readable = (c: RequestContext, rows: Array<EnrollmentRow>) =>
     readableSubscribers(roles, subscribers, identity(c), [
       ...new Set(rows.map((row) => row.subscriber_id)),
     ]);
@@ -188,8 +199,9 @@ export function registerSequenceRoutes(
     "/api/sequences",
     (c) => {
       const status = params(c).one("status");
-      if (status !== undefined && !(sequenceStatuses as readonly string[]).includes(status))
+      if (status !== undefined && !(sequenceStatuses as ReadonlyArray<string>).includes(status)) {
         throw invalid(c, "status");
+      }
       return ok(
         sequences.list({
           ...paging(c),
@@ -204,7 +216,9 @@ export function registerSequenceRoutes(
     "/api/sequences/:id",
     (c) => {
       const found = sequences.get(BigInt(getID(c)));
-      if (!found) throw new HttpError(404, "Sequence not found");
+      if (!found) {
+        throw new HttpError(404, "Sequence not found");
+      }
       return ok(found);
     },
     auth.middleware(GET),
@@ -226,7 +240,9 @@ export function registerSequenceRoutes(
       const value = await body(c, limits.bodyBytes);
       const id = BigInt(getID(c));
       const saved = save(c, value, (input) => sequences.update(id, input));
-      if (!saved) throw new HttpError(404, "Sequence not found");
+      if (!saved) {
+        throw new HttpError(404, "Sequence not found");
+      }
       return ok(saved);
     },
     auth.middleware(MANAGE),
@@ -238,19 +254,27 @@ export function registerSequenceRoutes(
     async (c) => {
       const value = await body(c, SMALL_BODY_BYTES);
       const status = value.status;
-      if (typeof status !== "string" || !(sequenceStatuses as readonly string[]).includes(status))
+      if (
+        typeof status !== "string" ||
+        !(sequenceStatuses as ReadonlyArray<string>).includes(status)
+      ) {
         throw invalid(c, "status");
+      }
       const id = BigInt(getID(c));
       const saved = writeTransaction(c.app.db, () => {
         auth.revalidate(c, MANAGE);
         try {
           return sequences.setStatus(id, status as SequenceStatus);
         } catch (error) {
-          if (error instanceof SequenceConflict) throw invalid(c, error.field, error.detail);
+          if (error instanceof SequenceConflict) {
+            throw invalid(c, error.field, error.detail);
+          }
           throw error;
         }
       });
-      if (!saved) throw new HttpError(404, "Sequence not found");
+      if (!saved) {
+        throw new HttpError(404, "Sequence not found");
+      }
       return ok(saved);
     },
     auth.middleware(MANAGE),
@@ -262,16 +286,23 @@ export function registerSequenceRoutes(
     async (c) => {
       const value = await body(c, VALIDATE_BODY_BYTES);
       const field = value.field === undefined ? "condition" : value.field;
-      if (typeof field !== "string" || !/^[A-Za-z0-9_.]{1,64}$/.test(field))
+      if (typeof field !== "string" || !/^[A-Za-z0-9_.]{1,64}$/.test(field)) {
         throw invalid(c, "field");
-      if (!("condition" in value)) throw invalid(c, "condition");
+      }
+      if (!("condition" in value)) {
+        throw invalid(c, "condition");
+      }
       // A save reads null as "no condition", so null is valid here too.
-      if (value.condition === null) return ok({ ok: true, errors: [] });
+      if (value.condition === null) {
+        return ok({ ok: true, errors: [] });
+      }
       const result = validate(value.condition, {
         canUseSql: roles.can(identity(c).role, "subscribers:sql_query"),
         field,
       });
-      if (!result.ok) return ok({ ok: false, errors: result.errors });
+      if (!result.ok) {
+        return ok({ ok: false, errors: result.errors });
+      }
       // The compiler is what a save's evaluator will run; it touches no data.
       try {
         compile(result.condition);
@@ -287,7 +318,9 @@ export function registerSequenceRoutes(
     "/api/sequences/:id/steps/:step/reschedule",
     async (c) => {
       const stepRaw = c.params.step ?? "";
-      if (!/^[1-9]\d{0,18}$/.test(stepRaw) || BigInt(stepRaw) > maxID) throw invalid(c, "step");
+      if (!/^[1-9]\d{0,18}$/.test(stepRaw) || BigInt(stepRaw) > maxID) {
+        throw invalid(c, "step");
+      }
       const stepId = BigInt(stepRaw);
       const id = BigInt(getID(c));
       let cursor = 0n,
@@ -302,36 +335,50 @@ export function registerSequenceRoutes(
         // A step deleted while batches ran has nothing left to move: the request reports the rows
         // already changed. Only a step that was never there is a 404.
         if (batch === "missing") {
-          if (first) throw new HttpError(404, "Step not found");
+          if (first) {
+            throw new HttpError(404, "Step not found");
+          }
           break;
         }
         first = false;
         changed += batch.changed;
         dueNow ||= batch.dueNow;
-        if (batch.next === null) break;
+        if (batch.next === null) {
+          break;
+        }
         cursor = batch.next;
         // Let the scheduler and other requests take the write lock between batches.
-        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
       }
-      if (dueNow) enrollments.wake();
+      if (dueNow) {
+        enrollments.wake();
+      }
       return ok({ changed });
     },
     auth.middleware(MANAGE),
     hasID,
   );
   /** The body of a preview or test: optional IDs and a sample, and `emails` for a test. */
-  const previewBody = async (c: RequestContext, extra: readonly string[] = []) => {
+  const previewBody = async (c: RequestContext, extra: ReadonlyArray<string> = []) => {
     const bytes = await readBounded(c.request, PREVIEW_BODY_BYTES);
     const value = bytes.length === 0 ? {} : parseJson(c.request, bytes);
-    if (!isObject(value)) throw invalid(c, "body");
-    for (const key of Object.keys(value))
-      if (!["subscriber_id", "trigger_event_id", "sample", ...extra].includes(key))
+    if (!isObject(value)) {
+      throw invalid(c, "body");
+    }
+    for (const key of Object.keys(value)) {
+      if (!["subscriber_id", "trigger_event_id", "sample", ...extra].includes(key)) {
         throw invalid(c, key);
+      }
+    }
     const id = (field: "subscriber_id" | "trigger_event_id") => {
       try {
         return idValue(value[field], field) ?? null;
       } catch (error) {
-        if (error instanceof DefinitionError) throw invalid(c, field);
+        if (error instanceof DefinitionError) {
+          throw invalid(c, field);
+        }
         throw error;
       }
     };
@@ -340,7 +387,9 @@ export function registerSequenceRoutes(
       try {
         sample = parseSampleValue(value.sample, { data: false });
       } catch (error) {
-        if (error instanceof SampleError) throw invalid(c, error.field);
+        if (error instanceof SampleError) {
+          throw invalid(c, error.field);
+        }
         throw error;
       }
     }
@@ -355,26 +404,36 @@ export function registerSequenceRoutes(
    * either is not there. The step's form is checked first, as the reschedule route does. */
   const stepOf = (c: RequestContext) => {
     const raw = c.params.step ?? "";
-    if (!/^[1-9]\d{0,18}$/.test(raw) || BigInt(raw) > maxID) throw invalid(c, "step");
+    if (!/^[1-9]\d{0,18}$/.test(raw) || BigInt(raw) > maxID) {
+      throw invalid(c, "step");
+    }
     const sequence = sequences.get(BigInt(getID(c)));
-    if (!sequence) throw new HttpError(404, "Sequence not found");
+    if (!sequence) {
+      throw new HttpError(404, "Sequence not found");
+    }
     const found = sequence.steps.find((step) => idOf(step.id) === BigInt(raw));
-    if (!found) throw new HttpError(404, "Step not found");
+    if (!found) {
+      throw new HttpError(404, "Step not found");
+    }
     return { sequence, step: found };
   };
   /** A subscriber the caller can read, or null for none named; anything else is absent (D103). */
   const subscriberNamed = (c: RequestContext, id: bigint | null) => {
-    if (id === null) return null;
+    if (id === null) {
+      return null;
+    }
     const row = subscribers.get(id);
-    if (!row || !readableSubscribers(roles, subscribers, identity(c), [id]).has(id))
+    if (!row || !readableSubscribers(roles, subscribers, identity(c), [id]).has(id)) {
       throw new HttpError(404, "Subscriber not found");
+    }
     return row;
   };
   /** The step's template, which must be transactional: a step sends one (05-sequences.md). */
-  const stepTemplate = (step: { template_id: number | object | null }) => {
+  const stepTemplate = (step: { template_id: number | { rawJSON: string } | null }) => {
     const template = step.template_id === null ? null : templates.get(idOf(step.template_id));
-    if (!template || template.type !== "tx")
+    if (!template || template.type !== "tx") {
       throw new HttpError(409, "The step does not send a transactional template.");
+    }
     return template;
   };
   /** The data a send of this step would render for the request, as the scheduler builds it (D105). */
@@ -412,8 +471,12 @@ export function registerSequenceRoutes(
         messageLinks(settings.marketing, deps.tracking),
       );
     } catch (error) {
-      if (error instanceof FieldError) throw invalid(c, error.field);
-      if (error instanceof StepRefusal) throw new HttpError(409, error.message);
+      if (error instanceof FieldError) {
+        throw invalid(c, error.field);
+      }
+      if (error instanceof StepRefusal) {
+        throw new HttpError(409, error.message);
+      }
       throw error;
     }
   };
@@ -435,10 +498,12 @@ export function registerSequenceRoutes(
         budget,
       );
     } catch (error) {
-      if (error instanceof RenderCapacityError)
+      if (error instanceof RenderCapacityError) {
         throw new HttpError(429, "Too many template renders in progress.");
-      if (error instanceof TemplateSourceError)
+      }
+      if (error instanceof TemplateSourceError) {
         throw new HttpError(400, i18n.Ts("templates.errorCompiling", "error", "invalid body"));
+      }
       throw new HttpError(400, i18n.Ts("templates.errorRendering", "error", "invalid template"));
     }
   };
@@ -484,20 +549,22 @@ export function registerSequenceRoutes(
       const addresses = testAddresses(c, value.emails);
       const { sequence, step } = stepOf(c);
       const template = stepTemplate(step);
-      if (testing >= MAX_TEST_SENDS)
+      if (testing >= MAX_TEST_SENDS) {
         throw new HttpError(429, "Too many test sends in progress.", { "Retry-After": "1" });
+      }
       // A blocklisted address never receives mail (04-sending.md), so it is skipped.
       const reachable = addresses.filter(
         (email) => subscribers.byEmail(email)?.status !== "blocklisted",
       );
       // B108 (D114): every address blocklisted says so, and names the addresses the caller gave.
-      if (!reachable.length)
+      if (!reachable.length) {
         throw new HttpError(400, `No recipients: blocklisted: ${addresses.join(", ")}`);
+      }
       testing++;
       let queued = false;
       try {
         const settings = deps.settings();
-        const messages: Message[] = [];
+        const messages: Array<Message> = [];
         for (const email of reachable) {
           const prepared = previewFor(c, value, step, sequence, email);
           const data = stepDataText(prepared.data);
@@ -546,7 +613,9 @@ export function registerSequenceRoutes(
         }));
         const results = dispatched.map(({ message, dispatch }) =>
           dispatch.result.then((outcome) => {
-            if (outcome.status === "accepted" && !outcome.rejected.length) return;
+            if (outcome.status === "accepted" && !outcome.rejected.length) {
+              return;
+            }
             c.app.logger.attention(
               `Test send to ${message.to[0]} for sequence ${sequence.id} step ${step.id} not delivered: ${outcome.status}, stage ${outcome.stage}`,
               "Test send not delivered: the server error output names the recipient and stage",
@@ -557,16 +626,19 @@ export function registerSequenceRoutes(
         void Promise.all(results).finally(() => testing--);
         return ok(true);
       } finally {
-        if (!queued) testing--;
+        if (!queued) {
+          testing--;
+        }
       }
     },
     auth.middleware(MANAGE),
     hasID,
   );
   /** The test recipients: 1 to 5 distinct addresses, validated as a subscriber's are. */
-  function testAddresses(c: RequestContext, value: unknown): string[] {
-    if (!Array.isArray(value) || value.length < 1 || value.length > MAX_TEST_EMAILS)
+  function testAddresses(c: RequestContext, value: unknown): Array<string> {
+    if (!Array.isArray(value) || value.length < 1 || value.length > MAX_TEST_EMAILS) {
       throw invalid(c, "emails");
+    }
     const policy = deps.settings();
     const seen = new Set<string>();
     for (const raw of value) {
@@ -576,8 +648,9 @@ export function registerSequenceRoutes(
         /[\r\n\0]/.test(email) ||
         !allowedDomain(email, policy.domainAllowlist, policy.domainBlocklist) ||
         seen.has(email)
-      )
+      ) {
         throw invalid(c, "emails");
+      }
       seen.add(email);
     }
     return [...seen];
@@ -592,9 +665,12 @@ export function registerSequenceRoutes(
         auth.revalidate(c, MANAGE);
         return sequences.remove(id);
       });
-      if (result === "missing") throw new HttpError(404, "Sequence not found");
-      if (result === "enrolled")
+      if (result === "missing") {
+        throw new HttpError(404, "Sequence not found");
+      }
+      if (result === "enrolled") {
         throw new HttpError(409, "The sequence has enrollments; archive it instead.");
+      }
       return ok(true);
     },
     auth.middleware(MANAGE),

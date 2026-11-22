@@ -31,6 +31,11 @@ export interface McpDeps {
   router: Router;
 }
 
+/** A parsed JSON object that is not an array: the only shape a JSON-RPC request can take here. */
+function isRpcObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function registerMcpRoutes(router: Router, deps: McpDeps): void {
   // GET /api/mcp answers 405 Method Not Allowed for Streamable HTTP servers without a stream. The
   // body is the API's JSON error, as the OpenAPI document declares for every 405.
@@ -86,7 +91,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
     const text = new TextDecoder().decode(arrayBuffer);
 
     // 5. Parse JSON
-    let body: any;
+    let body: unknown;
     try {
       body = JSON.parse(text);
     } catch {
@@ -119,12 +124,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
     }
 
     // 7. Validate JSON-RPC 2.0 structure
-    if (
-      typeof body !== "object" ||
-      body === null ||
-      body.jsonrpc !== "2.0" ||
-      typeof body.method !== "string"
-    ) {
+    if (!isRpcObject(body) || body.jsonrpc !== "2.0" || typeof body.method !== "string") {
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
@@ -177,7 +177,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
 
     // 11. Initialize: On an unsupported requested version, answer with the server's latest supported version as the spec says, not an error.
     if (method === "initialize") {
-      const requested = params?.protocolVersion;
+      const requested = isRpcObject(params) ? params.protocolVersion : undefined;
       let negotiated: string = LATEST_PROTOCOL_VERSION;
       if (
         typeof requested === "string" &&
@@ -230,7 +230,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
 
     // 13. tools/call
     if (method === "tools/call") {
-      if (typeof params !== "object" || params === null || typeof params.name !== "string") {
+      if (!isRpcObject(params) || typeof params.name !== "string") {
         return new Response(
           JSON.stringify({
             jsonrpc: "2.0",
@@ -259,12 +259,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         );
       }
 
-      const args =
-        typeof params.arguments === "object" &&
-        params.arguments !== null &&
-        !Array.isArray(params.arguments)
-          ? (params.arguments as Record<string, unknown>)
-          : {};
+      const args = isRpcObject(params.arguments) ? params.arguments : {};
 
       const cookieHeader = context.request.headers.get("cookie") ?? undefined;
       const csrfHeader = context.request.headers.get("x-csrf-token") ?? undefined;

@@ -81,7 +81,7 @@ function localLink(value: string): string {
   if (
     !value.startsWith("/") ||
     value.startsWith("//") ||
-    [...value].some(
+    Array.from(value).some(
       (character) =>
         character === "\\" || character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127,
     ) ||
@@ -97,7 +97,7 @@ function initials(name: string): string {
   if (!words.length) {
     return "?";
   }
-  const [first, second] = words.map((word) => [...word]);
+  const [first, second] = words.map((word) => Array.from(word));
   return (first![0]! + (second?.[0] ?? first![1] ?? "")).toUpperCase();
 }
 function Link({ item, icon }: { item: NavigationLink; icon?: string }) {

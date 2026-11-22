@@ -1,7 +1,7 @@
 // Native: which resolved addresses `webhooks.block_private_addresses` refuses.
 import { isIPv4, isIPv6 } from "node:net";
 
-const octets = (address: string) => address.split(".").map(Number) as Array<number>;
+const octets = (address: string) => address.split(".").map(Number);
 const inRange = (bytes: Array<number>, prefix: Array<number>, bits: number) =>
   prefix.every((value, index) => {
     const mask = Math.max(0, Math.min(8, bits - index * 8));
@@ -9,7 +9,7 @@ const inRange = (bytes: Array<number>, prefix: Array<number>, bits: number) =>
     return bytes[index]! >> shift === value >> shift;
   });
 /** Everything but public unicast: RFC 6890 special-purpose ranges. */
-const blocked4: Array<[number[], number]> = [
+const blocked4: Array<[Array<number>, number]> = [
   [[0, 0, 0, 0], 8],
   [[10, 0, 0, 0], 8],
   [[100, 64, 0, 0], 10],
@@ -26,7 +26,7 @@ const blocked4: Array<[number[], number]> = [
   [[224, 0, 0, 0], 4],
   [[240, 0, 0, 0], 4],
 ];
-const blocked6: Array<[number[], number]> = [
+const blocked6: Array<[Array<number>, number]> = [
   [[0x20, 0x01, 0x0d, 0xb8], 32],
   [[0x20, 0x01, 0x00, 0x00], 32],
 ];

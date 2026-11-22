@@ -24,7 +24,7 @@ const MAX_UPLOADS = 8;
 const CACHE_CONTROL = "public, max-age=3600";
 
 const vectorExtensions = new Set(["svg"]);
-const imageExtensions = ["gif", "png", "jpg", "jpeg"];
+const imageExtensions = new Set(["gif", "png", "jpg", "jpeg"]);
 /** Types a browser shows without running anything from them, or under the CSP below. */
 const inlineTypes =
   /^(image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)|(audio|video)\/.+|text\/plain)$/;
@@ -33,7 +33,7 @@ const SANDBOX = "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-i
 
 export interface MediaSettings {
   provider: string;
-  extensions: string[];
+  extensions: Array<string>;
   rootUrl: string;
 }
 
@@ -45,7 +45,9 @@ const UPLOAD_PATH = "upload.filesystem.upload_path";
  */
 export function uploadPathCheck(dataDir: string, store: Pick<MediaStore, "any">) {
   return (next: Record<string, any>, current: Record<string, any>): void => {
-    if (next[UPLOAD_PATH] === current[UPLOAD_PATH]) return;
+    if (next[UPLOAD_PATH] === current[UPLOAD_PATH]) {
+      return;
+    }
     let root: string;
     try {
       root = uploadRoot(dataDir, next[UPLOAD_PATH]);
@@ -59,33 +61,40 @@ export function uploadPathCheck(dataDir: string, store: Pick<MediaStore, "any">)
         return false;
       }
     })();
-    if (!same && store.any())
+    if (!same && store.any()) {
       throw new HttpError(
         400,
         "The upload path cannot change while media exists: its files stay where they are. " +
           "Delete the media first.",
       );
+    }
   };
 }
 
 // Go strconv.Atoi, ignoring its error.
 const atoi = (value: string | null) => {
-  if (!value || !/^[+-]?\d+$/.test(value)) return 0;
+  if (!value || !/^[+-]?\d+$/.test(value)) {
+    return 0;
+  }
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : 0;
 };
 
 async function readUpload(request: Request): Promise<Uint8Array> {
   const tooLarge = () => new HttpError(413, "The file is too large.");
-  if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) throw tooLarge();
-  const chunks: Uint8Array[] = [];
+  if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) {
+    throw tooLarge();
+  }
+  const chunks: Array<Uint8Array> = [];
   let size = 0;
   const reader = request.body?.getReader();
   if (reader) {
     try {
       while (true) {
         const item = await reader.read();
-        if (item.done) break;
+        if (item.done) {
+          break;
+        }
         size += item.value.length;
         if (size > MAX_BODY_BYTES) {
           await reader.cancel();
@@ -128,19 +137,21 @@ export function registerMediaRoutes(
   };
   const notFound = () => new HttpError(404, "not found");
   const filesystemOnly = (c: RequestContext) => {
-    if (settings().provider !== "filesystem")
+    if (settings().provider !== "filesystem") {
       throw new HttpError(
         400,
         c.app.i18n.Ts("globals.messages.errorUploadingFile", "error", "S3 is not supported"),
       );
+    }
   };
   /** The file of a form, as Go's FormFile: the first part of the name that has a filename. */
   const formFile = async (c: RequestContext, body: Uint8Array) => {
     const invalid = (error: string) =>
       new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFile", "error", error));
     const type = c.request.headers.get("content-type") ?? "";
-    if (type.split(";", 1)[0]?.trim().toLowerCase() !== "multipart/form-data")
+    if (type.split(";", 1)[0]?.trim().toLowerCase() !== "multipart/form-data") {
       throw invalid("request Content-Type isn't multipart/form-data");
+    }
     let form: FormData;
     try {
       form = await new Request("http://form.invalid", {
@@ -151,14 +162,19 @@ export function registerMediaRoutes(
     } catch {
       throw invalid("malformed multipart form");
     }
-    for (const value of form.getAll("file")) if (typeof value !== "string") return value;
+    for (const value of form.getAll("file")) {
+      if (typeof value !== "string") {
+        return value;
+      }
+    }
     throw invalid("http: no such file");
   };
 
   const upload: Handler = async (c) => {
     filesystemOnly(c);
-    if (uploading >= MAX_UPLOADS)
+    if (uploading >= MAX_UPLOADS) {
       throw new HttpError(429, "Too many uploads in progress.", { "Retry-After": "1" });
+    }
     uploading++;
     try {
       // Fixed before the body arrives, so a row always names the directory that admitted it.
@@ -166,7 +182,9 @@ export function registerMediaRoutes(
       try {
         root = files.root();
       } catch (error) {
-        if (error instanceof UploadRootError) throw new HttpError(503, error.message);
+        if (error instanceof UploadRootError) {
+          throw new HttpError(503, error.message);
+        }
         throw error;
       }
       const changed = () => new HttpError(409, "The upload path changed during the upload.");
@@ -178,24 +196,31 @@ export function registerMediaRoutes(
       const name = makeFilename(file.name);
       const ext = extensionOf(name);
       const { extensions } = settings();
-      if (!extensions.includes("*") && !extensions.includes(ext))
+      if (!extensions.includes("*") && !extensions.includes(ext)) {
         throw new HttpError(
           400,
           c.app.i18n.Ts("globals.messages.unsupportedFileType", "type", ext),
         );
-      if (file.size > MAX_FILE_BYTES) throw new HttpError(413, "The file is too large.");
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        throw new HttpError(413, "The file is too large.");
+      }
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const size = imageExtensions.includes(ext) ? imageSize(bytes) : null;
-      if (!files.current(root)) throw changed();
+      const size = imageExtensions.has(ext) ? imageSize(bytes) : null;
+      if (!files.current(root)) {
+        throw changed();
+      }
       const stored = await files.put(root, name, bytes, store.filenameTaken);
       try {
         // Nothing runs between this check and the insert.
-        if (!files.current(root)) throw changed();
+        if (!files.current(root)) {
+          throw changed();
+        }
         return ok(
           project(
             store.insert({
               filename: stored,
-              thumb: imageExtensions.includes(ext) || vectorExtensions.has(ext) ? stored : "",
+              thumb: imageExtensions.has(ext) || vectorExtensions.has(ext) ? stored : "",
               contentType: file.type,
               provider: "filesystem",
               meta: size ?? {},
@@ -252,8 +277,9 @@ export function registerMediaRoutes(
     if (row.provider === "filesystem") {
       try {
         await files.remove(row.filename);
-        if (row.thumb && row.thumb !== row.filename && !store.filenameTaken(row.thumb))
+        if (row.thumb && row.thumb !== row.filename && !store.filenameTaken(row.thumb)) {
           await files.remove(row.thumb);
+        }
       } catch (error) {
         c.app.logger.error(error);
       }

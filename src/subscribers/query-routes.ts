@@ -71,7 +71,7 @@ function queryInts(params: URLSearchParams, name: string): Array<bigint> | undef
   return out;
 }
 
-interface QueryInput {
+type QueryInput = {
   search: string;
   query: string;
   list_ids: Array<bigint>;
@@ -81,7 +81,7 @@ interface QueryInput {
   subscription_status: string;
   subscriber_status: string;
   all: boolean;
-}
+};
 const stringFields = new Set([
   "search",
   "query",
@@ -90,7 +90,7 @@ const stringFields = new Set([
   "subscription_status",
   "subscriber_status",
 ]);
-const listFields = ["list_ids", "target_list_ids"];
+const listFields = new Set(["list_ids", "target_list_ids"]);
 
 /** listmonk subQueryReq bound from a JSON body; other bodies bind no fields. */
 async function queryInput(c: RequestContext): Promise<QueryInput> {
@@ -107,20 +107,28 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
   };
   const body = await readBodyBytes(c.request);
   const type = c.request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-  if (!body.length || type !== "application/json") return out;
+  if (!body.length || type !== "application/json") {
+    return out;
+  }
   let document: unknown;
   try {
-    document = JSON.parse(body.toString("utf8"), (_key, value, context?: { source?: string }) => {
-      if (typeof value !== "number") return value;
+    document = JSON.parse(body.toString("utf-8"), (_key, value, context?: { source?: string }) => {
+      if (typeof value !== "number") {
+        return value;
+      }
       const source = context?.source ?? "";
       return /^-?\d+$/.test(source) ? BigInt(source) : value;
     });
   } catch {
     throw new HttpError(400);
   }
-  if (document === null) return out;
-  if (typeof document !== "object" || Array.isArray(document)) throw new HttpError(400);
-  const record = out as unknown as Record<string, unknown>;
+  if (document === null) {
+    return out;
+  }
+  if (typeof document !== "object" || Array.isArray(document)) {
+    throw new HttpError(400);
+  }
+  const record: Record<string, unknown> = out;
   // encoding/json matches field names case-insensitively.
   for (const [rawKey, value] of Object.entries(document)) {
     const key = rawKey.toLowerCase();
@@ -132,7 +140,7 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
         throw new HttpError(400);
       }
       record[key] = value.toWellFormed();
-    } else if (listFields.includes(key)) {
+    } else if (listFields.has(key)) {
       if (value === null) {
         record[key] = [];
         continue;
@@ -237,8 +245,9 @@ export function registerSubscriberQueryRoutes(
       ["subscription_status", filter.subscriptionStatus, [...subscriptionStatuses, "none"]],
       ["subscriber_status", filter.subscriberStatus, subscriberStatuses],
     ] as const) {
-      if (value && !allowed.includes(value))
+      if (value && !allowed.includes(value)) {
         throw preparing(c, `invalid input value for enum ${type}: "${value}"`);
+      }
     }
     const problem = filter.fragment ? checkFragment(filter.fragment) : undefined;
     if (problem) {
@@ -382,7 +391,7 @@ export function registerSubscriberQueryRoutes(
     sqlPermission(c, filter.fragment);
     validate(c, filter);
     const admitted = query.admitLarge() ?? throwTooMany();
-    let output: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let output: ReadableStreamDefaultController<BufferSource> | undefined;
     const finish = () => {
       admitted();
       void batches.return(undefined);
@@ -406,7 +415,7 @@ export function registerSubscriberQueryRoutes(
     }
     const text = new TextEncoder();
     let started = false;
-    const csv = new ReadableStream<Uint8Array>({
+    const csv = new ReadableStream<BufferSource>({
       start(controller) {
         output = controller;
       },
@@ -436,23 +445,16 @@ export function registerSubscriberQueryRoutes(
       cancel: finish,
     });
     const gzip = (c.request.headers.get("accept-encoding") ?? "").includes("gzip");
-    return new Response(
-      gzip
-        ? csv.pipeThrough(
-            new CompressionStream("gzip") as unknown as TransformStream<Uint8Array, Uint8Array>,
-          )
-        : csv,
-      {
-        headers: {
-          "Content-Type": "text/csv",
-          "Content-Disposition": "attachment; filename=subscribers.csv",
-          "Content-Transfer-Encoding": "binary",
-          "Cache-Control": "no-cache",
-          Vary: "Accept-Encoding",
-          ...(gzip ? { "Content-Encoding": "gzip" } : {}),
-        },
+    return new Response(gzip ? csv.pipeThrough(new CompressionStream("gzip")) : csv, {
+      headers: {
+        "Content-Type": "text/csv",
+        "Content-Disposition": "attachment; filename=subscribers.csv",
+        "Content-Transfer-Encoding": "binary",
+        "Cache-Control": "no-cache",
+        Vary: "Accept-Encoding",
+        ...(gzip ? { "Content-Encoding": "gzip" } : {}),
       },
-    );
+    });
   };
 
   type Action = (input: QueryInput, ids: Array<bigint>, targets: Array<bigint>) => void;
