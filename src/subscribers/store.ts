@@ -825,9 +825,10 @@ export function createSubscriberStore(
      * The public "Unsubscribe from all mailing lists" (B130, D128): every membership not already
      * unsubscribed ends, and a marketing suppression (B124, D125) is written unless one already names
      * this subscriber. The status stays: this is not the admin blocklist, so transactional mail and
-     * transactional sequence steps keep flowing. A marketing sequence step ends at its next due time,
-     * as the scheduler's consent check ends it. Webhooks are those of an unsubscribe. The caller holds
-     * the write.
+     * transactional sequence steps keep flowing. The caller's `unsubscribedAll` effect ends the running
+     * enrollments whose next step is marketing at once; a mixed sequence's marketing step is refused by the
+     * scheduler's consent check when it comes due. Webhooks are those of an unsubscribe, with
+     * `suppressed`. The caller holds the write.
      */
     unsubscribeAll(id: bigint): void {
       const row = get(id);
