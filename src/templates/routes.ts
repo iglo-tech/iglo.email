@@ -103,7 +103,7 @@ function translateError(context: RequestContext, error: unknown): never {
           ),
         );
       case "render":
-        // The cause in words, from the renderer's fixed list; it names no template text or data.
+        // The cause in words: the detail names the template's expression and the kind of value, never a data value (D134).
         throw new HttpError(
           400,
           t.Ts("templates.errorCompiling", "error", `it fails to render: ${error.detail}`),
