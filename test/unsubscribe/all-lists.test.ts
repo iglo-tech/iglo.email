@@ -81,7 +81,9 @@ test("the option unsubscribes from every list, keeps the status, and queues the 
   const [delivery] = await receiver.waitFor(1);
   expect(delivery!.body.event).toBe("subscriber.unsubscribed");
   // The payload names both lists and says the option wrote a marketing suppression (D128).
-  expect([...delivery!.body.data.list_ids].sort()).toEqual([s.news, s.other].sort());
+  expect([...delivery!.body.data.list_ids].sort((a, b) => a - b)).toEqual(
+    [s.news, s.other].sort((a, b) => a - b),
+  );
   expect(delivery!.body.data.suppressed).toBe(true);
   const events = receiver.received.map((r) => asBody<{ event: string }>(r.body).event);
   expect(events).not.toContain("subscriber.blocklisted");
