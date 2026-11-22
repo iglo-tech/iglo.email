@@ -21,12 +21,6 @@ const afterDrag = async (page, stored) => {
   return { dragged, tag: /<img[^>]*>/.exec(body)[0] };
 };
 
-const settle = () =>
-  new Promise((resolve) => {
-    const probe = new Image();
-    probe.onload = probe.onerror = () => setTimeout(resolve, 30);
-    probe.src = `/admin/static/favicon.png?${Math.random()}`;
-  });
 const saved = async (page, id) => {
   const save = page.waitForResponse((r) => r.request().method() === "PUT");
   await page.keyboard.press("Control+s");
@@ -108,14 +102,20 @@ async function open(page, id, query = "") {
   await expect(page.locator(EDITOR)).toBeVisible();
 }
 
+const settle = () =>
+  new Promise((resolve) => {
+    const probe = new Image();
+    probe.onload = probe.onerror = () => setTimeout(resolve, 30);
+    probe.src = `/admin/static/favicon.png?${Math.random()}`;
+  });
 // Mounts, serializes and mounts that again, which is where a mutation shape would turn, then undoes
 // and redoes through Squire's own innerHTML. A failed image has reported by the time a later one
 // loads, so the wait is a real one. `value` is what the screen would store.
 const exercise = (page, html) =>
   // As source text: the page's policy refuses `new Function`, and `audit` has to reach the page.
-  page.evaluate(`(${mountAndAudit})(${JSON.stringify(html)}, ${audit})`);
+  page.evaluate(`(${mountAndAudit})(${JSON.stringify(html)}, ${audit}, ${settle})`);
 
-async function mountAndAudit(html, check) {
+async function mountAndAudit(html, check, settle) {
   const host = document.querySelector("richtext-editor");
   const content = host.querySelector("[data-rte-content]");
   const bad = [];

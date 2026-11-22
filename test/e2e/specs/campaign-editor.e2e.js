@@ -16,16 +16,6 @@ import {
   signIn,
 } from "../helpers.js";
 
-const shape = (html) =>
-  [...new DOMParser().parseFromString(html, "text/html").body.querySelectorAll(":not(br)")].map(
-    (n) =>
-      [
-        n.localName,
-        ...[...n.attributes].map((a) => `${a.name}=${a.value}`).sort(),
-        n.childElementCount ? "" : n.textContent,
-      ].join("|"),
-  );
-
 // These prove the sanitizer on its own, and `neverRan` needs a handler that does run: the policy
 // would stop both. editor-containment.e2e.js holds the corpus with and without it.
 test.use({ bypassCSP: true });
@@ -264,7 +254,18 @@ test("an ordinary newsletter comes through the rich-text editor unchanged", asyn
   const same = () =>
     page.locator("richtext-editor").evaluate((el, original) => {
       // Squire ends a block holding only an image with a <br> for the caret.
-      return { want: shape(original), got: shape(el.value) };
+      const [want, got] = [original, el.value].map((html) =>
+        [
+          ...new DOMParser().parseFromString(html, "text/html").body.querySelectorAll(":not(br)"),
+        ].map((n) =>
+          [
+            n.localName,
+            ...[...n.attributes].map((a) => `${a.name}=${a.value}`).sort(),
+            n.childElementCount ? "" : n.textContent,
+          ].join("|"),
+        ),
+      );
+      return { want, got };
     }, body);
   await expect(page.locator(`${EDITOR} table`)).toHaveCount(1);
   const { want, got } = await same();
