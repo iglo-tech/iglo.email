@@ -7,10 +7,18 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
 import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 import { version } from "@/../package.json";
 
+/** A list page as a tool reply or an API body returns it, read as the shape the assertions use. */
+type Page<R = { id: number }> = { data: { results: Array<R> } };
+/** A campaign or template with its linked lists and media. */
+type Linked = { lists: Array<{ id: number }>; media: Array<{ id: number }>; [field: string]: any };
+/** A sequence with its steps. */
+type Sequence = { steps: Array<{ id: number; subject: string }>; [field: string]: any };
+
 function getTextContent(result: unknown): string {
-  const res = result as { content?: Array<{ type: string; text?: string }> };
+  const res = asBody<{ content?: Array<{ type: string; text?: string }> }>(result);
   return res.content?.[0]?.text ?? "";
 }
 const withoutKeys = (value: Record<string, unknown>, keys: Array<string>) =>
@@ -163,8 +171,8 @@ describe("B34 MCP endpoint tests", () => {
       },
     });
     expect(createRes.isError).toBeFalsy();
-    const createdData = (
-      createRes.structuredContent as { data: { id: number; name: string; body: string } }
+    const createdData = asBody<{ data: { id: number; name: string; body: string } }>(
+      createRes.structuredContent,
     ).data;
     const templateId = createdData.id;
     expect(templateId).toBeGreaterThan(0);
@@ -240,7 +248,7 @@ describe("B34 MCP endpoint tests", () => {
       arguments: { id: templateId },
     });
     expect(getRes.isError).toBeFalsy();
-    const getData = (getRes.structuredContent as { data: { name: string } }).data;
+    const getData = asBody<{ data: { name: string } }>(getRes.structuredContent).data;
     expect(getData.name).toBe("MCP Layout Updated");
 
     // Delete template through MCP
@@ -329,8 +337,8 @@ describe("B34 MCP endpoint tests", () => {
     const verifyListRes = await fetch(`${production.origin}/api/templates`, {
       headers: adminHeaders,
     });
-    const templates = (await verifyListRes.json()).data;
-    expect(templates.some((t: any) => t.name === "Forbidden Template")).toBe(false);
+    const templates = asBody<{ data: Array<{ name: string }> }>(await verifyListRes.json()).data;
+    expect(templates.some((t) => t.name === "Forbidden Template")).toBe(false);
 
     await client.close();
   });
@@ -399,9 +407,8 @@ describe("B34 MCP endpoint tests", () => {
       arguments: { query: "MCP" },
     });
     expect(listCampsRes.isError).toBeFalsy();
-    const listedCamps = (listCampsRes.structuredContent as { data: { results: Array<any> } }).data
-      .results;
-    expect(listedCamps.some((c: any) => c.id === campId)).toBe(true);
+    const listedCamps = asBody<Page>(listCampsRes.structuredContent).data.results;
+    expect(listedCamps.some((c) => c.id === campId)).toBe(true);
 
     // Preview campaign through MCP
     const previewRes = await client.callTool({
@@ -463,11 +470,11 @@ describe("B34 MCP endpoint tests", () => {
       headers: adminHeaders,
     });
     expect(getCampRes.status).toBe(200);
-    const updatedCampData = (await getCampRes.json()).data;
+    const updatedCampData = asBody<Linked>((await getCampRes.json()).data);
     expect(updatedCampData.subject).toBe("Brand New Subject Only");
     expect(updatedCampData.attribs).toEqual({ cta: "CTA-VALUE" });
     expect(updatedCampData.headers).toEqual([{ "X-Test-Header": "HeaderValue" }]);
-    expect(updatedCampData.lists.map((l: any) => l.id)).toEqual([listId]);
+    expect(updatedCampData.lists.map((l) => l.id)).toEqual([listId]);
 
     {
       // Create a second list that is not attached to campWithAttribsId
@@ -494,8 +501,8 @@ describe("B34 MCP endpoint tests", () => {
         { headers: adminHeaders },
       );
       expect(getCampAfterInvalidType.status).toBe(200);
-      const campDataAfterInvalidType = (await getCampAfterInvalidType.json()).data;
-      expect(campDataAfterInvalidType.lists.map((l: any) => l.id)).toEqual([listId]);
+      const campDataAfterInvalidType = asBody<Linked>((await getCampAfterInvalidType.json()).data);
+      expect(campDataAfterInvalidType.lists.map((l) => l.id)).toEqual([listId]);
 
       // Negative list ID: update_campaign with [otherListId, -5] must give the same result as direct PUT
       // (success, and stored lists become exactly [otherListId])
@@ -513,8 +520,8 @@ describe("B34 MCP endpoint tests", () => {
         { headers: adminHeaders },
       );
       expect(getCampAfterNegativeId.status).toBe(200);
-      const campDataAfterNegativeId = (await getCampAfterNegativeId.json()).data;
-      expect(campDataAfterNegativeId.lists.map((l: any) => l.id)).toEqual([otherListId]);
+      const campDataAfterNegativeId = asBody<Linked>((await getCampAfterNegativeId.json()).data);
+      expect(campDataAfterNegativeId.lists.map((l) => l.id)).toEqual([otherListId]);
     }
 
     // Test 3 blocker: send_campaign_test with a client sending ONLY declared fields (id and subscribers)
@@ -668,9 +675,9 @@ describe("B34 MCP endpoint tests", () => {
       headers: adminHeaders,
     });
     expect(getCampTwoLists.status).toBe(200);
-    const campTwoListsData = (await getCampTwoLists.json()).data;
+    const campTwoListsData = asBody<Linked>((await getCampTwoLists.json()).data);
     expect(campTwoListsData.subject).toBe("Updated Subject With One List Deleted");
-    expect(campTwoListsData.lists.some((l: any) => l.id === listDel2Id)).toBe(true);
+    expect(campTwoListsData.lists.some((l) => l.id === listDel2Id)).toBe(true);
 
     // Create a second list and campaign for permission boundary check
     const otherListRes = await fetch(`${production.origin}/api/lists`, {
@@ -762,7 +769,7 @@ describe("B34 MCP endpoint tests", () => {
         body: "<header>Safe</header>{{ content | raw }}",
       },
     });
-    const templateId = (createRes.structuredContent as { data: { id: number } }).data.id;
+    const templateId = asBody<{ data: { id: number } }>(createRes.structuredContent).data.id;
 
     // Update with invalid Liquid syntax
     const badUpdateRes = await client.callTool({
@@ -782,7 +789,7 @@ describe("B34 MCP endpoint tests", () => {
       arguments: { id: templateId },
     });
     expect(getRes.isError).toBeFalsy();
-    const storedBody = (getRes.structuredContent as { data: { body: string } }).data.body;
+    const storedBody = asBody<{ data: { body: string } }>(getRes.structuredContent).data.body;
     expect(storedBody).toBe("<header>Safe</header>{{ content | raw }}");
 
     // Clean up
@@ -1181,7 +1188,7 @@ describe("B34 MCP endpoint tests", () => {
       body: form,
     });
     expect(res.status).toBe(200);
-    return (await res.json()).data.id as number;
+    return asBody<number>((await res.json()).data.id);
   }
 
   // 9. list_lists and list_media return what the HTTP API returns, and their query filters the items created through it.
@@ -1208,19 +1215,21 @@ describe("B34 MCP endpoint tests", () => {
     const allLists = await client.callTool({ name: "list_lists", arguments: { query: "B39" } });
     expect(allLists.isError).toBeFalsy();
     expect(allLists.structuredContent).toEqual((await api("GET", "/api/lists?query=B39")).json);
-    const listIds = (allLists.structuredContent as any).data.results.map((l: any) => l.id);
+    const listIds = asBody<Page>(allLists.structuredContent).data.results.map((l) => l.id);
     expect(listIds).toEqual(expect.arrayContaining([alphaId, betaId]));
 
     const filtered = await client.callTool({ name: "list_lists", arguments: { query: "Alpha" } });
     expect(filtered.isError).toBeFalsy();
-    expect((filtered.structuredContent as any).data.results.map((l: any) => l.id)).toEqual([
+    expect(asBody<Page>(filtered.structuredContent).data.results.map((l) => l.id)).toEqual([
       alphaId,
     ]);
 
     const media = await client.callTool({ name: "list_media", arguments: { query: "b39-logo" } });
     expect(media.isError).toBeFalsy();
     expect(media.structuredContent).toEqual((await api("GET", "/api/media?query=b39-logo")).json);
-    const item = (media.structuredContent as any).data.results.find((m: any) => m.id === mediaId);
+    const item = asBody<Page<{ id: number; filename: string; url: string }>>(
+      media.structuredContent,
+    ).data.results.find((m) => m.id === mediaId)!;
     expect(item.filename).toBe("b39-logo.png");
     expect(typeof item.url).toBe("string");
 
@@ -1229,7 +1238,7 @@ describe("B34 MCP endpoint tests", () => {
       arguments: { query: "no-such-b39-file" },
     });
     expect(mediaNone.isError).toBeFalsy();
-    expect((mediaNone.structuredContent as any).data.results).toEqual([]);
+    expect(asBody<Page>(mediaNone.structuredContent).data.results).toEqual([]);
 
     await client.close();
   });
@@ -1259,10 +1268,10 @@ describe("B34 MCP endpoint tests", () => {
       name: "list_lists",
       arguments: { query: "B39 Campaign List" },
     });
-    const foundListId = (found.structuredContent as any).data.results[0].id;
+    const foundListId = asBody<Page>(found.structuredContent).data.results[0]!.id;
     expect(foundListId).toBe(listId);
     const hero = await client.callTool({ name: "list_media", arguments: { query: "b39-hero" } });
-    expect((hero.structuredContent as any).data.results[0].id).toBe(heroId);
+    expect(asBody<Page>(hero.structuredContent).data.results[0]!.id).toBe(heroId);
 
     const created = await client.callTool({
       name: "create_campaign",
@@ -1277,15 +1286,17 @@ describe("B34 MCP endpoint tests", () => {
       },
     });
     expect(created.isError).toBeFalsy();
-    const campaign = (created.structuredContent as any).data;
+    const campaign = asBody<{ data: { id: number; status: string } }>(
+      created.structuredContent,
+    ).data;
     const campId: number = campaign.id;
     expect(campaign.status).toBe("draft");
 
-    const stored = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    const stored = asBody<Linked>((await api("GET", `/api/campaigns/${campId}`)).json.data);
     expect(stored.name).toBe("B39 Created Campaign");
     expect(stored.subject).toBe("B39 Created Subject");
-    expect(stored.lists.map((l: any) => l.id)).toEqual([listId]);
-    expect(stored.media.map((m: any) => m.id)).toEqual([heroId]);
+    expect(stored.lists.map((l) => l.id)).toEqual([listId]);
+    expect(stored.media.map((m) => m.id)).toEqual([heroId]);
 
     // Partial edit: only the body is given, so subject, lists and media are kept.
     const updated = await client.callTool({
@@ -1293,11 +1304,11 @@ describe("B34 MCP endpoint tests", () => {
       arguments: { id: campId, body: "<p>Updated body for {{ subscriber.name }}</p>" },
     });
     expect(updated.isError).toBeFalsy();
-    const afterUpdate = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    const afterUpdate = asBody<Linked>((await api("GET", `/api/campaigns/${campId}`)).json.data);
     expect(afterUpdate.body).toBe("<p>Updated body for {{ subscriber.name }}</p>");
     expect(afterUpdate.subject).toBe("B39 Created Subject");
-    expect(afterUpdate.lists.map((l: any) => l.id)).toEqual([listId]);
-    expect(afterUpdate.media.map((m: any) => m.id)).toEqual([heroId]);
+    expect(afterUpdate.lists.map((l) => l.id)).toEqual([listId]);
+    expect(afterUpdate.media.map((m) => m.id)).toEqual([heroId]);
 
     const preview = await client.callTool({ name: "preview_campaign", arguments: { id: campId } });
     expect(preview.isError).toBeFalsy();
@@ -1394,22 +1405,22 @@ describe("B34 MCP endpoint tests", () => {
       (await api("GET", "/api/sequences?status=draft&page=1&per_page=50")).json,
     );
 
-    const before = (one.structuredContent as any).data;
-    const step2 = before.steps.find((s: any) => s.subject === "B39 step two");
+    const before = asBody<{ data: Sequence }>(one.structuredContent).data;
+    const step2 = before.steps.find((s) => s.subject === "B39 step two")!;
     const edited = await client.callTool({
       name: "update_sequence_step",
       arguments: { id: seqId, step_id: step2.id, subject: "B39 step two, edited" },
     });
     expect(edited.isError).toBeFalsy();
 
-    const after = (await api("GET", `/api/sequences/${seqId}`)).json.data;
+    const after = asBody<Sequence>((await api("GET", `/api/sequences/${seqId}`)).json.data);
     const omitUpdated = (value: Record<string, unknown>) => withoutKeys(value, ["updated_at"]);
     expect(omitUpdated(withoutKeys(after, ["steps"]))).toEqual(
       omitUpdated(withoutKeys(before, ["steps"])),
     );
-    expect(after.steps.map((s: any) => s.id)).toEqual(before.steps.map((s: any) => s.id));
+    expect(after.steps.map((s) => s.id)).toEqual(before.steps.map((s) => s.id));
     for (const [i, step] of before.steps.entries()) {
-      const next = after.steps[i];
+      const next = after.steps[i]!;
       expect(next.subject).toBe(step.id === step2.id ? "B39 step two, edited" : step.subject);
       expect(omitUpdated(withoutKeys(next, ["subject"]))).toEqual(
         omitUpdated(withoutKeys(step, ["subject"])),
@@ -1544,7 +1555,7 @@ describe("B34 MCP endpoint tests", () => {
       },
     });
     expect(created.isError).toBeFalsy();
-    const campId = (created.structuredContent as any).data.id;
+    const campId = asBody<{ data: { id: number } }>(created.structuredContent).data.id;
     expect((await api("GET", `/api/campaigns/${campId}`)).json.data.name).toBe(
       "B39 Cookie Campaign",
     );
@@ -1867,7 +1878,7 @@ describe("B34 MCP endpoint tests", () => {
 
     const own = await writeTemplate(production.origin, "B44 Own Origin");
     expect(own.status).toBe(200);
-    const ownResult = (await own.json()) as { result: { isError?: boolean } };
+    const ownResult = asBody<{ result: { isError?: boolean } }>(await own.json());
     expect(ownResult.result.isError).toBeFalsy();
     expect((await api("GET", `/api/templates/${tplId}`)).json.data.name).toBe("B44 Own Origin");
   });
@@ -1909,11 +1920,9 @@ describe("B34 MCP endpoint tests", () => {
     expect(updated.isError).toBeFalsy();
     await client.close();
 
-    const after = (await api("GET", `/api/campaigns/${campId}`)).json.data;
+    const after = asBody<Linked>((await api("GET", `/api/campaigns/${campId}`)).json.data);
     expect(after.subject).toBe("B44 Partial Updated");
-    const positiveListIds = (after.lists as Array<{ id: number }>)
-      .map((list) => list.id)
-      .filter((id) => id > 0);
+    const positiveListIds = after.lists.map((list) => list.id).filter((id) => id > 0);
     expect(positiveListIds).toEqual([keepId]);
   });
 

@@ -5,8 +5,17 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, startMailbox, admin } from "@/test/worked-example/harness";
 import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 import { EXCLUDED_OPERATIONS, HANDWRITTEN_COVERAGE } from "@/mcp/coverage";
 import { GENERATED } from "@/mcp/generated";
+
+/** A tool as tools/list describes it. */
+type Tool = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, any>;
+  annotations: Record<string, any>;
+};
 
 /** The 20 hand-written tools, which keep their names (D98). */
 const HANDWRITTEN_TOOLS = [
@@ -100,10 +109,9 @@ describe("B78 MCP covers every operation (D98)", () => {
       headers: { authorization: auth, "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
     });
-    return (await response.json()) as {
-      result?: any;
-      error?: { code: number; message: string };
-    };
+    return asBody<{ result?: any; error?: { code: number; message: string } }>(
+      await response.json(),
+    );
   }
 
   async function callTool(name: string, args: Record<string, unknown> = {}, auth = adminAuth) {
@@ -111,26 +119,27 @@ describe("B78 MCP covers every operation (D98)", () => {
     if (reply.error) {
       throw new Error(`${name}: ${reply.error.message}`);
     }
-    return reply.result as {
+    return asBody<{
       isError?: boolean;
       content: Array<{ type: string; text: string }>;
       structuredContent?: any;
-    };
+    }>(reply.result);
   }
 
-  async function listTools(): Promise<Array<any>> {
-    return (await rpc("tools/list")).result.tools;
+  async function listTools(): Promise<Array<Tool>> {
+    return asBody<Array<Tool>>((await rpc("tools/list")).result.tools);
   }
 
   async function apiGet(path: string) {
-    return (await fetch(`${production.origin}${path}`, { headers: adminHeaders })).json();
+    const response = await fetch(`${production.origin}${path}`, { headers: adminHeaders });
+    return asBody<Record<string, any>>(await response.json());
   }
 
   /** The operation ids of the API document, as the public document lists them. */
   async function documentOperationIds(): Promise<Array<string>> {
     const document = await apiGet("/api/openapi.json");
     return Object.values<any>(document.paths).flatMap((item) =>
-      Object.values<any>(item).map((operation) => operation.operationId),
+      Object.values<{ operationId: string }>(item).map((operation) => operation.operationId),
     );
   }
 
@@ -178,7 +187,7 @@ describe("B78 MCP covers every operation (D98)", () => {
       expect(typeof tool.annotations.destructiveHint).toBe("boolean");
       expect(typeof tool.annotations.openWorldHint).toBe("boolean");
     }
-    const byName = new Map<string, any>(tools.map((tool) => [tool.name, tool]));
+    const byName = new Map<string, Tool>(tools.map((tool): [string, Tool] => [tool.name, tool]));
     const hint = (name: string) => byName.get(name)!.annotations;
 
     // Reads and previews.
@@ -213,9 +222,12 @@ describe("B78 MCP covers every operation (D98)", () => {
     expect(hint("update_campaign")).toMatchObject({ destructiveHint: false, readOnlyHint: false });
 
     // Path parameters and bodies are arguments, and the required ones say so.
-    expect(byName.get("get_subscriber").inputSchema.required).toEqual(["id"]);
-    expect(byName.get("create_subscriber").inputSchema.required).toEqual(["body"]);
-    expect(byName.get("upload_media").inputSchema.required).toEqual(["filename", "content_base64"]);
+    expect(byName.get("get_subscriber")!.inputSchema.required).toEqual(["id"]);
+    expect(byName.get("create_subscriber")!.inputSchema.required).toEqual(["body"]);
+    expect(byName.get("upload_media")!.inputSchema.required).toEqual([
+      "filename",
+      "content_base64",
+    ]);
   });
 
   test("a missing required argument is an isError naming it, and nothing is sent", async () => {
@@ -243,7 +255,7 @@ describe("B78 MCP covers every operation (D98)", () => {
     expect(notBase64.isError).toBe(true);
     expect(notBase64.content[0]!.text).toBe("content_base64 is not valid base64.");
 
-    const media = (await apiGet("/api/media")).data.results as Array<{ filename: string }>;
+    const media = asBody<Array<{ filename: string }>>((await apiGet("/api/media")).data.results);
     expect(media.some((item) => item.filename.startsWith("too-big"))).toBe(false);
     expect(media.some((item) => item.filename.startsWith("bad"))).toBe(false);
   });

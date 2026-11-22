@@ -5,6 +5,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, admin } from "@/test/worked-example/harness";
 import type { Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 
 describe("create_template and update_template take is_default (B80)", () => {
   let production: Production;
@@ -33,7 +34,9 @@ describe("create_template and update_template take is_default (B80)", () => {
       headers: { authorization: adminAuth, "content-type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
     });
-    return (await response.json()) as { result?: any; error?: { code: number; message: string } };
+    return asBody<{ result?: any; error?: { code: number; message: string } }>(
+      await response.json(),
+    );
   }
 
   async function callTool(name: string, args: Record<string, unknown> = {}) {
@@ -41,11 +44,11 @@ describe("create_template and update_template take is_default (B80)", () => {
     if (reply.error) {
       throw new Error(`${name}: ${reply.error.message}`);
     }
-    return reply.result as {
+    return asBody<{
       isError?: boolean;
       content: Array<{ type: string; text: string }>;
       structuredContent?: any;
-    };
+    }>(reply.result);
   }
 
   async function api(method: string, path: string, body?: unknown) {
@@ -59,10 +62,9 @@ describe("create_template and update_template take is_default (B80)", () => {
 
   /** The ID of the template that is the default, as the API lists it. */
   async function defaultId(): Promise<Array<number>> {
-    const listed = (await api("GET", "/api/templates")).json.data as Array<{
-      id: number;
-      is_default: boolean;
-    }>;
+    const listed = asBody<Array<{ id: number; is_default: boolean }>>(
+      (await api("GET", "/api/templates")).json.data,
+    );
     return listed.filter((template) => template.is_default).map((template) => template.id);
   }
 
@@ -126,9 +128,10 @@ describe("create_template and update_template take is_default (B80)", () => {
     );
     expect(refused.structuredContent).toBeUndefined();
 
-    const saved = (await api("GET", "/api/templates")).json.data.find(
-      (template: { name: string }) => template.name === "B80 Tx Layout",
+    const savedTemplates = asBody<Array<{ id: number; name: string; is_default: boolean }>>(
+      (await api("GET", "/api/templates")).json.data,
     );
+    const saved = savedTemplates.find((template) => template.name === "B80 Tx Layout")!;
     expect(saved).toBeDefined();
     expect(saved.is_default).toBe(false);
     expect(refused.content[0]!.text).toContain(`Template ${saved.id} was saved`);
