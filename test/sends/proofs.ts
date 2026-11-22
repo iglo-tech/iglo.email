@@ -106,7 +106,9 @@ async function relay(mode: string) {
       }
     });
   });
-  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  await new Promise<void>((ok) => {
+    server.listen(0, "127.0.0.1", ok);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("Missing relay port");
@@ -118,7 +120,9 @@ async function relay(mode: string) {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((ok, fail) => server.close((error) => (error ? fail(error) : ok())));
+      await new Promise<void>((ok, fail) => {
+        server.close((error) => (error ? fail(error) : ok()));
+      });
     },
   };
 }
@@ -174,7 +178,9 @@ async function kill() {
   }
   const old = child;
   child = undefined;
-  const exited = new Promise<void>((ok) => old.once("exit", () => ok()));
+  const exited = new Promise<void>((ok) => {
+    old.once("exit", () => ok());
+  });
   old.kill("SIGKILL");
   await exited;
 }

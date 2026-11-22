@@ -305,7 +305,9 @@ test("a disabled webhook receives nothing for an event that would otherwise fire
   // The enabled webhook gets the event, so the same delete has reached the delivery loop; a settle
   // window after it then covers the disabled webhook's delivery, had one been made.
   await expect.poll(() => posts(live).length, WAIT).toBe(1);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await new Promise((resolve) => {
+    setTimeout(resolve, 2000);
+  });
   expect(posts(off)).toEqual([]);
   expect(await deliveries(page, disabled.id)).toEqual([]);
 });

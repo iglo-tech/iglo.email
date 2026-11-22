@@ -12,7 +12,10 @@ afterEach(async () => {
     await f.close();
   }
 });
-const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
+const tick = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 10);
+  });
 async function until(condition: () => boolean, f: TxFixture) {
   for (const end = performance.now() + 20_000; !condition(); await tick()) {
     if (performance.now() > end) {

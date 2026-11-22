@@ -120,13 +120,13 @@ describe("owned production lifecycle", () => {
     });
     const running = withProduction(executable, controller.signal, async (origin) => {
       ready(origin);
-      await new Promise<void>((_, reject) =>
+      await new Promise<void>((_, reject) => {
         controller.signal.addEventListener(
           "abort",
           () => reject(new Error("synthetic cancellation")),
           { once: true },
-        ),
-      );
+        );
+      });
     });
     const origin = await started;
     expect((await get(origin)).status).toBe(200);

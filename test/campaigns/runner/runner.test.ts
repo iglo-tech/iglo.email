@@ -597,7 +597,9 @@ test("a runner whose heartbeat stalled keeps its campaign from a second pipe in 
   await f.status(c.id, "running");
   // The first runner's timers stall, as in a blocked event loop, so it misses its renewals.
   let resume!: () => void;
-  const stalled = new Promise<void>((done) => (resume = done));
+  const stalled = new Promise<void>((done) => {
+    resume = done;
+  });
   let stall = false;
   const stallable = {
     now: () => f.clock.now(),

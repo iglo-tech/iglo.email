@@ -37,7 +37,9 @@ async function availablePorts(count: number): Promise<Array<number>> {
     await Promise.all(
       sockets.map((socket) =>
         socket.listening
-          ? new Promise<void>((resolve) => socket.close(() => resolve()))
+          ? new Promise<void>((resolve) => {
+              socket.close(() => resolve());
+            })
           : Promise.resolve(),
       ),
     );
@@ -52,7 +54,9 @@ async function stop(child: GroupChild | undefined) {
   if (child.exitCode === null && child.signalCode === null) {
     const timer = setTimeout(() => stopGroup(child, "SIGKILL"), 3000);
     try {
-      await new Promise<void>((resolve) => child.once("close", () => resolve()));
+      await new Promise<void>((resolve) => {
+        child.once("close", () => resolve());
+      });
     } finally {
       clearTimeout(timer);
     }

@@ -451,9 +451,13 @@ async function heldPost(
   const payload = JSON.stringify(body);
   const encoder = new TextEncoder();
   let release!: () => void;
-  const gate = new Promise<void>((resolve) => (release = resolve));
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   let reading!: () => void;
-  const consumed = new Promise<void>((resolve) => (reading = resolve));
+  const consumed = new Promise<void>((resolve) => {
+    reading = resolve;
+  });
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(encoder.encode(payload.slice(0, 10)));

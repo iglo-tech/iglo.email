@@ -11,7 +11,10 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execute = promisify(execFile);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 // Every child this process spawned and has not seen exit, registered before it listens, and every
 // instance started and not yet closed. A test that times out never reaches its own `close`, so
@@ -43,7 +46,9 @@ async function freePort() {
     probe.listen(0, "127.0.0.1", resolve);
   });
   const { port } = probe.address();
-  await new Promise((resolve) => probe.close(resolve));
+  await new Promise((resolve) => {
+    probe.close(resolve);
+  });
   return port;
 }
 
@@ -141,7 +146,8 @@ export async function startInstance(executable, dataDir, directory) {
   const stopped = (current) =>
     new Promise((resolve) => {
       if (current.exitCode !== null || current.signalCode !== null) {
-        return resolve(current.exitCode);
+        resolve(current.exitCode);
+        return;
       }
       const force = setTimeout(() => current.kill("SIGKILL"), 15_000);
       current.once("exit", (code) => {

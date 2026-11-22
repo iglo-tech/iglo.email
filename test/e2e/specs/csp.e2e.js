@@ -257,10 +257,17 @@ test.describe("script that reached the page", () => {
       response.setHeader("Access-Control-Allow-Origin", "*");
       response.end("ok");
     });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
     remote = `http://127.0.0.1:${server.address().port}`;
   });
-  test.afterAll(() => new Promise((resolve) => server.close(resolve)));
+  test.afterAll(
+    () =>
+      new Promise((resolve) => {
+        server.close(resolve);
+      }),
+  );
 
   test("does not run, and cannot send anything out", async ({ page }) => {
     await signIn(page);
@@ -309,7 +316,9 @@ test.describe("script that reached the page", () => {
       form.action = `${target}/form`;
       document.body.append(form);
       form.submit();
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
       // After a task: Playwright's own evaluation is exempt from the page's eval rule.
       let evaluated = "refused";
       try {

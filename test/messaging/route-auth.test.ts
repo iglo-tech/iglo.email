@@ -127,7 +127,9 @@ async function peer(hold = false) {
     socket.once("data", probe);
     socket.once("close", () => clearTimeout(timer));
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
   const addr = server.address();
   if (!addr || typeof addr === "string") {
     throw new Error("missing port");
@@ -141,7 +143,9 @@ async function peer(hold = false) {
       for (const s of sockets) {
         s.destroy();
       }
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
     },
   };
 }
@@ -158,9 +162,14 @@ test("a loopback probe is not counted as an SMTP client", async () => {
   const smtp = await peer();
   try {
     const silent = createConnection({ host: "127.0.0.1", port: smtp.port });
-    await new Promise((resolve) => silent.once("connect", resolve));
+    await new Promise((resolve) => {
+      silent.once("connect", resolve);
+    });
     silent.destroy();
-    const greeted = (socket: Socket) => new Promise((resolve) => socket.once("data", resolve));
+    const greeted = (socket: Socket) =>
+      new Promise((resolve) => {
+        socket.once("data", resolve);
+      });
     const delayed = createConnection({ host: "127.0.0.1", port: smtp.port });
     await greeted(delayed);
     delayed.write("GET / HTTP/1.1\r\n\r\n");

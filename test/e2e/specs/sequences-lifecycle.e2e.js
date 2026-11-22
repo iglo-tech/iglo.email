@@ -118,7 +118,9 @@ async function arrived(address, subject, timeout = 30_000) {
 // Waits past a due time and two scheduler ticks after it, so the scheduler has run twice since.
 async function pastDueAndTwoTicks(dueAt) {
   const until = Date.parse(dueAt) + 2 * TICK_MS;
-  await new Promise((resolve) => setTimeout(resolve, Math.max(0, until - Date.now())));
+  await new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, until - Date.now()));
+  });
 }
 
 test("re-entry: never stays out after a run, after_exit waits for the exit, always replaces", async ({

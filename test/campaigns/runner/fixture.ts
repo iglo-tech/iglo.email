@@ -36,7 +36,9 @@ export async function runnerFixture(
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);
       let resolve!: (outcome: Outcome) => void;
-      const result = new Promise<Outcome>((done) => (resolve = done));
+      const result = new Promise<Outcome>((done) => {
+        resolve = done;
+      });
       let settled = false;
       const settle = (status = control.outcome) => {
         if (settled) {

@@ -12,7 +12,9 @@ const peakKiB = () => Number(/VmHWM:\s+(\d+)/.exec(readFileSync("/proc/self/stat
 const mib = (kib: number) => +(kib / 1024).toFixed(1);
 
 let release = () => {};
-const stalled = new Promise<void>((resolve) => (release = resolve));
+const stalled = new Promise<void>((resolve) => {
+  release = resolve;
+});
 const f = await txFixture({
   beforeDispatch: () => stalled,
   limits: {

@@ -160,7 +160,9 @@ test("a snippet pasted on a trusted site loads the widget, solves and subscribes
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     response.end(`<!doctype html><html><body>${snippet}</body></html>`);
   });
-  await new Promise((resolve) => site.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => {
+    site.listen(0, "127.0.0.1", resolve);
+  });
   const port = site.address().port;
   const trusted = `http://localhost:${port}`;
   const untrusted = `http://127.0.0.1:${port}`;

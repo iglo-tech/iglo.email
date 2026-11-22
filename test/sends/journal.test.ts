@@ -292,15 +292,17 @@ test("an unknown child may be explicitly resent while both ancestors stay unchan
 
 test("actual TCP refusal retries only at injected-clock deadlines and stops after five attempts", async () => {
   const listener = createServer();
-  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    listener.listen(0, "127.0.0.1", resolve);
+  });
   const address = listener.address();
   if (!address || typeof address === "string") {
     throw new Error("missing listener");
   }
   const port = address.port;
-  await new Promise<void>((resolve, reject) =>
-    listener.close((error) => (error ? reject(error) : resolve())),
-  );
+  await new Promise<void>((resolve, reject) => {
+    listener.close((error) => (error ? reject(error) : resolve()));
+  });
   const f = await fixture();
   const emailer = createEmailer({
     clock: f.clock,

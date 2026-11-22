@@ -30,7 +30,12 @@ async function holdingSink(holds: Array<string>) {
   const dataResolvers = new Map<string, () => void>();
   const dataDone = (address: string) => {
     if (!dataWaiters.has(address)) {
-      dataWaiters.set(address, new Promise<void>((resolve) => dataResolvers.set(address, resolve)));
+      dataWaiters.set(
+        address,
+        new Promise<void>((resolve) => {
+          dataResolvers.set(address, resolve);
+        }),
+      );
     }
     return dataWaiters.get(address)!;
   };
@@ -81,7 +86,9 @@ async function holdingSink(holds: Array<string>) {
       }
     });
   });
-  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    listener.listen(0, "127.0.0.1", resolve);
+  });
   const address = listener.address();
   if (!address || typeof address === "string") {
     throw new Error("missing address");
@@ -119,9 +126,9 @@ async function holdingSink(holds: Array<string>) {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((resolve, reject) =>
-        listener.close((e) => (e ? reject(e) : resolve())),
-      );
+      await new Promise<void>((resolve, reject) => {
+        listener.close((e) => (e ? reject(e) : resolve()));
+      });
     },
   };
 }

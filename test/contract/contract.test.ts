@@ -81,7 +81,9 @@ describe("contract runner public boundary", () => {
             : '{"message":"404 unknown endpoint"}\n',
       );
     });
-    await new Promise<void>((ready) => target.listen(0, "127.0.0.1", ready));
+    await new Promise<void>((ready) => {
+      target.listen(0, "127.0.0.1", ready);
+    });
     try {
       const address = target.address();
       if (!address || typeof address === "string") {
@@ -92,7 +94,9 @@ describe("contract runner public boundary", () => {
       expect(result.output).toContain(`FAIL ${id}`);
       expect(seen).toEqual([expectedTarget]);
     } finally {
-      await new Promise<void>((done) => target.close(() => done()));
+      await new Promise<void>((done) => {
+        target.close(() => done());
+      });
     }
   });
 
@@ -234,7 +238,9 @@ describe("contract runner public boundary", () => {
       response.writeHead(400, { "content-type": "application/json" });
       response.end('{"message":"invalid ID"}\n');
     });
-    await new Promise<void>((resolveListen) => target.listen(0, "127.0.0.1", resolveListen));
+    await new Promise<void>((resolveListen) => {
+      target.listen(0, "127.0.0.1", resolveListen);
+    });
     try {
       const address = target.address();
       if (!address || typeof address === "string") {
@@ -256,7 +262,9 @@ describe("contract runner public boundary", () => {
       expect(result.output).toContain("D18");
       expect(seen).toEqual(["/api/lists/%2E"]);
     } finally {
-      await new Promise<void>((done) => target.close(() => done()));
+      await new Promise<void>((done) => {
+        target.close(() => done());
+      });
     }
   });
 });

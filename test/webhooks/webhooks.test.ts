@@ -502,7 +502,9 @@ test("redirects are not followed and count as failures", async () => {
 test("a hung receiver times out on the injected clock and starves no other receiver", async () => {
   const f = await open();
   let release = () => {};
-  const held = new Promise<void>((resolve) => (release = resolve));
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   cleanups.push(() => release());
   const hung = receiver(async () => {
     await held;
@@ -589,7 +591,9 @@ test("a disabled webhook holds its deliveries, resumes when enabled, and fails a
 test("deleting a webhook removes its deliveries and an in-flight attempt settles harmlessly", async () => {
   const f = await open();
   let release = () => {};
-  const held = new Promise<void>((resolve) => (release = resolve));
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   cleanups.push(() => release());
   const r = receiver(async () => {
     await held;
@@ -608,7 +612,9 @@ test("deleting a webhook removes its deliveries and an in-flight attempt settles
 test("a restart resumes queued and in-flight deliveries from durable state", async () => {
   const f = await open();
   let release = () => {};
-  const held = new Promise<void>((resolve) => (release = resolve));
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   cleanups.push(() => release());
   const r = receiver(async () => {
     await held;
@@ -914,7 +920,9 @@ test("a delivery held at DNS goes out cleared when its subscriber is deleted mea
     webhooks: {
       lookup: async () => {
         if (held) {
-          await new Promise<void>((resolve) => (release = resolve));
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
         }
         return ["127.0.0.1"];
       },
@@ -956,7 +964,9 @@ test("a delivery held at DNS sends nothing when its row is gone", async () => {
   const f = await open({
     webhooks: {
       lookup: async () => {
-        await new Promise<void>((resolve) => (release = resolve));
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
         return ["127.0.0.1"];
       },
       blocked: () => false,
@@ -1201,8 +1211,15 @@ test("pinned HTTPS checks the configured name, sends it as SNI and refuses a bad
     request.resume();
     response.end("ok");
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  cleanups.push(() => new Promise((resolve) => server.close(resolve)));
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  cleanups.push(
+    () =>
+      new Promise((resolve) => {
+        server.close(resolve);
+      }),
+  );
   server.unref();
   const { port } = server.address() as AddressInfo;
   let trust: string | undefined = cert;

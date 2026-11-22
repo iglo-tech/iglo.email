@@ -229,7 +229,6 @@ export default defineConfig({
       rules: {
         // Permanent: test runners, measure and reference scripts print their own command output, which AGENTS.md allows.
         "no-console": "off",
-        "no-promise-executor-return": "off", // B134g: test/ still has the rule's findings.
         "quality/no-unknown-returns": "off", // B134g: test/ still has the rule's findings.
         "quality/no-known-value-widening": "off", // B134g: test/ still has the rule's findings.
         "quality/no-conditional-empty-object-spread": "off", // B134g: test/ still has the rule's findings.

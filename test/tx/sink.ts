@@ -84,7 +84,9 @@ export async function startSink(
     });
     socket.on("error", () => {});
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("missing sink address");
@@ -96,7 +98,9 @@ export async function startSink(
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
     },
   };
 }
@@ -109,7 +113,9 @@ export async function startStalledSink() {
     socket.on("error", () => {});
     socket.write("220 stalled.test ESMTP\r\n");
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("missing sink address");
@@ -120,7 +126,9 @@ export async function startStalledSink() {
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
     },
   };
 }

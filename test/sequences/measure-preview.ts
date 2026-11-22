@@ -22,7 +22,9 @@ async function arrived(count: number) {
       throw new Error(`timed out: ${f.sink.messages.length} of ${count} at the sink`);
     }
     f.clock.advance(1000);
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
   }
 }
 /** Every send row, all pages (the list is newest first, 100 to a page). */
@@ -53,7 +55,9 @@ async function delivered(count: number, label: string) {
   const deadline = Date.now() + 60_000;
   for (;;) {
     f.clock.advance(1000);
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
     const total = (await f.json("/api/sends?per_page=1")).body.data.total as number;
     const open = await openSends();
     if (total >= count && open === 0) {
@@ -160,7 +164,9 @@ try {
       // The dispatch settles after the sink has the message, on the same clock: let it settle.
       for (let tick = 0; tick < 5; tick++) {
         f.clock.advance(1000);
-        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
       }
     }
     console.log(

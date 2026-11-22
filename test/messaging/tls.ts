@@ -25,9 +25,9 @@ async function port() {
   if (!address || typeof address === "string") {
     throw new Error("Missing local port");
   }
-  await new Promise<void>((resolvePort, reject) =>
-    server.close((error) => (error ? reject(error) : resolvePort())),
-  );
+  await new Promise<void>((resolvePort, reject) => {
+    server.close((error) => (error ? reject(error) : resolvePort()));
+  });
   return address.port;
 }
 try {
@@ -140,7 +140,9 @@ try {
           incoming.once("close", () => upstream.destroy());
           upstream.once("close", () => incoming.destroy());
         });
-        await new Promise<void>((done) => proxy.listen(0, "127.0.0.2", done));
+        await new Promise<void>((done) => {
+          proxy.listen(0, "127.0.0.2", done);
+        });
         const proxyAddress = proxy.address();
         if (!proxyAddress || typeof proxyAddress === "string") {
           throw new Error("Missing proxy port");
@@ -168,7 +170,9 @@ try {
             assert.equal(code, 0);
           }
         } finally {
-          await new Promise<void>((done) => proxy.close(() => done()));
+          await new Promise<void>((done) => {
+            proxy.close(() => done());
+          });
         }
         const response = await fetch(`${sink.api}/api/v1/messages`, {
           signal: AbortSignal.timeout(5000),

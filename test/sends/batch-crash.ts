@@ -33,9 +33,13 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
   const accepted: Array<string> = [];
   const sockets = new Set<Socket>();
   let connect!: () => void;
-  const connected = new Promise<void>((r) => (connect = r));
+  const connected = new Promise<void>((r) => {
+    connect = r;
+  });
   let announce!: () => void;
-  const held = new Promise<void>((r) => (announce = r));
+  const held = new Promise<void>((r) => {
+    announce = r;
+  });
   let greet = options.greet;
   let holdAfter = options.holdAfter;
   const server = createServer((socket) => {
@@ -87,7 +91,9 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
       }
     });
   });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  await new Promise<void>((r) => {
+    server.listen(0, "127.0.0.1", r);
+  });
   const address = server.address();
   if (!address || typeof address === "string") {
     throw new Error("sink address");
@@ -109,7 +115,9 @@ async function startSink(options: { greet: boolean; holdAfter?: number }): Promi
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((r) => server.close(() => r()));
+      await new Promise<void>((r) => {
+        server.close(() => r());
+      });
     },
   };
 }
@@ -124,9 +132,9 @@ function launch(dir: string, port: number, mode: "seed" | "run") {
     },
     stdio: ["ignore", "ignore", "inherit"],
   });
-  const exited = new Promise<{ code: number | null; signal: string | null }>((r) =>
-    child.once("exit", (code, signal) => r({ code, signal })),
-  );
+  const exited = new Promise<{ code: number | null; signal: string | null }>((r) => {
+    child.once("exit", (code, signal) => r({ code, signal }));
+  });
   return { child, exited };
 }
 async function within<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {

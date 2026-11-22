@@ -45,7 +45,9 @@ async function launch(dataDir: string) {
   return { child, call };
 }
 async function kill(child: ChildProcessWithoutNullStreams) {
-  const done = new Promise<void>((ok) => child.once("exit", () => ok()));
+  const done = new Promise<void>((ok) => {
+    child.once("exit", () => ok());
+  });
   child.kill("SIGKILL");
   await done;
   if (active === child) {

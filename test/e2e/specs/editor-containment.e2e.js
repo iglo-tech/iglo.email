@@ -233,10 +233,17 @@ test.describe("remote images load on request", () => {
       response.setHeader("Content-Type", "image/gif");
       response.end(Buffer.from("R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==", "base64"));
     });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
     remote = `http://127.0.0.1:${server.address().port}`;
   });
-  test.afterAll(() => new Promise((resolve) => server.close(resolve)));
+  test.afterAll(
+    () =>
+      new Promise((resolve) => {
+        server.close(resolve);
+      }),
+  );
 
   test("a body fetches nothing, reports nothing and is stored as written until asked", async ({
     page,

@@ -387,7 +387,9 @@ export async function schedulerFixture(
         throw new Error(`timed out waiting for ${label}`);
       }
       clock.advance(0);
-      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
     }
   }
   /** Advance the clock (or wake the scheduler when 0) and wait for one complete pass. */

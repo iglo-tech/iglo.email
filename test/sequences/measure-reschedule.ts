@@ -75,7 +75,9 @@ async function once(mode: "before" | "after") {
     const loop = (async () => {
       let last = performance.now();
       while (running) {
-        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
         writeTransaction(f.db, () =>
           f.db.run("UPDATE enrollments SET claimed_until = NULL WHERE id = 1"),
         );
@@ -108,7 +110,9 @@ async function once(mode: "before" | "after") {
           break;
         }
         cursor = batch.next;
-        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
       }
     }
     const elapsed = performance.now() - started;

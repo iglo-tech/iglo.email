@@ -224,7 +224,9 @@ export async function faultRelay(
             try {
               await Promise.race([
                 release,
-                new Promise<void>((done) => client.once("close", done)),
+                new Promise<void>((done) => {
+                  client.once("close", done);
+                }),
               ]);
             } finally {
               clearInterval(trickle);
@@ -274,9 +276,9 @@ export async function faultRelay(
       for (const socket of sockets) {
         socket.destroy();
       }
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
     },
   };
 }
