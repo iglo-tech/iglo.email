@@ -99,6 +99,7 @@ export function registerArchiveRoutes(
     return compileCampaign(deps.renderer, source).render(sub, {
       rootUrl: root,
       unsubscribeUrl: `${root}/subscription/${row.uuid}/${sub.uuid}`,
+      brand: deps.settings(),
     });
   };
   const archiveMessage = (row: CampaignRow) =>

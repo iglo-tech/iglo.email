@@ -527,6 +527,14 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         fromEmail: current["app.from_email"][0] ?? "",
         rootUrl: current["app.root_url"],
         siteName: current["app.site_name"],
+        brand: {
+          logoUrl: current["app.logo_url"],
+          siteName: current["app.site_name"],
+          siteUrl: current["app.site_url"],
+          accent: current["appearance.brand.accent"],
+          font: current["appearance.brand.font"],
+          header: current["appearance.brand.header"],
+        },
         messengers: [
           "email",
           ...(current.smtp as Array<{ enabled: boolean; name: string }>)
@@ -650,6 +658,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
           unsubscribeHeader: campaign.unsubscribeHeader,
           disableTracking: campaign.disableTracking,
           individualTracking: campaign.individualTracking,
+          brand: campaign.brand,
         };
       },
       notify: notifier,
