@@ -1,6 +1,7 @@
 // Bounded synthetic compiled HTTP decoder observations; no production data.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 
 const mean = (values: Array<number>) => values.reduce((a, b) => a + b, 0) / values.length;
 
@@ -27,7 +28,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           headers,
           body: `<List><Name>xml-measure-${i}</Name><Tags>one two</Tags><Description>value &amp; &#65;</Description></List>`,
         });
-        const data = (await created.json()) as { data: { id: number } };
+        const data = await readJson<{ data: { id: number } }>(created);
         if (created.status !== 200) {
           throw new Error("valid XML rejected");
         }

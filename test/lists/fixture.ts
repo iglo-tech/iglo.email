@@ -20,6 +20,7 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
+import { asBody, readJson } from "@/test/read-body";
 
 export async function startListFixture() {
   const dataDir = mkdtempSync(join(tmpdir(), "iglo-lists-fixture-"));
@@ -66,12 +67,12 @@ export async function startListFixture() {
       return ok(true);
     });
     router.route("POST", "/fixture/membership", async ({ request }) => {
-      const { list, status, subscriberStatus } = (await request.json()) as {
+      const { list, status, subscriberStatus } = await readJson<{
         list: number;
         status: string;
         subscriberStatus: string;
-      };
-      const id = (
+      }>(request);
+      const id = asBody<{ id: bigint }>(
         db
           .query("INSERT INTO subscribers(uuid,email,name,status) VALUES(?,?,?,?) RETURNING id")
           .get(
@@ -79,7 +80,7 @@ export async function startListFixture() {
             `${crypto.randomUUID()}@example.test`,
             "Synthetic subscriber",
             subscriberStatus,
-          ) as { id: bigint }
+          ),
       ).id;
       db.query("INSERT INTO subscriber_lists(subscriber_id,list_id,status) VALUES(?,?,?)").run(
         id,
@@ -89,8 +90,8 @@ export async function startListFixture() {
       return ok(Number(id));
     });
     router.route("POST", "/fixture/campaign", async ({ request }) => {
-      const { list, name } = (await request.json()) as { list: number; name: string };
-      const id = (
+      const { list, name } = await readJson<{ list: number; name: string }>(request);
+      const id = asBody<{ id: bigint }>(
         db
           .query(
             "INSERT INTO campaigns(uuid,name,subject,from_email,body,messenger) VALUES(?,?,?,?,?,?) RETURNING id",
@@ -102,7 +103,7 @@ export async function startListFixture() {
             "sender@example.test",
             "Body",
             "email",
-          ) as { id: bigint }
+          ),
       ).id;
       db.query("INSERT INTO campaign_lists(campaign_id,list_id,list_name) VALUES(?,?,?)").run(
         id,
@@ -121,11 +122,13 @@ export async function startListFixture() {
             list_name: row.list_name,
           })),
         subscribers: Number(
-          (db.query("SELECT COUNT(*) AS count FROM subscribers").get() as { count: bigint }).count,
+          asBody<{ count: bigint }>(db.query("SELECT COUNT(*) AS count FROM subscribers").get())
+            .count,
         ),
         memberships: Number(
-          (db.query("SELECT COUNT(*) AS count FROM subscriber_lists").get() as { count: bigint })
-            .count,
+          asBody<{ count: bigint }>(
+            db.query("SELECT COUNT(*) AS count FROM subscriber_lists").get(),
+          ).count,
         ),
       }),
     );

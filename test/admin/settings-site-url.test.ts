@@ -5,6 +5,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { admin, api, get, login } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+import { readJson } from "@/test/read-body";
 
 let f: Fixture;
 let cookie = "";
@@ -17,7 +18,7 @@ afterAll(() => f.close());
 async function siteUrl(): Promise<unknown> {
   const res = await get(f, "/api/settings", cookie);
   expect(res.status).toBe(200);
-  return ((await res.json()) as { data: Record<string, unknown> }).data["app.site_url"];
+  return (await readJson<{ data: Record<string, unknown> }>(res)).data["app.site_url"];
 }
 
 test("app.site_url is empty by default and takes an absolute http(s) URL", async () => {
@@ -55,7 +56,7 @@ test("a rejected app.site_url names the site URL, not the root URL, and keeps th
   ]) {
     const refused = await api(f, cookie, "/api/settings/app.site_url", "PUT", value);
     expect(refused.status).toBe(400);
-    const message = ((await refused.json()) as { message: string }).message;
+    const message = (await readJson<{ message: string }>(refused)).message;
     expect(message).toContain("site URL");
     expect(message).not.toContain("root URL");
     expect(message).not.toContain("root-url");
@@ -67,7 +68,7 @@ test("a rejected app.site_url names the fix, keeps the stored value and echoes n
   const kept = "https://brand.example.test/";
   const bare = await api(f, cookie, "/api/settings/app.site_url", "PUT", "brand.example.test");
   expect(bare.status).toBe(400);
-  expect(((await bare.json()) as { message: string }).message).toContain(
+  expect((await readJson<{ message: string }>(bare)).message).toContain(
     "such as https://brand.example.test",
   );
 

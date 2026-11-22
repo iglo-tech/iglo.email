@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
 import type { startUserFixture } from "@/test/users/fixture";
+import { readJson } from "@/test/read-body";
 
 export type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
@@ -46,7 +47,7 @@ export async function userWith(
     method: "POST",
     body: JSON.stringify({ name, permissions }),
   });
-  const { data: roleId } = (await role.json()) as { data: number };
+  const { data: roleId } = await readJson<{ data: number }>(role);
   const created = await api(f, cookie, "/api/users", "POST", {
     username: name,
     email: `${name}@example.test`,

@@ -1,4 +1,6 @@
 // Constrain every SMTP and Mailpit operation to the invocation-owned loopback reference.
+import { readJson } from "@/test/read-body";
+
 export interface ReferenceMailpit {
   api: string;
   host: string;
@@ -55,7 +57,7 @@ export async function assertOwnedMailpit(reference: ReferenceMailpit) {
   if (!response.ok) {
     throw new Error("Cannot verify reference Mailpit identity");
   }
-  const info = (await response.json()) as { Label?: string; MessageRelay?: { Enabled?: boolean } };
+  const info = await readJson<{ Label?: string; MessageRelay?: { Enabled?: boolean } }>(response);
   if (info.Label !== reference.runId || info.MessageRelay?.Enabled !== false) {
     throw new Error("Mailpit is not the labelled, relay-disabled reference for this run");
   }

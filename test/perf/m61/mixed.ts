@@ -26,6 +26,7 @@ import {
   rssOf,
   stats,
 } from "@/test/perf/m61/record";
+import { asBody } from "@/test/read-body";
 
 const executable = join(repository, "dist/iglo.email");
 const base = measurementBase();
@@ -90,7 +91,7 @@ async function startSink() {
   await new Promise<void>((done) => {
     server.listen(0, "127.0.0.1", done);
   });
-  const port = (server.address() as { port: number }).port;
+  const port = asBody<{ port: number }>(server.address()).port;
   return {
     port,
     delivered,
@@ -110,7 +111,7 @@ async function availablePort() {
   await new Promise<void>((done) => {
     server.listen(0, "127.0.0.1", done);
   });
-  const port = (server.address() as { port: number }).port;
+  const port = asBody<{ port: number }>(server.address()).port;
   await new Promise<void>((done) => {
     server.close(() => done());
   });
@@ -349,32 +350,26 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
     const db = reader;
     const queue = () =>
       Object.fromEntries(
-        (
-          db.query("SELECT status, count(*) AS n FROM sends GROUP BY status").all() as Array<{
-            status: string;
-            n: number;
-          }>
+        asBody<Array<{ status: string; n: number }>>(
+          db.query("SELECT status, count(*) AS n FROM sends GROUP BY status").all(),
         ).map((row) => [row.status, row.n]),
       );
     const enrollments = () =>
       Object.fromEntries(
-        (
-          db.query("SELECT status, count(*) AS n FROM enrollments GROUP BY status").all() as Array<{
-            status: string;
-            n: number;
-          }>
+        asBody<Array<{ status: string; n: number }>>(
+          db.query("SELECT status, count(*) AS n FROM enrollments GROUP BY status").all(),
         ).map((row) => [row.status, row.n]),
       );
     // Exits by sequence and reason: `event:signup` is a `reentry: always` replacement,
     // `event:order_paid` an `exit_on` exit.
     const exits = () =>
       Object.fromEntries(
-        (
+        asBody<Array<{ k: string; n: number }>>(
           db
             .query(
               "SELECT q.name || ' ' || e.status || ' ' || coalesce(e.exit_reason, '-') AS k, count(*) AS n FROM enrollments e JOIN sequences q ON q.id = e.sequence_id GROUP BY k ORDER BY k",
             )
-            .all() as Array<{ k: string; n: number }>
+            .all(),
         ).map((row) => [row.k, row.n]),
       );
     const campaignState = async () => {
@@ -610,5 +605,5 @@ async function run(name: "events" | "baseline" | "mixed" | "campaign") {
 
 const scenarios = process.argv.slice(2);
 for (const name of scenarios.length ? scenarios : ["events", "baseline", "mixed"]) {
-  await run(name as "events" | "baseline" | "mixed" | "campaign");
+  await run(asBody<"events" | "baseline" | "mixed" | "campaign">(name));
 }

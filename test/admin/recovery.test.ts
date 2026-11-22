@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { admin, api, get, login, userWith } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+import { readJson } from "@/test/read-body";
 
 const sent = "If the account is active, you will receive a password reset email.";
 const form = { "content-type": "application/x-www-form-urlencoded" };
@@ -30,9 +31,9 @@ const reset = (link: string, password: string, password2 = password, extra = {})
 async function resetLink(address: string, seen = 0): Promise<string> {
   for (let attempt = 0; attempt < 200; attempt++) {
     const response = await fetch(`${f.origin}/fixture/mail`);
-    const { data } = (await response.json()) as {
+    const { data } = await readJson<{
       data: Array<{ to: Array<string>; body: string }>;
-    };
+    }>(response);
     const mails = data.filter((mail) => mail.to[0] === address);
     if (mails.length > seen) {
       const href = /href="http:\/\/fixture\.test(\/admin\/reset\?[^"]+)"/.exec(mails.at(-1)!.body);
@@ -43,8 +44,7 @@ async function resetLink(address: string, seen = 0): Promise<string> {
   throw new Error(`No mail for ${address}`);
 }
 const mailCount = async () =>
-  ((await (await fetch(`${f.origin}/fixture/mail`)).json()) as { data: Array<unknown> }).data
-    .length;
+  (await readJson<{ data: Array<unknown> }>(await fetch(`${f.origin}/fixture/mail`))).data.length;
 
 test("the screens keep upstream's fields and the login page links to them", async () => {
   const login = await (await get(f, "/admin/login")).text();
@@ -136,9 +136,9 @@ test("an identity change retires the link", async () => {
   await userWith(f, cookie, "reset-newer", []);
   await forgot("reset-newer@example.test");
   const second = await resetLink("reset-newer@example.test");
-  const { data } = (await (await get(f, "/api/users", cookie)).json()) as {
+  const { data } = await readJson<{
     data: Array<{ id: number; username: string }>;
-  };
+  }>(await get(f, "/api/users", cookie));
   const user = data.find((item) => item.username === "reset-newer")!;
   const disabled = await api(f, cookie, `/api/users/${user.id}`, "PUT", {
     ...user,
@@ -162,9 +162,9 @@ test("a link dies when its account moves to another mailbox", async () => {
 });
 
 test("the second factor still stands after a reset", async () => {
-  const { data: id } = (await (
-    await fetch(`${f.origin}/fixture/totp-user`, { method: "POST" })
-  ).json()) as { data: number };
+  const { data: id } = await readJson<{ data: number }>(
+    await fetch(`${f.origin}/fixture/totp-user`, { method: "POST" }),
+  );
   expect(id).toBeGreaterThan(0);
   await forgot("fixture-totp@example.test");
   const link = await resetLink("fixture-totp@example.test");

@@ -11,6 +11,7 @@ import { Database } from "bun:sqlite";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PerformanceObserver, monitorEventLoopDelay } from "node:perf_hooks";
+import { asBody } from "@/test/read-body";
 
 const round = (x: number) => Math.round(x * 100) / 100;
 
@@ -105,16 +106,16 @@ function wrapStatement<T extends object>(stmt: T, sql: string): T {
   }
   wrapped.add(stmt);
   for (const m of ["run", "get", "all", "values"] as const) {
-    const original = (stmt as Record<string, unknown>)[m];
+    const original = asBody<Record<string, unknown>>(stmt)[m];
     if (typeof original === "function") {
-      (stmt as Record<string, unknown>)[m] = timed(original as never, sql, stmt);
+      asBody<Record<string, unknown>>(stmt)[m] = timed(asBody<never>(original), sql, stmt);
     }
   }
   return stmt;
 }
 for (const m of ["query", "prepare"] as const) {
-  const original = Database.prototype[m] as (sql: string, ...r: Array<unknown>) => object;
-  (Database.prototype as unknown as Record<string, unknown>)[m] = function (
+  const original = asBody<(sql: string, ...r: Array<unknown>) => object>(Database.prototype[m]);
+  asBody<Record<string, unknown>>(Database.prototype)[m] = function (
     this: Database,
     sql: string,
     ...rest: Array<unknown>
@@ -123,16 +124,24 @@ for (const m of ["query", "prepare"] as const) {
   };
 }
 const originalRun = Database.prototype.run;
-Database.prototype.run = function (this: Database, sql: string, ...rest: Array<never>) {
-  return timed(originalRun as never, sql, this)(sql, ...rest);
-} as never;
+Database.prototype.run = asBody<never>(function (
+  this: Database,
+  sql: string,
+  ...rest: Array<never>
+) {
+  return timed(asBody<never>(originalRun), sql, this)(sql, ...rest);
+});
 const originalExec = Database.prototype.exec;
-Database.prototype.exec = function (this: Database, sql: string, ...rest: Array<never>) {
-  return timed(originalExec as never, sql, this)(sql, ...rest);
-} as never;
+Database.prototype.exec = asBody<never>(function (
+  this: Database,
+  sql: string,
+  ...rest: Array<never>
+) {
+  return timed(asBody<never>(originalExec), sql, this)(sql, ...rest);
+});
 for (const m of ["parse", "stringify"] as const) {
-  const original = JSON[m] as (...a: Array<unknown>) => unknown;
-  (JSON as unknown as Record<string, unknown>)[m] = function (...a: Array<unknown>) {
+  const original = asBody<(...a: Array<unknown>) => unknown>(JSON[m]);
+  asBody<Record<string, unknown>>(JSON)[m] = function (...a: Array<unknown>) {
     if (!recording) {
       return original.apply(JSON, a);
     }
@@ -150,7 +159,7 @@ new PerformanceObserver((list) => {
     return;
   }
   for (const e of list.getEntries()) {
-    const d = (e as unknown as { detail?: { kind?: number } }).detail;
+    const d = asBody<{ detail?: { kind?: number } }>(e).detail;
     gcs.push({
       s: e.startTime,
       e: e.startTime + e.duration,

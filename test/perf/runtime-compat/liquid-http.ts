@@ -1,6 +1,7 @@
 // Test-only loopback HTTP boundary for explicitly supplied or generated data.
 import { render } from "@/test/perf/runtime-compat/liquid-render";
 import type { FixtureInput } from "@/test/perf/runtime-compat/liquid-render";
+import { readJson } from "@/test/read-body";
 
 export function startLiquidFixture() {
   const server = Bun.serve({
@@ -11,7 +12,7 @@ export function startLiquidFixture() {
         return new Response("Not found", { status: 404 });
       }
       try {
-        const input = (await request.json()) as FixtureInput & { action?: string };
+        const input = await readJson<FixtureInput & { action?: string }>(request);
         if (input.action === "prototype-array") {
           const array: Array<string> = [];
           array.length = 1;

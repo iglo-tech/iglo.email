@@ -4,6 +4,7 @@ import { SpikeStore } from "@/test/perf/sqlite-write-load/store";
 import type { Mutation, SyntheticEvent } from "@/test/perf/sqlite-write-load/store";
 import { Workload } from "@/test/perf/sqlite-write-load/workload";
 import type { Mode } from "@/test/perf/sqlite-write-load/workload";
+import { asBody, readJson } from "@/test/read-body";
 
 export function startSpikeFixture(directory: string) {
   const store = new SpikeStore(directory);
@@ -23,16 +24,16 @@ export function startSpikeFixture(directory: string) {
       case "process":
         return store.process(input.count);
       case "events":
-        store.events(input.events as Array<SyntheticEvent>);
+        store.events(asBody<Array<SyntheticEvent>>(input.events));
         return true;
       case "subscriber":
-        store.mutate([input as Mutation], input.rollback);
+        store.mutate([asBody<Mutation>(input)], input.rollback);
         return true;
       case "search":
         return store.search(input.term);
       case "start":
         workload = new Workload(store, clock, {
-          mode: input.mode as Mode,
+          mode: asBody<Mode>(input.mode),
           durationMs: input.durationMs,
           subscribers,
         });
@@ -58,7 +59,7 @@ export function startSpikeFixture(directory: string) {
         return new Response("Not found", { status: 404 });
       }
       try {
-        return Response.json({ result: action((await request.json()) as Record<string, any>) });
+        return Response.json({ result: action(await readJson<Record<string, any>>(request)) });
       } catch (error) {
         return Response.json({ error: String(error) }, { status: 400 });
       }

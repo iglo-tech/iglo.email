@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { admin, api, get, login, userWith } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+import { readJson } from "@/test/read-body";
 
 let f: Fixture;
 let cookie = "";
@@ -86,9 +87,9 @@ test("an unknown admin path is the admin error page, and assets still resolve", 
 });
 
 test("a stored site name reaches the page escaped", async () => {
-  const settings = (await (await get(f, "/api/settings", cookie)).json()) as {
-    data: Record<string, unknown>;
-  };
+  const settings = await readJson<{ data: Record<string, unknown> }>(
+    await get(f, "/api/settings", cookie),
+  );
   const hostile = '</title><script>globalThis.injected=1</script>"';
   const saved = await api(f, cookie, "/api/settings", "PUT", {
     ...settings.data,

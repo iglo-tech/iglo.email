@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 
 test("compiled lists and grants persist across restart", async () => {
   const admin = { user: "m15-restart-admin", password: "m15-restart-password" };
@@ -40,43 +41,43 @@ test("compiled lists and grants persist across restart", async () => {
         });
       }
       const list = (
-        (await (
+        await readJson<{ data: { id: number; uuid: string } }>(
           await req("/api/lists", "POST", {
             name: "persistent list",
             description: "stored",
             tags: ["saved tag"],
-          })
-        ).json()) as { data: { id: number; uuid: string } }
+          }),
+        )
       ).data;
       const userRole = (
-        (await (
-          await req("/api/roles/users", "POST", { name: "restart-user", permissions: [] })
-        ).json()) as { data: { id: number } }
+        await readJson<{ data: { id: number } }>(
+          await req("/api/roles/users", "POST", { name: "restart-user", permissions: [] }),
+        )
       ).data.id;
       const listRole = (
-        (await (
+        await readJson<{ data: { id: number } }>(
           await req("/api/roles/lists", "POST", {
             name: "restart-list",
             lists: [{ id: list.id, permissions: ["list:get"] }],
-          })
-        ).json()) as { data: { id: number } }
+          }),
+        )
       ).data.id;
       const user = (
-        (await (
+        await readJson<{ data: { username: string; password: string } }>(
           await req("/api/users", "POST", {
             username: "m15-restart-api",
             type: "api",
             status: "enabled",
             user_role_id: userRole,
             list_role_id: listRole,
-          })
-        ).json()) as { data: { username: string; password: string } }
+          }),
+        )
       ).data;
       const limited = `Basic ${btoa(`${user.username}:${user.password}`)}`;
       await restart();
       const response = await req(`/api/lists/${list.id}`, "GET", undefined, limited);
       expect(response.status).toBe(200);
-      expect(((await response.json()) as { data: unknown }).data).toMatchObject({
+      expect((await readJson<{ data: unknown }>(response)).data).toMatchObject({
         id: list.id,
         uuid: list.uuid,
         name: "persistent list",

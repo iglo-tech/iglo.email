@@ -4,6 +4,7 @@ import { statfsSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { startSpikeFixture } from "@/test/perf/sqlite-write-load/fixture";
+import { readJson } from "@/test/read-body";
 
 async function request(origin: string, input: unknown) {
   const response = await fetch(`${origin}/synthetic/write-load`, {
@@ -13,7 +14,7 @@ async function request(origin: string, input: unknown) {
   });
   return {
     status: response.status,
-    ...((await response.json()) as { result?: any; error?: string }),
+    ...(await readJson<{ result?: any; error?: string }>(response)),
   };
 }
 

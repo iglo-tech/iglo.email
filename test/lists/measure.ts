@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { startListFixture } from "@/test/lists/fixture";
+import { readJson } from "@/test/read-body";
 const admin = { user: "m15-measure-admin", password: "m15-measure-password" };
 const executable = resolve(process.argv[2] ?? "dist/iglo.email");
 const candidate = process.argv[3] === "candidate";
@@ -24,7 +25,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
           headers,
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
-        const data = (await response.json()) as { data: any };
+        const data = await readJson<{ data: any }>(response);
         if (response.status !== 200) {
           throw new Error(`Unexpected status ${response.status} for ${path}`);
         }
@@ -115,7 +116,7 @@ if (candidate) {
           headers,
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
-        const data = (await response.json()) as { data: any };
+        const data = await readJson<{ data: any }>(response);
         if (response.status !== 200) {
           throw new Error("Fixture request failed");
         }

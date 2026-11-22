@@ -1,6 +1,7 @@
 // Specification for the synthetic HTTP renderer, not a production template API.
 import { expect, test } from "bun:test";
 import { startLiquidFixture } from "@/test/perf/runtime-compat/liquid-http";
+import { readJson } from "@/test/read-body";
 
 async function withRenderer(run: (origin: string) => Promise<void>) {
   const fixture = startLiquidFixture();
@@ -19,7 +20,7 @@ async function render(origin: string, input: unknown) {
   });
   return {
     status: response.status,
-    ...((await response.json()) as { result?: string; error?: string }),
+    ...(await readJson<{ result?: string; error?: string }>(response)),
   };
 }
 

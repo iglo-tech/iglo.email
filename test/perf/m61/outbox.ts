@@ -10,6 +10,7 @@ import { createRealClock } from "@/clock";
 import { seed, startRuntime } from "@/test/scheduler/runtime";
 import { startSink } from "@/test/tx/sink";
 import { measurementBase, memAvailable, record, stats } from "@/test/perf/m61/record";
+import { asBody } from "@/test/read-body";
 
 const backlog = Number(process.argv[2] ?? 10_000);
 const repetitions = Number(process.argv[3] ?? 2);
@@ -18,7 +19,7 @@ const base = measurementBase();
 const clock = createRealClock();
 const sink = await startSink({});
 
-const count = (db: Database, sql: string) => Number((db.query(sql).get() as { n: bigint }).n);
+const count = (db: Database, sql: string) => Number(asBody<{ n: bigint }>(db.query(sql).get()).n);
 async function until(check: () => boolean, label: string, ms = 900_000) {
   const deadline = Date.now() + ms;
   while (!check()) {

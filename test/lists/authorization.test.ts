@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { createConnection } from "node:net";
 import { provisionApiUser } from "@/test/contract/owned";
 import { startListFixture } from "@/test/lists/fixture";
+import { readJson } from "@/test/read-body";
 
 test("live session grants, CSRF and in-flight body authorization", async () => {
   const f = await startListFixture();
@@ -18,7 +19,7 @@ test("live session grants, CSRF and in-flight body authorization", async () => {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       expect(response.status).toBe(200);
-      return ((await response.json()) as { data: any }).data;
+      return (await readJson<{ data: Record<string, any> }>(response)).data;
     }
     const list = await admin("/api/lists", "POST", { name: "session fixture" });
     const userRole = await admin("/api/roles/users", "POST", {
