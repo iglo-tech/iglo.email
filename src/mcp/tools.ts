@@ -44,19 +44,19 @@ const operation = (id: string): Operation => {
  * Where a hand-written tool takes an API field under its own argument name, the field is not added
  * again: `dir` is the `order` of getCampaigns (D98).
  */
-const ARGUMENT_FOR_FIELD: Record<string, Record<string, string>> = {
-  list_campaigns: { order: "dir" },
-};
+const ARGUMENT_FOR_FIELD = new Map<string, Map<string, string>>([
+  ["list_campaigns", new Map([["order", "dir"]])],
+]);
 const argumentFor = (tool: string, field: string): string =>
-  ARGUMENT_FOR_FIELD[tool]?.[field] ?? field;
+  ARGUMENT_FOR_FIELD.get(tool)?.get(field) ?? field;
 
 /**
  * Fields of a covered operation that its hand-written tool deliberately does not take, with the
  * reason. update_campaign: the endpoint keeps a campaign's stored type, so a type given here is not applied.
  */
-const UNTAKEN_FIELDS: Record<string, Record<string, string>> = {
-  update_campaign: { type: "the endpoint keeps the stored type of a campaign" },
-};
+const UNTAKEN_FIELDS = new Map<string, Map<string, string>>([
+  ["update_campaign", new Map([["type", "the endpoint keeps the stored type of a campaign"]])],
+]);
 
 /**
  * Each query parameter and body field of an operation, with the schema the generated tool builds for
@@ -90,7 +90,7 @@ function withOperationFields(tool: ToolDefinition): ToolDefinition {
       continue;
     }
     for (const [field, schema] of Object.entries(operationFields(operation(id)))) {
-      if (UNTAKEN_FIELDS[tool.name]?.[field]) {
+      if (UNTAKEN_FIELDS.get(tool.name)?.get(field)) {
         continue;
       }
       if (argumentFor(tool.name, field) in properties) {
