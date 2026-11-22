@@ -108,7 +108,8 @@ export async function runSubscriberStateRevisions(target: {
         const result = await response.json();
         check(
           response.status === (target.mode === "reference" ? 500 : 409) &&
-            (target.mode === "reference" || result.message === "E-mail already exists."),
+            (target.mode === "reference" ||
+              (result.message === "E-mail already exists." && result.code === "email_conflict")),
           "D41-safe-duplicate-email",
         );
         check(

@@ -148,7 +148,8 @@ export async function runEventsContract(target: {
     subscriber: { external_id: "c_1", email: "race@example.com", attribs: { n: 2 } },
     name: "conflict",
   });
-  check(conflict.status === 409, "conflict");
+  // The stable `code` is a deliberate, additive difference from listmonk's envelope (B131, D129).
+  check(conflict.status === 409 && conflict.body?.code === "email_conflict", "conflict");
   check(stored().length === before, "conflict-no-event");
   const missing = await post({ subscriber: { external_id: "nobody" }, name: "x" });
   check(missing.status === 404, "missing");

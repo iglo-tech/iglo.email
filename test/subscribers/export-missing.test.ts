@@ -23,7 +23,7 @@ describe("export of a missing subscriber", () => {
       headers: f.sessionHeaders,
     });
     expect(response.status).toBe(400);
-    expect(await response.text()).toBe('{"message":"Subscriber not found"}\n');
+    expect(await response.text()).toBe('{"message":"Subscriber not found","code":"not_found"}\n');
   });
 
   test("a present numeric ID still exports", async () => {
@@ -37,6 +37,9 @@ describe("export of a missing subscriber", () => {
       headers: f.sessionHeaders,
     });
     expect(response.status).toBe(404);
-    expect(JSON.parse(await response.text())).toEqual({ message: "Subscriber not found." });
+    expect(JSON.parse(await response.text())).toEqual({
+      message: "Subscriber not found.",
+      code: "not_found",
+    });
   });
 });

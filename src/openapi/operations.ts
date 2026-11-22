@@ -841,9 +841,10 @@ const sending: Array<Operation> = [
     tag: "Events",
     summary: "Record an event, upsert its subscriber, grant list consent, start and end sequences.",
     description:
-      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list, and for an existing subscriber on a list it already has a membership on (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe.",
+      "`subscriber.grant_lists` needs `subscribers:manage` and manage scope on each list, and for an existing subscriber on a list it already has a membership on (D99). Use it instead of PUT /api/subscribers/lists when a call must not undo an unsubscribe. An `email` another subscriber holds: when that subscriber has no `external_id` and this event's `external_id` is free, the event claims it (the holder keeps its lists and history); otherwise the answer is 409 `email_conflict`, naming the holder's `conflict.external_id` where the caller manages it (D129).",
     native: true,
     permissions: ["subscriber_events:create"],
+    errors: [400, 404, 409, 413, 429],
     body: ref("EventInput"),
     data: ref("EventResult"),
   },
@@ -853,9 +854,10 @@ const sending: Array<Operation> = [
     tag: "Events",
     summary: "Record at most 500 events; each has its own result.",
     description:
-      "Each item has its own `subscriber.grant_lists` check (D99): a refused grant fails that item only.",
+      "Each item has its own `subscriber.grant_lists` check (D99): a refused grant fails that item only. Each item's address conflict is its own result too, with the same `code` and `conflict` as a single event (D129).",
     native: true,
     permissions: ["subscriber_events:create"],
+    errors: [400, 413, 429],
     body: object({ events: array(ref("EventInput")) }),
     data: object({ results: array(ref("BatchEventResult")) }),
   },
