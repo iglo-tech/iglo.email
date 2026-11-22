@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
+import { must } from "@/invariant";
 import { lowercaseGlob } from "@/campaigns/search";
 import sql from "@/campaigns/store.sql" with { type: "text" };
 
@@ -275,7 +276,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
           ) as { id: bigint };
         setLists(id, listIds);
         setMedia(id, mediaIds);
-        return get(id)!;
+        return must(get(id), "campaign row");
       });
     },
     /** update-campaign within one write: the caller's merge is rechecked against the row. */
@@ -324,7 +325,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
         );
         setLists(id, listIds);
         setMedia(id, mediaIds);
-        return get(id)!;
+        return must(get(id), "campaign row");
       });
     },
     /** UpdateCampaignStatus: upstream's transitions, checked and written in one transaction. */

@@ -8,6 +8,7 @@ import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
+import { must } from "@/invariant";
 import { createLoop } from "@/loops/loop";
 import { sendingHeld } from "@/settings/hold";
 import type { ListReferences } from "@/lists/references";
@@ -359,7 +360,10 @@ export function createCampaignRunner(deps: RunnerDeps) {
     pipes.set(id, {
       // The scheduled -> running flip bumped the generation (a trigger, so RETURNING cannot
       // show it): the pipe opens at the current one.
-      campaign: { ...campaign, runner_generation: store.state(id)!.runner_generation },
+      campaign: {
+        ...campaign,
+        runner_generation: must(store.state(id), "campaign state").runner_generation,
+      },
       compiled,
       media: store.mediaIds(id),
       images: embedded.images,
@@ -408,7 +412,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
     }
     const at = iso(now);
     const recipients = found.filter((sub) => store.claim(id, sub.id, at));
-    if (!store.advance(id, token, found.at(-1)!.id, at)) {
+    if (!store.advance(id, token, must(found.at(-1), "last recipient").id, at)) {
       // The lease passed to another holder during this step: write nothing more.
       drop(id);
       return null;
@@ -448,7 +452,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
     }
     while (pipes.size) {
       const all = [...pipes.values()];
-      const pipe = all[rotation++ % all.length]!;
+      const pipe = must(all[rotation++ % all.length], "pipe");
       const batch = next(pipe, now, settings);
       if (batch) {
         return [batch];
@@ -596,7 +600,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         store.unclaim(c.id, token, sub.id);
       }
       if (recipients.length) {
-        store.rewind(c.id, token, recipients[0]!.id - 1n, now);
+        store.rewind(c.id, token, must(recipients[0], "first recipient").id - 1n, now);
       }
       store.pause(c.id, token, c.runner_generation, now);
       release(pipe);
@@ -667,7 +671,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         if (i >= recipients.length) {
           return;
         }
-        const sub = recipients[i]!;
+        const sub = must(recipients[i], "recipient");
         let message: Message;
         try {
           message = await render(pipe, sub, settings, attachments);
@@ -685,7 +689,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         // full second). No one-second window then holds more than `rate` of its messages.
         const times = (workerTimes[w] ??= []);
         if (times.length >= rate) {
-          const until = times[times.length - rate]! + 1000;
+          const until = must(times[times.length - rate], "rate window") + 1000;
           while (clock.now().getTime() < until && !stopping.signal.aborted) {
             await sleep(until - clock.now().getTime());
           }
@@ -807,7 +811,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         store.settle(
           c.id,
           token,
-          recipients[i]!.id,
+          must(recipients[i], "recipient").id,
           outcome.status,
           iso(outcome.at),
           outcome.reason ?? null,
@@ -817,7 +821,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         for (const sub of unsent) {
           store.unclaim(c.id, token, sub.id);
         }
-        store.rewind(c.id, token, unsent[0]!.id - 1n, now);
+        store.rewind(c.id, token, must(unsent[0], "first unsent recipient").id - 1n, now);
       }
       if (stop === "errors") {
         paused = store.pause(c.id, token, c.runner_generation, now);
