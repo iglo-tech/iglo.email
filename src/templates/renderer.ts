@@ -141,6 +141,26 @@ export interface RenderTracking {
 const attribute = (value: string) => value.replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
+const pad = (n: number) => String(n).padStart(2, "0");
+function hasContent(templates: Array<Template>): boolean {
+  for (const tpl of templates) {
+    if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText())) {
+      return true;
+    }
+    // A content reference captured into a variable is not itself a layout output.
+    if ("name" in tpl && tpl.name === "capture") {
+      continue;
+    }
+    if (
+      "children" in tpl &&
+      tpl.children &&
+      hasContent(toValueSync<Array<Template>>(tpl.children(false, true)))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
 export function createRenderer(clock: Clock, translation: Translation) {
   // en-US only (D102). Negative zero and values that round to zero render as 0, not -0.
   const numberFormat = new Intl.NumberFormat("en-US", { signDisplay: "negative" });
@@ -360,7 +380,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
       if (!Number.isFinite(date.getTime())) {
         throw new Error("Invalid date");
       }
-      const pad = (n: number) => String(n).padStart(2, "0");
       const values = new Map([
         ["%", "%"],
         ["Y", String(date.getUTCFullYear())],
@@ -426,25 +445,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
   function parse(source: string, html: boolean, limit = SOURCE_LIMIT) {
     checkSource(source, limit);
     return (html ? htmlEngine : plainEngine).parse(source);
-  }
-  function hasContent(templates: Array<Template>): boolean {
-    for (const tpl of templates) {
-      if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText())) {
-        return true;
-      }
-      // A content reference captured into a variable is not itself a layout output.
-      if ("name" in tpl && tpl.name === "capture") {
-        continue;
-      }
-      if (
-        "children" in tpl &&
-        tpl.children &&
-        hasContent(toValueSync<Array<Template>>(tpl.children(false, true)))
-      ) {
-        return true;
-      }
-    }
-    return false;
   }
   function validate(body: string, subject: string, campaign: boolean) {
     let compiled: Array<Template>;

@@ -70,6 +70,12 @@ function filter(
   validate(context, result.type, result.optin, result.status);
   return result;
 }
+const missing = (context: RequestContext): never => {
+  throw new HttpError(
+    400,
+    context.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.list}"),
+  );
+};
 export function registerListRoutes(
   router: Router,
   store: ListStore,
@@ -107,12 +113,6 @@ export function registerListRoutes(
       per_page: minimal ? result.total : perPage,
       page: minimal ? 1 : page,
     });
-  };
-  const missing = (context: RequestContext): never => {
-    throw new HttpError(
-      400,
-      context.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.list}"),
-    );
   };
   const get: Handler = (context) => {
     const id = BigInt(getID(context));

@@ -48,6 +48,19 @@ const keys = [
   "sequences.triggerWhere",
 ];
 
+const action = (handler: string, icon: string, label: string, disabled: string, test: string) => (
+  <button
+    type="button"
+    class="ghost small"
+    aria-label={label}
+    title={label}
+    data-testid={test}
+    x-bind:disabled={disabled}
+    {...{ "x-on:click.prevent": handler }}
+  >
+    <Icon name={icon} />
+  </button>
+);
 function StepCard({
   t,
   canSql,
@@ -57,19 +70,6 @@ function StepCard({
   canSql: boolean;
   canManage: boolean;
 }) {
-  const action = (handler: string, icon: string, label: string, disabled: string, test: string) => (
-    <button
-      type="button"
-      class="ghost small"
-      aria-label={label}
-      title={label}
-      data-testid={test}
-      x-bind:disabled={disabled}
-      {...{ "x-on:click.prevent": handler }}
-    >
-      <Icon name={icon} />
-    </button>
-  );
   return (
     <fieldset class="card step-card" data-testid="step-card">
       <legend x-text="stepTitle(i)"></legend>
@@ -270,25 +270,25 @@ function TestDialog({ t }: { t: Translation }) {
   );
 }
 
+const status = (handler: string, test: string, label: string, when: string) => (
+  <template x-if={when}>
+    <button
+      type="button"
+      class="outline external"
+      data-testid={test}
+      x-bind:disabled="isLoading('sequences')"
+      {...{ "x-on:click.prevent": handler }}
+    >
+      {label}
+    </button>
+  </template>
+);
 function sequenceView(isNew: boolean): AdminView {
   return ({ context, can }) => {
     const t = context.app.i18n;
     const canManage = can("sequences:manage");
     const canSql = can("subscribers:sql_query");
     const heading = t.T("sequences.newSequence");
-    const status = (handler: string, test: string, label: string, when: string) => (
-      <template x-if={when}>
-        <button
-          type="button"
-          class="outline external"
-          data-testid={test}
-          x-bind:disabled="isLoading('sequences')"
-          {...{ "x-on:click.prevent": handler }}
-        >
-          {label}
-        </button>
-      </template>
-    );
     return {
       title: isNew ? heading : t.T("globals.terms.sequences"),
       pageId: "sequences.all",

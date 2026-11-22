@@ -163,6 +163,8 @@ export function startCampaignRunner(deps: RunnerDeps) {
 }
 
 /** Creates the runner without starting it: no orphan is recovered and nothing is claimed yet. */
+const iso = (ms: number) => new Date(ms).toISOString();
+const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
 export function createCampaignRunner(deps: RunnerDeps) {
   const { db, clock, store } = deps;
   const leaseMs = deps.leaseMs ?? defaultLease;
@@ -180,9 +182,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
   let slidingCount = 0;
   let slidingUntil = 0;
 
-  const iso = (ms: number) => new Date(ms).toISOString();
   const log = (safe: SafeMessage, message: string) => deps.logger.attention(message, safe);
-  const label = (c: RunnableCampaign) => `campaign ${c.id} (${c.name})`;
 
   const pendingNotifications: Array<{
     campaign: { id: bigint; name: string; status: string; sent: number; to_send: number };

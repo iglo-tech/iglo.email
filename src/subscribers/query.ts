@@ -31,6 +31,8 @@ export const LARGE_SELECTIONS = 2;
 
 const json = (ids: Array<bigint>) => `[${ids.join(",")}]`;
 
+const column = (connection: Database, sql: string, args: Array<Arg>) =>
+  (connection.query(sql).values(...args) as Array<Array<unknown>>).map((row) => row[0] as bigint);
 export function createSubscriberQuery(options: {
   /** The write connection; bulk actions run here in one transaction. */
   db: Database;
@@ -50,8 +52,6 @@ export function createSubscriberQuery(options: {
   let large = 0;
   const writes = prepareNamedQueries(db, [{ name: "subscribers/query", sql: querySql }]);
   const reads = prepareNamedQueries(readonly, [{ name: "subscribers/export", sql: exportSql }]);
-  const column = (connection: Database, sql: string, args: Array<Arg>) =>
-    (connection.query(sql).values(...args) as Array<Array<unknown>>).map((row) => row[0] as bigint);
   return {
     /** Admit one large selection; returns its idempotent release, or undefined when full. */
     admitLarge(): (() => void) | undefined {

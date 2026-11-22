@@ -36,6 +36,10 @@ export interface ResetDeps {
 // `no-referrer`: that makes the browser send `Origin: null`, which the form's own POST fails.
 const pageHeaders = { "Cache-Control": "no-store", "Referrer-Policy": "same-origin" };
 
+const link = (context: RequestContext) => ({
+  token: (context.url.searchParams.get("token") ?? "").trim(),
+  email: (context.url.searchParams.get("email") ?? "").trim().toLowerCase(),
+});
 export function createPasswordReset(deps: ResetDeps) {
   const { auth, renderer, send, settings, logger } = deps;
   const form = (context: RequestContext, title: string, children: Child): Response => {
@@ -149,10 +153,6 @@ export function createPasswordReset(deps: ResetDeps) {
     }, 0);
     return message(context, 200, context.app.i18n.T("users.resetLinkSent"));
   };
-  const link = (context: RequestContext) => ({
-    token: (context.url.searchParams.get("token") ?? "").trim(),
-    email: (context.url.searchParams.get("email") ?? "").trim().toLowerCase(),
-  });
   const resetForm = (context: RequestContext, token: string, email: string, error = "") => {
     const t = context.app.i18n;
     const query = new URLSearchParams({ token, email });

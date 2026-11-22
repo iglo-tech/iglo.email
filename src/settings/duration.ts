@@ -73,8 +73,8 @@ interface CronDuration {
 }
 // Go 1.27.2 time.ParseDuration, in nanoseconds. Keep the signed 64-bit
 // boundary and classify errors before handing milliseconds to the cron helper.
+const quote = (value: string) => JSON.stringify(value);
 export function cronDuration(input: string): CronDuration {
-  const quote = (value: string) => JSON.stringify(value);
   const fail = (kind: string) => ({ nanos: 0n, error: `time: ${kind} ${quote(input)}` });
   let rest = input;
   const negative = rest.startsWith("-");

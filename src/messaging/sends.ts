@@ -150,6 +150,17 @@ export type BounceTarget = Pick<
   PublicRow,
   "id" | "uuid" | "source" | "kind" | "subscriber_id" | "list_id" | "to_email"
 >;
+const noop = () => {};
+const summary = (row: PublicRow): SendSummary => ({
+  id: jsonID(row.id)!,
+  uuid: row.uuid,
+  status: row.status,
+  smtp_message_id: row.smtp_message_id,
+});
+// Idempotency rows store `tx:<sha256(key)>:<fingerprint>:<index>` in the existing
+// unique column, so one request with several recipients keeps one key and the
+// request fingerprint without a schema change. The raw key is never stored.
+const keyPrefix = (key: string) => `tx:${createHash("sha256").update(key).digest("hex")}:`;
 export function createSends(options: {
   db: Database;
   clock: Clock;
@@ -174,7 +185,7 @@ export function createSends(options: {
     }
     options.ended?.({ ...row, status, error });
   };
-  let wake = () => {};
+  let wake = noop;
   const get = (id: bigint) => db.query<Row, [bigint]>("SELECT * FROM sends WHERE id = ?").get(id);
   const getPublic = (id: bigint) =>
     db.query<PublicRow, [bigint]>(`SELECT ${publicColumns} FROM sends WHERE id = ?`).get(id);
@@ -534,16 +545,6 @@ export function createSends(options: {
     wake();
     return result;
   }
-  const summary = (row: PublicRow): SendSummary => ({
-    id: jsonID(row.id)!,
-    uuid: row.uuid,
-    status: row.status,
-    smtp_message_id: row.smtp_message_id,
-  });
-  // Idempotency rows store `tx:<sha256(key)>:<fingerprint>:<index>` in the existing
-  // unique column, so one request with several recipients keeps one key and the
-  // request fingerprint without a schema change. The raw key is never stored.
-  const keyPrefix = (key: string) => `tx:${createHash("sha256").update(key).digest("hex")}:`;
   function replay(prefix: string, fingerprint: string): Array<PublicRow> | null {
     const rows = db
       .query<PublicRow & { idempotency_key: string }, [string, string]>(
@@ -1097,7 +1098,7 @@ export function createSends(options: {
       wake = fn;
     },
     close() {
-      wake = () => {};
+      wake = noop;
     },
   };
 }

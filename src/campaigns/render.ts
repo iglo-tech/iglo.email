@@ -61,19 +61,16 @@ export function nameChunk(name: string, last: boolean): string {
 const mode = (type: ContentType) =>
   type === "markdown" ? "markdown" : type === "plain" ? "plain" : "html";
 
+const fields = <T>(field: "body" | "subject" | "from" | "altbody" | "header", run: () => T): T => {
+  try {
+    return run();
+  } catch {
+    throw new CampaignSourceError(field);
+  }
+};
 /** One compiled campaign; render it for many subscribers. Throws on invalid source. */
 export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) {
   const layout = c.templateBody && c.content_type !== "visual" ? c.templateBody : undefined;
-  const fields = <T>(
-    field: "body" | "subject" | "from" | "altbody" | "header",
-    run: () => T,
-  ): T => {
-    try {
-      return run();
-    } catch {
-      throw new CampaignSourceError(field);
-    }
-  };
   fields("subject", () => renderer.compile({ body: "", subject: c.subject, mode: "plain" }));
   const main = fields("body", () => {
     const request: Omit<RenderRequest, "data"> = {
@@ -144,8 +141,8 @@ export function compileCampaign(renderer: TemplateRenderer, c: MessageCampaign) 
   };
 }
 /** compileArchiveCampaigns: `archive_meta` is the sample subscriber. */
+const text = (value: unknown) => (typeof value === "string" ? value : "");
 export function archiveSubscriber(meta: Record<string, unknown>): CampaignSubscriber {
-  const text = (value: unknown) => (typeof value === "string" ? value : "");
   return {
     uuid: text(meta.uuid),
     email: text(meta.email),

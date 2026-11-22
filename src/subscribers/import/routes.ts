@@ -33,30 +33,30 @@ interface Params {
   overwrite_subscription_status?: unknown;
 }
 /** Upstream's SessionOpt: wrong types are errors and absent or null fields are empty. */
+const text = (item: unknown) => {
+  if (item === undefined || item === null) {
+    return "";
+  }
+  if (typeof item !== "string") {
+    throw new Error("expected a string");
+  }
+  return item;
+};
+const flag = (item: unknown) => {
+  if (item === undefined || item === null) {
+    return false;
+  }
+  if (typeof item !== "boolean") {
+    throw new Error("expected a boolean");
+  }
+  return item;
+};
 function parseParams(raw: string) {
   const value = JSON.parse(raw) as unknown;
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("params must be an object");
   }
   const params = value as Params;
-  const text = (item: unknown) => {
-    if (item === undefined || item === null) {
-      return "";
-    }
-    if (typeof item !== "string") {
-      throw new Error("expected a string");
-    }
-    return item;
-  };
-  const flag = (item: unknown) => {
-    if (item === undefined || item === null) {
-      return false;
-    }
-    if (typeof item !== "boolean") {
-      throw new Error("expected a boolean");
-    }
-    return item;
-  };
   const lists = params.lists ?? [];
   if (!Array.isArray(lists) || !lists.every((id) => Number.isSafeInteger(id))) {
     throw new Error("expected a list of integers");
@@ -72,36 +72,36 @@ function parseParams(raw: string) {
   };
 }
 
+const already = (c: RequestContext) => new HttpError(400, c.app.i18n.T("import.alreadyRunning"));
+const receive = async (c: RequestContext, slot: UploadSlot): Promise<ReceivedForm> => {
+  const boundary = multipartBoundary(c.request.headers.get("content-type"));
+  if (!boundary || !c.request.body) {
+    return {};
+  }
+  const file = await open(slot.path, "wx", 0o600);
+  try {
+    return await receiveForm(c.request.body, boundary, file, MAX_BODY_BYTES, slot.signal);
+  } catch (error) {
+    if (error instanceof UploadTooLarge) {
+      throw new HttpError(413, "The file is too large.");
+    }
+    if (slot.signal.aborted) {
+      throw new HttpError(503, "The server is shutting down.");
+    }
+    // A broken or abandoned request: Go's FormValue finds no parameters in it.
+    if (error instanceof MalformedForm) {
+      return {};
+    }
+    throw error;
+  } finally {
+    await file.close();
+  }
+};
 export function registerImportRoutes(
   router: Router,
   deps: { importer: Importer; roles: Roles; auth: Authentication },
 ) {
   const { importer, roles, auth } = deps;
-  const already = (c: RequestContext) => new HttpError(400, c.app.i18n.T("import.alreadyRunning"));
-  const receive = async (c: RequestContext, slot: UploadSlot): Promise<ReceivedForm> => {
-    const boundary = multipartBoundary(c.request.headers.get("content-type"));
-    if (!boundary || !c.request.body) {
-      return {};
-    }
-    const file = await open(slot.path, "wx", 0o600);
-    try {
-      return await receiveForm(c.request.body, boundary, file, MAX_BODY_BYTES, slot.signal);
-    } catch (error) {
-      if (error instanceof UploadTooLarge) {
-        throw new HttpError(413, "The file is too large.");
-      }
-      if (slot.signal.aborted) {
-        throw new HttpError(503, "The server is shutting down.");
-      }
-      // A broken or abandoned request: Go's FormValue finds no parameters in it.
-      if (error instanceof MalformedForm) {
-        return {};
-      }
-      throw error;
-    } finally {
-      await file.close();
-    }
-  };
   const options = (c: RequestContext, form: ReceivedForm): ImportOptions => {
     const { i18n } = c.app;
     // A long upload outlives the check that admitted it.

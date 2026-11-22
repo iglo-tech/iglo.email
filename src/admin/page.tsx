@@ -104,6 +104,20 @@ function adminMessage(status: number, title: string, description: string, home: 
   return new Response(`<!DOCTYPE html>${body}`, { status, headers: htmlHeaders });
 }
 
+/** renderAdminError. */
+const failure = (context: RequestContext, error: unknown): Response => {
+  const known = error instanceof HttpError;
+  if (!known) {
+    context.app.logger.error(error);
+  }
+  const status = known ? error.status : 500;
+  if (context.request.method === "HEAD") {
+    return new Response(null, { status });
+  }
+  const message = (known && error.message) || STATUS_CODES[status] || "";
+  const home = context.app.i18n.T("globals.terms.dashboard");
+  return adminMessage(status, "Error", message, home);
+};
 export function createAdminPages(deps: {
   auth: Authentication;
   roles: Roles;
@@ -117,20 +131,6 @@ export function createAdminPages(deps: {
           identity.role.permissions.some((held) => held.startsWith(permission.slice(0, -1)))
         : roles.can(identity.role, permission),
     );
-  /** renderAdminError. */
-  const failure = (context: RequestContext, error: unknown): Response => {
-    const known = error instanceof HttpError;
-    if (!known) {
-      context.app.logger.error(error);
-    }
-    const status = known ? error.status : 500;
-    if (context.request.method === "HEAD") {
-      return new Response(null, { status });
-    }
-    const message = (known && error.message) || STATUS_CODES[status] || "";
-    const home = context.app.i18n.T("globals.terms.dashboard");
-    return adminMessage(status, "Error", message, home);
-  };
   /**
    * adminPage: the session check, then the optional permission check (any one of them), then the
    * view. A page request without a session goes to login and comes back afterwards.

@@ -164,11 +164,11 @@ async function verify(source: string): Promise<void> {
  */
 const runtime = { bun: "1.4.5", webkit: "d6375c72affe0f70222cdcb45012b10f0bf3a9d5" };
 
+const license = (name: string) => Bun.file(join(root, "assets/licenses", name)).text();
 async function notices(): Promise<string> {
   if (Bun.version !== runtime.bun) {
     throw new Error(`Update the WebKit revision in notices() for Bun ${Bun.version}`);
   }
-  const license = (name: string) => Bun.file(join(root, "assets/licenses", name)).text();
   const sections = [
     `iglo.email ${version} third-party notices
 

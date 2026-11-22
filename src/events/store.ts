@@ -139,6 +139,17 @@ class TransactionLost extends Error {
   }
 }
 
+const result = (
+  id: bigint,
+  subscriberId: bigint,
+  outcome: { enrollments: Enrollments; grants: Array<Grant> },
+): EventResult => ({
+  status: 200,
+  event_id: numberID(id),
+  subscriber_id: numberID(subscriberId),
+  enrollments: outcome.enrollments,
+  grants: outcome.grants,
+});
 export function createEventStore(
   db: Database,
   subscribers: SubscriberStore,
@@ -151,17 +162,6 @@ export function createEventStore(
   const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
   const aggregates = createEventAggregates(db);
   const exitThenTrigger = options.exitThenTrigger ?? noSequences;
-  const result = (
-    id: bigint,
-    subscriberId: bigint,
-    outcome: { enrollments: Enrollments; grants: Array<Grant> },
-  ): EventResult => ({
-    status: 200,
-    event_id: numberID(id),
-    subscriber_id: numberID(subscriberId),
-    enrollments: outcome.enrollments,
-    grants: outcome.grants,
-  });
   /**
    * One grant (D99) after the subscriber upsert. A blocklisted subscriber gets nothing; a
    * missing membership is inserted confirmed, and any existing one is left as it is.

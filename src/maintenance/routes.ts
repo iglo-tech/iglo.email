@@ -37,6 +37,15 @@ function rfc3339(text: string | null): string | null {
 }
 const seconds = (stored: string) => `${stored.slice(0, 19)}Z`;
 
+const invalidData = (c: RequestContext) =>
+  new HttpError(400, c.app.i18n.T("globals.messages.invalidData"));
+const parsed = (c: RequestContext, name: string) => {
+  const value = rfc3339(c.url.searchParams.get(name));
+  if (value === null) {
+    throw invalidData(c);
+  }
+  return value;
+};
 export function registerMaintenanceRoutes(
   router: Router,
   deps: {
@@ -51,15 +60,6 @@ export function registerMaintenanceRoutes(
   },
 ) {
   const { subscribers, analytics, logs, auth, clock, keepOpen, individualTracking } = deps;
-  const invalidData = (c: RequestContext) =>
-    new HttpError(400, c.app.i18n.T("globals.messages.invalidData"));
-  const parsed = (c: RequestContext, name: string) => {
-    const value = rfc3339(c.url.searchParams.get(name));
-    if (value === null) {
-      throw invalidData(c);
-    }
-    return value;
-  };
   let running: Promise<unknown> | undefined;
   let closed = false;
   let exporting = 0;

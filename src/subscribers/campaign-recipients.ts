@@ -19,13 +19,13 @@ export interface CampaignRecipient {
   external_id: string | null;
 }
 
+const lists = (audience: CampaignAudience) =>
+  JSON.stringify(audience.lists.map((l) => ({ id: l.id.toString(), optin: l.optin }))).replaceAll(
+    /"id":"(\d+)"/g,
+    '"id":$1',
+  );
 export function createCampaignRecipients(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "subscribers/campaign-recipients", sql }]);
-  const lists = (audience: CampaignAudience) =>
-    JSON.stringify(audience.lists.map((l) => ({ id: l.id.toString(), optin: l.optin }))).replaceAll(
-      /"id":"(\d+)"/g,
-      '"id":$1',
-    );
   return {
     /** to_send and max_subscriber_id: distinct qualifying subscribers and the highest ID. */
     measure(audience: CampaignAudience): { count: bigint; max: bigint } {

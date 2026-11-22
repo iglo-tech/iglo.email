@@ -8,6 +8,57 @@ interface DecodedWord {
   content: string;
   error: boolean;
 }
+const visible = (c: string) => !!c && ((c >= "!" && c <= "~") || c.codePointAt(0)! >= 128);
+const atext = (c: string) => visible(c) && !String.raw`()<>[]:;@\,"`.includes(c);
+// Decode syntax before charset conversion, as mime.WordDecoder does. Invalid
+// encoded words remain literal; only an unsupported charset is fatal.
+const decodeWord = (word: string): DecodedWord => {
+  const match = /^=\?([^?]+)\?([bBqQ])\?([^?]*)\?=$/.exec(word);
+  if (!match) {
+    return { encoded: false, content: word, error: false };
+  }
+  const text = match[3]!;
+  let bytes: Uint8Array;
+  if (match[2]!.toLowerCase() === "b") {
+    const encoded = text.replaceAll(/[\r\n]/g, "");
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+      return { encoded: false, content: word, error: false };
+    }
+    bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
+  } else {
+    const values: Array<number> = [];
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i]!;
+      if (c === "=") {
+        const hex = text.slice(i + 1, i + 3);
+        if (!/^[0-9a-fA-F]{2}$/.test(hex)) {
+          return { encoded: false, content: word, error: false };
+        }
+        values.push(Number.parseInt(hex, 16));
+        i += 2;
+      } else if (c === "_") {
+        values.push(32);
+      } else if ((c >= " " && c <= "~") || c === "\r" || c === "\n" || c === "\t") {
+        values.push(c.charCodeAt(0));
+      } else {
+        return { encoded: false, content: word, error: false };
+      }
+    }
+    bytes = Uint8Array.from(values);
+  }
+  // EqualFold's long-s equivalence matters for the ASCII built-in charset names.
+  const charset = match[1]!.toLowerCase().replaceAll("ſ", "s");
+  return {
+    encoded: true,
+    content:
+      charset === "iso-8859-1"
+        ? Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")
+        : charset === "us-ascii"
+          ? Array.from(bytes, (byte) => String.fromCharCode(byte < 128 ? byte : 0xff_fd)).join("")
+          : new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes),
+    error: !["utf-8", "iso-8859-1", "us-ascii"].includes(charset),
+  };
+};
 export function parseAddress(input: string): string | undefined {
   let pos = 0;
   let mailbox: string | undefined;
@@ -15,57 +66,6 @@ export function parseAddress(input: string): string | undefined {
     while (input[pos] === " " || input[pos] === "\t") {
       pos++;
     }
-  };
-  const visible = (c: string) => !!c && ((c >= "!" && c <= "~") || c.codePointAt(0)! >= 128);
-  const atext = (c: string) => visible(c) && !String.raw`()<>[]:;@\,"`.includes(c);
-  // Decode syntax before charset conversion, as mime.WordDecoder does. Invalid
-  // encoded words remain literal; only an unsupported charset is fatal.
-  const decodeWord = (word: string): DecodedWord => {
-    const match = /^=\?([^?]+)\?([bBqQ])\?([^?]*)\?=$/.exec(word);
-    if (!match) {
-      return { encoded: false, content: word, error: false };
-    }
-    const text = match[3]!;
-    let bytes: Uint8Array;
-    if (match[2]!.toLowerCase() === "b") {
-      const encoded = text.replaceAll(/[\r\n]/g, "");
-      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
-        return { encoded: false, content: word, error: false };
-      }
-      bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
-    } else {
-      const values: Array<number> = [];
-      for (let i = 0; i < text.length; i++) {
-        const c = text[i]!;
-        if (c === "=") {
-          const hex = text.slice(i + 1, i + 3);
-          if (!/^[0-9a-fA-F]{2}$/.test(hex)) {
-            return { encoded: false, content: word, error: false };
-          }
-          values.push(Number.parseInt(hex, 16));
-          i += 2;
-        } else if (c === "_") {
-          values.push(32);
-        } else if ((c >= " " && c <= "~") || c === "\r" || c === "\n" || c === "\t") {
-          values.push(c.charCodeAt(0));
-        } else {
-          return { encoded: false, content: word, error: false };
-        }
-      }
-      bytes = Uint8Array.from(values);
-    }
-    // EqualFold's long-s equivalence matters for the ASCII built-in charset names.
-    const charset = match[1]!.toLowerCase().replaceAll("ſ", "s");
-    return {
-      encoded: true,
-      content:
-        charset === "iso-8859-1"
-          ? Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")
-          : charset === "us-ascii"
-            ? Array.from(bytes, (byte) => String.fromCharCode(byte < 128 ? byte : 0xff_fd)).join("")
-            : new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes),
-      error: !["utf-8", "iso-8859-1", "us-ascii"].includes(charset),
-    };
   };
   const quoted = (allowEmpty = false) => {
     if (input[pos] !== '"') {

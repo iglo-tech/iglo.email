@@ -34,6 +34,7 @@ export interface SessionData {
   expires_at: number;
 }
 
+const noop = () => {};
 export function createUserStore(db: Database, clock: Clock, roles: Roles) {
   const queries = prepareNamedQueries(db, [{ name: "users", sql }]);
   const count = () => (queries.get("count-users").get() as { count: bigint }).count;
@@ -51,7 +52,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         count: bigint;
       }
     ).count;
-  let onMutation: (id: bigint) => void = () => {};
+  let onMutation: (id: bigint) => void = noop;
   function insert(fields: UserFields): UserRow {
     const time = now();
     return queries

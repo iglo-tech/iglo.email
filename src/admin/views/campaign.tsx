@@ -266,16 +266,16 @@ function CampaignForm({ t, isNew, canSend, site }: FormProps) {
     </div>
   );
 }
+const code = (language: string, when: string) => (
+  <template x-if={`ready && contentReady && ${when}`} data-editor="">
+    <code-editor
+      lang={language}
+      x-init="setValue($el, form.body)"
+      x-on:input="form.body = $el.value"
+    ></code-editor>
+  </template>
+);
 function CampaignContent({ t }: { t: Translation }) {
-  const code = (language: string, when: string) => (
-    <template x-if={`ready && contentReady && ${when}`} data-editor="">
-      <code-editor
-        lang={language}
-        x-init="setValue($el, form.body)"
-        x-on:input="form.body = $el.value"
-      ></code-editor>
-    </template>
-  );
   const editor = {
     "x-on:editor-ready": "editorReady = true",
     "x-on:campaign-save.window": "onSave",
@@ -576,18 +576,18 @@ function ContentSettings({ t }: { t: Translation }) {
     </ot-dropdown>
   );
 }
+const tab = (id: string, icon: string, label: string, mark: unknown = null) => (
+  <button type="button" role="tab" id={id}>
+    <Icon name={icon} /> {label} {mark}
+  </button>
+);
+const done = (when: string) => (
+  <span x-cloak="" x-show={when}>
+    <Icon name="check-circle" />
+  </span>
+);
 function Tabs(props: FormProps & { canManage: boolean }) {
   const { t, canManage } = props;
-  const tab = (id: string, icon: string, label: string, mark: unknown = null) => (
-    <button type="button" role="tab" id={id}>
-      <Icon name={icon} /> {label} {mark}
-    </button>
-  );
-  const done = (when: string) => (
-    <span x-cloak="" x-show={when}>
-      <Icon name="check-circle" />
-    </span>
-  );
   return (
     <ot-tabs data-anchor="tab">
       <div role="tablist" data-variant="primary">
@@ -630,12 +630,12 @@ function Tabs(props: FormProps & { canManage: boolean }) {
     </ot-tabs>
   );
 }
+const off = (icon: string, label: string) => (
+  <a role="tab" aria-disabled="true">
+    <Icon name={icon} /> {label}
+  </a>
+);
 function NewTabs({ t }: { t: Translation }) {
-  const off = (icon: string, label: string) => (
-    <a role="tab" aria-disabled="true">
-      <Icon name={icon} /> {label}
-    </a>
-  );
   return (
     <div role="tablist" data-variant="primary">
       <a role="tab" aria-selected="true">
@@ -771,6 +771,7 @@ function Header(props: { t: Translation; isNew: boolean; canManage: boolean }) {
   );
 }
 
+const asset = (name: string) => `/admin/static/${name}?v=${assetVersion}`;
 function view(isNew: boolean): AdminView {
   return (request) => {
     const { context, can, site } = request;
@@ -789,7 +790,6 @@ function view(isNew: boolean): AdminView {
       "x-on:keydown.ctrl.s.window.prevent": "onSaveShortcut",
       "x-on:keydown.meta.s.window.prevent": "onSaveShortcut",
     };
-    const asset = (name: string) => `/admin/static/${name}?v=${assetVersion}`;
     const props = { t, isNew, canSend, site };
     // Only this screen mounts authored HTML, and only the button above asks for this (D71).
     // A link from another site, a mail or a pasted address would otherwise load a campaign's

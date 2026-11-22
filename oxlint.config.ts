@@ -204,6 +204,7 @@ export default defineConfig({
         "quality/no-unknown-returns": "off", // B134c: test/ still has the rule's findings.
         "quality/no-known-value-widening": "off", // B134c: test/ still has the rule's findings.
         "quality/no-conditional-empty-object-spread": "off", // B134c: test/ still has the rule's findings.
+        "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
       },
     },
     // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
@@ -238,7 +239,6 @@ export default defineConfig({
     "typescript/no-unsafe-return": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
     "quality/no-unsafe-dictionary-type": "off", // B134d
-    "unicorn/consistent-function-scoping": "off", // B134d
 
     // B134c: findings remain only in test/.
     "typescript/no-require-imports": "off", // B134c

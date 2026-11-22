@@ -18,22 +18,22 @@ function atom(value: string): boolean {
   return true;
 }
 
+const parse = (part: string) =>
+  part
+    ? part.split(":").flatMap((x) => {
+        if (!x.includes(".")) {
+          return [Number.parseInt(x, 16)];
+        }
+        const bytes = x.split(".").map(Number);
+        return [bytes[0]! * 256 + bytes[1]!, bytes[2]! * 256 + bytes[3]!];
+      })
+    : [];
 // Go net.ParseIP(...).To4() also accepts IPv4-mapped IPv6 literals.
 function mappedIPv4(value: string): boolean {
   if (isIP(value) !== 6) {
     return false;
   }
   const [left, right] = value.split("::");
-  const parse = (part: string) =>
-    part
-      ? part.split(":").flatMap((x) => {
-          if (!x.includes(".")) {
-            return [Number.parseInt(x, 16)];
-          }
-          const bytes = x.split(".").map(Number);
-          return [bytes[0]! * 256 + bytes[1]!, bytes[2]! * 256 + bytes[3]!];
-        })
-      : [];
   const a = parse(left ?? ""),
     b = parse(right ?? "");
   const words = right === undefined ? a : [...a, ...Array(8 - a.length - b.length).fill(0), ...b];

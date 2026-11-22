@@ -113,6 +113,19 @@ async function readJSON(request: Request): Promise<Input> {
 function invalid(context: RequestContext, name: string): never {
   throw new HttpError(400, context.app.i18n.Ts("globals.messages.invalidFields", "name", name));
 }
+const atom = (part: string) =>
+  !part.startsWith(".") &&
+  !part.endsWith(".") &&
+  !part.includes("..") &&
+  !Array.from(part).some((character) => {
+    const code = character.codePointAt(0)!;
+    return (
+      code <= 32 ||
+      code === 127 ||
+      /\s/.test(character) ||
+      String.raw`<>(),:;[]\"`.includes(character)
+    );
+  });
 function validEmail(value: string): boolean {
   const separator = value.indexOf("@");
   if (separator <= 0 || separator >= value.length - 1 || value.indexOf("@", separator + 1) !== -1) {
@@ -120,19 +133,6 @@ function validEmail(value: string): boolean {
   }
   const local = value.slice(0, separator),
     domain = value.slice(separator + 1);
-  const atom = (part: string) =>
-    !part.startsWith(".") &&
-    !part.endsWith(".") &&
-    !part.includes("..") &&
-    !Array.from(part).some((character) => {
-      const code = character.codePointAt(0)!;
-      return (
-        code <= 32 ||
-        code === 127 ||
-        /\s/.test(character) ||
-        String.raw`<>(),:;[]\"`.includes(character)
-      );
-    });
   if (!atom(local)) {
     return false;
   }

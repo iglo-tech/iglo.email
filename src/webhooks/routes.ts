@@ -19,76 +19,76 @@ const MAX_SECRET = 256;
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const invalid = (c: RequestContext, name: string) =>
+  new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", name));
+const body = async (c: RequestContext) => {
+  const value = parseJson(c.request, await readBounded(c.request, BODY_BYTES));
+  if (!isObject(value)) {
+    throw invalid(c, "body");
+  }
+  return value;
+};
+const validUrl = (c: RequestContext, value: unknown) => {
+  // The URL parser drops tabs and newlines, so the raw text is checked too.
+  if (
+    typeof value !== "string" ||
+    value.length > MAX_URL ||
+    // oxlint-disable-next-line no-control-regex
+    /[\s\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw invalid(c, "url");
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw invalid(c, "url");
+  }
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    !url.hostname ||
+    url.username ||
+    url.password
+  ) {
+    throw invalid(c, "url");
+  }
+  return value;
+};
+const validEvents = (c: RequestContext, value: unknown) => {
+  if (
+    !Array.isArray(value) ||
+    !value.length ||
+    value.some((event) => !webhookEvents.includes(event))
+  ) {
+    throw invalid(c, "events");
+  }
+  return [...new Set(value as Array<string>)];
+};
+const validEnabled = (c: RequestContext, value: unknown) => {
+  if (typeof value !== "boolean") {
+    throw invalid(c, "enabled");
+  }
+  return value;
+};
+const paging = (c: RequestContext) => {
+  const value = (name: string, fallback: number, max: number) => {
+    const values = c.url.searchParams.getAll(name);
+    if (!values.length) {
+      return fallback;
+    }
+    const number = /^[1-9]\d{0,6}$/.test(values[0]!) ? Number(values[0]) : 0;
+    if (values.length > 1 || number < 1 || number > max) {
+      throw invalid(c, name);
+    }
+    return number;
+  };
+  return { page: value("page", 1, 1_000_000), perPage: value("per_page", 20, 100) };
+};
 export function registerWebhookRoutes(
   router: Router,
   deps: { webhooks: WebhookStore; auth: Authentication },
 ) {
   const { webhooks, auth } = deps;
-  const invalid = (c: RequestContext, name: string) =>
-    new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFields", "name", name));
-  const body = async (c: RequestContext) => {
-    const value = parseJson(c.request, await readBounded(c.request, BODY_BYTES));
-    if (!isObject(value)) {
-      throw invalid(c, "body");
-    }
-    return value;
-  };
-  const validUrl = (c: RequestContext, value: unknown) => {
-    // The URL parser drops tabs and newlines, so the raw text is checked too.
-    if (
-      typeof value !== "string" ||
-      value.length > MAX_URL ||
-      // oxlint-disable-next-line no-control-regex
-      /[\s\u0000-\u001f\u007f]/.test(value)
-    ) {
-      throw invalid(c, "url");
-    }
-    let url: URL;
-    try {
-      url = new URL(value);
-    } catch {
-      throw invalid(c, "url");
-    }
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      !url.hostname ||
-      url.username ||
-      url.password
-    ) {
-      throw invalid(c, "url");
-    }
-    return value;
-  };
-  const validEvents = (c: RequestContext, value: unknown) => {
-    if (
-      !Array.isArray(value) ||
-      !value.length ||
-      value.some((event) => !webhookEvents.includes(event))
-    ) {
-      throw invalid(c, "events");
-    }
-    return [...new Set(value as Array<string>)];
-  };
-  const validEnabled = (c: RequestContext, value: unknown) => {
-    if (typeof value !== "boolean") {
-      throw invalid(c, "enabled");
-    }
-    return value;
-  };
-  const paging = (c: RequestContext) => {
-    const value = (name: string, fallback: number, max: number) => {
-      const values = c.url.searchParams.getAll(name);
-      if (!values.length) {
-        return fallback;
-      }
-      const number = /^[1-9]\d{0,6}$/.test(values[0]!) ? Number(values[0]) : 0;
-      if (values.length > 1 || number < 1 || number > max) {
-        throw invalid(c, name);
-      }
-      return number;
-    };
-    return { page: value("page", 1, 1_000_000), perPage: value("per_page", 20, 100) };
-  };
   const exists = (id: bigint) => {
     if (!webhooks.get(id)) {
       throw new HttpError(404, "Webhook not found");

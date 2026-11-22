@@ -7,10 +7,10 @@ export interface DKIM {
   key_selector: string;
   private_key: string;
 }
+const fail = (): never => {
+  throw new HttpError(400, "Invalid DKIM configuration.");
+};
 export function validateDKIM(value: DKIM): DKIM {
-  const fail = (): never => {
-    throw new HttpError(400, "Invalid DKIM configuration.");
-  };
   if (
     !value ||
     typeof value.domain_name !== "string" ||

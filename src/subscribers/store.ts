@@ -134,6 +134,25 @@ const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER)
     ? Number(id)
     : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(id.toString());
+const json = (ids: Array<bigint>) => `[${ids.join(",")}]`;
+const permittedLists = (requested: Array<bigint>, scope: Scope) =>
+  requested.filter((id) => scope.all || scope.ids.includes(id));
+const conflict = (error: unknown): never => {
+  if (error instanceof Error && error.message.includes("subscribers.external_id")) {
+    throw new HttpError(409, "External ID already exists");
+  }
+  if (error instanceof Error && error.message.includes("subscribers.email")) {
+    throw new HttpError(409, "E-mail already exists.");
+  }
+  throw error;
+};
+const bounded = (attribs: string, previous: number) => {
+  if (Buffer.byteLength(attribs) > Math.max(EVENT_ATTRIBS_BYTES, previous)) {
+    throw new HttpError(400, "Invalid attributes.");
+  }
+  return attribs;
+};
+const blocked = () => new HttpError(400, "The e-mail domain is blocklisted.");
 export function createSubscriberStore(
   db: Database,
   clock: Clock,
@@ -189,7 +208,6 @@ export function createSubscriberStore(
       effects.changed?.({ id, blocklisted, listIds });
     }
   };
-  const json = (ids: Array<bigint>) => `[${ids.join(",")}]`;
   const webhookData = (name: string, ...args: Array<string | number | null>) =>
     (q.get(name).get(...args) as { data: string }).data;
   const external = (key: string) => q.get("subscriber-by-external").get(key) as Row | null;
@@ -215,17 +233,6 @@ export function createSubscriberStore(
       clock.now().toISOString(),
     );
   };
-  const conflict = (error: unknown): never => {
-    if (error instanceof Error && error.message.includes("subscribers.external_id")) {
-      throw new HttpError(409, "External ID already exists");
-    }
-    if (error instanceof Error && error.message.includes("subscribers.email")) {
-      throw new HttpError(409, "E-mail already exists.");
-    }
-    throw error;
-  };
-  const permittedLists = (requested: Array<bigint>, scope: Scope) =>
-    requested.filter((id) => scope.all || scope.ids.includes(id));
   const replace = (
     id: bigint,
     requested: Array<bigint>,
@@ -503,13 +510,6 @@ export function createSubscriberStore(
         }
         return JSON.stringify(Object.fromEntries(merged));
       };
-      const bounded = (attribs: string, previous: number) => {
-        if (Buffer.byteLength(attribs) > Math.max(EVENT_ATTRIBS_BYTES, previous)) {
-          throw new HttpError(400, "Invalid attributes.");
-        }
-        return attribs;
-      };
-      const blocked = () => new HttpError(400, "The e-mail domain is blocklisted.");
       if (!row) {
         if (input.email === undefined) {
           throw new HttpError(404, "Subscriber not found");

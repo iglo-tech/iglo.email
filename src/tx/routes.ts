@@ -104,6 +104,10 @@ function subscriberContext(row: SubscriberRow | null, email: string) {
   };
 }
 
+const busy = () =>
+  new HttpError(429, "Too many sends with attachments in progress.", {
+    "Retry-After": "1",
+  });
 export function registerTxRoutes(
   router: Router,
   deps: {
@@ -129,10 +133,6 @@ export function registerTxRoutes(
 ) {
   const budget = deps.limits?.maxBytes ?? MAX_ATTACHMENT_BYTES_IN_FLIGHT;
   let gate: ByteGate | undefined;
-  const busy = () =>
-    new HttpError(429, "Too many sends with attachments in progress.", {
-      "Retry-After": "1",
-    });
   /** Gives the handler its reservation slot and releases whatever it still holds on any exit. */
   const guarded =
     (

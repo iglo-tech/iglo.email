@@ -584,9 +584,9 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   next["app.check_updates"] = false;
   return next;
 }
+const mask = (value: string | undefined) => "•".repeat(Array.from(value ?? "").length);
 export function masked(settings: Settings): Settings {
   const out = cloneJson(settings);
-  const mask = (value: string | undefined) => "•".repeat(Array.from(value ?? "").length);
   for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
     for (const item of out[key]) {
       if (item.password) {

@@ -52,6 +52,37 @@ export const normalizeTags = (tags: Array<string>) =>
     return slug ? [slug] : [];
   });
 
+const visible = (row: Row, scope: ListScope) => scope.all || scope.ids.includes(row.id);
+const matches = (row: Row, filter: ListFilter, scope: ListScope) => {
+  const tags: Array<string> = row.tags ? JSON.parse(row.tags) : [];
+  return (
+    visible(row, scope) &&
+    row.name.toLowerCase().includes(normalize(filter.query).toLowerCase()) &&
+    (!filter.type || row.type === filter.type) &&
+    (!filter.optin || row.optin === filter.optin) &&
+    (!filter.status || row.status === filter.status) &&
+    filter.tags.every((tag) => tags.includes(tag))
+  );
+};
+const project = (row: Row, statuses: Record<string, number> | null) => ({
+  id:
+    row.id <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number(row.id)
+      : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(row.id.toString()),
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+  uuid: row.uuid,
+  name: row.name,
+  type: row.type,
+  optin: row.optin,
+  status: row.status,
+  tags: row.tags ? JSON.parse(row.tags) : [],
+  description: row.description,
+  subscriber_count: statuses ? Object.values(statuses).reduce((a, b) => a + b, 0) : 0,
+  subscriber_statuses: statuses,
+  subscription_created_at: null,
+  subscription_updated_at: null,
+});
 export function createListStore(
   db: Database,
   clock: Clock,
@@ -61,37 +92,6 @@ export function createListStore(
   const queries = prepareNamedQueries(db, [{ name: "lists/store", sql }]);
   const byId = (id: bigint) => queries.get("list-by-id").get(id) as Row | null;
   const rows = () => queries.get("all-lists").all() as Array<Row>;
-  const visible = (row: Row, scope: ListScope) => scope.all || scope.ids.includes(row.id);
-  const matches = (row: Row, filter: ListFilter, scope: ListScope) => {
-    const tags: Array<string> = row.tags ? JSON.parse(row.tags) : [];
-    return (
-      visible(row, scope) &&
-      row.name.toLowerCase().includes(normalize(filter.query).toLowerCase()) &&
-      (!filter.type || row.type === filter.type) &&
-      (!filter.optin || row.optin === filter.optin) &&
-      (!filter.status || row.status === filter.status) &&
-      filter.tags.every((tag) => tags.includes(tag))
-    );
-  };
-  const project = (row: Row, statuses: Record<string, number> | null) => ({
-    id:
-      row.id <= BigInt(Number.MAX_SAFE_INTEGER)
-        ? Number(row.id)
-        : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(row.id.toString()),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    uuid: row.uuid,
-    name: row.name,
-    type: row.type,
-    optin: row.optin,
-    status: row.status,
-    tags: row.tags ? JSON.parse(row.tags) : [],
-    description: row.description,
-    subscriber_count: statuses ? Object.values(statuses).reduce((a, b) => a + b, 0) : 0,
-    subscriber_statuses: statuses,
-    subscription_created_at: null,
-    subscription_updated_at: null,
-  });
   const get = (id: bigint) => {
     const row = byId(id);
     return row ? project(row, counts.all().get(id) ?? {}) : null;

@@ -35,6 +35,22 @@ const LARGE_PAGE = MEMORY_PAGE;
 const throwTooMany = (): never => {
   throw new HttpError(429, "Too many large subscriber selections in progress.");
 };
+const noop = () => {};
+const encode = (value: unknown) =>
+  JSON.stringify(value)
+    .replaceAll("<", String.raw`\u003c`)
+    .replaceAll(">", String.raw`\u003e`)
+    .replaceAll("&", String.raw`\u0026`)
+    .replaceAll("\u2028", String.raw`\u2028`)
+    .replaceAll("\u2029", String.raw`\u2029`);
+const identity = (c: RequestContext) => {
+  if (!c.identity) {
+    throw new Error("Identity required");
+  }
+  return c.identity;
+};
+const preparing = (c: RequestContext, error: string) =>
+  new HttpError(400, c.app.i18n.Ts("subscribers.errorPreparingQuery", "error", error));
 const max = 9_223_372_036_854_775_807n,
   min = -9_223_372_036_854_775_808n;
 
@@ -170,6 +186,43 @@ async function queryInput(c: RequestContext): Promise<QueryInput> {
   return out;
 }
 
+// The checks upstream's database casts and dry run perform before running a query.
+const validate = (c: RequestContext, filter: SubscriberFilter) => {
+  for (const [type, value, allowed] of [
+    ["subscription_status", filter.subscriptionStatus, [...subscriptionStatuses, "none"]],
+    ["subscriber_status", filter.subscriberStatus, subscriberStatuses],
+  ] as const) {
+    if (value && !allowed.includes(value)) {
+      throw preparing(c, `invalid input value for enum ${type}: "${value}"`);
+    }
+  }
+  const problem = filter.fragment ? checkFragment(filter.fragment) : undefined;
+  if (problem) {
+    throw preparing(c, problem);
+  }
+};
+// Upstream returns 400 when preparing a query fails and 500 when running it fails.
+const fetching = (c: RequestContext, error: unknown): never => {
+  if (error instanceof HttpError) {
+    throw error;
+  }
+  if (error instanceof RunnerError && error.kind === "busy") {
+    throw new HttpError(429, "Too many subscriber queries in progress.");
+  }
+  if (error instanceof RunnerError && error.kind === "query") {
+    throw preparing(c, error.message);
+  }
+  throw new HttpError(
+    500,
+    c.app.i18n.Ts(
+      "globals.messages.errorFetching",
+      "name",
+      "{globals.terms.subscribers}",
+      "error",
+      error instanceof Error ? error.message : "unknown error",
+    ),
+  );
+};
 export function registerSubscriberQueryRoutes(
   router: Router,
   query: SubscriberQuery,
@@ -177,12 +230,6 @@ export function registerSubscriberQueryRoutes(
   roles: Roles,
   auth: Authentication,
 ) {
-  const identity = (c: RequestContext) => {
-    if (!c.identity) {
-      throw new Error("Identity required");
-    }
-    return c.identity;
-  };
   const listIDs = (i: Identity, permission: "list:get" | "list:manage") =>
     roles.listScope(i.role, i.user.list_role_id, permission);
   // FilterListsByPerm: with both types only per-list get permissions count, as upstream.
@@ -237,45 +284,6 @@ export function registerSubscriberQueryRoutes(
       );
     }
   };
-  const preparing = (c: RequestContext, error: string) =>
-    new HttpError(400, c.app.i18n.Ts("subscribers.errorPreparingQuery", "error", error));
-  // The checks upstream's database casts and dry run perform before running a query.
-  const validate = (c: RequestContext, filter: SubscriberFilter) => {
-    for (const [type, value, allowed] of [
-      ["subscription_status", filter.subscriptionStatus, [...subscriptionStatuses, "none"]],
-      ["subscriber_status", filter.subscriberStatus, subscriberStatuses],
-    ] as const) {
-      if (value && !allowed.includes(value)) {
-        throw preparing(c, `invalid input value for enum ${type}: "${value}"`);
-      }
-    }
-    const problem = filter.fragment ? checkFragment(filter.fragment) : undefined;
-    if (problem) {
-      throw preparing(c, problem);
-    }
-  };
-  // Upstream returns 400 when preparing a query fails and 500 when running it fails.
-  const fetching = (c: RequestContext, error: unknown): never => {
-    if (error instanceof HttpError) {
-      throw error;
-    }
-    if (error instanceof RunnerError && error.kind === "busy") {
-      throw new HttpError(429, "Too many subscriber queries in progress.");
-    }
-    if (error instanceof RunnerError && error.kind === "query") {
-      throw preparing(c, error.message);
-    }
-    throw new HttpError(
-      500,
-      c.app.i18n.Ts(
-        "globals.messages.errorFetching",
-        "name",
-        "{globals.terms.subscribers}",
-        "error",
-        error instanceof Error ? error.message : "unknown error",
-      ),
-    );
-  };
   const readFilter = (c: RequestContext, i: Identity): SubscriberFilter => {
     const params = c.url.searchParams;
     let lists: Array<bigint> = [];
@@ -296,14 +304,6 @@ export function registerSubscriberQueryRoutes(
     return filter;
   };
 
-  const encode = (value: unknown) =>
-    JSON.stringify(value)
-      .replaceAll("<", String.raw`\u003c`)
-      .replaceAll(">", String.raw`\u003e`)
-      .replaceAll("&", String.raw`\u0026`)
-      .replaceAll("\u2028", String.raw`\u2028`)
-      .replaceAll("\u2029", String.raw`\u2029`);
-
   const list: Handler = async (c) => {
     const i = canRead(c);
     const filter = readFilter(c, i);
@@ -317,7 +317,7 @@ export function registerSubscriberQueryRoutes(
     perPage = perPage < 0 ? 0 : perPage < 1 ? 20 : perPage;
     const page = Math.max(1, atoi(params.get("page")));
     // per_page=all, negative and oversized pages hold every selected ID until streamed.
-    let release = () => {};
+    let release = noop;
     if (perPage === 0 || perPage > LARGE_PAGE) {
       release = query.admitLarge() ?? throwTooMany();
     }

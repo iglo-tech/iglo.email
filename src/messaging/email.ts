@@ -227,6 +227,13 @@ function bareAddress(value: string): string {
   const parsed = parseAddress(trimSpace(value));
   return parsed === undefined ? "" : simpleLower(parsed);
 }
+const one = (value: string) => {
+  const address = parseAddress(value);
+  if (address === undefined) {
+    throw new Error("Invalid mailbox");
+  }
+  return { address };
+};
 function build(
   s: SMTPServer,
   input: Message,
@@ -306,13 +313,6 @@ function build(
     };
   });
   const customHeaders = Array.from(headers.values(), ({ name: key, value }) => ({ key, value }));
-  const one = (value: string) => {
-    const address = parseAddress(value);
-    if (address === undefined) {
-      throw new Error("Invalid mailbox");
-    }
-    return { address };
-  };
   // Nodemailer 10 supports explicit address objects here. The separately pinned
   // @types/nodemailer 8 envelope type omits them. Keep this adapter at the SDK
   // boundary so an already parsed mailbox cannot be expanded as an address list.

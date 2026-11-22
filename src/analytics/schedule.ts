@@ -91,6 +91,7 @@ function parts(input: string) {
   return { zone, spec: rest };
 }
 
+const wild = (text: string) => text.startsWith("*") || text.startsWith("?");
 /** Whether a cron expression matches the minute that starts at an instant. */
 function matcher(spec: string, zone: Intl.DateTimeFormat | null) {
   const fields = (descriptors.get(spec) ?? spec).split(/\s+/);
@@ -98,12 +99,11 @@ function matcher(spec: string, zone: Intl.DateTimeFormat | null) {
     throw new Error(`Invalid cron expression: ${spec}`);
   }
   const sets = fields.map(field);
+  const has = (index: number, value: number) => sets[index] === null || sets[index]!.has(value);
   // Robfig semantics: two restricted day fields match when either does.
-  const wild = (text: string) => text.startsWith("*") || text.startsWith("?");
   const anyDay = !wild(fields[2]!) && !wild(fields[4]!);
   return (at: Date) => {
     const [minute, hour, day, month, weekday] = zoned(at, zone);
-    const has = (index: number, value: number) => sets[index] === null || sets[index]!.has(value);
     if (!has(0, minute) || !has(1, hour) || !has(3, month)) {
       return false;
     }

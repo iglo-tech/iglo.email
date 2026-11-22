@@ -141,10 +141,25 @@ export type TestOutcome =
   | { error: "test_running" }
   | { error: "no_consent"; reason: string };
 
+const noop = () => {};
+const bound = (since: string) => (e: RecordedEvent) => {
+  // At trigger time the enrollment starts now and no step has run: `last_step` falls back
+  // to the trigger, like the evaluator.
+  const time =
+    since === "trigger" || since === "last_step"
+      ? Date.parse(e.occurredAt)
+      : since === "enrollment"
+        ? Date.parse(e.receivedAt)
+        : Date.parse(e.receivedAt) - parseDuration(since)!;
+  return time < MIN_TIME ? "" : new Date(time).toISOString();
+};
+/** A manual or test trigger is the subscriber's own event under the sequence's trigger name. */
+const triggerFits = (trigger: TriggerEvent | null, subscriberId: bigint, event: string) =>
+  trigger === null || (trigger.subscriber_id === subscriberId && trigger.name === event);
 export function createEnrollments(db: Database, clock: Clock) {
   const q = prepareNamedQueries(db, [{ name: "sequences/enrollments", sql }]);
   const byId = (id: bigint) => q.get("enrollment-by-id").get(id) as EnrollmentRow | null;
-  let due = () => {};
+  let due = noop;
 
   // Trigger filters run on the write connection inside the event transaction, so they see the
   // event and the subscriber upsert it just made. They hold no raw `sql` (refused at save).
@@ -171,17 +186,6 @@ export function createEnrollments(db: Database, clock: Clock) {
     if (compiled.fragments.length) {
       throw new Error("Trigger filters cannot contain sql");
     }
-    const bound = (since: string) => (e: RecordedEvent) => {
-      // At trigger time the enrollment starts now and no step has run: `last_step` falls back
-      // to the trigger, like the evaluator.
-      const time =
-        since === "trigger" || since === "last_step"
-          ? Date.parse(e.occurredAt)
-          : since === "enrollment"
-            ? Date.parse(e.receivedAt)
-            : Date.parse(e.receivedAt) - parseDuration(since)!;
-      return time < MIN_TIME ? "" : new Date(time).toISOString();
-    };
     return {
       statement: db.prepare(compiled.sql),
       params: compiled.params.map((param) =>
@@ -214,10 +218,6 @@ export function createEnrollments(db: Database, clock: Clock) {
     const value = (filter.statement.values(...args) as Array<Array<unknown>>)[0]?.[0];
     return value === 1n || value === 1;
   }
-
-  /** A manual or test trigger is the subscriber's own event under the sequence's trigger name. */
-  const triggerFits = (trigger: TriggerEvent | null, subscriberId: bigint, event: string) =>
-    trigger === null || (trigger.subscriber_id === subscriberId && trigger.name === event);
 
   /**
    * Insert an enrollment at its first step. `from` is when the first wait counts from: the
@@ -713,7 +713,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       q.get("exit-by-sequence").run(at(), at(), sequenceId);
     },
     close() {
-      due = () => {};
+      due = noop;
       for (const filter of filters.values()) {
         filter.statement.finalize();
       }

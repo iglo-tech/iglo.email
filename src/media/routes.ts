@@ -80,8 +80,8 @@ const atoi = (value: string | null) => {
   return Number.isSafeInteger(parsed) ? parsed : 0;
 };
 
+const tooLarge = () => new HttpError(413, "The file is too large.");
 async function readUpload(request: Request): Promise<Uint8Array> {
-  const tooLarge = () => new HttpError(413, "The file is too large.");
   if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) {
     throw tooLarge();
   }
@@ -109,6 +109,32 @@ async function readUpload(request: Request): Promise<Uint8Array> {
   return Buffer.concat(chunks);
 }
 
+const notFound = () => new HttpError(404, "not found");
+const formFile = async (c: RequestContext, body: Uint8Array) => {
+  const invalid = (error: string) =>
+    new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFile", "error", error));
+  const type = c.request.headers.get("content-type") ?? "";
+  if (type.split(";", 1)[0]?.trim().toLowerCase() !== "multipart/form-data") {
+    throw invalid("request Content-Type isn't multipart/form-data");
+  }
+  let form: FormData;
+  try {
+    form = await new Request("http://form.invalid", {
+      method: "POST",
+      headers: { "content-type": type },
+      body: new Blob([body as Uint8Array<ArrayBuffer>]),
+    }).formData();
+  } catch {
+    throw invalid("malformed multipart form");
+  }
+  for (const value of form.getAll("file")) {
+    if (typeof value !== "string") {
+      return value;
+    }
+  }
+  throw invalid("http: no such file");
+};
+const changed = () => new HttpError(409, "The upload path changed during the upload.");
 export function registerMediaRoutes(
   router: Router,
   deps: {
@@ -135,7 +161,6 @@ export function registerMediaRoutes(
       url: files.url(rootUrl, row.filename),
     };
   };
-  const notFound = () => new HttpError(404, "not found");
   const filesystemOnly = (c: RequestContext) => {
     if (settings().provider !== "filesystem") {
       throw new HttpError(
@@ -145,31 +170,6 @@ export function registerMediaRoutes(
     }
   };
   /** The file of a form, as Go's FormFile: the first part of the name that has a filename. */
-  const formFile = async (c: RequestContext, body: Uint8Array) => {
-    const invalid = (error: string) =>
-      new HttpError(400, c.app.i18n.Ts("globals.messages.invalidFile", "error", error));
-    const type = c.request.headers.get("content-type") ?? "";
-    if (type.split(";", 1)[0]?.trim().toLowerCase() !== "multipart/form-data") {
-      throw invalid("request Content-Type isn't multipart/form-data");
-    }
-    let form: FormData;
-    try {
-      form = await new Request("http://form.invalid", {
-        method: "POST",
-        headers: { "content-type": type },
-        body: new Blob([body as Uint8Array<ArrayBuffer>]),
-      }).formData();
-    } catch {
-      throw invalid("malformed multipart form");
-    }
-    for (const value of form.getAll("file")) {
-      if (typeof value !== "string") {
-        return value;
-      }
-    }
-    throw invalid("http: no such file");
-  };
-
   const upload: Handler = async (c) => {
     filesystemOnly(c);
     if (uploading >= MAX_UPLOADS) {
@@ -187,7 +187,6 @@ export function registerMediaRoutes(
         }
         throw error;
       }
-      const changed = () => new HttpError(409, "The upload path changed during the upload.");
       const body = await readUpload(c.request);
       const file = await formFile(c, body);
       // A long upload outlives the check that admitted it.

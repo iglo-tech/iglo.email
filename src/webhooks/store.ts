@@ -113,6 +113,9 @@ const page = (rows: Array<unknown>, total: bigint, page: number, perPage: number
 /** Generated secrets are 256 random bits. */
 export const generateSecret = () => randomBytes(32).toString("hex");
 
+const noop = () => {};
+const retryDelay = (attempts: bigint) =>
+  Math.min(FIRST_RETRY_MS * 2 ** Math.min(Number(attempts) - 1, 20), MAX_RETRY_MS);
 export function createWebhookStore(db: Database, clock: Clock) {
   const q = prepareNamedQueries(db, [{ name: "webhooks/store", sql }]);
   const count = (name: string, ...args: Array<bigint>) =>
@@ -124,9 +127,7 @@ export function createWebhookStore(db: Database, clock: Clock) {
     const deadline = Date.parse(createdAt) + DELIVERY_WINDOW_MS;
     return now >= deadline ? null : new Date(Math.min(now + delay, deadline)).toISOString();
   };
-  const retryDelay = (attempts: bigint) =>
-    Math.min(FIRST_RETRY_MS * 2 ** Math.min(Number(attempts) - 1, 20), MAX_RETRY_MS);
-  let wake = () => {};
+  let wake = noop;
   const subscribed = (event: WebhookEvent) => q.get("webhooks-for-event").all(event).length;
   return {
     /** The enabled webhooks' IDs and targets, for the upgrade notice (B125). No secrets. */
@@ -335,7 +336,7 @@ export function createWebhookStore(db: Database, clock: Clock) {
       wake = fn;
     },
     close() {
-      wake = () => {};
+      wake = noop;
       q.close();
     },
   };
