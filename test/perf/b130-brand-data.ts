@@ -75,7 +75,7 @@ function dataFor(i: number): string {
 }
 
 const perSample = 2000;
-const samples = 7;
+const samples = 15;
 let sink = 0;
 
 function renderOne(i: number): number {
@@ -95,8 +95,12 @@ for (let s = 0; s < samples; s += 1) {
   runs.push(performance.now() - start);
 }
 runs.sort((a, b) => a - b);
+// Other load on the machine only slows a sample down, so the fastest sample is the steadier estimate;
+// the median is printed beside it.
 const median = runs[Math.floor(runs.length / 2)]!;
+const fastest = runs[0]!;
+const micros = (ms: number) => ((ms * 1000) / perSample).toFixed(1);
 console.log(
-  `${mode} ${root}: ${((median * 1000) / perSample).toFixed(1)} us per render ` +
-    `(median of ${samples} x ${perSample}); data text ${dataFor(1).length} bytes; checksum ${sink}`,
+  `${mode} ${root}: min ${micros(fastest)} us, median ${micros(median)} us per render ` +
+    `(${samples} x ${perSample}); data text ${dataFor(1).length} bytes; checksum ${sink}`,
 );
