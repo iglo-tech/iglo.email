@@ -56,7 +56,9 @@ test("an error that names no code takes the code of its status", async () => {
     409: "conflict",
     413: "payload_too_large",
     415: "unsupported_media_type",
+    422: "result_too_large",
     429: "rate_limited",
+    499: "client_closed",
     500: "internal_error",
     501: "not_implemented",
     502: "bad_gateway",
@@ -139,6 +141,20 @@ test("a failure that is not an HttpError is a logged 500 with a code and no Retr
   expect(r.headers.get("Retry-After")).toBeNull();
   expect(await r.json()).toEqual({ message: "Internal Server Error", code: "internal_error" });
   expect(f.errors).toHaveLength(1);
+});
+
+test("a missing subscriber ID is listmonk's 400, with the code that says not_found", async () => {
+  const f = await open();
+  const r = await f.json("/api/subscribers/999999", "PUT", {
+    email: "missing@example.com",
+    name: "Missing",
+    status: "enabled",
+    attribs: {},
+  });
+  expect(r).toEqual({
+    status: 400,
+    body: { message: "Subscriber (999999: ) not found", code: "not_found" },
+  });
 });
 
 test("an unknown API path answers 404 not_found", async () => {

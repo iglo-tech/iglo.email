@@ -209,6 +209,9 @@ sending remains staged until M2.4's full policy.
 Every API error answers `{"message": …, "code": …}` (B131, D129). `message` is listmonk's text, and a client should not parse it. `code` is one of the values in [`src/server/error-codes.ts`](../../src/server/error-codes.ts), snake_case and stable. The OpenAPI document lists, on each response, the codes that status can send.
 
 - `invalid_fields` (400): the request is malformed, or a field, value or body is not valid.
+- `not_found` (400): a numeric subscriber ID that does not exist. listmonk answers 400 here, not 404, and the code says what happened, so the status stays listmonk's.
+- `result_too_large` (422): an analytics read's result is over its size limit. Narrow the range, the IDs or the interval.
+- `client_closed` (499): the client disconnected before the answer. Nobody reads the body; the code is there for logs and the contract.
 - `unauthorized` (401), `permission_denied` (403), `not_found` (404), `method_not_allowed` (405), `payload_too_large` (413), `unsupported_media_type` (415), `rate_limited` (429), `internal_error` (500), `not_implemented` (501), `bad_gateway` (502) and `unavailable` (503): the status's own meaning.
 - `conflict` (409): the request conflicts with the current state.
 - `email_conflict` (409): the e-mail belongs to another subscriber. Its `conflict.external_id` names that subscriber where the caller may see it (the table above).

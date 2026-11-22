@@ -264,7 +264,10 @@ export async function runOpenApiContract(target: {
 
   const conforms = (key: string, reply: Reply) => {
     const operation = operationOf(key);
-    const declared = operation.responses[String(reply.status)] ?? operation.responses.default;
+    // A failure must be a status the operation names: `default` carries every code, so it cannot
+    // show that the failure's own code is one its status can send (B131, D129).
+    const named = operation.responses[String(reply.status)];
+    const declared = reply.status >= 400 ? named : (named ?? operation.responses.default);
     if (!declared) {
       throw new Error(`FAIL openapi-status ${key}: ${reply.status} is not documented`);
     }

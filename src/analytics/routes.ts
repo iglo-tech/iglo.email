@@ -9,6 +9,7 @@ import type { Summaries, SummaryName } from "@/analytics/summaries";
 import type { CampaignStore, Scope } from "@/campaigns/store";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
+import type { ErrorCode } from "@/server/error-codes";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import { strHasLen } from "@/server/validation";
@@ -112,12 +113,16 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
   const scope = (context: RequestContext): Scope =>
     can(context, "campaigns:get_all") ? { all: true, ids: [] } : permitted(context);
 
-  const refused: Partial<Record<ReaderError["kind"], [number, string]>> = {
-    busy: [429, "Too many analytics reads in progress."],
-    egress: [503, "Analytics responses are still being sent. Try again shortly."],
-    limit: [422, "Analytics result too large. Narrow the range, the IDs or the interval."],
-    cancelled: [499, "Client closed the request."],
-    closed: [503, "The server is shutting down."],
+  const refused: Partial<Record<ReaderError["kind"], [number, string, ErrorCode]>> = {
+    busy: [429, "Too many analytics reads in progress.", "rate_limited"],
+    egress: [503, "Analytics responses are still being sent. Try again shortly.", "unavailable"],
+    limit: [
+      422,
+      "Analytics result too large. Narrow the range, the IDs or the interval.",
+      "result_too_large",
+    ],
+    cancelled: [499, "Client closed the request.", "client_closed"],
+    closed: [503, "The server is shutting down.", "unavailable"],
   };
   const served = async (
     context: RequestContext,
@@ -129,7 +134,8 @@ export function registerAnalyticsRoutes(router: Router, deps: AnalyticsDeps) {
     } catch (error) {
       const answer = error instanceof ReaderError ? refused[error.kind] : undefined;
       if (answer) {
-        throw new HttpError(...answer);
+        const [status, message, code] = answer;
+        throw new HttpError(status, message, {}, code);
       }
       context.app.logger.error(error);
       throw new HttpError(

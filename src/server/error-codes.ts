@@ -13,7 +13,9 @@ export const ERROR_CODES = [
   "external_id_conflict",
   "payload_too_large",
   "unsupported_media_type",
+  "result_too_large",
   "rate_limited",
+  "client_closed",
   "held",
   "unavailable",
   "internal_error",
@@ -34,7 +36,9 @@ const DEFAULT_CODES = new Map<number, ErrorCode>([
   [409, "conflict"],
   [413, "payload_too_large"],
   [415, "unsupported_media_type"],
+  [422, "result_too_large"],
   [429, "rate_limited"],
+  [499, "client_closed"],
   [500, "internal_error"],
   [501, "not_implemented"],
   [502, "bad_gateway"],
@@ -43,7 +47,8 @@ const DEFAULT_CODES = new Map<number, ErrorCode>([
 
 /** Every code an answer of each status can carry, for the OpenAPI document. */
 const CODES_BY_STATUS = new Map<number, ReadonlyArray<ErrorCode>>([
-  [400, ["invalid_fields"]],
+  // A missing numeric ID is a 400 in listmonk, so its `not_found` is a 400 code too.
+  [400, ["invalid_fields", "not_found"]],
   [401, ["unauthorized"]],
   [403, ["permission_denied"]],
   [404, ["not_found"]],
@@ -51,7 +56,9 @@ const CODES_BY_STATUS = new Map<number, ReadonlyArray<ErrorCode>>([
   [409, ["conflict", "email_conflict", "external_id_conflict"]],
   [413, ["payload_too_large"]],
   [415, ["unsupported_media_type"]],
+  [422, ["result_too_large"]],
   [429, ["rate_limited"]],
+  [499, ["client_closed"]],
   [500, ["internal_error"]],
   [501, ["not_implemented"]],
   [502, ["bad_gateway"]],

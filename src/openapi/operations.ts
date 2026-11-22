@@ -76,6 +76,11 @@ const analytics: Array<Parameter> = [
   { name: "interval", schema: { enum: ["hour", "day", "week", "month"] } },
   { name: "unique", schema: boolean },
 ];
+/**
+ * What the analytics reader refuses a read with: too large (422), busy (429), the client gone (499,
+ * which nobody reads) and the server shutting down or still sending (503).
+ */
+const readRefusals = [422, 429, 499, 503];
 const subscriberSelection: Array<Parameter> = [
   {
     name: "query",
@@ -370,6 +375,7 @@ const lists: Array<Operation> = [
       "`subscriptions` and `unsubscriptions` need only the list. The campaign permissions are for the other types.",
     permissions: readList,
     alsoPermissions: [["campaigns:get", "campaigns:get_all"], ["campaigns:get_analytics"]],
+    errors: readRefusals,
     query: analytics,
     data: array({ anyOf: [ref("ListCount"), ref("LinkCount")] }),
   },
@@ -813,6 +819,7 @@ const sending: Array<Operation> = [
     summary: "Sends with views and clicks, by template or sequence step.",
     native: true,
     permissions: ["sends:get"],
+    errors: readRefusals,
     query: [...range, { name: "group_by", schema: { enum: ["template", "step"] } }],
     data: array({ anyOf: [ref("SendsByTemplate"), ref("SendsByStep")] }),
   },
@@ -891,6 +898,7 @@ const sending: Array<Operation> = [
     summary: "Enrollments and sends per step, for at most 100 sequences.",
     native: true,
     permissions: ["sequences:get"],
+    errors: readRefusals,
     query: [{ ...ids, required: true }],
     data: ref("SequenceCounts"),
   },
@@ -1110,6 +1118,7 @@ const campaigns: Array<Operation> = [
     tag: "Analytics",
     summary: "Counts per campaign.",
     permissions: ["campaigns:get_analytics"],
+    errors: readRefusals,
     query: analytics,
     data: array({ anyOf: [ref("CampaignCount"), ref("LinkCount")] }),
   },
@@ -1222,6 +1231,7 @@ const campaigns: Array<Operation> = [
     id: "getDashboardCounts",
     tag: "Analytics",
     summary: "Instance totals.",
+    errors: readRefusals,
     data: ref("DashboardCounts"),
   },
   {
@@ -1229,6 +1239,7 @@ const campaigns: Array<Operation> = [
     id: "getDashboardCharts",
     tag: "Analytics",
     summary: "Views and clicks per day.",
+    errors: readRefusals,
     data: ref("DashboardCharts"),
   },
   {
@@ -1236,6 +1247,7 @@ const campaigns: Array<Operation> = [
     id: "getDashboardCampaigns",
     tag: "Analytics",
     summary: "The latest campaigns the caller may read; null when there are none.",
+    errors: readRefusals,
     data: nullable(array(ref("Campaign"))),
   },
 ];

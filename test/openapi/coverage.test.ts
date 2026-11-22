@@ -166,6 +166,30 @@ describe("document", () => {
     expect(validate(document, missing, { message: "x", code: "email_conflict" })).not.toEqual([]);
     expect(validate(document, missing, { message: "x", code: "not_found" })).toEqual([]);
   });
+  test("an analytics read names its refusals, and each carries the code of its status", () => {
+    const paths = document.paths as Record<string, Record<string, any>>;
+    const responses = document.components.responses as Record<string, any>;
+    const schemaOf = (status: number) =>
+      responses[`Error${status}`].content["application/json"].schema;
+    const read = paths["/api/sends/analytics"]!.get;
+    expect(read.responses[422]).toEqual({ $ref: "#/components/responses/Error422" });
+    expect(read.responses[499]).toEqual({ $ref: "#/components/responses/Error499" });
+    expect(validate(document, schemaOf(422), { message: "x", code: "result_too_large" })).toEqual(
+      [],
+    );
+    expect(validate(document, schemaOf(422), { message: "x", code: "error" })).not.toEqual([]);
+    expect(validate(document, schemaOf(499), { message: "x", code: "client_closed" })).toEqual([]);
+  });
+  test("a bad ID in a subscriber route is documented as a 400 not_found", () => {
+    const paths = document.paths as Record<string, Record<string, any>>;
+    expect(paths["/api/subscribers/{id}"]!.put.responses[400]).toEqual({
+      $ref: "#/components/responses/Error400",
+    });
+    const schema = (document.components.responses as Record<string, any>).Error400.content[
+      "application/json"
+    ].schema;
+    expect(validate(document, schema, { message: "x", code: "not_found" })).toEqual([]);
+  });
 });
 
 describe("deliberate differences", () => {
