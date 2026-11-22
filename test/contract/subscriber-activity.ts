@@ -3,6 +3,14 @@
 // at 6fcd95f. Views and clicks go through the real pixel and redirect routes.
 import type { Credentials, Mode } from "@/test/contract/types";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
+
+/** A subscriber data export, read as the parts the checks use. */
+type Exported = {
+  profile: [Record<string, any>];
+  subscriptions: Array<{ type: string; [field: string]: any }>;
+  [field: string]: any;
+};
 
 const denied = async (response: Response, message: string, label: string) => {
   check(response.status === 403, `${label}-status`);
@@ -59,7 +67,7 @@ export async function runSubscriberActivity(target: {
     const value = (await response.json()).data;
     check(response.status === 200 && value?.id, `subscriber-activity-setup-${path}`);
     resources.push({ path, id: value.id });
-    return value;
+    return asBody<Record<string, any>>(value);
   };
   /** An API user, by the permissions and per-list grants of a role made for it. */
   const caller = async (name: string, permissions: Array<string>, lists: Array<unknown> = []) => {
@@ -115,7 +123,7 @@ export async function runSubscriberActivity(target: {
       },
     });
     try {
-      const smtp = before.smtp.map((server: JsonObject) => ({
+      const smtp = asBody<Array<JsonObject>>(before.smtp).map((server) => ({
         ...server,
         enabled: true,
         host: "127.0.0.1",
@@ -230,7 +238,8 @@ export async function runSubscriberActivity(target: {
     await track();
 
     // One row per campaign and per link and campaign, with upstream's fields.
-    const activity = async () => (await (await request(`${path}/activity`)).json()).data;
+    const activity = async () =>
+      asBody<Record<string, any>>((await (await request(`${path}/activity`)).json()).data);
     let data = await activity();
     check(
       Object.keys(data).sort().join() === "campaign_views,link_clicks",
@@ -285,7 +294,7 @@ export async function runSubscriberActivity(target: {
       );
       const text = await reply.text();
       check(text.startsWith('{\n  "'), "subscriber-export-indented");
-      return JSON.parse(text);
+      return asBody<Exported>(JSON.parse(text));
     };
     let file = await exported();
     check(
@@ -298,8 +307,8 @@ export async function runSubscriberActivity(target: {
         file.profile[0].attribs.plan === "a",
       "subscriber-export-profile",
     );
-    const secret = file.subscriptions.find(({ type }: { type: string }) => type === "private");
-    const open = file.subscriptions.find(({ type }: { type: string }) => type === "public");
+    const secret = file.subscriptions.find(({ type }) => type === "private")!;
+    const open = file.subscriptions.find(({ type }) => type === "public")!;
     check(
       file.subscriptions.length === 2 &&
         Object.keys(open).sort().join() === "created_at,name,subscription_status,type" &&
@@ -447,7 +456,11 @@ export async function runSubscriberActivity(target: {
     check((await clear("link_clicks")).status === 200, "subscriber-activity-delete-repeat");
 
     // The subscriber and its consent records stay.
-    const after = (await (await request(path)).json()).data;
+    const after = asBody<{
+      email: string;
+      status: string;
+      lists: Array<{ subscription_status: string }>;
+    }>((await (await request(path)).json()).data);
     check(
       after.email === subscriber.email &&
         after.status === subscriber.status &&

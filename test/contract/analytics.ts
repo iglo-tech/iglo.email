@@ -10,11 +10,12 @@ import { join } from "node:path";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import { asBody } from "@/test/read-body";
 
 const summed = (response: { status: number; body: any }, key: "campaign_id" | "list_id") => {
   check(response.status === 200, `summed-status-${response.status}`);
   const out: Record<number, number> = {};
-  for (const row of response.body.data as Array<CountRow>) {
+  for (const row of asBody<Array<CountRow>>(response.body.data)) {
     out[row[key]!] = (out[row[key]!] ?? 0) + row.count;
   }
   return out;
@@ -34,6 +35,7 @@ interface CountRow {
   count: number;
   timestamp: string;
 }
+type BoardRow = { id: number; status: string; body: string; body_source: unknown };
 const dummy = "00000000-0000-0000-0000-000000000000";
 const wide = "from=2000-01-01&to=2099-01-01";
 
@@ -120,8 +122,10 @@ export async function runAnalyticsContract(target: {
       await Bun.sleep(25);
     }
   };
-  const counts = async () => (await call("/api/dashboard/counts")).body.data;
-  const charts = async () => (await call("/api/dashboard/charts")).body.data;
+  const counts = async () =>
+    asBody<Record<string, any>>((await call("/api/dashboard/counts")).body.data);
+  const charts = async () =>
+    asBody<Record<string, any>>((await call("/api/dashboard/charts")).body.data);
   const analytics = async (
     resource: string,
     type: string,
@@ -170,7 +174,7 @@ export async function runAnalyticsContract(target: {
       await setting("bounce.webhooks_enabled", true);
     }
     const settings = (await call("/api/settings")).body.data;
-    const rootUrl = (settings["app.root_url"] as string).replace(/\/+$/, "");
+    const rootUrl = asBody<string>(settings["app.root_url"]).replace(/\/+$/, "");
     if (!reference) {
       const smtp = [
         {
@@ -187,14 +191,16 @@ export async function runAnalyticsContract(target: {
       ];
       check((await call("/api/settings/smtp", "PUT", smtp)).status === 200, "smtp-settings");
     }
-    const templates = (await call("/api/templates?no_body=true")).body.data as Array<any>;
-    const defaultTemplate = templates.find((t) => t.is_default).id as number;
+    const templates = asBody<Array<{ id: number; is_default: boolean }>>(
+      (await call("/api/templates?no_body=true")).body.data,
+    );
+    const defaultTemplate = templates.find((t) => t.is_default)!.id;
 
     const list = async (name: string, type: string, optin: string) => {
       const response = await call("/api/lists", "POST", { name: `${marker} ${name}`, type, optin });
       check(response.status === 200, "list-create");
       owned.lists.push(response.body.data.id);
-      return response.body.data.id as number;
+      return asBody<number>(response.body.data.id);
     };
     const subscriber = async (name: string, lists: Array<number>) => {
       const response = await call("/api/subscribers", "POST", {
@@ -205,7 +211,7 @@ export async function runAnalyticsContract(target: {
       });
       check(response.status === 200, "subscriber-create");
       owned.subscribers.push(response.body.data.id);
-      return response.body.data as { id: number; uuid: string; email: string };
+      return asBody<{ id: number; uuid: string; email: string }>(response.body.data);
     };
     const campaign = async (name: string, lists: Array<number>) => {
       const response = await call("/api/campaigns", "POST", {
@@ -217,7 +223,7 @@ export async function runAnalyticsContract(target: {
       });
       check(response.status === 200, "campaign-create");
       owned.campaigns.push(response.body.data.id);
-      return response.body.data as { id: number; uuid: string; name: string };
+      return asBody<{ id: number; uuid: string; name: string }>(response.body.data);
     };
 
     const news = await list("news", "public", "single");
@@ -364,7 +370,7 @@ export async function runAnalyticsContract(target: {
       { [camp1.id]: 3, [camp2.id]: 2 },
       "total-views",
     );
-    const linkRows = (await analytics("campaigns", "links", ids)).body.data as Array<object>;
+    const linkRows = asBody<Array<object>>((await analytics("campaigns", "links", ids)).body.data);
     same(
       linkRows,
       [
@@ -393,15 +399,17 @@ export async function runAnalyticsContract(target: {
     const finishedAt = new Date();
     for (const interval of ["hour", "day", "week", "month"]) {
       const allowed = new Set([truncated(startedAt, interval), truncated(finishedAt, interval)]);
-      const rows = (await analytics("campaigns", "views", ids, `&interval=${interval}`)).body
-        .data as Array<CountRow>;
+      const rows = asBody<Array<CountRow>>(
+        (await analytics("campaigns", "views", ids, `&interval=${interval}`)).body.data,
+      );
       check(rows.length >= 2, `interval-${interval}-rows`);
       for (const row of rows) {
         same(Object.keys(row).sort(), ["campaign_id", "count", "timestamp"], "campaign-row-keys");
         check(allowed.has(row.timestamp), `interval-${interval}-${row.timestamp}`);
       }
-      const listRows = (await analytics("lists", "views", [news], `&interval=${interval}`)).body
-        .data as Array<CountRow>;
+      const listRows = asBody<Array<CountRow>>(
+        (await analytics("lists", "views", [news], `&interval=${interval}`)).body.data,
+      );
       for (const row of listRows) {
         same(
           Object.keys(row).sort(),
@@ -412,7 +420,9 @@ export async function runAnalyticsContract(target: {
         check(allowed.has(row.timestamp), `list-interval-${interval}`);
       }
     }
-    const defaulted = (await analytics("campaigns", "views", ids)).body.data as Array<CountRow>;
+    const defaulted = asBody<Array<CountRow>>(
+      (await analytics("campaigns", "views", ids)).body.data,
+    );
     check(
       defaulted.every((row) => row.timestamp === truncated(finishedAt, "day")),
       "interval-default-day",
@@ -446,7 +456,7 @@ export async function runAnalyticsContract(target: {
     const error = async (path: string, status: number, label: string) => {
       const response = await call(path);
       check(response.status === status, `${label}-status-${response.status}`);
-      return response.body?.message as string;
+      return asBody<string>(response.body?.message);
     };
     const invalidDates = "Invalid `from` or `to` dates.";
     check(
@@ -566,8 +576,9 @@ export async function runAnalyticsContract(target: {
       ).status === 200,
       "unsubscribe",
     );
-    const left = (await analytics("lists", "unsubscriptions", [other])).body
-      .data as Array<CountRow>;
+    const left = asBody<Array<CountRow>>(
+      (await analytics("lists", "unsubscriptions", [other])).body.data,
+    );
     same(
       left.map((row) => [row.list_id, row.campaign_id, row.count]),
       [[other, 0, 1]],
@@ -669,10 +680,11 @@ export async function runAnalyticsContract(target: {
 
     const board = await call("/api/dashboard/campaigns");
     check(board.status === 200 && board.body.data.length === 6, "board-size");
-    const rows = board.body.data as Array<any>;
-    check(rows[0].id === planned.id && rows[0].status === "scheduled", "board-scheduled-first");
-    const listed = (await call("/api/campaigns?no_body=true&per_page=7&order_by=created_at")).body
-      .data.results as Array<any>;
+    const rows = asBody<Array<BoardRow>>(board.body.data);
+    check(rows[0]!.id === planned.id && rows[0]!.status === "scheduled", "board-scheduled-first");
+    const listed = asBody<{ results: Array<{ id: number }> }>(
+      (await call("/api/campaigns?no_body=true&per_page=7&order_by=created_at")).body.data,
+    ).results;
     same(
       rows.slice(1).map((row) => row.id),
       listed
@@ -683,15 +695,16 @@ export async function runAnalyticsContract(target: {
     );
     same(
       rows[1],
-      listed.find((row) => row.id === rows[1].id),
+      listed.find((row) => row.id === rows[1]!.id),
       "board-row",
     );
     check(
       rows.every((row) => row.body === "" && row.body_source === null),
       "board-no-bodies",
     );
-    const narrowed = (await call("/api/dashboard/campaigns", "GET", undefined, scoped)).body
-      .data as Array<any>;
+    const narrowed = asBody<Array<{ id: number }>>(
+      (await call("/api/dashboard/campaigns", "GET", undefined, scoped)).body.data,
+    );
     check(
       narrowed.length && narrowed.every((row) => [camp1.id, camp2.id, planned.id].includes(row.id)),
       "board-scoped",
@@ -745,10 +758,9 @@ export async function runAnalyticsContract(target: {
       "tracked-list-unique",
     );
     // With individual tracking links always count distinct known subscribers.
-    const distinct = (await analytics("campaigns", "links", [camp1.id])).body.data as Array<{
-      url: string;
-      count: number;
-    }>;
+    const distinct = asBody<Array<{ url: string; count: number }>>(
+      (await analytics("campaigns", "links", [camp1.id])).body.data,
+    );
     same(
       distinct.sort((a, b) => a.url.localeCompare(b.url)),
       [
@@ -772,7 +784,7 @@ export async function runAnalyticsContract(target: {
         body: `<a href="{{ "https://example.test/receipt" | track_link }}">r</a>{{ track_view }}`,
       });
       check(created.status === 200, "tx-template");
-      const template = created.body.data.id as number;
+      const template = asBody<number>(created.body.data.id);
       owned.templates.push(template);
       const tx = await call("/api/tx", "POST", {
         subscriber_id: ada.id,
@@ -798,7 +810,7 @@ export async function runAnalyticsContract(target: {
       check((await call(sendPath, "GET", undefined, scoped)).status === 403, "sends-permission");
       check((await call(`/api/sends/analytics?from=2000`)).status === 400, "sends-dates");
       check((await call(`${sendPath}&group_by=nope`)).status === 400, "sends-group");
-      const grouped = (await call(sendPath)).body.data as Array<any>;
+      const grouped = asBody<Array<{ template_id: number }>>((await call(sendPath)).body.data);
       same(
         grouped.find((row) => row.template_id === template),
         {
@@ -818,11 +830,8 @@ export async function runAnalyticsContract(target: {
     // Caching: the numbers hold still until the next refresh, as with materialized views.
     // The collection is what refreshes the view when caching is off.
     const members = async () =>
-      (
-        (await call("/api/lists?per_page=all")).body.data.results as Array<{
-          id: number;
-          subscriber_count: number;
-        }>
+      asBody<Array<{ id: number; subscriber_count: number }>>(
+        (await call("/api/lists?per_page=all")).body.data.results,
       ).find((row) => row.id === hidden)!.subscriber_count;
     const membersBefore = await members();
     await setting("app.cache_slow_queries", true);

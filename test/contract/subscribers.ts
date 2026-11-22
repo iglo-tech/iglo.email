@@ -7,6 +7,22 @@ import { runSubscriberStateRevisions } from "@/test/contract/subscriber-state-re
 import { runSubscriberScope } from "@/test/contract/subscriber-scope";
 import { runSubscriberQuery } from "@/test/contract/subscriber-query";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
+
+/** A subscriber as the API returns it, read as the fields the checks use. */
+type Subscriber = {
+  id: number;
+  email: string;
+  name: string;
+  status: string;
+  lists: Array<{
+    id: number;
+    subscription_status: string;
+    subscription_updated_at: string;
+    [field: string]: any;
+  }>;
+  [field: string]: any;
+};
 
 const bytes = (prefix: string, byte: number, tail: string) =>
   new Uint8Array([...new TextEncoder().encode(prefix), byte, ...new TextEncoder().encode(tail)])
@@ -42,7 +58,7 @@ export async function runSubscribersContract(target: {
     const data = (await response.json()).data;
     check(response.status === 200 && typeof data?.id === "number", "subscriber-list-create");
     lists.push(data.id);
-    return data.id as number;
+    return asBody<number>(data.id);
   }
   async function create(body: Record<string, unknown>) {
     const response = await request("/api/subscribers", "POST", body);
@@ -51,12 +67,12 @@ export async function runSubscribersContract(target: {
       subscribers.push(data.id);
     }
     check(response.status === 200 && typeof data?.id === "number", "subscriber-create");
-    return data;
+    return asBody<Subscriber>(data);
   }
   async function get(id: number) {
     const response = await request(`/api/subscribers/${id}`);
     check(response.status === 200, "subscriber-get");
-    return (await response.json()).data;
+    return asBody<Subscriber>((await response.json()).data);
   }
   try {
     await runSubscriberCouncilRevisions(target);
@@ -82,8 +98,8 @@ export async function runSubscribersContract(target: {
     );
     check(
       sub.lists.length === 1 &&
-        sub.lists[0].id === list &&
-        sub.lists[0].subscription_status === "confirmed",
+        sub.lists[0]!.id === list &&
+        sub.lists[0]!.subscription_status === "confirmed",
       "subscriber-create-membership",
     );
     if (target.mode === "normal") {
@@ -161,7 +177,8 @@ export async function runSubscribersContract(target: {
         "application/json",
       );
       check(
-        result.response.status === 200 && result.value.data.name.startsWith(`${expected}-`),
+        result.response.status === 200 &&
+          asBody<{ data: { name: string } }>(result.value).data.name.startsWith(`${expected}-`),
         "subscriber-name-unicode-title",
       );
     }
@@ -429,7 +446,7 @@ export async function runSubscribersContract(target: {
       attribs: { replacement: 2 },
     });
     check(response.status === 200, "subscriber-patch");
-    let value = (await response.json()).data;
+    let value = asBody<Subscriber>((await response.json()).data);
     check(
       value.name === "Changed" &&
         value.email === email &&
@@ -438,13 +455,13 @@ export async function runSubscribersContract(target: {
         value.lists.length === 1,
       "subscriber-patch-replacement",
     );
-    const originalMembershipUpdate = value.lists[0].subscription_updated_at;
+    const originalMembershipUpdate = value.lists[0]!.subscription_updated_at;
     response = await request(`/api/subscribers/${sub.id}`, "PATCH", {
       lists: [list, secondList],
       preconfirm_subscriptions: true,
     });
     check(response.status === 200, "subscriber-patch-lists");
-    value = (await response.json()).data;
+    value = asBody<Subscriber>((await response.json()).data);
     check(
       value.lists.length === 2 &&
         value.lists.every((l: any) => l.subscription_status === "confirmed"),
@@ -480,7 +497,7 @@ export async function runSubscribersContract(target: {
       preconfirm_subscriptions: true,
     });
     check(response.status === 200, "subscriber-patch-after-unsubscribe");
-    value = (await response.json()).data;
+    value = asBody<Subscriber>((await response.json()).data);
     check(
       value.lists.find((l: any) => l.id === list)?.subscription_status === "unsubscribed",
       "subscriber-unsubscribe-preserved",
@@ -498,7 +515,7 @@ export async function runSubscribersContract(target: {
       lists: [list, secondList],
     });
     check(response.status === 200, "subscriber-reenable");
-    value = (await response.json()).data;
+    value = asBody<Subscriber>((await response.json()).data);
     check(
       value.status === "enabled" &&
         value.lists.every((l: any) => l.subscription_status === "unsubscribed"),
@@ -519,7 +536,7 @@ export async function runSubscribersContract(target: {
       email: sub.email,
       lists: [list],
     });
-    value = (await response.json()).data;
+    value = asBody<Subscriber>((await response.json()).data);
     check(
       response.status === 200 &&
         value.status === "blocklisted" &&

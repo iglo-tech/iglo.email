@@ -1,6 +1,7 @@
 // Reference: listmonk subscriber/importer handlers at 6fcd95f; D43 validation.
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -29,12 +30,12 @@ export async function runSubscriberCouncilRevisions(target: {
       owned.push({ path, id: result.data.id });
     }
     check(response.status === 200 && result.data, "create");
-    return result.data;
+    return asBody<Record<string, any>>(result.data);
   }
   async function get(path: string) {
     const response = await request(path);
     check(response.status === 200, "get");
-    return (await response.json()).data;
+    return asBody<Record<string, any>>((await response.json()).data);
   }
   const subscribers = "/api/subscribers";
   let cleanupFailures = 0;

@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { ERROR_CODES } from "@/server/error-codes";
+import { asBody } from "@/test/read-body";
 import { cases as corpus } from "@/test/contract/cases";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type {
@@ -217,13 +218,13 @@ function normalize(
       if (typeof parent !== "object" || parent === null || !Object.hasOwn(parent, component)) {
         throw new Error(`Missing volatile field ${field.path.join(".")}`);
       }
-      parent = (parent as Record<string, unknown>)[component];
+      parent = asBody<Record<string, unknown>>(parent)[component];
     }
     const key = field.path.at(-1)!;
     if (typeof parent !== "object" || parent === null || !Object.hasOwn(parent, key)) {
       throw new Error(`Missing volatile field ${field.path.join(".")}`);
     }
-    const object = parent as Record<string, unknown>;
+    const object = asBody<Record<string, unknown>>(parent);
     const original = object[key];
     if (field.kind === "id") {
       const token = numericTokens.get(parent)?.get(key);
@@ -269,7 +270,7 @@ function normalize(
         field.kind !== "timestamp" ||
         !earlier ||
         earlier.kind !== "timestamp" ||
-        Date.parse(original as string) <= Date.parse(earlier.value as string)
+        Date.parse(asBody<string>(original)) <= Date.parse(asBody<string>(earlier.value))
       ) {
         throw new Error(`Timestamp ${field.bind} is not after ${field.after}`);
       }

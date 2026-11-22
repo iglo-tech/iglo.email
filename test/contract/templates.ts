@@ -6,6 +6,7 @@ import {
   loopMetadataOutput,
   loopModifierControls,
 } from "@/test/templates/budget-cases";
+import { asBody } from "@/test/read-body";
 
 type Row = {
   id: number;
@@ -53,12 +54,12 @@ export async function runTemplatesContract(target: {
     ? "<p>Hello {{ .Subscriber.Name }}</p>"
     : "<p>Hello {{ subscriber.name }}</p>";
   const list = async (query = "") =>
-    ((await (await request(`/api/templates${query}`)).json()) as { data: Array<Row> }).data;
+    asBody<{ data: Array<Row> }>(await (await request(`/api/templates${query}`)).json()).data;
   const get = async (id: number) =>
-    ((await (await request(`/api/templates/${id}`)).json()) as { data: Row }).data;
+    asBody<{ data: Row }>(await (await request(`/api/templates/${id}`)).json()).data;
   const create = async (input: unknown) => {
     const response = await request("/api/templates", "POST", input);
-    const item = ((await response.json()) as { data: Row }).data;
+    const item = asBody<{ data: Row }>(await response.json()).data;
     if (response.status === 200 && item?.id) {
       owned.push(item.id);
     }
@@ -73,7 +74,7 @@ export async function runTemplatesContract(target: {
     );
     const initial = await request("/api/templates");
     check(initial.status === 200, "list");
-    const rows = ((await initial.json()) as { data: Array<Row> }).data;
+    const rows = asBody<{ data: Array<Row> }>(await initial.json()).data;
     check(
       Array.isArray(rows) && rows.some((row) => row.type === "campaign" && row.is_default),
       "default",
@@ -114,8 +115,8 @@ export async function runTemplatesContract(target: {
     }
     const fetched = await get(item.id);
     check(fetched.name === item.name && fetched.body === campaignBody, "get");
-    const noBody = (
-      (await (await request(`/api/templates/${item.id}?no_body=true`)).json()) as { data: Row }
+    const noBody = asBody<{ data: Row }>(
+      await (await request(`/api/templates/${item.id}?no_body=true`)).json(),
     ).data;
     check(!("body" in noBody) && noBody.body_source === null, "no-body");
     check(
@@ -291,7 +292,8 @@ export async function runTemplatesContract(target: {
       body: txBody,
     });
     check(
-      update.status === 200 && ((await update.json()) as { data: Row }).data.subject === "Updated",
+      update.status === 200 &&
+        asBody<{ data: Row }>(await update.json()).data.subject === "Updated",
       "update",
     );
     check((await get(tx.id)).name === `renamed-${suffix}`, "update-persisted");
@@ -387,7 +389,7 @@ export async function runTemplatesContract(target: {
       `{"name":"first","NAME":"paired-${suffix}-é","name":null,"type":"tx","subject":"Hello","body":"text"}`,
       "application/json",
     );
-    const duplicateRow = ((await duplicate.json()) as { data?: Row }).data;
+    const duplicateRow = asBody<{ data?: Row }>(await duplicate.json()).data;
     if (duplicate.status === 200 && duplicateRow) {
       owned.push(duplicateRow.id);
     }
@@ -399,7 +401,7 @@ export async function runTemplatesContract(target: {
       `<Template><Name>xml-${suffix}</Name><Type>tx</Type><Subject>Hello</Subject><Body>body</Body></Template>`,
       "application/xml",
     );
-    const xmlRow = ((await xml.json()) as { data?: Row }).data;
+    const xmlRow = asBody<{ data?: Row }>(await xml.json()).data;
     if (xml.status === 200 && xmlRow) {
       owned.push(xmlRow.id);
     }
@@ -427,7 +429,7 @@ export async function runTemplatesContract(target: {
         subject: "é".repeat(1024),
         body: "",
       });
-      const subjectRow = ((await subjectExact.json()) as { data?: Row }).data;
+      const subjectRow = asBody<{ data?: Row }>(await subjectExact.json()).data;
       if (subjectExact.status === 200 && subjectRow) {
         owned.push(subjectRow.id);
       }
@@ -521,7 +523,7 @@ export async function runTemplatesContract(target: {
     const setDefault = await request(`/api/templates/${item.id}/default`, "PUT");
     check(
       setDefault.status === 200 &&
-        ((await setDefault.json()) as { data: Array<Row> }).data.some(
+        asBody<{ data: Array<Row> }>(await setDefault.json()).data.some(
           (row) => row.id === item.id && row.is_default,
         ),
       "set-default",

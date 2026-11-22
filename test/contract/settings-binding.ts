@@ -1,6 +1,7 @@
 // Representative HTTP binding cases shared with the pinned reference.
 import type { Credentials, Mode } from "@/test/contract/types";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { asBody } from "@/test/read-body";
 
 const check = (condition: unknown, label: string) => {
   if (!condition) {
@@ -17,10 +18,8 @@ export async function runSettingsBinding(target: {
   const request = (path: string, init: RequestInit) =>
     settingsFetch(target.baseUrl + path, init, target.mode === "reference");
   const get = async () =>
-    (
-      (await (await request("/api/settings", { headers: { Authorization: auth } })).json()) as {
-        data: Record<string, any>;
-      }
+    asBody<{ data: Record<string, any> }>(
+      await (await request("/api/settings", { headers: { Authorization: auth } })).json(),
     ).data;
   const put = (path: string, body: string, type = "application/json") =>
     request(path, { method: "PUT", headers: { Authorization: auth, "Content-Type": type }, body });

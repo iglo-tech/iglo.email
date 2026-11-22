@@ -4,6 +4,17 @@
 // reference result in reference mode and the iglo.email result in normal mode.
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
+
+/** A list or subscriber the API created, read as the fields the checks use. */
+type Created = { id: number; [field: string]: any };
+/** A subscriber listing with each subscriber's lists. */
+type Listing = {
+  results: Array<{
+    id: number;
+    lists: Array<{ id: number; name?: string; restricted?: boolean; description?: string }>;
+  }>;
+};
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -12,7 +23,7 @@ function check(value: unknown, label: string): asserts value {
 }
 
 const names = (body: any) =>
-  ((body.data?.results ?? []) as Array<{ email: string }>).map((row) => row.email.split("-")[0]);
+  asBody<Array<{ email: string }>>(body.data?.results ?? []).map((row) => row.email.split("-")[0]);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 export async function runSubscriberQuery(target: {
@@ -54,7 +65,7 @@ export async function runSubscriberQuery(target: {
       resources.push({ kind, id: response.body.data.id });
     }
     check(response.status === 200, `subscriber-query-setup-${kind}`);
-    return response.body.data;
+    return asBody<Created>(response.body.data);
   }
   const q = encodeURIComponent;
   try {
@@ -149,7 +160,8 @@ export async function runSubscriberQuery(target: {
     );
     r = await json(`/api/subscribers?search=${tag}&status=bogus`);
     check(
-      r.status === 400 && r.body.message.startsWith("Error preparing subscriber query: "),
+      r.status === 400 &&
+        asBody<string>(r.body.message).startsWith("Error preparing subscriber query: "),
       "subscriber-query-invalid-status",
     );
 
@@ -185,7 +197,8 @@ export async function runSubscriberQuery(target: {
     ] as const) {
       r = await json(`/api/subscribers?query=${q(fragment)}`);
       check(
-        r.status === 400 && r.body.message.startsWith("Error preparing subscriber query: "),
+        r.status === 400 &&
+          asBody<string>(r.body.message).startsWith("Error preparing subscriber query: "),
         `subscriber-query-sql-${label}`,
       );
     }
@@ -239,9 +252,9 @@ export async function runSubscriberQuery(target: {
       Authorization: `Basic ${btoa(`${scopedUser.username}:${scopedUser.password}`)}`,
     };
     r = await json(`/api/subscribers?per_page=all`, "GET", undefined, scoped);
-    const masked = r.body.data.results
-      ?.find((row: any) => row.id === bob.id)
-      ?.lists.find((list: any) => list.id === listB);
+    const masked = asBody<Listing>(r.body.data)
+      .results.find((row) => row.id === bob.id)
+      ?.lists.find((list) => list.id === listB);
     check(
       same(names(r.body), ["bob", "alice"]) &&
         masked?.name === "*Unknown" &&
@@ -365,7 +378,7 @@ export async function runSubscriberQuery(target: {
       target_list_ids: [listB, 2_147_483_000],
     });
     check(
-      r.status === 500 && r.body.message.startsWith("Error updating Subscribers: "),
+      r.status === 500 && asBody<string>(r.body.message).startsWith("Error updating Subscribers: "),
       "subscriber-bulk-fk",
     );
     r = await json(`/api/subscribers?list_id=${listB}`);
@@ -396,7 +409,9 @@ export async function runSubscriberQuery(target: {
     r = await json(`/api/subscribers?search=${tag}&subscription_status=none`);
     check(same(names(r.body), ["carol"]), "subscriber-bulk-remove");
     r = await json("/api/subscribers/query/blocklist", "PUT", { search: bob.email });
-    const blocked = (await json(`/api/subscribers/${bob.id}`)).body.data;
+    const blocked = asBody<{ status: string; lists: Array<{ subscription_status: string }> }>(
+      (await json(`/api/subscribers/${bob.id}`)).body.data,
+    );
     check(
       same(r.body, { data: true }) &&
         blocked.status === "blocklisted" &&
@@ -458,7 +473,7 @@ export async function runSubscriberQuery(target: {
       names(
         await json(
           `/api/subscribers?list_id=${list}&search=${q(multi)}${extra}&order_by=email&order=asc`,
-        ).then((x) => x.body),
+        ).then((x): unknown => x.body),
       );
     const both = [listC, listD];
     r = await json("/api/subscribers/query/lists", "PUT", {

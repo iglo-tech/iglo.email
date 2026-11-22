@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 await withProduction(
@@ -15,7 +16,7 @@ await withProduction(
     assert.equal((await call("/api/sends", "")).status, 403);
     let response = await call("/api/sends");
     assert.equal(response.status, 200);
-    assert.deepEqual(((await response.json()) as { data: unknown }).data, {
+    assert.deepEqual(asBody<{ data: unknown }>(await response.json()).data, {
       results: [],
       total: 0,
       page: 1,
@@ -34,7 +35,7 @@ await withProduction(
     response = await call("/api/sends");
     assert.equal(response.status, 200);
     assert.deepEqual(
-      ((await response.json()) as { data: { results: Array<unknown> } }).data.results,
+      asBody<{ data: { results: Array<unknown> } }>(await response.json()).data.results,
       [],
     );
     process.stdout.write("PASS native production empty journal, authentication and restart\n");

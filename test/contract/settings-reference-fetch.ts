@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { asBody } from "@/test/read-body";
 
 // Last lines of the reference's own log, on one printable line, without credentials.
 function upstreamLogTail(): string {
@@ -44,7 +45,7 @@ export async function settingsFetch(
       const readJSON = response.json.bind(response);
       response.json = async () => {
         try {
-          return await readJSON();
+          return asBody<unknown>(await readJSON());
         } catch {
           throw new Error(`FAIL settings-json-${method}-${response.status}`);
         }
@@ -53,13 +54,13 @@ export async function settingsFetch(
     } catch (error) {
       if (
         !reference ||
-        (error as { code?: string }).code !== "ECONNREFUSED" ||
+        asBody<{ code?: string }>(error).code !== "ECONNREFUSED" ||
         Date.now() >= deadline
       ) {
         const method = /^(GET|PUT|POST|DELETE)$/.test(init.method ?? "GET")
           ? (init.method ?? "GET")
           : "OTHER";
-        const code = (error as { code?: string }).code;
+        const code = asBody<{ code?: string }>(error).code;
         const reason = code === "ECONNREFUSED" ? "refused" : "other";
         const waited = Date.now() - started;
         const detail = `attempts=${attempts} waited=${waited}ms code=${code ?? "none"} reference=${reference}${reference ? upstreamLogTail() : ""}`;

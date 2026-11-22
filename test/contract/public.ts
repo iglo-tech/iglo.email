@@ -11,6 +11,7 @@ import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import { altchaPayload, solveAltcha } from "@/test/public/altcha-solver";
 import type { AltchaChallenge } from "@/test/public/altcha-solver";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 const uuidText = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const dummy = "00000000-0000-0000-0000-000000000000";
@@ -101,9 +102,9 @@ export async function runPublicContract(target: {
       query: `to:"${address}"`,
       limit: "50",
     });
-    const found = (await (await mailpit(`/api/v1/search?${query}`)).json()) as {
-      messages: Array<{ ID: string; Subject: string }>;
-    };
+    const found = asBody<{ messages: Array<{ ID: string; Subject: string }> }>(
+      await (await mailpit(`/api/v1/search?${query}`)).json(),
+    );
     return found.messages;
   };
   const received = async (address: string, count = 1) => {
@@ -117,10 +118,10 @@ export async function runPublicContract(target: {
     }
   };
   const message = async (id: string) =>
-    (await (await mailpit(`/api/v1/message/${encodeURIComponent(id)}`)).json()) as {
+    asBody<{
       HTML: string;
       Attachments: Array<{ PartID: string; FileName: string; ContentType: string }>;
-    };
+    }>(await (await mailpit(`/api/v1/message/${encodeURIComponent(id)}`)).json());
   const raw = async (id: string) =>
     await (await mailpit(`/api/v1/message/${encodeURIComponent(id)}/raw`)).text();
   const owned = {
@@ -144,20 +145,20 @@ export async function runPublicContract(target: {
     if (found) {
       owned.subscribers.add(found.id);
     }
-    return found as {
+    return asBody<{
       id: number;
       uuid: string;
       name: string;
       status: string;
       lists: Array<any>;
-    };
+    }>(found);
   };
   const membership = async (id: number, list: number) =>
-    (await call(`/api/subscribers/${id}`)).body?.data?.lists?.find(
-      (l: { id: number }) => l.id === list,
-    );
+    asBody<Array<{ id: number; subscription_status?: string; [field: string]: any }> | undefined>(
+      (await call(`/api/subscribers/${id}`)).body?.data?.lists,
+    )?.find((l) => l.id === list);
   const status = async (id: number, list: number) =>
-    (await membership(id, list))?.subscription_status as string | undefined;
+    (await membership(id, list))?.subscription_status;
   const createList = async (name: string, type: string, optin: string) => {
     const response = await call("/api/lists", "POST", {
       name: `${marker} ${name}`,
@@ -166,7 +167,7 @@ export async function runPublicContract(target: {
     });
     check(response.status === 200, `list-${name}`);
     owned.lists.push(response.body.data.id);
-    return response.body.data as { id: number; uuid: string; name: string };
+    return asBody<{ id: number; uuid: string; name: string }>(response.body.data);
   };
   const createSubscriber = async (name: string, lists: Array<number>, preconfirm = false) => {
     const email = address(name);
@@ -179,8 +180,8 @@ export async function runPublicContract(target: {
     check(response.status === 200, `subscriber-${name}`);
     owned.subscribers.add(response.body.data.id);
     return {
-      id: response.body.data.id as number,
-      uuid: response.body.data.uuid as string,
+      id: asBody<number>(response.body.data.id),
+      uuid: asBody<string>(response.body.data.uuid),
       email,
     };
   };
@@ -208,7 +209,7 @@ export async function runPublicContract(target: {
       optin: "single",
     });
     check(list.status === 200, "paired-list");
-    owned.lists.push(list.body.data.id as number);
+    owned.lists.push(asBody<number>(list.body.data.id));
     check(
       (
         await call("/api/subscribers/lists", "PUT", {
@@ -220,7 +221,7 @@ export async function runPublicContract(target: {
       ).status === 200,
       "paired-member",
     );
-    const fromEmail = (await call("/api/settings")).body.data["app.from_email"][0] as string;
+    const fromEmail = asBody<string>((await call("/api/settings")).body.data["app.from_email"][0]);
     const created = await call("/api/campaigns", "POST", {
       name: `${marker} paired campaign`,
       subject: `${marker} paired subject`,
@@ -232,7 +233,7 @@ export async function runPublicContract(target: {
       body: "<p>Paired</p>",
     });
     check(created.status === 200, "paired-campaign");
-    owned.campaigns.push(created.body.data.id as number);
+    owned.campaigns.push(asBody<number>(created.body.data.id));
     check(
       (await call(`/api/campaigns/${created.body.data.id}/status`, "PUT", { status: "running" }))
         .status === 200,
@@ -245,7 +246,7 @@ export async function runPublicContract(target: {
       }
       check(Date.now() < deadline, "paired-finish");
     }
-    return created.body.data.uuid as string;
+    return asBody<string>(created.body.data.uuid);
   };
   const setSetting = async (key: string, value: unknown) => {
     const response = await call(`/api/settings/${key}`, "PUT", value);
@@ -299,7 +300,7 @@ export async function runPublicContract(target: {
       ];
       check((await call("/api/settings/smtp", "PUT", smtp)).status === 200, "smtp-settings");
     }
-    const rootUrl = (settings["app.root_url"] as string).replace(/\/+$/, "");
+    const rootUrl = asBody<string>(settings["app.root_url"]).replace(/\/+$/, "");
     const single = await createList("single", "public", "single");
     const double = await createList("double", "public", "double");
     const hidden = await createList("hidden", "private", "single");
@@ -307,7 +308,7 @@ export async function runPublicContract(target: {
 
     // GET /api/public/lists: minimal fields, public lists only.
     const lists = await visit("/api/public/lists");
-    const listed = JSON.parse(lists.text) as Array<Record<string, unknown>>;
+    const listed = asBody<Array<Record<string, unknown>>>(JSON.parse(lists.text));
     check(
       lists.status === 200 &&
         listed.some((l) => l.uuid === single.uuid && l.name === single.name) &&
@@ -520,20 +521,18 @@ export async function runPublicContract(target: {
     // B121 (D119, deliberate difference): with no public list to show, the form page is the
     // branded message at 200; upstream answers 500. The public lists are archived for the check
     // and restored after it, so the rest of the suite sees them as before.
-    const minimal = (await call("/api/lists?minimal=true&status=active")).body.data as {
-      results: Array<{ id: number; type: string }>;
-    };
+    const minimal = asBody<{ results: Array<{ id: number; type: string }> }>(
+      (await call("/api/lists?minimal=true&status=active")).body.data,
+    );
     const publicIds = minimal.results
       .filter((list) => list.type === "public")
       .map((list) => list.id);
     // The check must have something to archive; an empty set would pass without testing anything.
     check(publicIds.length > 0, "form-empty-lists-present");
     const setStatus = async (id: number, status: "active" | "archived") => {
-      const full = (await call(`/api/lists/${id}`)).body.data as {
-        name: string;
-        type: string;
-        optin: string;
-      };
+      const full = asBody<{ name: string; type: string; optin: string }>(
+        (await call(`/api/lists/${id}`)).body.data,
+      );
       return call(`/api/lists/${id}`, "PUT", {
         name: full.name,
         type: full.type,
@@ -933,8 +932,12 @@ export async function runPublicContract(target: {
         data.profile[0].uuid === noa.uuid &&
         // Production's paired list (privacyPath) is one more subscription of Noa's.
         data.subscriptions.length === (reference ? 2 : 3) &&
-        data.subscriptions.some((s: any) => s.name === single.name) &&
-        data.subscriptions.some((s: any) => s.name === "Private list") &&
+        asBody<{ subscriptions: Array<{ name: string }> }>(data).subscriptions.some(
+          (s) => s.name === single.name,
+        ) &&
+        asBody<{ subscriptions: Array<{ name: string }> }>(data).subscriptions.some(
+          (s) => s.name === "Private list",
+        ) &&
         !JSON.stringify(data).includes(hidden.name) &&
         Array.isArray(data.campaign_views) &&
         Array.isArray(data.link_clicks) &&
@@ -1046,7 +1049,7 @@ export async function runPublicContract(target: {
         check(sent.status === 200, `anon-${label}-send`);
         await received(who.email);
         const listed = await call(`/api/sends?subscriber_id=${who.id}`);
-        const send = listed.body.data.results[0].id as number;
+        const send = asBody<number>(listed.body.data.results[0].id);
         check((await remove(who)) === 200, `anon-${label}-remove`);
         owned.subscribers.delete(who.id);
         const row = (await call(`/api/sends/${send}`)).body.data;
@@ -1063,10 +1066,11 @@ export async function runPublicContract(target: {
 
     // A finished campaign: view in browser, template URLs and the archive.
     const reader = await createSubscriber("reader", [single.id], true);
-    const templates = (await call("/api/templates?no_body=true")).body.data as Array<any>;
-    const archiveTemplate = templates.find((t) => t.name === "Default archive template")
-      .id as number;
-    const defaultTemplate = templates.find((t) => t.is_default).id as number;
+    const templates = asBody<Array<{ id: number; name: string; is_default: boolean }>>(
+      (await call("/api/templates?no_body=true")).body.data,
+    );
+    const archiveTemplate = templates.find((t) => t.name === "Default archive template")!.id;
+    const defaultTemplate = templates.find((t) => t.is_default)!.id;
     const urls = reference
       ? `<a href="{{ MessageURL }}">view</a> <a href="{{ ManageURL }}">manage</a> <a href="{{ ArchiveURL }}">all</a> <a href="{{ OptinURL }}">confirm</a> Hi {{ .Subscriber.FirstName }}`
       : `<a href="{{ message_url }}">view</a> <a href="{{ manage_url }}">manage</a> <a href="{{ archive_url }}">all</a> <a href="{{ optin_url }}">confirm</a> Hi {{ subscriber.first_name }}`;
@@ -1086,7 +1090,7 @@ export async function runPublicContract(target: {
       archive_slug: `${marker}-slug`,
     });
     check(created.status === 200, "campaign-create");
-    const campaign = created.body.data as { id: number; uuid: string };
+    const campaign = asBody<{ id: number; uuid: string }>(created.body.data);
     owned.campaigns.push(campaign.id);
 
     const view = `/campaign/${campaign.uuid}/${reader.uuid}`;
@@ -1153,7 +1157,9 @@ export async function runPublicContract(target: {
     // Archive API, list page, feed, single and latest pages. Only sample data shows.
     const archive = await visit("/api/public/archive?per_page=50");
     const archived = JSON.parse(archive.text).data;
-    const entry = archived.results.find((r: any) => r.uuid === campaign.uuid);
+    const entry = asBody<{ results: Array<{ uuid: string; [field: string]: any }> }>(
+      archived,
+    ).results.find((r) => r.uuid === campaign.uuid);
     check(
       archive.status === 200 &&
         entry?.subject === `${marker} subject` &&
@@ -1474,7 +1480,7 @@ export async function runPublicContract(target: {
         { altcha: { enabled: true, complexity: 1000 }, hcaptcha },
         async () => {
           const issued = await visit("/api/public/captcha/altcha");
-          const challenge = JSON.parse(issued.text) as AltchaChallenge;
+          const challenge = asBody<AltchaChallenge>(JSON.parse(issued.text));
           check(
             issued.status === 200 &&
               issued.headers.get("content-type") === "application/json" &&

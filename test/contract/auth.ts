@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { rawRequest } from "@/test/server/raw-request";
+import { asBody } from "@/test/read-body";
 
 interface UserRecord {
   id: number;
@@ -117,7 +118,7 @@ async function user(response: Response): Promise<UserRecord> {
   if (response.status !== 200) {
     throw new Error(`FAIL user-response-status-${response.status}`);
   }
-  const value = (await response.json()) as { data?: UserRecord };
+  const value = asBody<{ data?: UserRecord }>(await response.json());
   if (!value.data || !Number.isSafeInteger(value.data.id) || value.data.id < 1) {
     throw new Error("FAIL user-response-id");
   }
@@ -208,7 +209,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     const invalid = await request(target, "/api/health", { auth: "token invalid:invalid" });
     check(
       invalid.status === 403 &&
-        ((await invalid.json()) as { message: string }).message === "invalid API credentials",
+        asBody<{ message: string }>(await invalid.json()).message === "invalid API credentials",
       "auth-invalid-token",
     );
     for (const [authorization, message, caseName] of [
@@ -218,7 +219,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       ["token :empty", "empty `api_key` or `token`", "auth-empty-key"],
     ]) {
       const response = await request(target, "/api/health", { auth: authorization! });
-      const observed = ((await response.json()) as { message: string }).message;
+      const observed = asBody<{ message: string }>(await response.json()).message;
       const expected = `code=400, message=${message}`;
       check(response.status === 403 && observed === expected, caseName!);
     }
@@ -345,7 +346,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         user_role_id: 1,
       },
     });
-    const duplicateBody = (await duplicate.json()) as { message: string };
+    const duplicateBody = asBody<{ message: string }>(await duplicate.json());
     check(
       duplicate.status === 500 &&
         duplicateBody.message ===
@@ -367,7 +368,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       noRole.status === (target.mode === "reference" ? 500 : 400),
       "d27-invalid-role-safe-error",
     );
-    const invalidRoleMessage = ((await noRole.json()) as { message: string }).message;
+    const invalidRoleMessage = asBody<{ message: string }>(await noRole.json()).message;
     check(
       target.mode === "reference"
         ? /\b[a-f0-9]{64}\b/.test(invalidRoleMessage)
@@ -382,7 +383,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     const listResponse = await request(target, "/api/users?order_by=username&order=asc", {
       auth: basic,
     });
-    const list = (await listResponse.json()) as { data: Array<UserRecord> };
+    const list = asBody<{ data: Array<UserRecord> }>(await listResponse.json());
     check(
       listResponse.status === 200 &&
         Array.isArray(list.data) &&
@@ -394,7 +395,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     const upperResponse = await request(target, "/api/users?order_by=username&order=ASC", {
       auth: basic,
     });
-    const upperNames = ((await upperResponse.json()) as { data: Array<UserRecord> }).data.map(
+    const upperNames = asBody<{ data: Array<UserRecord> }>(await upperResponse.json()).data.map(
       (entry) => entry.username,
     );
     check(
@@ -411,8 +412,8 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         `/api/users?order_by=loggedin_at&order=${direction}`,
         { auth: basic },
       );
-      const ordered = (
-        (await orderedResponse.json()) as { data: Array<{ loggedin_at: string | null }> }
+      const ordered = asBody<{ data: Array<{ loggedin_at: string | null }> }>(
+        await orderedResponse.json(),
       ).data;
       check(
         orderedResponse.status === 200 &&
@@ -462,7 +463,8 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       });
       check(
         invalidEmail.status === 400 &&
-          ((await invalidEmail.json()) as { message: string }).message === "Invalid fields: email",
+          asBody<{ message: string }>(await invalidEmail.json()).message ===
+            "Invalid fields: email",
         "users-email-invalid-dots",
       );
     }
@@ -488,7 +490,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       });
       check(
         response.status === 400 &&
-          ((await response.json()) as { message: string }).message === "Invalid fields: email",
+          asBody<{ message: string }>(await response.json()).message === "Invalid fields: email",
         `users-email-probe-${index}`,
       );
     }
@@ -502,7 +504,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       if (roleResponse.status !== 200) {
         throw new Error("FAIL reference-list-role-setup");
       }
-      const role = ((await roleResponse.json()) as { data: { id: number } }).data;
+      const role = asBody<{ data: { id: number } }>(await roleResponse.json()).data;
       if (!Number.isSafeInteger(role.id) || role.id < 1) {
         throw new Error("FAIL reference-list-role-id");
       }
@@ -523,11 +525,9 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
         if (response.status !== 200) {
           throw new Error("FAIL reference-list-user-setup");
         }
-        const entry = (
-          (await response.json()) as {
-            data: { id: number; list_role_id: number; list_role: unknown };
-          }
-        ).data;
+        const entry = asBody<{
+          data: { id: number; list_role_id: number; list_role: unknown };
+        }>(await response.json()).data;
         listUserId = entry.id;
         check(
           Number.isSafeInteger(listUserId) &&
@@ -538,8 +538,8 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
           "reference-user-detail-empty-list-role",
         );
         const responseList = await request(target, "/api/users", { auth: basic });
-        const entries = (
-          (await responseList.json()) as { data: Array<{ id: number; list_role: unknown }> }
+        const entries = asBody<{ data: Array<{ id: number; list_role: unknown }> }>(
+          await responseList.json(),
         ).data;
         const listRole = entries.find((item) => item.id === listUserId)?.list_role;
         check(
@@ -614,7 +614,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
     if (target.mode === "reference") {
       check(
         nameOnly.status === 400 &&
-          ((await nameOnly.json()) as { message: string }).message === "Invalid fields: email",
+          asBody<{ message: string }>(await nameOnly.json()).message === "Invalid fields: email",
         "d28-api-profile-name-only",
       );
     } else {
@@ -746,7 +746,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
       auth: basic,
     });
     check(
-      deletedApi.status === 200 && ((await deletedApi.json()) as { data: boolean }).data === true,
+      deletedApi.status === 200 && asBody<{ data: boolean }>(await deletedApi.json()).data === true,
       "users-delete-batch",
     );
     created.splice(created.indexOf(api.id), 1);
@@ -843,7 +843,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
           headers: { Authorization: basic },
         });
       } catch (error) {
-        reset = (error as { code?: string }).code === "ECONNRESET";
+        reset = asBody<{ code?: string }>(error).code === "ECONNRESET";
       }
       check(reset, "D26-header-only-logout");
     } else {
@@ -909,7 +909,7 @@ export async function runAuthContract(target: AuthTarget): Promise<void> {
 /** Both callers own a disposable target; restore its bootstrap account even on failure. */
 async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> {
   const response = await request(target, "/api/users", { auth: basic });
-  const list = (await response.json()) as { data: Array<UserRecord> };
+  const list = asBody<{ data: Array<UserRecord> }>(await response.json());
   const humans = list.data.filter(
     (entry) => entry.type === "user" && entry.status === "enabled" && entry.user_role.id === 1,
   );
@@ -943,7 +943,7 @@ async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> 
       if (target.mode === "reference") {
         check(
           updated.status === 400 &&
-            ((await updated.json()) as { message: string }).message ===
+            asBody<{ message: string }>(await updated.json()).message ===
               "User(s) couldn't be updated. There has to be at least one active Super Admin user.",
           `d29-last-admin-${name}`,
         );
@@ -990,7 +990,7 @@ async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> 
       check((await user(converted)).type === "api", "d28-reference-final-human-converted");
     } else {
       check(
-        ((await converted.json()) as { message: string }).message ===
+        asBody<{ message: string }>(await converted.json()).message ===
           "User(s) couldn't be updated. There has to be at least one active Super Admin user.",
         "d28-last-human-admin-error",
       );
@@ -1047,7 +1047,7 @@ async function lastHumanAdmin(target: AuthTarget, basic: string): Promise<void> 
     });
     check(noLogin.status === 400, "last-admin-password-login-off-refused");
     check(
-      ((await noLogin.json()) as { message: string }).message === needSuper,
+      asBody<{ message: string }>(await noLogin.json()).message === needSuper,
       "last-admin-password-login-off-message",
     );
     const placeholder = await request(target, "/api/users", {

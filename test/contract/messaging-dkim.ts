@@ -8,6 +8,7 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { verifyFixtureDkim } from "@/test/perf/runtime-compat/dkim-check";
 import { listmonkEnvelope } from "@/test/contract/envelope";
+import { asBody } from "@/test/read-body";
 import type { Credentials } from "@/test/contract/types";
 
 export async function runDKIMSettings(target: {
@@ -35,7 +36,7 @@ export async function runDKIMSettings(target: {
         signal: AbortSignal.timeout(5000),
       });
     const read = async () =>
-      ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data;
+      asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data;
     const initial = await read();
     assert.equal(Object.hasOwn(initial.smtp[0], "dkim"), false);
     const { privateKey, publicKey } = generateKeyPairSync("rsa", {
@@ -242,7 +243,7 @@ export async function runDKIMSettings(target: {
     const beforeRefused = await read();
     const refused = await request("/api/settings/smtp", "PUT", [first, duplicate]);
     assert.equal(refused.status, 400);
-    assert.match(((await refused.json()) as { message: string }).message, /uuid/i);
+    assert.match(asBody<{ message: string }>(await refused.json()).message, /uuid/i);
     assert.deepEqual(await read(), beforeRefused);
     assert.equal((await request("/api/settings/smtp", "PUT", [first])).status, 200);
     await send("restored", true);

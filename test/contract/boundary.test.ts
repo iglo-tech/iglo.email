@@ -6,6 +6,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { withProduction } from "@/test/contract/owned";
 import { runContract } from "@/test/contract/runner";
 import type { ContractCase, ContractTarget, Difference } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 const create = (id: number, created: string, updated: string) =>
   Bun.serve({
@@ -261,7 +262,7 @@ describe("difference metadata and strict transport", () => {
         fixture: endpoint,
       };
       const bad: Array<Array<ContractCase>> = [
-        [{ ...base, difference: "D99" as Difference }],
+        [{ ...base, difference: asBody<Difference>("D99") }],
         [{ ...base, difference: "D17" }],
         [{ ...base, id: "positive-id-overflow" }],
         [base, base],

@@ -8,10 +8,11 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 const failed = async (response: Response, label: string, status = 400) => {
   check(response.status === status, `${label}-status`);
-  const body = (await response.json()) as { message?: unknown };
+  const body = asBody<{ message?: unknown }>(await response.json());
   check(typeof body.message === "string" && body.message.length > 0, `${label}-message`);
 };
 
@@ -85,13 +86,13 @@ export async function runTxContract(target: {
   };
   const sends = async (response: Response, label: string, status = "sent") => {
     check(response.status === 200, `${label}-status`);
-    const body = (await response.json()) as { data: true | { sends: Array<SendRow> } };
+    const body = asBody<{ data: true | { sends: Array<SendRow> } }>(await response.json());
     if (reference) {
       check(body.data === true, `${label}-reference-body`);
       return [];
     }
     // Declared difference: the native response returns the created sends.
-    const data = body.data as { sends: Array<SendRow> };
+    const data = asBody<{ sends: Array<SendRow> }>(body.data);
     check(Array.isArray(data.sends) && data.sends.length > 0, `${label}-sends`);
     for (const row of data.sends) {
       check(
@@ -114,9 +115,9 @@ export async function runTxContract(target: {
   let cleanupFailures = 0;
   try {
     if (!reference) {
-      const current = (await (await api("/api/settings")).json()) as {
-        data: { smtp: Array<Record<string, unknown>> };
-      };
+      const current = asBody<{ data: { smtp: Array<Record<string, unknown>> } }>(
+        await (await api("/api/settings")).json(),
+      );
       const smtp = [
         {
           ...current.data.smtp[0],
@@ -140,14 +141,14 @@ export async function runTxContract(target: {
         body,
       });
       check(response.status === 200, "template-create");
-      const id = ((await response.json()) as { data: { id: number } }).data.id;
+      const id = asBody<{ data: { id: number } }>(await response.json()).data.id;
       owned.templates.push(id);
       return id;
     };
     const subscriber = async (email: string, name: string, status = "enabled", extra = {}) => {
       const response = await api("/api/subscribers", "POST", { email, name, status, ...extra });
       check(response.status === 200, "subscriber-create");
-      const id = ((await response.json()) as { data: { id: number } }).data.id;
+      const id = asBody<{ data: { id: number } }>(await response.json()).data.id;
       owned.subscribers.push(id);
       return id;
     };
@@ -281,8 +282,8 @@ export async function runTxContract(target: {
     await failed(await form("{", []), "multipart-invalid-data");
 
     // Validation: every rejected request sends nothing.
-    const campaign = (
-      (await (await api("/api/templates")).json()) as { data: Array<{ id: number; type: string }> }
+    const campaign = asBody<{ data: Array<{ id: number; type: string }> }>(
+      await (await api("/api/templates")).json(),
     ).data.find((row) => row.type === "campaign")!.id;
     const invalid: Array<[string, unknown]> = [
       [
@@ -307,7 +308,7 @@ export async function runTxContract(target: {
         await tx({
           template_id: templateId,
           subject: `${marker} invalid ${label}`,
-          ...(body as object),
+          ...asBody<object>(body),
         }),
         `invalid-${label}`,
       );
@@ -346,7 +347,8 @@ export async function runTxContract(target: {
 
     if (!reference) {
       const journal = async (id: number) =>
-        ((await (await api(`/api/sends/${id}`)).json()) as { data: Record<string, unknown> }).data;
+        asBody<{ data: Record<string, unknown> }>(await (await api(`/api/sends/${id}`)).json())
+          .data;
       const row = await journal(external[0]!.id);
       check(
         row.source === "tx" &&
@@ -386,7 +388,7 @@ export async function runTxContract(target: {
       const parallel = { ...first, data: { order: "K14" }, idempotency_key: `${key}-parallel` };
       const results = await Promise.all([tx(parallel), tx(parallel), tx(parallel)]);
       const rows = await Promise.all(
-        results.map(async (r) => (await r.json()) as { data: { sends: Array<SendRow> } }),
+        results.map(async (r) => asBody<{ data: { sends: Array<SendRow> } }>(await r.json())),
       );
       check(
         results.every((r) => r.status === 200) &&
@@ -421,7 +423,7 @@ export async function runTxContract(target: {
         optin: "single",
       });
       check(listResponse.status === 200, "list-create");
-      const list = ((await listResponse.json()) as { data: { id: number } }).data.id;
+      const list = asBody<{ data: { id: number } }>(await listResponse.json()).data.id;
       owned.lists.push(list);
       response = await tx({
         subscriber_id: ada,
@@ -450,8 +452,8 @@ export async function runTxContract(target: {
       check(await absent(subjectOf("M16")), "marketing-no-mail");
 
       // Atomicity: a missing ID among valid ones creates no rows and sends nothing.
-      const before = ((await (await api("/api/sends")).json()) as { data: { total: number } }).data
-        .total;
+      const before = asBody<{ data: { total: number } }>(await (await api("/api/sends")).json())
+        .data.total;
       await failed(
         await tx({
           subscriber_ids: [ada, 2_147_483_000],
@@ -460,7 +462,7 @@ export async function runTxContract(target: {
         }),
         "atomic",
       );
-      const after = ((await (await api("/api/sends")).json()) as { data: { total: number } }).data
+      const after = asBody<{ data: { total: number } }>(await (await api("/api/sends")).json()).data
         .total;
       check(before === after && (await absent(subjectOf("N17"))), "atomic-no-rows");
 

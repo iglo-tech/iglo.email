@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { faultRelay } from "@/test/messaging/fault-relay";
 import { listmonkEnvelope } from "@/test/contract/envelope";
+import { asBody } from "@/test/read-body";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runMessagingContract(target: {
@@ -40,7 +41,7 @@ export async function runMessagingContract(target: {
     }),
   );
   assert.equal(response.status, 200);
-  const envelope = (await response.json()) as { data: unknown };
+  const envelope = asBody<{ data: unknown }>(await response.json());
   assert.ok(Array.isArray(envelope.data));
   if (target.mode === "normal") {
     assert.deepEqual(envelope.data, []);
@@ -50,13 +51,13 @@ export async function runMessagingContract(target: {
     signal: AbortSignal.timeout(5000),
   });
   assert.equal(list.status, 200);
-  const found = (await list.json()) as { messages: Array<{ ID: string; Subject: string }> };
+  const found = asBody<{ messages: Array<{ ID: string; Subject: string }> }>(await list.json());
   assert.equal(found.messages.length, 1);
   assert.equal(found.messages[0]!.Subject, "Test connection");
   const message = await fetch(`${sink.api}/api/v1/message/${found.messages[0]!.ID}`, {
     signal: AbortSignal.timeout(5000),
   });
-  const captured = (await message.json()) as { To: Array<{ Address: string }>; HTML: string };
+  const captured = asBody<{ To: Array<{ Address: string }>; HTML: string }>(await message.json());
   assert.deepEqual(
     captured.To.map((item) => item.Address),
     [recipient],
@@ -80,10 +81,8 @@ export async function runMessagingContract(target: {
     }
     const query = new URLSearchParams({ query: `to:one-${recipient}`, limit: "100" });
     assert.equal(
-      (
-        (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-          messages: Array<unknown>;
-        }
+      asBody<{ messages: Array<unknown> }>(
+        await (await fetch(`${sink.api}/api/v1/search?${query}`)).json(),
       ).messages.length,
       0,
     );
@@ -110,13 +109,13 @@ export async function runMessagingContract(target: {
   );
   assert.equal(quoted.status, 200);
   const quotedQuery = new URLSearchParams({ query: `to:quoted-${recipient}`, limit: "100" });
-  const quotedIntake = (await (await fetch(`${sink.api}/api/v1/search?${quotedQuery}`)).json()) as {
-    messages: Array<{ ID: string }>;
-  };
+  const quotedIntake = asBody<{ messages: Array<{ ID: string }> }>(
+    await (await fetch(`${sink.api}/api/v1/search?${quotedQuery}`)).json(),
+  );
   assert.equal(quotedIntake.messages.length, 1);
-  const quotedMessage = (await (
-    await fetch(`${sink.api}/api/v1/message/${quotedIntake.messages[0]!.ID}`)
-  ).json()) as { To: Array<{ Address: string }> };
+  const quotedMessage = asBody<{ To: Array<{ Address: string }> }>(
+    await (await fetch(`${sink.api}/api/v1/message/${quotedIntake.messages[0]!.ID}`)).json(),
+  );
   assert.deepEqual(
     quotedMessage.To.map((value) => value.Address),
     [`quoted-${recipient}`],
@@ -151,10 +150,8 @@ export async function runMessagingContract(target: {
     assert.equal(plainRelay.authAttempts(), 0);
     const query = new URLSearchParams({ query: `to:insecure-${recipient}`, limit: "100" });
     assert.equal(
-      (
-        (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-          messages: Array<unknown>;
-        }
+      asBody<{ messages: Array<unknown> }>(
+        await (await fetch(`${sink.api}/api/v1/search?${query}`)).json(),
       ).messages.length,
       0,
     );
@@ -192,9 +189,9 @@ export async function runMessagingContract(target: {
       assert.equal(relay.authenticated(), reverse ? 1 : 0);
       assert.equal(relay.loginReplies(), reverse ? 2 : 0);
       const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
-      const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-        messages: Array<unknown>;
-      };
+      const intake = asBody<{ messages: Array<unknown> }>(
+        await (await fetch(`${sink.api}/api/v1/search?${query}`)).json(),
+      );
       assert.equal(intake.messages.length, reverse ? 1 : 0);
     } finally {
       await relay.close();
@@ -221,9 +218,9 @@ export async function runMessagingContract(target: {
       });
     }
     const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
-    const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-      messages: Array<unknown>;
-    };
+    const intake = asBody<{ messages: Array<unknown> }>(
+      await (await fetch(`${sink.api}/api/v1/search?${query}`)).json(),
+    );
     assert.equal(intake.messages.length, 0);
     // D51 also refuses an unadvertised selected method, even if the peer would accept it.
     const relay = await faultRelay(sink, "auth", {
@@ -251,9 +248,9 @@ export async function runMessagingContract(target: {
         });
       }
       const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
-      const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-        messages: Array<unknown>;
-      };
+      const intake = asBody<{ messages: Array<unknown> }>(
+        await (await fetch(`${sink.api}/api/v1/search?${query}`)).json(),
+      );
       assert.equal(intake.messages.length, target.mode === "normal" ? 0 : 1);
       assert.equal(relay.authAttempts(), target.mode === "normal" ? 0 : 1);
       assert.equal(relay.authenticated(), target.mode === "normal" ? 0 : 1);
@@ -283,9 +280,9 @@ export async function runMessagingContract(target: {
         });
       }
       const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
-      const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
-        messages: Array<unknown>;
-      };
+      const intake = asBody<{ messages: Array<unknown> }>(
+        await (await fetch(`${sink.api}/api/v1/search?${query}`)).json(),
+      );
       assert.equal(intake.messages.length, target.mode === "normal" ? 1 : 0);
       assert.equal(relay.connections(), 1);
     } finally {

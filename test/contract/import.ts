@@ -5,6 +5,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 import type { Credentials, Mode } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 import { startReceiver } from "@/test/webhooks/receiver";
 
 const IDLE = { name: "", total: 0, imported: 0, status: "none" };
@@ -24,8 +25,25 @@ const form = (params: unknown, content?: BlobPart, name = "subscribers.csv") => 
   }
   return data;
 };
+/** A subscriber as the API returns it, read as the fields the checks use. */
+type Subscriber = {
+  id: number;
+  name: string;
+  status: string;
+  attribs: Record<string, any>;
+  lists: Array<{ id: number; subscription_status: string; [field: string]: any }>;
+  [field: string]: any;
+};
+/** An import run as GET /api/import/subscribers/status reports it, with its log. */
+type Run = {
+  status: string;
+  total: number;
+  imported: number;
+  name: string;
+  [field: string]: any;
+};
 const membership = (row: any, id: number) =>
-  row.lists.find((entry: any) => entry.id === id)?.subscription_status;
+  asBody<Subscriber>(row).lists.find((entry) => entry.id === id)?.subscription_status;
 const subscribe = (ids: Array<number>, extra: Record<string, unknown> = {}) => ({
   mode: "subscribe",
   delim: ",",
@@ -73,12 +91,13 @@ export async function runImportContract(target: {
   };
   const post = (params: unknown, content?: BlobPart, name?: string, headers?: any) =>
     call("/api/import/subscribers", "POST", form(params, content, name), headers);
-  const status = async () => (await call("/api/import/subscribers")).body.data;
-  const logs = async () => (await call("/api/import/subscribers/logs")).body.data as string;
+  const status = async () =>
+    asBody<Record<string, any>>((await call("/api/import/subscribers")).body.data);
+  const logs = async () => asBody<string>((await call("/api/import/subscribers/logs")).body.data);
   const reset = () => call("/api/import/subscribers", "DELETE");
   const settled = async () => {
     for (const deadline = Date.now() + 60_000; Date.now() < deadline; await Bun.sleep(20)) {
-      const current = await status();
+      const current = asBody<Run>(await status());
       if (current.status === "finished" || current.status === "failed") {
         return current;
       }
@@ -101,13 +120,13 @@ export async function runImportContract(target: {
     const result = await call("/api/lists", "POST", { name: `${label}-${suffix}` });
     check(result.status === 200, "list");
     lists.push(result.body.data.id);
-    return result.body.data.id as number;
+    return asBody<number>(result.body.data.id);
   };
   const address = (label: string) => `${label}.${suffix}@example.test`;
   const subscriber = async (email: string) => {
     const query = encodeURIComponent(`subscribers.email = '${email}'`);
     const found = await call(`/api/subscribers?query=${query}`);
-    const row = found.body.data.results[0];
+    const row = asBody<Subscriber>(found.body.data.results[0]);
     if (row && !created.includes(row.id)) {
       created.push(row.id);
     }
@@ -117,7 +136,7 @@ export async function runImportContract(target: {
     const result = await call("/api/subscribers", "POST", { email, ...body });
     check(result.status === 200, "seed");
     created.push(result.body.data.id);
-    return result.body.data;
+    return asBody<Subscriber>(result.body.data);
   };
 
   try {
@@ -131,7 +150,10 @@ export async function runImportContract(target: {
 
     // Parameters, in upstream's order.
     const refused = async (result: Awaited<ReturnType<typeof post>>, code: number, text: string) =>
-      check(result.status === code && result.body?.message?.includes(text), `refused-${text}`);
+      check(
+        result.status === code && asBody<string | undefined>(result.body?.message)?.includes(text),
+        `refused-${text}`,
+      );
     await refused(await post("not json", "email\n"), 400, "Invalid params");
     await refused(await post(undefined, "email\n"), 400, "Invalid params");
     await refused(
@@ -200,9 +222,13 @@ export async function runImportContract(target: {
     // Search and list counts see the new rows.
     const found = await call(`/api/subscribers?search=${encodeURIComponent(address("clean"))}`);
     check(found.body.data.total === 1, "search");
-    const counted = (await call(`/api/lists?per_page=all`)).body.data.results.find(
-      (entry: any) => entry.id === a,
-    );
+    const counted = asBody<{
+      results: Array<{
+        id: number;
+        subscriber_count: number;
+        subscriber_statuses?: Record<string, number>;
+      }>;
+    }>((await call(`/api/lists?per_page=all`)).body.data).results.find((entry) => entry.id === a)!;
     check(counted.subscriber_count === 2, `list-count-${counted.subscriber_count}`);
     check(counted.subscriber_statuses?.confirmed === 2, "list-statuses");
 
@@ -500,7 +526,7 @@ export async function runImportContract(target: {
       events: ["subscriber.blocklisted", "subscriber.unsubscribed"],
     });
     check(hook.status === 200, "hook");
-    const hooks = [hook.body.data.id as number];
+    const hooks = [asBody<number>(hook.body.data.id)];
     try {
       const person = await seed(address("hooked"), { lists: [a] });
       const file = `email\n${address("hooked")}\n${address("hooknew")}\n`;

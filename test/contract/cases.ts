@@ -1,5 +1,6 @@
 // Reference: listmonk cmd/handlers.go, cmd/lists.go, internal/auth/auth.go at 6fcd95f.
 import type { ContractCase, Endpoint, Expectation, VolatileField } from "@/test/contract/types";
+import { asBody } from "@/test/read-body";
 
 const wire = (status: number, contentType: string | null, value: string): Expectation => ({
   status,
@@ -216,14 +217,17 @@ export const cases: ReadonlyArray<ContractCase> = freeze([
       '{"message":"User(s) couldn\'t be updated. There has to be at least one active Super Admin user."}',
     ],
   ].map(([id, requestBody, status, body]): ContractCase => ({
-    id: id as string,
+    id: asBody<string>(id),
     group: "core",
     method: "PUT",
     auth: "basic",
     requestContentType: "application/json",
-    requestBody: requestBody as string,
-    reference: endpoint("/api/users/123456789", json(status as number, body as string)),
-    production: endpoint("/api/users/123456789", json(status as number, body as string)),
+    requestBody: asBody<string>(requestBody),
+    reference: endpoint("/api/users/123456789", json(asBody<number>(status), asBody<string>(body))),
+    production: endpoint(
+      "/api/users/123456789",
+      json(asBody<number>(status), asBody<string>(body)),
+    ),
   })),
   ...(["basic", "token", "bad-token"] as const).map((auth): ContractCase => ({
     id: `protected-health-${auth}`,
