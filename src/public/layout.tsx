@@ -69,10 +69,12 @@ export function PublicShell({
   const accent = site.accent || defaultAccent;
   const fontUrl = googleFontUrl(site.font);
   const mode = headerMode(site.header, site.logoUrl !== "");
+  // A logo is shown only when one is set (headerMode), so no bundled image ever stands in for it. The
+  // name beside a logo says it already, so the image has no alt text then (B129 review, N2).
   const brand = (
     <>
       {mode !== "name" ? (
-        <img src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`} alt={siteName} />
+        <img src={site.logoUrl} alt={mode === "logo_and_name" ? "" : siteName} />
       ) : null}
       {mode !== "logo" ? <span class="site-name">{siteName}</span> : null}
     </>

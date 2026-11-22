@@ -101,6 +101,26 @@ test("each header mode shows the logo, the name, or both, and the logo links onl
   }
 });
 
+test("with no logo URL, the logo and logo_and_name headers show the name and no image (no bundled logo)", async () => {
+  for (const header of ["logo", "logo_and_name", "auto"] as const) {
+    const f = await open({ header, logoUrl: "" });
+    const html = await (await f.request("/subscription/form")).text();
+    const brandBlock = /<div class="logo">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? "";
+    expect(brandBlock).toContain('<span class="site-name">Brand Co</span>');
+    expect(brandBlock).not.toContain("<img");
+    expect(html).not.toContain("logo.svg");
+  }
+});
+
+test("beside the name, the logo has no alt text, and a logo alone is named by the site", async () => {
+  const both = await open({ header: "logo_and_name", logoUrl: logo });
+  const bothHtml = await (await both.request("/subscription/form")).text();
+  expect(bothHtml).toContain(`<img src="${logo}" alt="">`);
+  const alone = await open({ header: "logo", logoUrl: logo });
+  const aloneHtml = await (await alone.request("/subscription/form")).text();
+  expect(aloneHtml).toContain(`<img src="${logo}" alt="Brand Co">`);
+});
+
 test("a logo with no site URL and no subscription page is not a link, and no empty href is written", async () => {
   const f = await open({ subscriptionPage: false, siteUrl: "", logoUrl: logo, header: "logo" });
   const html = await (await f.request("/subscription/form")).text();

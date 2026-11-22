@@ -33,12 +33,12 @@ export function googleFontUrl(font: string): string {
 }
 
 /**
- * What the header shows. `auto` is the logo when a logo is set and the site name otherwise; the
- * other modes are as stored.
+ * What the header shows. Without a logo URL it is the site name whatever is stored: no mode shows
+ * a bundled image (B129 review, D127). With one, `auto` is the logo and the other modes are as stored.
  */
 export function headerMode(header: BrandHeader, hasLogo: boolean): Exclude<BrandHeader, "auto"> {
-  if (header !== "auto") {
-    return header;
+  if (!hasLogo) {
+    return "name";
   }
-  return hasLogo ? "logo" : "name";
+  return header === "auto" ? "logo" : header;
 }
