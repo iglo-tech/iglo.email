@@ -43,6 +43,41 @@ shared host). There is no consistent slowdown in any case, so no regression is s
 - A template that uses a new filter does its own work, bounded by the D54 budgets; the budget tests in
   `test/templates/filters.test.ts` cover that.
 
+## Re-measured at the review fixes (head `fdec764`)
+
+The review's fixes changed the renderer and the converter after the table above, so both were measured
+again with the same method: `origin/main` (`72dddbb`) and the head (`fdec764`), each exported with
+`git archive` and installed with `bun install --frozen-lockfile`, in one `oven/bun:1.4.5` container
+(linux/arm64), 20 rounds per tree, base and head alternating, one process per round.
+
+Render (`test/templates/measure-send-render.ts 1`), median over 20 rounds, microseconds per render. The
+range is the fastest and slowest round:
+
+| Case | Base median (range) | Head median (range) | Change of the median |
+|---|---|---|---|
+| Transactional HTML (a 20-item loop, `date`, `number`, `default`, `upcase`) | 188.3 (151.4 to 295.9) | 182.4 (146.6 to 262.2) | -3 % |
+| Campaign layout (`track_link`, `track_view`, `raw` content) | 26.4 (20.5 to 45.9) | 25.3 (21.5 to 44.4) | -4 % |
+| Plain text (a loop with `upcase`) | 63.9 (45.3 to 92.8) | 54.8 (48.6 to 72.0) | -14 % |
+
+The medians differ by less than the spread of each tree, so no slowdown is shown. An earlier head,
+measured before `date` computed one directive at a time, was about 9 % slower on the transactional HTML
+median (206.8 against 189.2 µs, with the same ranges overlapping); that cost is gone.
+
+Converter (`test/messaging/measure-plain-depth.ts`), the review's shape: 1,000 open lists, then 100,000
+`<li>x</li>` items (1.0 MB of HTML). Median of five conversions per process, 20 rounds per tree:
+
+| Tree | Median time (range) | Output | Resident memory after (median, range) |
+|---|---|---|---|
+| `origin/main` | 168.3 ms (158.9 to 188.8) | 400 KB text part | 78 MiB (76 to 85) |
+| Head | 98.0 ms (93.9 to 111.1) | no text part | 89 MiB (82 to 98) |
+
+The head is faster because it stops once its output would be longer than the HTML (the check that runs as
+the output grows), and so it writes no text part for this shape. On `main` the same items have no indent
+and fit the HTML; with the list depth indented, each item is longer than its `<li>` markup, so the message
+goes without a text part, as an over-long conversion always does (D118). A list nested nine or more levels
+deep indents at the eight-level cap. Shapes that fit keep their text part: the ratio tests in
+`test/messaging/plain-nesting.test.ts` cover the cap and the linear time.
+
 ## Reproduce
 
 ```sh
