@@ -24,6 +24,7 @@ import { createServer } from "node:net";
 import { createHash } from "node:crypto";
 import { createSends } from "@/messaging/sends";
 import { registerSendRoutes } from "@/messaging/routes";
+import { asBody } from "@/test/read-body";
 
 const message = () => ({
   from: "sender@example.test",
@@ -205,11 +206,13 @@ test("explicit resend preserves the original and returns one current child", asy
       Array.from({ length: 8 }, () => f.call(`/api/sends/${original.id}/resend`, "POST", "{}")),
     );
     expect(responses.every((r) => r.status === 200)).toBe(true);
-    const children = responses.map((r) => JSON.parse(r.text).data);
+    const children = responses.map(
+      (r) => asBody<{ data: Record<string, unknown> }>(JSON.parse(r.text)).data,
+    );
     expect(new Set(children.map((c) => c.id)).size).toBe(1);
-    expect(children[0]).toMatchObject({ retry_of: original.id, status: "queued", attempts: 0 });
-    expect(children[0].uuid).not.toBe(original.uuid);
-    expect(children[0].smtp_message_id).not.toBe(original.smtp_message_id);
+    expect(children[0]!).toMatchObject({ retry_of: original.id, status: "queued", attempts: 0 });
+    expect(children[0]!.uuid).not.toBe(original.uuid);
+    expect(children[0]!.smtp_message_id).not.toBe(original.smtp_message_id);
     const again = startOutbox({
       db: f.db,
       clock: f.clock,
@@ -221,13 +224,13 @@ test("explicit resend preserves the original and returns one current child", asy
     const repeated = JSON.parse(
       (await f.call(`/api/sends/${original.id}/resend`, "POST", "{}")).text,
     ).data;
-    expect(repeated).toMatchObject({ id: children[0].id, status: "failed" });
+    expect(repeated).toMatchObject({ id: children[0]!.id, status: "failed" });
     const grandchild = JSON.parse(
-      (await f.call(`/api/sends/${children[0].id}/resend`, "POST", "{}")).text,
+      (await f.call(`/api/sends/${children[0]!.id}/resend`, "POST", "{}")).text,
     ).data;
-    expect(grandchild).toMatchObject({ retry_of: children[0].id, status: "queued", attempts: 0 });
-    expect(grandchild.smtp_message_id).not.toBe(children[0].smtp_message_id);
-    expect(grandchild.uuid).not.toBe(children[0].uuid);
+    expect(grandchild).toMatchObject({ retry_of: children[0]!.id, status: "queued", attempts: 0 });
+    expect(grandchild.smtp_message_id).not.toBe(children[0]!.smtp_message_id);
+    expect(grandchild.uuid).not.toBe(children[0]!.uuid);
     expect(JSON.parse((await f.call(`/api/sends/${original.id}`)).text).data.status).toBe("failed");
   } finally {
     await emailer.close();
@@ -243,12 +246,12 @@ test("manual resend rejects each ineligible status and missing retained payload"
       // Historical states unavailable from a producer are arranged only in this disposable fixture.
       f.db.run(
         "UPDATE sends SET status=?, payload=CASE WHEN ? IN ('failed','unknown') THEN NULL ELSE payload END WHERE id=?",
-        [status, status, BigInt(entry.id as number)],
+        [status, status, BigInt(asBody<number>(entry.id))],
       );
       expect((await f.call(`/api/sends/${entry.id}/resend`, "POST", "{}")).status).toBe(409);
     }
     const marketing = f.journal.enqueue({ source: "tx", kind: "marketing", message: message() });
-    f.db.run("UPDATE sends SET status='failed' WHERE id=?", [BigInt(marketing.id as number)]);
+    f.db.run("UPDATE sends SET status='failed' WHERE id=?", [BigInt(asBody<number>(marketing.id))]);
     expect((await f.call(`/api/sends/${marketing.id}/resend`, "POST", "{}")).status).toBe(409);
     expect(JSON.parse((await f.call("/api/sends")).text).data.total).toBe(7);
   } finally {
@@ -265,7 +268,7 @@ test("an unknown child may be explicitly resent while both ancestors stay unchan
       message: message(),
       idempotencyKey: "synthetic-original",
     });
-    f.db.run("UPDATE sends SET status='unknown' WHERE id=?", [BigInt(original.id as number)]);
+    f.db.run("UPDATE sends SET status='unknown' WHERE id=?", [BigInt(asBody<number>(original.id))]);
     const child = JSON.parse(
       (await f.call(`/api/sends/${original.id}/resend`, "POST", "{}")).text,
     ).data;
@@ -640,7 +643,7 @@ test("prepared payload limits are enforced atomically at the owner and safe HTTP
       },
     ];
     for (const input of invalid) {
-      expect(() => enqueue(input as Message)).toThrow("Invalid prepared message");
+      expect(() => enqueue(asBody<Message>(input))).toThrow("Invalid prepared message");
     }
     const response = await f.call("/api/sends?per_page=100");
     expect(response.status).toBe(200);
@@ -793,7 +796,7 @@ test("live resend authority rejects disabled, deleted and revoked principals whi
   const f = await fixture();
   try {
     const original = f.journal.enqueue({ source: "tx", kind: "transactional", message: message() });
-    f.db.run("UPDATE sends SET status='failed' WHERE id=?", [BigInt(original.id as number)]);
+    f.db.run("UPDATE sends SET status='failed' WHERE id=?", [BigInt(asBody<number>(original.id))]);
     const role = f.roles.mutate(
       "user",
       null,
@@ -835,14 +838,14 @@ test("live resend authority rejects disabled, deleted and revoked principals whi
       kind: "transactional",
       message: message(),
       subscriberId: linked.id,
-      listId: BigInt(list.id as number),
+      listId: BigInt(asBody<number>(list.id)),
     });
     const listRole = f.roles.mutate(
       "list",
       null,
       "send-list",
       [],
-      [{ id: BigInt(list.id as number), permissions: ["list:get", "list:manage"] }],
+      [{ id: BigInt(asBody<number>(list.id)), permissions: ["list:get", "list:manage"] }],
       f.clock.now().toISOString(),
     )!;
     const token = "synthetic-live-token";

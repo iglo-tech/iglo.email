@@ -17,9 +17,10 @@ import { createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
+import { asBody } from "@/test/read-body";
 
 const controlPath = resolve("node_modules/.cache/m22-control/src/messaging/email.ts");
-const control = (await import(controlPath)) as { createEmailer: typeof createEmailer };
+const control = asBody<{ createEmailer: typeof createEmailer }>(await import(controlPath));
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const marker = `m08${sink.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;

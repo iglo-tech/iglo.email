@@ -14,6 +14,7 @@ import { createSendAnonymizer } from "@/messaging/anonymize";
 import { createSends } from "@/messaging/sends";
 import { createSubscriberStore } from "@/subscribers/store";
 import { TestClock } from "@/test/server/fixture";
+import { asBody } from "@/test/read-body";
 
 const open: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
@@ -84,12 +85,14 @@ function fixture() {
       .get(id)!;
   const enqueue = (input: Partial<Parameters<typeof journal.enqueue>[0]> = {}) =>
     BigInt(
-      journal.enqueue({
-        source: "tx",
-        kind: "transactional",
-        message: message(),
-        ...input,
-      }).id as number,
+      asBody<number>(
+        journal.enqueue({
+          source: "tx",
+          kind: "transactional",
+          message: message(),
+          ...input,
+        }).id,
+      ),
     );
   /** An emailer whose pushes the test settles by hand. */
   const pushes: Array<{ resolve(o: Outcome): void; reject(e: Error): void }> = [];
@@ -114,7 +117,7 @@ function fixture() {
         attention: (message) => errors.push(new Error(message)),
       },
       sends: journal,
-      emailer: emailer as never,
+      emailer: asBody<never>(emailer),
     });
     open.push(async () => {
       for (const p of pushes) {

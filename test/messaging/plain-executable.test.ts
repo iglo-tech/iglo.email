@@ -12,6 +12,7 @@ import {
 } from "@/test/backup/fixture";
 import { textPart } from "@/test/messaging/mime";
 import { startSink } from "@/test/tx/sink";
+import { asBody, readJson } from "@/test/read-body";
 
 setDefaultTimeout(120_000);
 
@@ -52,8 +53,8 @@ async function stack() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         });
-  const seeded = ((await (await call("/api/settings")).json()) as { data: any }).data;
-  const smtp = seeded.smtp.map((item: Record<string, unknown>, index: number) =>
+  const seeded = (await readJson<{ data: Record<string, any> }>(await call("/api/settings"))).data;
+  const smtp = asBody<Array<Record<string, unknown>>>(seeded.smtp).map((item, index) =>
     index === 0
       ? { ...item, host: "127.0.0.1", port: sink.port, tls_type: "none", auth_protocol: "none" }
       : item,
@@ -123,7 +124,7 @@ test("a tx template link built from data keeps its & after the HTML escape: text
       body: '<p><a href="{{ data.url }}">Verify</a></p>',
     });
     expect(template.status).toBe(200);
-    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(template)).data.id;
     const sent = await s.call("/api/tx", "POST", {
       subscriber_mode: "external",
       subscriber_emails: ["verify@example.test"],
@@ -146,7 +147,7 @@ test("a multi-list double opt-in mail keeps both list parameters, with & not &am
     const lists: Array<number> = [];
     for (const name of ["Alpha", "Beta"]) {
       const list = await s.call("/api/lists", "POST", { name, type: "public", optin: "double" });
-      lists.push(((await list.json()) as { data: { id: number } }).data.id);
+      lists.push((await readJson<{ data: { id: number } }>(list)).data.id);
     }
     const created = await s.call("/api/subscribers", "POST", {
       email: "ada-optin@example.test",
@@ -173,7 +174,7 @@ test("a Markdown campaign link with two query parameters reads with & in the tex
       type: "public",
       optin: "single",
     });
-    const listId = ((await list.json()) as { data: { id: number } }).data.id;
+    const listId = (await readJson<{ data: { id: number } }>(list)).data.id;
     await s.call("/api/subscribers", "POST", {
       email: "ada-md@example.test",
       name: "Ada",
@@ -188,7 +189,7 @@ test("a Markdown campaign link with two query parameters reads with & in the tex
       content_type: "markdown",
       body: "[the sale](https://shop.example/sale?utm_source=news&utm_medium=email)",
     });
-    const id = ((await campaign.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(campaign)).data.id;
     const sent = await s.call(`/api/campaigns/${id}/test`, "POST", {
       name: "Sale",
       subject: "Sale",
@@ -223,7 +224,7 @@ test("a 14 KB template that renders to 840 KB converts promptly, and /health ans
       body,
     });
     expect(template.status).toBe(200);
-    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(template)).data.id;
     const started = performance.now();
     const sent = await s.call("/api/tx", "POST", {
       subscriber_mode: "external",
@@ -259,7 +260,7 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
       body,
     });
     expect(template.status).toBe(200);
-    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(template)).data.id;
     const sending = s.call("/api/tx", "POST", {
       subscriber_mode: "external",
       subscriber_emails: ["bold@example.test"],
@@ -292,7 +293,7 @@ test("a 12 KB template of unclosed <p> elements does not delay /health by more t
       body,
     });
     expect(template.status).toBe(200);
-    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(template)).data.id;
     const sending = s.call("/api/tx", "POST", {
       subscriber_mode: "external",
       subscriber_emails: ["unclosed@example.test"],
@@ -329,7 +330,7 @@ test("an 11 KB template of unclosed spans with stray end tags does not delay /he
       body,
     });
     expect(template.status).toBe(200);
-    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(template)).data.id;
     const sending = s.call("/api/tx", "POST", {
       subscriber_mode: "external",
       subscriber_emails: ["stray@example.test"],
@@ -361,7 +362,7 @@ test("a fragment with self-closing SVG and MathML sends, with or without a text 
       subject: "Svg",
       body: '<svg><title/></svg><svg style="display:none"/><math><a href="x"/></math>visible',
     });
-    const id = ((await template.json()) as { data: { id: number } }).data.id;
+    const id = (await readJson<{ data: { id: number } }>(template)).data.id;
     const sent = await s.call("/api/tx", "POST", {
       subscriber_mode: "external",
       subscriber_emails: ["svg@example.test"],

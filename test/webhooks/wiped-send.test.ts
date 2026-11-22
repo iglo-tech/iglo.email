@@ -7,6 +7,7 @@ import { writeTransaction } from "@/db/transaction";
 import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hold";
 import { txFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
 
 const noop = () => {};
 const message = (to: string) => ({
@@ -40,13 +41,12 @@ async function open(reject: () => boolean) {
 const wipe = (f: Awaited<ReturnType<typeof open>>["f"], id: number, wiped: boolean) =>
   writeTransaction(f.db, () => f.owners.subscribers.remove([BigInt(id)], { wipe: wiped }));
 const summary = (r: ReturnType<typeof startReceiver>) =>
-  r.received.map((x) => [x.body.event, x.body.data.send?.uuid ?? null]);
+  r.received.map((x) => {
+    const body = asBody<{ event: string; data: { send?: { uuid: string } } }>(x.body);
+    return [body.event, body.data.send?.uuid ?? null];
+  });
 const uuidOf = (f: Awaited<ReturnType<typeof open>>["f"], email: string) =>
-  (
-    f.db.query("SELECT uuid FROM sends WHERE to_email = ?").get(email) as {
-      uuid: string;
-    }
-  ).uuid;
+  asBody<{ uuid: string }>(f.db.query("SELECT uuid FROM sends WHERE to_email = ?").get(email)).uuid;
 
 for (const wiped of [true, false]) {
   test(`a subscriber deleted during SMTP (wipe: ${wiped}) leaves no send.failed; a control still reports`, async () => {
@@ -77,9 +77,7 @@ for (const wiped of [true, false]) {
       ["send.failed", uuidOf(f, "kept@example.test")],
     ]);
     expect(
-      f.db.query("SELECT status FROM sends WHERE to_email = ''").get() as {
-        status: string;
-      },
+      asBody<{ status: string }>(f.db.query("SELECT status FROM sends WHERE to_email = ''").get()),
     ).toEqual({ status: "failed" });
   });
 }

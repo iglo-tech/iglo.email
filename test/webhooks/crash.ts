@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
+import { readJson } from "@/test/read-body";
 
 const admin = { user: "crash-admin", password: "crash-admin-password" };
 const executable = resolve(import.meta.dir, "../../dist/iglo.email");
@@ -99,7 +100,7 @@ try {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     assert.equal(response.status, 200, path);
-    return ((await response.json()) as { data: any }).data;
+    return (await readJson<{ data: Record<string, any> }>(response)).data;
   };
   // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
   await api("/api/settings/webhooks.block_private_addresses", "PUT", false);

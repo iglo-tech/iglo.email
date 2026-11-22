@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { faultRelay } from "@/test/messaging/fault-relay";
+import { readJson } from "@/test/read-body";
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const marker = `m08${sink.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
@@ -140,7 +141,7 @@ async function start(port: number, auth: boolean, dir: string, offset = 0) {
   const portText = await new Promise<string>((ok, fail) => {
     let value = "";
     child!.stdout.on("data", (chunk) => {
-      value += chunk.toString();
+      value += String(chunk);
       if (value.includes("\n")) {
         ok(value.split("\n")[0]!);
       }
@@ -163,7 +164,7 @@ async function start(port: number, auth: boolean, dir: string, offset = 0) {
     if (!response.ok) {
       throw new Error(`Fixture ${path} failed: ${response.status}`);
     }
-    return ((await response.json()) as { data: any }).data;
+    return (await readJson<{ data: Record<string, any> }>(response)).data;
   }
   const session = await call("/fixture/session");
   return {

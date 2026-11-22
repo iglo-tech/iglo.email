@@ -14,6 +14,7 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { faultRelay } from "@/test/messaging/fault-relay";
 import { expectMessageId, header } from "@/test/perf/runtime-compat/smtp-expect";
+import { readJson } from "@/test/read-body";
 
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
@@ -57,7 +58,7 @@ async function fixture(dataDir: string, smtpPort: number, clockOffset = 0) {
   const port = await new Promise<string>((ok, fail) => {
     let out = "";
     child.stdout.on("data", (chunk) => {
-      out += chunk.toString();
+      out += String(chunk);
       if (out.includes("\n")) {
         ok(out.split("\n")[0]!);
       }
@@ -83,7 +84,7 @@ async function fixture(dataDir: string, smtpPort: number, clockOffset = 0) {
       signal: AbortSignal.timeout(10_000),
     });
     assert.equal(response.status, 200, path);
-    return ((await response.json()) as { data: any }).data;
+    return (await readJson<{ data: Record<string, any> }>(response)).data;
   };
   const session = await call("/fixture/session");
   return {
@@ -204,7 +205,7 @@ async function api(origin: string, credentials: { user: string; token: string },
     signal: AbortSignal.timeout(5000),
   });
   assert.equal(response.status, 200);
-  return ((await response.json()) as { data: any }).data;
+  return (await readJson<{ data: Record<string, any> }>(response)).data;
 }
 async function terminal(origin: string, credentials: { user: string; token: string }, id: number) {
   const deadline = Date.now() + 10_000;
@@ -449,7 +450,7 @@ try {
     });
     assert.equal(wakeResponse.status, 200, await wakeResponse.clone().text());
     const wakeChild = (
-      (await wakeResponse.json()) as { data: { id: number; smtp_message_id: string } }
+      await readJson<{ data: { id: number; smtp_message_id: string } }>(wakeResponse)
     ).data;
     assert.equal((await terminal(b.origin, bCredentials, wakeChild.id)).status, "sent");
     assert.equal((await api(a.origin, aCredentials, `/api/sends/${aRow.id}`)).status, "sending");

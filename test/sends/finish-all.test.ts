@@ -12,6 +12,7 @@ import type { Outcome } from "@/messaging/email";
 import { createSends } from "@/messaging/sends";
 import { createSubscriberStore } from "@/subscribers/store";
 import { TestClock } from "@/test/server/fixture";
+import { asBody } from "@/test/read-body";
 
 const open: Array<() => void> = [];
 afterEach(() => {
@@ -73,7 +74,7 @@ function fixture() {
       >("SELECT status, error, attempts, next_attempt_at FROM sends WHERE id = ?")
       .get(id)!;
   const enqueue = (input: Parameters<typeof journal.enqueue>[0]) =>
-    BigInt(journal.enqueue(input).id as number);
+    BigInt(asBody<number>(journal.enqueue(input).id));
   const claim = (limit: number) => {
     const now = clock.now();
     return journal.claimBatch(now, new Date(now.getTime() + 60_000), limit);

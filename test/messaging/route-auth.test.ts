@@ -4,6 +4,7 @@ import { createConnection, createServer } from "node:net";
 import type { Socket } from "node:net";
 import { startUserFixture } from "@/test/users/fixture";
 import { defaultAuthPolicy } from "@/users/auth";
+import { readJson } from "@/test/read-body";
 
 const greeted = (socket: Socket) =>
   new Promise((resolve) => {
@@ -200,7 +201,7 @@ for (const change of ["disabled", "deleted", "grant", "explicit"] as const) {
         name,
         permissions: ["settings:manage"],
       });
-      const role = ((await roleRes.json()) as { data: { id: number } }).data.id;
+      const role = (await readJson<{ data: { id: number } }>(roleRes)).data.id;
       const input = {
         username: name,
         email: `${name}@example.test`,
@@ -211,7 +212,7 @@ for (const change of ["disabled", "deleted", "grant", "explicit"] as const) {
         user_role_id: role,
       };
       const created = await request(f, admin, "/api/users", "POST", input);
-      const user = ((await created.json()) as { data: { id: number } }).data;
+      const user = (await readJson<{ data: { id: number } }>(created)).data;
       const human = await login(f, name, input.password);
       const payload = smtpBody(smtp.port),
         split = Math.floor(payload.length / 2),
@@ -287,7 +288,7 @@ test("SMTP route requires cookie CSRF and same origin; API credentials work with
       status: "enabled",
       user_role_id: 1,
     });
-    const api = ((await created.json()) as { data: { password: string } }).data;
+    const api = (await readJson<{ data: { password: string } }>(created)).data;
     const response = await fetch(`${f.origin}/api/settings/smtp/test`, {
       method: "POST",
       headers: {

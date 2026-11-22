@@ -12,6 +12,7 @@ import {
   temporaryDirectory,
 } from "@/test/backup/fixture";
 import { startSink } from "@/test/tx/sink";
+import { asBody, readJson } from "@/test/read-body";
 
 setDefaultTimeout(120_000);
 
@@ -56,8 +57,9 @@ test("the admin notification carries the app.logo_url the server saved", async (
 
     // The seeded SMTP server points at the sink, without TLS or login. Its masked password is sent
     // back empty, which the API keeps (or, with auth none, drops).
-    const seeded = ((await (await call("/api/settings")).json()) as { data: any }).data;
-    const smtp = seeded.smtp.map((item: Record<string, unknown>, index: number) =>
+    const seeded = (await readJson<{ data: Record<string, any> }>(await call("/api/settings")))
+      .data;
+    const smtp = asBody<Array<Record<string, unknown>>>(seeded.smtp).map((item, index) =>
       index === 0
         ? { ...item, host: "127.0.0.1", port: sink.port, tls_type: "none", auth_protocol: "none" }
         : item,
@@ -69,11 +71,11 @@ test("the admin notification carries the app.logo_url the server saved", async (
     expect((await call("/api/settings/app.logo_url", "PUT", logo)).status).toBe(200);
 
     const list = (
-      (await (await call("/api/lists", "POST", { name: "Empty", type: "public" })).json()) as {
-        data: { id: number };
-      }
+      await readJson<{ data: { id: number } }>(
+        await call("/api/lists", "POST", { name: "Empty", type: "public" }),
+      )
     ).data;
-    const created = (await (
+    const created = await readJson<{ data: { id: number } }>(
       await call("/api/campaigns", "POST", {
         name: "Logo",
         subject: "Logo",
@@ -81,17 +83,17 @@ test("the admin notification carries the app.logo_url the server saved", async (
         type: "regular",
         content_type: "html",
         body: "<p>Hello</p>",
-      })
-    ).json()) as { data: { id: number } };
+      }),
+    );
     expect(
       (await call(`/api/campaigns/${created.data.id}/status`, "PUT", { status: "running" })).status,
     ).toBe(200);
 
     await waitFor(async () => {
       const campaign = (
-        (await (await call(`/api/campaigns/${created.data.id}`)).json()) as {
-          data: { status: string };
-        }
+        await readJson<{ data: { status: string } }>(
+          await call(`/api/campaigns/${created.data.id}`),
+        )
       ).data;
       return campaign.status === "finished" ? true : undefined;
     }, "the campaign to finish");

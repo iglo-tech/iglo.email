@@ -6,6 +6,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { referenceMailpit, assertOwnedMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import { readJson } from "@/test/read-body";
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const directory = await mkdtemp(join(tmpdir(), "iglo-recovery-time-"));
@@ -19,7 +20,7 @@ async function launch(dataDir: string) {
   const port = await new Promise<string>((ok, fail) => {
     let output = "";
     child.stdout.on("data", (chunk) => {
-      output += chunk.toString();
+      output += String(chunk);
       if (output.includes("\n")) {
         ok(output.split("\n")[0]!);
       }
@@ -40,7 +41,7 @@ async function launch(dataDir: string) {
       signal: AbortSignal.timeout(10_000),
     });
     assert.equal(response.status, 200);
-    return ((await response.json()) as { data: any }).data;
+    return (await readJson<{ data: Record<string, any> }>(response)).data;
   };
   return { child, call };
 }

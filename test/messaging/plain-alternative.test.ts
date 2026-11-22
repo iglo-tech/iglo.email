@@ -5,6 +5,7 @@ import { campaignsFixture } from "@/test/campaigns/fixture";
 import { htmlPart, parseMail, textPart } from "@/test/messaging/mime";
 import { schedulerFixture } from "@/test/scheduler/fixture";
 import { txFixture } from "@/test/tx/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => {
@@ -96,9 +97,10 @@ test("an explicit altbody on a transactional send is the text part, unchanged", 
 
 test("a campaign test send without altbody is multipart/alternative with generated text", async () => {
   const f = await campaigns();
-  const list = (
-    await f.json("/api/lists", "POST", { name: "News", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "News", type: "public", optin: "single" })).body
+      .data.id,
+  );
   await f.subscriber("ada@example.test", [list]);
   const campaign = await f.campaign({
     name: "Weekly",
@@ -125,9 +127,10 @@ test("a campaign test send without altbody is multipart/alternative with generat
 
 test("an explicit campaign altbody is the text part, unchanged", async () => {
   const f = await campaigns();
-  const list = (
-    await f.json("/api/lists", "POST", { name: "News", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const list = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "News", type: "public", optin: "single" })).body
+      .data.id,
+  );
   await f.subscriber("ada@example.test", [list]);
   const altbody = "Campaign text, as the editor wrote it.";
   const sent = await f.json(

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createRealClock } from "@/clock";
 import { createEmailer } from "@/messaging/email";
 import type { SMTPServer, Message } from "@/messaging/email";
+import { asBody } from "@/test/read-body";
 const server: SMTPServer = {
   name: "",
   enabled: true,
@@ -21,12 +22,14 @@ const server: SMTPServer = {
   from_addresses: [],
 };
 // The JSON carries the body as text; the message owner takes bytes.
-const parsed = JSON.parse(process.env.M21_MESSAGE!) as Omit<Message, "body"> & {
-  body: string;
-  binary?: boolean;
-  alt?: string;
-  inline?: { name: string; cid: string; bytes: string };
-};
+const parsed = asBody<
+  Omit<Message, "body"> & {
+    body: string;
+    binary?: boolean;
+    alt?: string;
+    inline?: { name: string; cid: string; bytes: string };
+  }
+>(JSON.parse(process.env.M21_MESSAGE!));
 const message = { ...parsed, body: Buffer.from(parsed.body) };
 if (message.alt) {
   message.altBody = Buffer.from(message.alt);
@@ -54,7 +57,7 @@ if (message.inline) {
 const emailer = createEmailer({
   settings: () => ({
     smtp: process.env.M21_SERVERS
-      ? (JSON.parse(process.env.M21_SERVERS) as Array<SMTPServer>)
+      ? asBody<Array<SMTPServer>>(JSON.parse(process.env.M21_SERVERS))
       : [server],
     rootUrl: "https://example.test",
   }),

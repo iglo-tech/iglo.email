@@ -10,6 +10,7 @@ import { createListReferences } from "@/lists/references";
 import { createSubscriberStore } from "@/subscribers/store";
 import { createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
+import { asBody } from "@/test/read-body";
 
 const rows = 2000;
 for (let repetition = 1; repetition <= 3; repetition++) {
@@ -57,7 +58,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
     clock,
     logger: { error() {}, attention() {} },
     sends,
-    emailer: emailer as never,
+    emailer: asBody<never>(emailer),
   });
   const count = () =>
     db.query<{ n: number }, []>("SELECT count(*) AS n FROM sends WHERE status='sent'").get()!.n;

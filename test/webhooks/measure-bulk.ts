@@ -9,6 +9,7 @@ import { Database } from "bun:sqlite";
 import { mkdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { asBody } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const executable = resolve(process.argv[2] ?? join(repository, "dist/iglo.email"));
@@ -67,7 +68,7 @@ try {
         if (!response.ok) {
           throw new Error(`${method} ${path}: ${response.status} ${text}`);
         }
-        return JSON.parse(text);
+        return asBody<{ data: Record<string, any> }>(JSON.parse(text));
       };
       // The receiver is on loopback, which the default refuses (D122).
       await api("/api/settings/webhooks.block_private_addresses", "PUT", false);
@@ -78,8 +79,9 @@ try {
         });
       }
       const list = async (name: string) =>
-        (await api("/api/lists", "POST", { name, type: "public", optin: "single" })).data
-          .id as number;
+        asBody<number>(
+          (await api("/api/lists", "POST", { name, type: "public", optin: "single" })).data.id,
+        );
       const half = await list("half"),
         whole = await list("whole");
       const path = join(dataDir, "iglo-email.db");
@@ -105,7 +107,9 @@ try {
         api("/api/subscribers/query/delete", "POST", { list_ids: [whole], all: true }),
       );
       const reader = new Database(path, { readonly: true });
-      const count = (reader.query("SELECT count(*) AS n FROM webhook_deliveries").get() as any).n;
+      const count = asBody<{ n: number }>(
+        reader.query("SELECT count(*) AS n FROM webhook_deliveries").get(),
+      ).n;
       reader.close();
       return {
         bun: Bun.version,

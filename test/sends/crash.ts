@@ -11,6 +11,7 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { faultRelay } from "@/test/messaging/fault-relay";
 import { createServer, createConnection } from "node:net";
 import type { Socket } from "node:net";
+import { asBody, readJson } from "@/test/read-body";
 
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
@@ -27,7 +28,7 @@ async function launch(dir: string, smtpPort = sink.port) {
   const port = await new Promise<string>((resolvePort, reject) => {
     let value = "";
     child.stdout.on("data", (chunk) => {
-      value += chunk.toString();
+      value += String(chunk);
       if (value.includes("\n")) {
         resolvePort(value.split("\n")[0]!);
       }
@@ -54,7 +55,7 @@ async function launch(dir: string, smtpPort = sink.port) {
     if (!response.ok) {
       throw new Error(`Fixture ${path} returned ${response.status}`);
     }
-    return ((await response.json()) as { data: any }).data;
+    return (await readJson<{ data: Record<string, any> }>(response)).data;
   }
   const session = await call("/fixture/session");
   const headers = { cookie: session.cookie, "x-csrf-token": session.csrf };
@@ -172,7 +173,7 @@ try {
     if (messages.length) {
       assert.equal(
         messages[0]!.MessageID.replaceAll(/[<>]/g, ""),
-        entry.smtp_message_id.replaceAll(/[<>]/g, ""),
+        asBody<string>(entry.smtp_message_id).replaceAll(/[<>]/g, ""),
       );
     }
     await kill(process.child);
@@ -210,7 +211,7 @@ try {
       if (messages.length) {
         assert.equal(
           messages[0]!.MessageID.replaceAll(/[<>]/g, ""),
-          entry.smtp_message_id.replaceAll(/[<>]/g, ""),
+          asBody<string>(entry.smtp_message_id).replaceAll(/[<>]/g, ""),
         );
       }
       await kill(worker.child);
