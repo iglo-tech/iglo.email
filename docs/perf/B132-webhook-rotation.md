@@ -17,6 +17,10 @@ one webhook, 1000 events, in one `oven/bun:1.4.5` container (linux/arm64). Every
 | unsubscribe p99 | 3.56 | 3.80 |
 | drain: 1000 deliveries reach the receiver | 32 | 31 |
 
+**The 1.58 vs 1.09 ms ingest difference is warm-up, not the change.** The median of three pairs
+keeps the slow early runs (base 2.38 and 1.58 ms, head 1.17 and 1.09 ms). The last pair alone is
+1.05 vs 1.04 ms.
+
 Per run, in the order measured:
 
 | run | tree | load 1/5/15 | ingest p50 | ingest p99 | unsub p50 | unsub p99 | drain ms |
