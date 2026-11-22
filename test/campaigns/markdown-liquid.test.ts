@@ -6,6 +6,7 @@ import { afterEach, expect, test } from "bun:test";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { previewForm, readerSession } from "@/test/campaigns/markdown-support";
+import { asBody } from "@/test/read-body";
 
 const CAP_MESSAGE = "Markdown is larger than 128 KiB after template expansion";
 
@@ -147,11 +148,11 @@ test("five concurrent 128 KiB Liquid previews of the slowest forms leave a read 
   );
   const logged = new Response(child.stderr).text();
   try {
-    const ready = JSON.parse(await firstLine(child.stdout)) as {
+    const ready = asBody<{
       origin: string;
       campaign: number;
       headers: Record<string, string>;
-    };
+    }>(JSON.parse(await firstLine(child.stdout)));
     const forms: Array<[string, string]> = [
       ["| a |\n|---|\n| b |\n", "_"],
       ["| a |\n|---|\n| b |\n", "* *"],

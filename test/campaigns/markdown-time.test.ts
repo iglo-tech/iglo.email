@@ -5,6 +5,7 @@ import { afterEach, expect, test } from "bun:test";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { previewForm, readerSession, repeat } from "@/test/campaigns/markdown-support";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<CampaignsFixture> = [];
 afterEach(async () => {
@@ -42,11 +43,11 @@ test("five concurrent 64 KiB previews leave a read sent after them answering wit
   );
   const logged = new Response(child.stderr).text();
   try {
-    const ready = JSON.parse(await firstLine(child.stdout)) as {
+    const ready = asBody<{
       origin: string;
       campaign: number;
       headers: Record<string, string>;
-    };
+    }>(JSON.parse(await firstLine(child.stdout)));
     const shapes = ["|\n-\n", "a\n***\n", "__+", "[\n-\n"];
     const started = performance.now();
     const previews = Array.from({ length: 5 }, (_, i) =>

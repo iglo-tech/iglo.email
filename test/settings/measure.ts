@@ -1,6 +1,7 @@
 // Bounded synthetic compiled HTTP workload for M1.2; no external services.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 
 const measure = async (count: number, warm: number, action: (i: number) => Promise<void>) => {
   const samples: Array<number> = [];
@@ -34,7 +35,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         if (response.status !== 200) {
           throw new Error(`Unexpected HTTP status ${response.status}`);
         }
-        return (await response.json()).data;
+        return (await readJson<{ data: Record<string, any> }>(response)).data;
       };
       const health = await measure(50, 5, async () => {
         await request("/health");

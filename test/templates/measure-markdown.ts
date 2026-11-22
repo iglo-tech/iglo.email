@@ -7,6 +7,7 @@
 import { createMarkdownBudget, markdownOutputBound, renderMarkdown } from "@/templates/markdown";
 import { markdownCorpus } from "@/test/templates/markdown-corpus";
 import { newsletter } from "@/test/templates/markdown-newsletter";
+import { asBody } from "@/test/read-body";
 
 /** Families [unit, prefix]: the prefix is written once, then the unit repeats to the requested size. */
 export const families: Record<string, [string, string]> = {
@@ -102,7 +103,7 @@ function timed(body: string) {
       createMarkdownBudget(() => {}),
     );
   } catch (error) {
-    status = `error: ${(error as Error).message}`;
+    status = `error: ${asBody<Error>(error).message}`;
   }
   const ms = performance.now() - started;
   return {
@@ -297,12 +298,12 @@ if (Bun.argv[2] === "one") {
       console.log(`${family.padEnd(22)} TIMEOUT > 10000 ms`);
       continue;
     }
-    const r = JSON.parse(out.trim()) as {
+    const r = asBody<{
       ms: number;
       status: string;
       bound: number;
       actual: number;
-    };
+    }>(JSON.parse(out.trim()));
     slowest = Math.max(slowest, r.ms);
     if (r.ms > 100) {
       over100++;
@@ -342,9 +343,9 @@ if (Bun.argv[2] === "one") {
   console.log(`wrote ${docs.length} documents`);
 } else if (Bun.argv[2] === "compare") {
   const gm = new Map<string, string>(
-    (JSON.parse(await Bun.file(Bun.argv[3]!).text()) as Array<{ id: string; html: string }>).map(
-      (r) => [r.id, r.html],
-    ),
+    asBody<Array<{ id: string; html: string }>>(
+      JSON.parse(await Bun.file(Bun.argv[3]!).text()),
+    ).map((r) => [r.id, r.html]),
   );
   const corpus: Array<{ id: string; src: string }> = [];
   markdownCorpus.forEach((src, i) => corpus.push({ id: `pin-${i + 1}`, src }));

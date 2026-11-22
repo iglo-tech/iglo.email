@@ -1,6 +1,7 @@
 // Opt-in serial compiled HTTP comparison; all state is disposable and synthetic.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { readJson } from "@/test/read-body";
 const admin = { user: "m18-measure-admin", password: "m18-measure-password" };
 const executables = [
   ["control", resolve("node_modules/.cache/m18-baseline/dist/iglo.email")],
@@ -27,7 +28,7 @@ for (const [kind, executable] of executables) {
           if (response.status !== 200) {
             throw new Error(`HTTP ${response.status} in ${method} ${path.split("?")[0]}`);
           }
-          return ((await response.json()) as { data: any }).data;
+          return (await readJson<{ data: Record<string, any> }>(response)).data;
         }
         const samples: Array<number> = [];
         const restartSamples: Array<number> = [];

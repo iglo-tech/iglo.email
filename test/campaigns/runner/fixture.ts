@@ -9,6 +9,7 @@ import type { Clock } from "@/clock";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import type { Message, Outcome } from "@/messaging/email";
 import { WAIT_WALL_MS, waitWall } from "@/test/wait";
+import { asBody } from "@/test/read-body";
 
 export interface Push {
   at: number;
@@ -119,7 +120,7 @@ export async function runnerFixture(
     const parts = await Promise.all(
       campaignIds.map(async (id) => {
         try {
-          const body = (await read(id)) as { status: string; sent: number; to_send: number };
+          const body = asBody<{ status: string; sent: number; to_send: number }>(await read(id));
           const lease = store.state(BigInt(id))?.runner_lease ? "held" : "free";
           return (
             `campaign ${id} status ${body.status} sent ${body.sent} ` +
@@ -166,7 +167,8 @@ export async function runnerFixture(
           : ""),
     });
   };
-  const read = async (id: number) => (await f.json(`/api/campaigns/${id}`)).body.data;
+  const read = async (id: number) =>
+    asBody<Record<string, any>>((await f.json(`/api/campaigns/${id}`)).body.data);
   const until = (id: number, value: string) => drive(async () => (await read(id)).status === value);
   const status = (id: number, value: string) =>
     f.json(`/api/campaigns/${id}/status`, "PUT", { status: value });
@@ -194,9 +196,9 @@ export async function runnerFixture(
     return sub;
   };
   const listStatus = async (subscriberId: number, listId: number) =>
-    (await f.json(`/api/subscribers/${subscriberId}`)).body.data.lists.find(
-      (l: { id: number }) => l.id === listId,
-    )?.subscription_status as string | undefined;
+    asBody<Array<{ id: number; subscription_status: string }>>(
+      (await f.json(`/api/subscribers/${subscriberId}`)).body.data.lists,
+    ).find((l) => l.id === listId)?.subscription_status;
   return {
     ...f,
     campaign,

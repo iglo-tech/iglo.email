@@ -9,6 +9,7 @@ import {
   loopModifierControls,
   coercionCases,
 } from "@/test/templates/budget-cases";
+import { readJson } from "@/test/read-body";
 
 test("loop conversions and filter/for arguments obey the message budget", async () => {
   const renderer = createRenderer(createRealClock(), createTranslation());
@@ -19,7 +20,7 @@ test("loop conversions and filter/for arguments obey the message budget", async 
       try {
         const value =
           request.headers.get("content-type") === "application/json"
-            ? ((await request.json()) as { body: string; data: string })
+            ? await readJson<{ body: string; data: string }>(request)
             : { body: await request.text(), data: "{}" };
         return new Response((await renderer.render({ ...value, mode: "plain" })).body);
       } catch {

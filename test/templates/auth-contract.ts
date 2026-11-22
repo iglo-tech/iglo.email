@@ -1,5 +1,6 @@
 // Production-only D26/D54 authorization checks for the template routes.
 import type { Credentials } from "@/test/contract/types";
+import { readJson } from "@/test/read-body";
 
 const check = (value: unknown, label: string) => {
   if (!value) {
@@ -35,7 +36,7 @@ export async function runTemplateAuthorization(
     const name = `m18-${crypto.randomUUID()}`;
     const roleResponse = await request("/api/roles/users", "POST", { name, permissions });
     check(roleResponse.status === 200, "role-create");
-    const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+    const role = (await readJson<{ data: { id: number } }>(roleResponse)).data.id;
     ownedRoles.push(role);
     const userResponse = await request("/api/users", "POST", {
       username: name,
@@ -44,7 +45,7 @@ export async function runTemplateAuthorization(
       user_role_id: role,
     });
     check(userResponse.status === 200, "user-create");
-    const user = ((await userResponse.json()) as { data: { id: number; password: string } }).data;
+    const user = (await readJson<{ data: { id: number; password: string } }>(userResponse)).data;
     ownedUsers.push(user.id);
     return `Basic ${btoa(`${name}:${user.password}`)}`;
   }
@@ -82,7 +83,7 @@ export async function runTemplateAuthorization(
     );
     const created = await request("/api/templates", "POST", candidate, { authorization: writer });
     check(created.status === 200, "writer");
-    ownedTemplates.push(((await created.json()) as { data: { id: number } }).data.id);
+    ownedTemplates.push((await readJson<{ data: { id: number } }>(created)).data.id);
     const page = await fetch(`${baseUrl}/admin/login`),
       text = await page.text();
     const nonce = /name="nonce"\s+value="([^"]+)"/.exec(text)?.[1];
@@ -129,7 +130,7 @@ export async function runTemplateAuthorization(
       origin: baseUrl,
     });
     check(allowed.status === 200, "cookie-write");
-    ownedTemplates.push(((await allowed.json()) as { data: { id: number } }).data.id);
+    ownedTemplates.push((await readJson<{ data: { id: number } }>(allowed)).data.id);
     const postPreview = await fetch(`${baseUrl}/api/templates/preview`, {
       method: "POST",
       headers: { cookie, "content-type": "application/x-www-form-urlencoded" },

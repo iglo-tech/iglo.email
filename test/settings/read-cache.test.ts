@@ -11,6 +11,7 @@ import { placeRestoreHold, sendingHeld } from "@/settings/hold";
 import { writeStoredValue } from "@/settings/stored";
 import { createSettings } from "@/settings/store";
 import { TestClock } from "@/test/server/fixture";
+import { asBody } from "@/test/read-body";
 
 const directories: Array<string> = [];
 afterEach(() => {
@@ -47,7 +48,7 @@ test("the shared value cannot be mutated and the restore hold does not read thro
   const { db, settings } = open();
   const first = settings.read();
   expect(() => {
-    (first as any)["app.site_name"] = "mutated";
+    asBody<Record<string, unknown>>(first)["app.site_name"] = "mutated";
   }).toThrow();
   expect(settings.read()["app.site_name"]).not.toBe("mutated");
   expect(sendingHeld(db)).toBe(false);

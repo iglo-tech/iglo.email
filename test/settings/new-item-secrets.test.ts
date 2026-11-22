@@ -9,6 +9,7 @@ import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 import { openDatabase } from "@/db/connection";
 import { writeStoredValue } from "@/settings/stored";
+import { asBody, readJson } from "@/test/read-body";
 
 let f: Fixture;
 let cookie = "";
@@ -18,23 +19,35 @@ beforeEach(async () => {
 });
 afterEach(() => f.close());
 
-async function read(): Promise<Record<string, any>> {
+// The settings record: the three item lists the tests add to are arrays of item records, the rest is per key.
+type Settings = {
+  smtp: Array<any>;
+  messengers: Array<any>;
+  "bounce.mailboxes": Array<any>;
+  [key: string]: any;
+};
+async function read(): Promise<Settings> {
   const res = await get(f, "/api/settings", cookie);
   expect(res.status).toBe(200);
-  return ((await res.json()) as { data: Record<string, any> }).data;
+  return (await readJson<{ data: Settings }>(res)).data;
 }
 
 // The settings page sends each masked secret back empty, which the API reads as "keep"
 // (settings.js onSubmit). Every save below takes the page's shape the same way.
-function unmasked(value: unknown): any {
+function unmasked<T = Settings>(value: unknown): T {
+  return asBody<T>(unmaskedValue(value));
+}
+function unmaskedValue(value: unknown): unknown {
   if (typeof value === "string") {
     return /^•+$/.test(value) ? "" : value;
   }
   if (Array.isArray(value)) {
-    return value.map(unmasked);
+    return value.map(unmaskedValue);
   }
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unmasked(item)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, unmaskedValue(item)]),
+    );
   }
   return value;
 }
@@ -113,10 +126,7 @@ test("3. a new messenger with a blank password stores none, and the stored one k
   });
   expect((await save(second)).status).toBe(200);
 
-  const messengers = (await read()).messengers as Array<{
-    name: string;
-    password?: string;
-  }>;
+  const messengers = asBody<Array<{ name: string; password?: string }>>((await read()).messengers);
   const added = messengers.find((item) => item.name === "b51-chat-two");
   expect(added).toBeDefined();
   expect(added!.password).toBeUndefined();

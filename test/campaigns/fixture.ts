@@ -50,6 +50,7 @@ import type { WebhookTransport } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
+import { asBody } from "@/test/read-body";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
@@ -267,7 +268,9 @@ export async function campaignsFixture(
     };
   };
   const list = async (name: string, optin = "single") =>
-    (await json("/api/lists", "POST", { name, type: "public", optin })).body.data.id as number;
+    asBody<number>(
+      (await json("/api/lists", "POST", { name, type: "public", optin })).body.data.id,
+    );
   const subscriber = async (email: string, listIds: Array<number>, extra: JsonObject = {}) => {
     const created = await json("/api/subscribers", "POST", {
       email,
@@ -278,14 +281,14 @@ export async function campaignsFixture(
     if (created.status !== 200) {
       throw new Error(`subscriber ${created.status}`);
     }
-    return created.body.data as { id: number; uuid: string; email: string };
+    return asBody<{ id: number; uuid: string; email: string }>(created.body.data);
   };
   const campaign = async (input: JsonObject) => {
     const created = await json("/api/campaigns", "POST", input);
     if (created.status !== 200) {
       throw new Error(`campaign ${created.status} ${JSON.stringify(created.body)}`);
     }
-    return created.body.data as Record<string, any> & { id: number; uuid: string };
+    return asBody<Record<string, any> & { id: number; uuid: string }>(created.body.data);
   };
   /** Wait for the sink: test sends are queued to the emailer, as in listmonk. */
   const mail = async (count: number) => {

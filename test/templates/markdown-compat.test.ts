@@ -9,6 +9,7 @@ import { createTranslation } from "@/i18n/i18n";
 import { createRenderer } from "@/templates/renderer";
 import { markdownCorpus } from "@/test/templates/markdown-corpus";
 import { newsletter } from "@/test/templates/markdown-newsletter";
+import { asBody } from "@/test/read-body";
 
 const pinned: Array<string> = [
   "fd6c83adc06e4baecc889e105f2b9f8d1a477c41ce71ac814a7f73f434cfe6d8 175",
@@ -55,7 +56,7 @@ test("ordinary Markdown renders as pinned", async () => {
       const { body: html } = await renderer.render({ body, data: "{}", mode: "markdown" });
       actual.push(`${createHash("sha256").update(html).digest("hex")} ${Buffer.byteLength(html)}`);
     } catch (error) {
-      actual.push(`refused: ${(error as Error).message}`);
+      actual.push(`refused: ${asBody<Error>(error).message}`);
     }
   }
   expect(actual).toEqual(pinned);

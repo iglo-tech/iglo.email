@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
+import { readJson } from "@/test/read-body";
 
 const normalize = (html: string) => html.replaceAll(/\s+/g, " ").trim();
 const sink = referenceMailpit(process.env);
@@ -59,16 +60,16 @@ try {
           });
           assert.equal(response.status, 200);
           const query = new URLSearchParams({ query: `to:${variantAddress}`, limit: "100" });
-          const found = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
+          const found = await readJson<{
             messages: Array<{ ID: string; MessageID: string; Subject: string }>;
-          };
+          }>(await fetch(`${sink.api}/api/v1/search?${query}`));
           assert.equal(found.messages.length, 1);
           const item = found.messages[0]!;
           ids.push(item.ID);
-          const message = (await (await fetch(`${sink.api}/api/v1/message/${item.ID}`)).json()) as {
+          const message = await readJson<{
             HTML: string;
             To: Array<{ Address: string }>;
-          };
+          }>(await fetch(`${sink.api}/api/v1/message/${item.ID}`));
           assert.deepEqual(
             message.To.map((x) => x.Address),
             [variantAddress],

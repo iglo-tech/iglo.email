@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { admin, api, get, login } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+import { asBody, readJson } from "@/test/read-body";
 
 let f: Fixture;
 let cookie = "";
@@ -14,21 +15,33 @@ beforeEach(async () => {
 });
 afterEach(() => f.close());
 
-async function read(): Promise<Record<string, any>> {
+// The settings record: the three item lists the tests add to are arrays of item records, the rest is per key.
+type Settings = {
+  smtp: Array<any>;
+  messengers: Array<any>;
+  "bounce.mailboxes": Array<any>;
+  [key: string]: any;
+};
+async function read(): Promise<Settings> {
   const res = await get(f, "/api/settings", cookie);
   expect(res.status).toBe(200);
-  return ((await res.json()) as { data: Record<string, any> }).data;
+  return (await readJson<{ data: Settings }>(res)).data;
 }
 
-function unmasked(value: unknown): any {
+function unmasked<T = Settings>(value: unknown): T {
+  return asBody<T>(unmaskedValue(value));
+}
+function unmaskedValue(value: unknown): unknown {
   if (typeof value === "string") {
     return /^•+$/.test(value) ? "" : value;
   }
   if (Array.isArray(value)) {
-    return value.map(unmasked);
+    return value.map(unmaskedValue);
   }
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, unmasked(item)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, unmaskedValue(item)]),
+    );
   }
   return value;
 }
@@ -119,7 +132,7 @@ test("5. a save with two SMTP servers sharing one uuid is refused, and changes n
   });
   const response = await save(body);
   expect(response.status).toBe(400);
-  expect(((await response.json()) as { message: string }).message).toMatch(/uuid/i);
+  expect((await readJson<{ message: string }>(response)).message).toMatch(/uuid/i);
   expect(await read()).toEqual(before);
 });
 
@@ -158,7 +171,7 @@ test("6. a save with two bounce mailboxes or two messengers sharing a uuid is re
 
 test("7. the per-key SMTP update refuses duplicate uuids too", async () => {
   const before = await read();
-  const items = unmasked(before.smtp);
+  const items = unmasked<Array<any>>(before.smtp);
   items.push({ ...items[0], name: "b56-key-twin", host: "b56-key-twin.example.test" });
   const response = await api(f, cookie, "/api/settings/smtp", "PUT", items);
   expect(response.status).toBe(400);

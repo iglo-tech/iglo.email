@@ -1,6 +1,7 @@
 // Public-boundary tests for the M1.2 policy and authorization seams.
 import { createConnection } from "node:net";
 import type { Credentials } from "@/test/contract/types";
+import { readJson } from "@/test/read-body";
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -56,7 +57,7 @@ export async function runSettingsLive(target: {
     };
   }
   const get = async () =>
-    ((await (await request("/api/settings")).json()) as { data: Record<string, any> }).data;
+    (await readJson<{ data: Record<string, any> }>(await request("/api/settings"))).data;
   const key = (name: string, body: unknown) => request(`/api/settings/${name}`, "PUT", body);
   const notice = await fetch(`${base}/admin/static/licenses/gdgvda-cron-0.7.0-MIT.txt`);
   const noticeText = await notice.text();
@@ -110,7 +111,7 @@ export async function runSettingsLive(target: {
   check((await create("a@sub.example.test")).status === 400, "wildcard-one-label");
   const nested = await create("a@deep.sub.example.test");
   check(nested.status === 200, "wildcard-no-recursion");
-  const id = ((await nested.json()) as { data: { id: number } }).data.id;
+  const id = (await readJson<{ data: { id: number } }>(nested)).data.id;
   check((await key("privacy.domain_allowlist", ["example.test"])).status === 200, "allowlist-set");
   check((await create("a@example.test")).status === 200, "allowlist-precedence");
   check((await create("b@sub.example.test")).status === 400, "allowlist-excludes");
@@ -146,7 +147,7 @@ export async function runSettingsLive(target: {
     "external-query-policy",
   );
   const unchangedExternal = (
-    (await (await request(queryExternal)).json()) as { data: { email: string; name: string } }
+    await readJson<{ data: { email: string; name: string } }>(await request(queryExternal))
   ).data;
   check(
     unchangedExternal.email === "external@example.test" &&
@@ -172,7 +173,7 @@ export async function runSettingsLive(target: {
       const name = `m12-${crypto.randomUUID()}`;
       const roleResponse = await request("/api/roles/users", "POST", { name, permissions: perms });
       check(roleResponse.status === 200, "role-create");
-      const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+      const role = (await readJson<{ data: { id: number } }>(roleResponse)).data.id;
       roles.push(role);
       const userResponse = await request("/api/users", "POST", {
         username: name,
@@ -182,7 +183,7 @@ export async function runSettingsLive(target: {
       });
       check(userResponse.status === 200, "user-create");
       const user = (
-        (await userResponse.json()) as { data: { id: number; username: string; password: string } }
+        await readJson<{ data: { id: number; username: string; password: string } }>(userResponse)
       ).data;
       users.push(user.id);
       return { role, name, auth: `Basic ${btoa(`${user.username}:${user.password}`)}` };
@@ -279,7 +280,7 @@ export async function runSettingsLive(target: {
       const name = `m12-human-${crypto.randomUUID()}`;
       const roleResponse = await request("/api/roles/users", "POST", { name, permissions: perms });
       check(roleResponse.status === 200, "human-role-create");
-      const role = ((await roleResponse.json()) as { data: { id: number } }).data.id;
+      const role = (await readJson<{ data: { id: number } }>(roleResponse)).data.id;
       roles.push(role);
       const password = "m12-synthetic-human-password";
       const userResponse = await request("/api/users", "POST", {
@@ -292,7 +293,7 @@ export async function runSettingsLive(target: {
         user_role_id: role,
       });
       check(userResponse.status === 200, "human-create");
-      users.push(((await userResponse.json()) as { data: { id: number } }).data.id);
+      users.push((await readJson<{ data: { id: number } }>(userResponse)).data.id);
       const page = await fetch(base + "/admin/login");
       const nonce = /name="nonce"\s+value="([^"]+)"/.exec(await page.text())?.[1];
       const nc = page.headers
