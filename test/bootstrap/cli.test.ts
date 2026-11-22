@@ -266,7 +266,9 @@ describe("compiled executable", () => {
         });
         expect(apiResponse.status).toBe(404);
         expect(apiResponse.headers.get("content-type")).toBe("application/json");
-        expect(await apiResponse.text()).toBe('{"message":"404 unknown endpoint"}\n');
+        expect(await apiResponse.text()).toBe(
+          '{"message":"404 unknown endpoint","code":"not_found"}\n',
+        );
       }
       const protectedHealth = await fetch(`http://127.0.0.1:${port}/api/health`);
       expect(protectedHealth.status).toBe(403);
