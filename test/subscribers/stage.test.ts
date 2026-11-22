@@ -7,6 +7,7 @@ import { STAGE_CHUNK } from "@/subscribers/id-stage";
 import { openFilePaths } from "@/test/host-processes";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
+import { asBody } from "@/test/read-body";
 
 const TOTAL = STAGE_CHUNK * 2 + 123;
 const q = (fragment: string) => encodeURIComponent(fragment);
@@ -45,14 +46,16 @@ describe("staged selections", () => {
     expect(response.status).toBe(200);
     expect(response.body.data.total).toBe(TOTAL);
     expect(response.body.data.results).toHaveLength(TOTAL);
-    const ids = response.body.data.results.map((r: { id: number }) => r.id);
+    const ids = asBody<Array<{ id: number }>>(response.body.data.results).map((r) => r.id);
     expect(new Set(ids).size).toBe(TOTAL);
     expect(staged()).toEqual([]);
   });
 
   test("a built-in page over the chunk is complete and in order", async () => {
     const response = await f.json("/api/subscribers?per_page=all&order_by=id&order=desc");
-    const ids: Array<number> = response.body.data.results.map((r: { id: number }) => r.id);
+    const ids: Array<number> = asBody<Array<{ id: number }>>(response.body.data.results).map(
+      (r) => r.id,
+    );
     expect(ids).toHaveLength(TOTAL);
     expect(ids).toEqual([...ids].sort((a, b) => b - a));
     expect(staged()).toEqual([]);
@@ -63,9 +66,9 @@ describe("staged selections", () => {
       query: "subscribers.id % 2 = 0",
     });
     expect(result.status).toBe(200);
-    const blocked = f.db
-      .query("SELECT COUNT(*) AS n FROM subscribers WHERE status = 'blocklisted'")
-      .get() as { n: number };
+    const blocked = asBody<{ n: number }>(
+      f.db.query("SELECT COUNT(*) AS n FROM subscribers WHERE status = 'blocklisted'").get(),
+    );
     expect(Number(blocked.n)).toBe(Math.floor(TOTAL / 2));
     expect(staged()).toEqual([]);
   });

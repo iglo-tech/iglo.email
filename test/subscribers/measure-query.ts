@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { createQueryRunner } from "@/subscribers/query-runner";
 import { queryFixture } from "@/test/subscribers/fixture";
+import { asBody } from "@/test/read-body";
 
 const count = Number(process.argv[2] ?? 100_000);
 const f = await queryFixture({ timeoutMs: 2000 });
@@ -199,7 +200,7 @@ try {
   });
   report("remaining", {
     subscribers: Number(
-      (f.db.query("SELECT count(*) AS n FROM subscribers").get() as { n: bigint }).n,
+      asBody<{ n: bigint }>(f.db.query("SELECT count(*) AS n FROM subscribers").get()).n,
     ),
   });
 } finally {

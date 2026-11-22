@@ -17,6 +17,7 @@ import { startPurge } from "@/loops/purge";
 import { createSends } from "@/messaging/sends";
 import { createSubscriberStore } from "@/subscribers/store";
 import { createTranslation } from "@/i18n/i18n";
+import { asBody } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
 const events = Number(process.argv[2] ?? 400_000);
@@ -81,7 +82,7 @@ async function run(variant: "idle" | "before" | "after") {
   // Let the seeding's checkpoint and file writes finish, so they are not counted as the purge's.
   db.run("PRAGMA wal_checkpoint(TRUNCATE)");
   await Bun.sleep(5000);
-  const left = () => (db.query("SELECT count(*) AS n FROM events").get() as { n: bigint }).n;
+  const left = () => asBody<{ n: bigint }>(db.query("SELECT count(*) AS n FROM events").get()).n;
   const startCount = Number(left());
 
   const logger = {
@@ -123,13 +124,16 @@ async function run(variant: "idle" | "before" | "after") {
     await Bun.sleep(Math.max(0, due - performance.now()));
     const begin = performance.now();
     lateness.push(begin - due);
-    sends.enqueue({ source: "tx", kind: "transactional", message } as never);
+    sends.enqueue(asBody<never>({ source: "tx", kind: "transactional", message }));
     const claimed = writeTransaction(db, () => {
       const time = new Date();
       return sends.claimBatch(time, new Date(time.getTime() + 60_000), 1);
     });
     sends.finishAll(
-      claimed.map(({ row }) => ({ row, outcome: { status: "accepted", rejected: [] } as never })),
+      claimed.map(({ row }) => ({
+        row,
+        outcome: asBody<never>({ status: "accepted", rejected: [] }),
+      })),
     );
     whole.push(performance.now() - due);
   }

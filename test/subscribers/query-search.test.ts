@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ascending } from "@/test/order";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
+import { asBody } from "@/test/read-body";
 
 const q = (fragment: string) => encodeURIComponent(fragment);
 const emails = (body: { data: { results: Array<{ email: string }> | null } }) =>
@@ -87,7 +88,7 @@ describe("sharp S search", () => {
     ).toBe(200);
     const all = await f.json("/api/subscribers?per_page=all");
     const status = Object.fromEntries(
-      (all.body.data.results as Array<{ email: string; status: string }>).map((row) => [
+      asBody<Array<{ email: string; status: string }>>(all.body.data.results).map((row) => [
         row.email.split("-")[0],
         row.status,
       ]),

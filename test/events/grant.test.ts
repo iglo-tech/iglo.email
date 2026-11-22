@@ -5,6 +5,7 @@ import { createTranslation } from "@/i18n/i18n";
 import { eventsFixture } from "@/test/events/fixture";
 import type { JsonObject, JsonValue } from "@/test/json-object";
 import type { EventsFixture } from "@/test/events/fixture";
+import { asBody } from "@/test/read-body";
 
 const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
@@ -26,7 +27,9 @@ const invalid = "Invalid fields: subscriber.grant_lists";
 
 /** A subscriber's membership status on one list, or null when it has none. */
 async function membership(f: EventsFixture, subscriberId: number, list: number) {
-  const row = (await f.subscriber(subscriberId)).lists.find((l: { id: number }) => l.id === list);
+  const row = asBody<Array<{ id: number; subscription_status: string }>>(
+    (await f.subscriber(subscriberId)).lists,
+  ).find((l) => l.id === list);
   return row?.subscription_status ?? null;
 }
 async function unsubscribe(f: EventsFixture, subscriberId: number, list: number) {
@@ -53,7 +56,7 @@ test("after a one-click unsubscribe, a repeated grant reports unsubscribed and c
   const f = await open();
   const news = await f.list("news");
   const first = await f.post(order({ email: "ana@example.test", grant_lists: [news] }));
-  const id = first.body.data.subscriber_id as number;
+  const id = asBody<number>(first.body.data.subscriber_id);
   await unsubscribe(f, id, news);
   expect(await membership(f, id, news)).toBe("unsubscribed");
   const again = await f.post(order({ email: "ana@example.test", grant_lists: [news] }));
@@ -93,7 +96,7 @@ test("a blocklisted subscriber gets blocklisted for every list, no membership, a
     email: "blocked@example.test",
     name: "Blocked",
   });
-  const id = created.body.data.id as number;
+  const id = asBody<number>(created.body.data.id);
   const blocked = await f.json("/api/subscribers/blocklist", "PUT", { ids: [id] });
   expect(blocked.status).toBe(200);
   const before = f.count("events");
@@ -173,7 +176,9 @@ test("a grant may name up to 20 distinct lists", async () => {
   }
   const r = await f.post(order({ email: "many@example.test", grant_lists: lists }));
   expect(r.status).toBe(200);
-  expect(r.body.data.grants.map((g: { list_id: number }) => g.list_id)).toEqual(lists);
+  expect(asBody<Array<{ list_id: number }>>(r.body.data.grants).map((g) => g.list_id)).toEqual(
+    lists,
+  );
 });
 
 test("a batch with one bad grant records the other events and reports the bad one", async () => {
@@ -278,9 +283,11 @@ test("in a batch, a list the token cannot manage refuses only its own item", asy
   expect(third.status).toBe(200);
   expect(f.count("events")).toBe(2);
   expect(f.count("subscribers")).toBe(2);
-  expect(await f.subscriber(first.subscriber_id).then((s) => s.lists)).toMatchObject([
-    { id: news, subscription_status: "confirmed" },
-  ]);
+  expect(
+    await f
+      .subscriber(first.subscriber_id)
+      .then((s) => asBody<Array<{ id: number; subscription_status: string }>>(s.lists)),
+  ).toMatchObject([{ id: news, subscription_status: "confirmed" }]);
 });
 
 test("a repeated idempotency key replays the first grants and changes nothing", async () => {
@@ -290,7 +297,7 @@ test("a repeated idempotency key replays the first grants and changes nothing", 
     order({ email: "replay@example.test", grant_lists: [news] }, { idempotency_key: "k-1" }),
   );
   expect(first.body.data.grants).toEqual([{ list_id: news, result: "added" }]);
-  const id = first.body.data.subscriber_id as number;
+  const id = asBody<number>(first.body.data.subscriber_id);
   await unsubscribe(f, id, news);
   const events = f.count("events");
   const replay = await f.post(
@@ -324,7 +331,7 @@ test("a limited token needs a managed list the existing subscriber is already on
     lists: [secret],
     preconfirm_subscriptions: true,
   });
-  const id = created.body.data.id as number;
+  const id = asBody<number>(created.body.data.id);
   // Manages news only; vip is on secret only.
   const news_only = await f.apiUser(
     "news-events",
@@ -356,7 +363,7 @@ test("a limited token may grant on an existing subscriber already on a list it m
     lists: [news],
     preconfirm_subscriptions: true,
   });
-  const id = created.body.data.id as number;
+  const id = asBody<number>(created.body.data.id);
   const sport_events = await f.apiUser(
     "sport-events",
     ["subscriber_events:create", "subscribers:manage"],

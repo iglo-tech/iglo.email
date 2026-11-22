@@ -5,6 +5,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
+import { asBody } from "@/test/read-body";
 
 const path = (id: number) => `/api/subscribers/${id}/subscriber-events`;
 
@@ -28,17 +29,19 @@ async function subscriberInList(f: QueryFixture, listId: number) {
     lists: [listId],
   });
   expect(created.status).toBe(200);
-  return created.body.data.id as number;
+  return asBody<number>(created.body.data.id);
 }
 
 test("subscriber events need subscriber_events:get on REST, with the subscriber read scope", async () => {
   const f = await open();
-  const listA = (
-    await f.json("/api/lists", "POST", { name: "Events A", type: "public", optin: "single" })
-  ).body.data.id as number;
-  const listB = (
-    await f.json("/api/lists", "POST", { name: "Events B", type: "public", optin: "single" })
-  ).body.data.id as number;
+  const listA = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "Events A", type: "public", optin: "single" })).body
+      .data.id,
+  );
+  const listB = asBody<number>(
+    (await f.json("/api/lists", "POST", { name: "Events B", type: "public", optin: "single" })).body
+      .data.id,
+  );
   const inside = await subscriberInList(f, listA);
   const outside = await subscriberInList(f, listB);
   const scope = [{ id: listA, permissions: ["list:get"] }];

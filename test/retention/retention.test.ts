@@ -10,6 +10,7 @@ import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 
 const noop = () => {};
 const cookie = (id: string) => ({ cookie: `session=${id}` });
@@ -91,16 +92,17 @@ const purging = (f: TxFixture, clock: Clock, purges: Array<Purge>, batchSize?: n
     purges,
     ...(batchSize ? { batchSize } : {}),
   });
-const scalar = (f: TxFixture, sql: string) => Number((f.db.query(sql).get() as { n: bigint }).n);
+const scalar = (f: TxFixture, sql: string) =>
+  Number(asBody<{ n: bigint }>(f.db.query(sql).get()).n);
 const logger = (f: TxFixture) => ({
   error: (error: unknown) => f.errors.push(error),
   attention: (message: string) => f.errors.push(new Error(message)),
 });
 const stored = (f: TxFixture, id: number) =>
-  f.db.query("SELECT payload, tracked_links FROM sends WHERE id = ?").get(id) as {
+  asBody<{
     payload: string | null;
     tracked_links: string | null;
-  };
+  }>(f.db.query("SELECT payload, tracked_links FROM sends WHERE id = ?").get(id));
 async function compactAll(f: TxFixture) {
   const pace = paced(f, () => 0);
   const loop = purging(f, pace.clock, [createSendCompaction(f.db)]);
@@ -115,16 +117,14 @@ function addSession(f: TxFixture, id: string, data: JsonObject, createdAt = f.cl
   ]);
 }
 const sessionIds = (f: TxFixture) =>
-  (f.db.query("SELECT id FROM sessions ORDER BY id").all() as Array<{ id: string }>).map(
+  asBody<Array<{ id: string }>>(f.db.query("SELECT id FROM sessions ORDER BY id").all()).map(
     (r) => r.id,
   );
 
 test("expired sessions go and valid ones stay", async () => {
   const f = await open();
   const login = async () =>
-    (await f.auth.login("fixture-admin", "fixture-admin-password")) as {
-      id: string;
-    };
+    asBody<{ id: string }>(await f.auth.login("fixture-admin", "fixture-admin-password"));
   const old = await login();
   f.clock.advance(6 * day);
   const fresh = await login();
@@ -223,7 +223,7 @@ test("finished deliveries go after 30 days, pending ones never, and the API stay
     url: r.url(),
     events: ["send.failed"],
   });
-  const id = created.body.data.id as number;
+  const id = asBody<number>(created.body.data.id);
   const queue = () =>
     f.db.transaction(() =>
       f.webhooks!.queueWebhook("send.failed", () => ({
@@ -231,7 +231,10 @@ test("finished deliveries go after 30 days, pending ones never, and the API stay
         list_ids: [],
       })),
     )();
-  const list = async () => (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data;
+  const list = async () =>
+    asBody<{ results: Array<{ status: string; uuid: string }>; total: number }>(
+      (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data,
+    );
   const until = async (check: (rows: Array<any>) => boolean) => {
     const deadline = Date.now() + 10_000;
     while (!check((await list()).results)) {
@@ -252,7 +255,7 @@ test("finished deliveries go after 30 days, pending ones never, and the API stay
   f.clock.advance(day - 1);
   f.advanceWebhooks(1);
   await until((rows) => rows.every((row) => row.status !== "queued"));
-  expect((await list()).results.map((row: any) => row.status)).toEqual(["failed", "delivered"]);
+  expect((await list()).results.map((row) => row.status)).toEqual(["failed", "delivered"]);
 
   // A row still pending, with its due time long past: the webhook is disabled at no time here.
   f.db.run("UPDATE webhooks SET enabled = 0 WHERE id = ?", [id]);
@@ -268,16 +271,12 @@ test("finished deliveries go after 30 days, pending ones never, and the API stay
   const loop = purging(f, pace.clock, [f.webhooks!.purge], 1);
   await pace.idle();
   // The failed row finished 29 days ago and stays; the delivered one finished just over 30 ago.
-  expect((await list()).results.map((row: any) => row.status)).toEqual([
-    "queued",
-    "queued",
-    "failed",
-  ]);
+  expect((await list()).results.map((row) => row.status)).toEqual(["queued", "queued", "failed"]);
   expect((await list()).total).toBe(3);
   f.clock.advance(day + 1);
   await pace.again();
   const after = await list();
-  expect(after.results.map((row: any) => row.uuid)).toEqual(["claimed-old", "pending-old"]);
+  expect(after.results.map((row) => row.uuid)).toEqual(["claimed-old", "pending-old"]);
   expect(after.total).toBe(2);
   expect(pace.yields.at(-1)).toBe(2);
   await loop.stop();
@@ -290,13 +289,15 @@ test("an old email keeps working after its body is dropped, and only finished ro
   const template = await f.template(
     `<p>Secret body <a href="{{ '${target}' | track_link }}">go</a> <a href="{{ unsubscribe_url }}">unsub</a></p>`,
   );
-  const list = (
-    await f.json("/api/lists", "POST", {
-      name: "news",
-      type: "public",
-      optin: "single",
-    })
-  ).body.data.id as number;
+  const list = asBody<number>(
+    (
+      await f.json("/api/lists", "POST", {
+        name: "news",
+        type: "public",
+        optin: "single",
+      })
+    ).body.data.id,
+  );
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [list] });
   const key = "retained-idempotency-key";
   const first = await f.tx({

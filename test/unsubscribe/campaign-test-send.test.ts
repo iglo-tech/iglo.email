@@ -9,6 +9,7 @@ import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
+import { asBody } from "@/test/read-body";
 
 const testSend = "00000000-0000-0000-0000-000000000001";
 const message =
@@ -81,12 +82,14 @@ test("following a test send's links changes no subscriber, queues no webhook and
   const receiver = startReceiver();
   cleanups.push(() => receiver.close());
   const f = await open();
-  const hookId = (
-    await f.json("/api/webhooks", "POST", {
-      url: receiver.url(),
-      events: ["subscriber.unsubscribed"],
-    })
-  ).body.data.id as number;
+  const hookId = asBody<number>(
+    (
+      await f.json("/api/webhooks", "POST", {
+        url: receiver.url(),
+        events: ["subscriber.unsubscribed"],
+      })
+    ).body.data.id,
+  );
   const news = await f.list("news");
   const double = await f.list("double", "double");
   const ada = await f.subscriber("ada@example.test", [news, double]);
@@ -167,8 +170,10 @@ test("a real send to the same subscriber still unsubscribes, tracks and queues i
   expect(unsubscribe.status).toBe(200);
   expect(await unsubscribe.text()).not.toContain(message);
   const data = (await f.json(`/api/subscribers/${sub.id}`)).body.data;
-  expect(data.lists.find((l: { id: number }) => l.id === single)?.subscription_status).toBe(
-    "unsubscribed",
-  );
+  expect(
+    asBody<Array<{ id: number; subscription_status: string }>>(data.lists).find(
+      (l) => l.id === single,
+    )?.subscription_status,
+  ).toBe("unsubscribed");
   await receiver.waitFor(1);
 });
