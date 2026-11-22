@@ -6,6 +6,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { must } from "@/invariant";
 import { asBody } from "@/test/read-body";
 
 const fixtures: Array<SchedulerFixture> = [];
@@ -67,28 +68,33 @@ test("the all-lists option ends waiting marketing, keeps transactional steps, an
   const first = await order();
   expect(first.status).toBe(200);
   const subscriber = asBody<number>(first.body.data.subscriber_id);
-  const enrolled = (sequence: number) =>
-    asBody<{ status: string; exit_reason: string | null }>(
-      f.db
-        .query(
-          "SELECT status, exit_reason FROM enrollments WHERE sequence_id = ? AND subscriber_id = ?",
-        )
-        .get(sequence, subscriber),
+  const enrolled = async (sequence: number) => {
+    const rows = asBody<{
+      results: Array<{ sequence_id: number; status: string; exit_reason: string | null }>;
+    }>((await f.json(`/api/enrollments?subscriber_id=${subscriber}`)).body.data).results;
+    const row = must(
+      rows.find((e) => e.sequence_id === sequence),
+      "the enrollment of the sequence",
     );
+    return { status: row.status, exit_reason: row.exit_reason };
+  };
   await f.until(() => sent(f, "marketing") === 1, "the marketing mail of the first order");
   await f.until(() => sent(f, "transactional") === 1, "the receipt of the first order");
-  expect(enrolled(later.id)).toEqual({ status: "active", exit_reason: null });
+  expect(await enrolled(later.id)).toEqual({ status: "active", exit_reason: null });
 
   // 2. The public link of that marketing mail: the all-lists option, as its form posts it.
   const uuid = asBody<string>((await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid);
-  const send = asBody<{ uuid: string }>(
-    f.db.query("SELECT uuid FROM sends WHERE to_email = ? AND kind = 'marketing'").get(address),
-  ).uuid;
-  const option = await f.request(`/m/${send}/unsubscribe/${uuid}`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: "List-Unsubscribe=One-Click&blocklist=true",
-  });
+  const marketingSends = asBody<{ results: Array<{ uuid: string }> }>(
+    (await f.json(`/api/sends?subscriber_id=${subscriber}&kind=marketing`)).body.data,
+  ).results;
+  const option = await f.request(
+    `/m/${must(marketingSends[0], "marketing send").uuid}/unsubscribe/${uuid}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "List-Unsubscribe=One-Click&blocklist=true",
+    },
+  );
   expect(option.status).toBe(200);
   expect(await option.text()).toContain("You have unsubscribed successfully.");
 
@@ -98,7 +104,7 @@ test("the all-lists option ends waiting marketing, keeps transactional steps, an
   expect(
     asBody<Array<{ subscription_status: string }>>(after.lists).map((l) => l.subscription_status),
   ).toEqual(["unsubscribed", "unsubscribed"]);
-  expect(enrolled(later.id)).toEqual({ status: "exited", exit_reason: "unsubscribed" });
+  expect(await enrolled(later.id)).toEqual({ status: "exited", exit_reason: "unsubscribed" });
 
   // 4. A later order: both grants are suppressed, neither marketing sequence starts, the receipt does.
   const again = await order();
