@@ -715,6 +715,7 @@ async function compareBody(
       ) => unknown,
     ) => unknown;
     value = parse(actual, function (key, entry, context) {
+      // JSON.parse always passes the holder as `this`, so this guard is always true; it only narrows the type.
       if (
         typeof entry === "number" &&
         context?.source &&
