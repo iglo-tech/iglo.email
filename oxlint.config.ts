@@ -475,7 +475,6 @@ export default defineConfig({
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
     // B134c: findings remain only in test/.
-    "typescript/no-require-imports": "off", // B134c
     "typescript/no-unsafe-function-type": "off", // B134c
     "no-unexpected-multiline": "off", // B134c
     "quality/no-reflect-get": "off", // B134c

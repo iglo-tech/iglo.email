@@ -3,10 +3,8 @@ import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { withProduction } from "@/test/contract/owned";
+import { PNG } from "pngjs";
 
-const { PNG } = require("pngjs") as {
-  PNG: { sync: { read(value: Buffer): { width: number; height: number; data: Buffer } } };
-};
 const root = resolve(import.meta.dir, "../..");
 const fixture = await readFile(resolve(root, "test/users/fixtures.md"), "utf8");
 const user = /^IGLO_EMAIL_ADMIN_USER=(.+)$/m.exec(fixture)?.[1];
