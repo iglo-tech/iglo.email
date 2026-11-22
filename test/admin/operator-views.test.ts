@@ -8,6 +8,12 @@ import { admin, get, login, userWith } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 
+/** The icon a sidebar link shows, by the link's href. */
+const iconOf = (page: string, href: string) =>
+  new RegExp(`href="${href}"[^>]*>\\s*<svg class="icon">\\s*<use href="[^"]*#icon-(\\w+)"`).exec(
+    page,
+  )?.[1];
+
 let f: Fixture;
 let cookie = "";
 beforeAll(async () => {
@@ -49,6 +55,9 @@ test("the send log is a page of its own behind sends:get, with its filters and t
   expect(listed).toContain('data-testid="send-filters"');
   // The sidebar links to the log for a reader; a user without the grant has no link.
   expect(listed).toContain('href="/admin/sends"');
+  // The send log has its own icon, not the dashboard's grid (B127).
+  expect(iconOf(listed, "/admin/sends")).toBe("mail");
+  expect(iconOf(await (await get(f, "/admin", reader)).text(), "/admin")).toBe("grid");
   expect(await (await get(f, "/admin/lists", none)).text()).not.toContain('href="/admin/sends"');
 });
 

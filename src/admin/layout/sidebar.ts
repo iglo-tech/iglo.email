@@ -94,7 +94,8 @@ export function sidebar(
     );
   }
   if (can("sends:get")) {
-    items.push(link("sends.all", t.T("sends.title"), "/admin/sends"));
+    // The send log has its own icon: the dashboard keeps the grid (B127).
+    items.push({ ...link("sends.all", t.T("sends.title"), "/admin/sends"), icon: "mail" });
   }
   if (can("users:get", "users:manage", "roles:get", "roles:manage")) {
     items.push(
