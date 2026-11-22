@@ -5,12 +5,15 @@ import { resolve } from "node:path";
 import { createRealClock } from "@/clock";
 import { createTranslation } from "@/i18n/i18n";
 import { createRenderer } from "@/templates/renderer";
+import type { compile, engine, renderCompiled } from "@/test/perf/runtime-compat/liquid-render";
 const controlPath = resolve(
   "node_modules/.cache/m18-baseline/test/perf/runtime-compat/liquid-render.ts",
 );
-const control = (await import(
-  controlPath
-)) as typeof import("@/test/perf/runtime-compat/liquid-render");
+const control = (await import(controlPath)) as {
+  compile: typeof compile;
+  engine: typeof engine;
+  renderCompiled: typeof renderCompiled;
+};
 const renderer = createRenderer(createRealClock(), createTranslation());
 const body =
   "<h1>Hello {{ subscriber.name }}</h1><p>{{ subscriber.attribs.city }} / {{ subscriber.email }}</p><ul>{% for interest in subscriber.attribs.interests %}<li>{{ interest | upcase }}</li>{% endfor %}</ul>";
