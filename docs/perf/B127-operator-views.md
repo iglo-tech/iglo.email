@@ -57,6 +57,25 @@ The send projection's subject, step labels, and (added with the template column)
 read for the rows a page returns only. A page is at most 100 rows, and each label is a primary-key or
 `json_each` lookup.
 
+## Events, names and holds
+
+These read the sequence and template tables and the enrollments, not `sends`. Plans are from the
+migrated database (schema 28, a million sends, no enrollments in it); the enrollment and event
+tables hold what a subscriber has, so the plans are what bounds them. No timing is listed: each read
+takes at most one page's worth of IDs.
+
+| Read | Where | Plan | Bound |
+|---|---|---|---|
+| Template names of a page's sends | send log, subscriber sends tab (`templateNames`) | `SEARCH templates USING INTEGER PRIMARY KEY`, `json_each` for the IDs | at most one page of distinct template IDs (100 rows) |
+| Sequence names of a page's refused starts | events list (`sequence-names`) | `SEARCH sequences USING INTEGER PRIMARY KEY` | the refused starts of one page of events |
+| Step labels of a page's sends | send log (`step-labels`, unchanged) | `SEARCH st` and `SEARCH s` by rowid | at most one page of distinct steps |
+| Enrollments an event started or exited | events list (`subscriber-event-links`) | `SEARCH e USING INDEX idx_enrollments_subscriber_sequence (subscriber_id=?)`, then the page's IDs and `{name, at}` pairs | one subscriber's enrollments; the page's events bound the IDs |
+| Events of a subscriber, one page | events list (unchanged `events-page`) | `SEARCH events USING INDEX sqlite_autoindex_events_1 (subscriber_id=?)` and a temp sort of that subscriber's events | one subscriber's events |
+| Cap hold of each enrollment on a page | subscriber's enrollments list (`listedWithHolds`) | the cap's latest-send read: `COVERING INDEX idx_sends_cap`, 0.00 ms per status (see above) | one read per row with an active marketing deferred wait; other rows read nothing |
+
+The events list adds one enrollment query and one name lookup per page; a subscriber's enrollments
+are read once, through the index that already serves the subscriber's enrollment tab.
+
 ## Decision
 
 Migration 0028 is accepted: the status-filtered send log and the dashboard drop from about half a
