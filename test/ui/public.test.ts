@@ -115,7 +115,8 @@ test("compiled production serves the public message page and asset boundaries", 
       expect(page.body).toContain("<h2>Page not found</h2>");
       expect(page.body).toMatch(/href="\/public\/static\/style\.css\?v=[a-z0-9]+"/);
       expect(page.body).toMatch(/href="\/public\/custom\.css\?v=[a-z0-9]+"/);
-      expect(page.body).toMatch(/src="\/public\/static\/logo\.svg\?v=[a-z0-9]+"/);
+      // B129 (D127): with no logo set, the automatic header shows the site name.
+      expect(page.body).toContain('<span class="site-name">Mailing list</span>');
       expect(page.body).not.toMatch(/<footer|Powered by|listmonk/);
     }
     expect(await rawRequest(origin, "/missing-public-page", { method: "HEAD" })).toEqual({

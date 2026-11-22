@@ -275,7 +275,8 @@ async function comparePublic404(
   let title = "",
     heading = "",
     footer = "",
-    message = "";
+    message = "",
+    siteNameText = "";
   let styleVersion = "",
     logoVersion = "",
     iconVersion = "";
@@ -293,7 +294,8 @@ async function comparePublic404(
   };
   // This is the specified default 404 page, not an arbitrary HTML sanitizer.
   const attributes: Readonly<Record<string, ReadonlyArray<string>>> = {
-    html: [],
+    // B129 (D127): production's html carries the brand as custom properties in its style.
+    html: ["style"],
     head: [],
     body: [],
     title: [],
@@ -304,6 +306,8 @@ async function comparePublic404(
     header: ["class"],
     footer: ["class"],
     img: ["src", "alt"],
+    // B129 (D127): the site name stands in for the logo when the header shows the name.
+    span: ["class"],
     a: ["href", "target", "rel"],
     script: ["src", "async", "defer"],
   };
@@ -311,6 +315,7 @@ async function comparePublic404(
     div: ["container", "wrap", "logo"],
     header: ["header"],
     footer: ["container"],
+    span: ["site-name"],
   };
   // HTMLRewriter exposes tokens without a browser's tree-repair step. Validate
   // every token's parent instead of letting selectors silently skip misplaced
@@ -345,9 +350,14 @@ async function comparePublic404(
         if (current?.role === "footer-link") {
           current.text += chunk.text;
         }
+        if (current?.role === "site-name") {
+          siteNameText += chunk.text;
+        }
         if (
           chunk.text.trim() &&
-          !["title", "h2", "message", "footer", "footer-link"].includes(current?.role ?? "")
+          !["title", "h2", "message", "footer", "footer-link", "site-name"].includes(
+            current?.role ?? "",
+          )
         ) {
           throw new Error("Unexpected public page text");
         }
@@ -375,6 +385,10 @@ async function comparePublic404(
             requiredParent = "wrap";
           }
         } else if (tag === "img") {
+          requiredParent = expected.customScript ? "logo-link" : "logo";
+        } else if (tag === "span") {
+          role = "site-name";
+          count("siteName");
           requiredParent = expected.customScript ? "logo-link" : "logo";
         } else if (tag === "a") {
           if (parent === "footer") {
@@ -640,11 +654,20 @@ async function comparePublic404(
     "message",
     "style",
     "icon",
-    "images",
   ]) {
     if (counts[name] !== 1) {
       throw new Error(`Expected exactly one ${name}`);
     }
+  }
+  // B129 (D127): the header shows the logo, or the site name when the header is the name.
+  if ((counts.images ?? 0) !== (expected.logoShown ? 1 : 0)) {
+    throw new Error("Wrong logo image count");
+  }
+  if ((counts.siteName ?? 0) !== (expected.logoShown ? 0 : 1)) {
+    throw new Error("Wrong site name count");
+  }
+  if (!expected.logoShown && siteNameText !== expected.siteName) {
+    throw new Error("Wrong site name in the header");
   }
   // B126 (D123): production's shell has no footer; upstream's has one with its credit.
   if ((counts.footer ?? 0) !== (expected.footerText ? 1 : 0)) {
@@ -671,7 +694,7 @@ async function comparePublic404(
   if (message.trim() !== "" || footer.replaceAll(/\s+/g, " ").trim() !== expected.footerText) {
     throw new Error("Wrong public 404 message or attribution");
   }
-  if (styleVersion !== logoVersion || styleVersion !== iconVersion) {
+  if (styleVersion !== iconVersion || (expected.logoShown && styleVersion !== logoVersion)) {
     throw new Error("Inconsistent asset versions");
   }
 }

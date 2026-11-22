@@ -19,6 +19,7 @@ const html404 = (
   footerLinks: ReadonlyArray<{ readonly text: string; readonly href: string }>,
   customScript: boolean,
   archiveTitle: string | null,
+  logoShown: boolean,
 ): Expectation => ({
   status: 404,
   contentType: "text/html; charset=UTF-8",
@@ -27,6 +28,7 @@ const html404 = (
     siteName,
     heading,
     logoAlt,
+    logoShown,
     footerText,
     footerLinks,
     customScript,
@@ -41,6 +43,7 @@ const referenceHTML = html404(
   [{ text: "listmonk", href: "https://listmonk.app" }],
   true,
   "Mailing list archive - Mailing list",
+  true,
 );
 // B121 (D119): the production 404 is the branded public shell with the site's settings: the site
 // name, the custom CSS and JS links, and the logo link. The defaults here are the site defaults.
@@ -54,6 +57,8 @@ const productionHTML = html404(
   [],
   true,
   "Mailing list archive - Mailing list",
+  // B129 (D127): no logo is set, so the automatic header shows the site name.
+  false,
 );
 const css: Expectation = {
   status: 200,
