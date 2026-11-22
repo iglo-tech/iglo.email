@@ -80,7 +80,7 @@ SET body = '{% comment %}Adapted from listmonk static/email-templates/default.tp
             }
 
             a {
-                color: {{ brand_accent }};
+                color: {{ brand_link }};
             }
                 a:hover {
                     color: #111;
@@ -292,7 +292,7 @@ SET body = '{% comment %}Adapted from listmonk static/email-templates/default-ar
             }
 
             a {
-                color: {{ brand_accent }};
+                color: {{ brand_link }};
             }
                 a:hover {
                     color: #111;

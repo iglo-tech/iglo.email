@@ -14,8 +14,9 @@ body {
   line-height: 26px;
   color: #111;
 }
+/* Link text takes the link colour, the accent darkened where it would not read on white (B129, D127). */
 a {
-  color: var(--brand-accent, #0055d4);
+  color: var(--brand-link, var(--brand-accent, #0055d4));
   text-decoration-color: currentColor;
 }
 /* Form controls take the brand font too, not the browser's system face (B129, D127). */
@@ -111,7 +112,7 @@ input[disabled] {
 .button.button-outline {
   background: #fff;
   border: 1px solid var(--brand-accent, #0055d4);
-  color: var(--brand-accent, #0055d4);
+  color: var(--brand-link, var(--brand-accent, #0055d4));
 }
 .button.button-outline:hover {
   border-color: #333;

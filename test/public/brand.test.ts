@@ -127,6 +127,47 @@ test("the focus ring is the accent when it has 3:1 against white, else near-blac
   expect(css).not.toContain("outline: none");
 });
 
+/** The WCAG relative luminance of a `#rrggbb` colour, worked out from the rendered value. */
+function luminanceOf(hex: string): number {
+  const linear = (at: number) => {
+    const value = Number.parseInt(hex.slice(at, at + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * linear(1) + 0.7152 * linear(3) + 0.0722 * linear(5);
+}
+
+/** The WCAG contrast ratio of two `#rrggbb` colours. */
+function contrastRatio(a: string, b: string): number {
+  const la = luminanceOf(a);
+  const lb = luminanceOf(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+test("link text takes a link colour that reads on white: the accent when it has 4.5:1, else a darker shade of it", async () => {
+  for (const [accent, link] of [
+    ["", "#0055d4"],
+    ["#003366", "#003366"],
+    // #ffeb3b has about 1.3:1 against white; its lightness is stepped down until it has 4.5:1.
+    ["#ffeb3b", "#857700"],
+    // #ff0066 has 3.9:1 and #009688 has 3.7:1, so both darken; each keeps its hue.
+    ["#ff0066", "#e8005d"],
+    ["#009688", "#008478"],
+  ] as const) {
+    const f = await open({ accent });
+    const html = await (await f.request("/subscription/form")).text();
+    expect(html).toContain(`--brand-link: ${link};`);
+    expect(contrastRatio(link, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    // The fills and borders keep the accent itself; only the text takes the link colour.
+    expect(html).toContain(`--brand-accent: ${accent || "#0055d4"};`);
+  }
+  const css = await (await (await open()).request("/public/static/style.css")).text();
+  expect(css).toContain("color: var(--brand-link, var(--brand-accent, #0055d4));");
+  // The outline button's text is brand-coloured on white, so it takes the link colour too.
+  expect(css).toContain(
+    "border: 1px solid var(--brand-accent, #0055d4);\n  color: var(--brand-link",
+  );
+});
+
 test("button text is black or white by the accent's contrast, and links and form controls take the brand", async () => {
   for (const [accent, text] of [
     ["", "#ffffff"],
@@ -213,6 +254,8 @@ test("the archive index, an archived campaign's page and the opt-in page carry n
   expect(page).toContain(`<img src="${logo}" alt="" style=`);
   expect(page).toContain('<span style="font-size: 18px;');
   expect(page).toContain("#ff0066");
+  // The archive's link text takes the link colour, the accent darkened to read on white (B129, D127).
+  expect(page).toContain("color: #e8005d;");
 
   const double = await f.list("Double opt-in", "public", "double");
   const id = await f.subscriber("optin@example.test", "Opt", { lists: [double.id] });
@@ -233,7 +276,8 @@ test("the data mail carries the accent and the font inline, and no credit in eit
     .find((m) => decoded(m.data).header("Subject") === "Your data from Brand Co");
   expect(message).toBeDefined();
   const mail = decoded(message!.data);
-  expect(mail.body).toContain('style="color: #ff0066;"');
+  // The site link takes the link colour: #ff0066 has 3.9:1 against white, so the mail darkens it.
+  expect(mail.body).toContain('style="color: #e8005d;"');
   // Liquid escapes the quotes of the stack, and the mail's style attribute reads them back. The
   // family comes first, then the mail's own stack, not a bare sans-serif (B129 adopter check).
   expect(mail.body).toContain("font-family: &#34;Lora&#34;, system-ui, -apple-system,");

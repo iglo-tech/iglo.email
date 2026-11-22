@@ -40,7 +40,7 @@ export interface BrandSite {
 /**
  * The brand values a mail or a campaign template reads (B129, D127). Every system mail and the
  * campaign and archive data take these, so a template can show the logo or name, the accent on its
- * links and buttons, and the font. The logo passes only as an http(s) URL (safeLogo). A font that is
+ * buttons, the link colour on its links (readable on white), and the font. The logo passes only as an http(s) URL (safeLogo). A font that is
  * not a system choice is a Google family, and a mail takes its stack only, never the web font.
  */
 export function mailBrand(site: BrandSite) {
@@ -50,6 +50,7 @@ export function mailBrand(site: BrandSite) {
     site_name: site.siteName,
     site_url: site.siteUrl,
     brand_accent: site.accent || defaultAccent,
+    brand_link: linkColour(site.accent),
     brand_on_accent: onAccentText(site.accent),
     brand_font: site.font === "system-sans" ? "" : fontStack(site.font, mailStack),
     brand_header: headerMode(site.header, logo !== ""),
@@ -65,8 +66,8 @@ const systemFonts = new Map<string, string>([
 
 export type BrandHeader = "auto" | "logo" | "name" | "logo_and_name";
 
-/** The WCAG relative luminance of a validated `#rgb` or `#rrggbb` colour. */
-function luminance(hex: string): number {
+/** The red, green and blue channels (0 to 255) of a validated `#rgb` or `#rrggbb` colour. */
+function channels(hex: string) {
   const digits =
     hex.length === 4
       ? hex
@@ -75,11 +76,77 @@ function luminance(hex: string): number {
           .map((c) => c + c)
           .join("")
       : hex.slice(1);
-  const linear = (at: number) => {
-    const value = Number.parseInt(digits.slice(at, at + 2), 16) / 255;
-    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  return {
+    red: Number.parseInt(digits.slice(0, 2), 16),
+    green: Number.parseInt(digits.slice(2, 4), 16),
+    blue: Number.parseInt(digits.slice(4, 6), 16),
   };
-  return 0.2126 * linear(0) + 0.7152 * linear(2) + 0.0722 * linear(4);
+}
+
+/** The linear light of one channel (0 to 255), as WCAG defines it. */
+function linearChannel(value: number): number {
+  const scaled = value / 255;
+  return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+}
+
+/** The WCAG relative luminance of a validated `#rgb` or `#rrggbb` colour. */
+function luminance(hex: string): number {
+  const { red, green, blue } = channels(hex);
+  return 0.2126 * linearChannel(red) + 0.7152 * linearChannel(green) + 0.0722 * linearChannel(blue);
+}
+
+/** The hue (degrees), saturation and lightness (0 to 1) of a validated colour. */
+function hsl(hex: string) {
+  const { red, green, blue } = channels(hex);
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  const delta = max - min;
+  if (delta === 0) {
+    return { hue: 0, saturation: 0, lightness };
+  }
+  const saturation = delta / (1 - Math.abs(2 * lightness - 1));
+  const sector =
+    max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+  return { hue: (sector * 60 + 360) % 360, saturation, lightness };
+}
+
+/** The `#rrggbb` colour of a hue (degrees), saturation and lightness (0 to 1). */
+function fromHsl(hue: number, saturation: number, lightness: number): string {
+  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation;
+  const secondary = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const offset = lightness - chroma / 2;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  const sector = Math.floor(hue / 60);
+  if (sector < 1) {
+    red = chroma;
+    green = secondary;
+  } else if (sector < 2) {
+    red = secondary;
+    green = chroma;
+  } else if (sector < 3) {
+    green = chroma;
+    blue = secondary;
+  } else if (sector < 4) {
+    green = secondary;
+    blue = chroma;
+  } else if (sector < 5) {
+    red = secondary;
+    blue = chroma;
+  } else {
+    red = chroma;
+    blue = secondary;
+  }
+  const byte = (value: number) =>
+    Math.round((value + offset) * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return `#${byte(red)}${byte(green)}${byte(blue)}`;
 }
 
 /** The WCAG contrast ratio of two colours, from 1 to 21. */
@@ -106,6 +173,28 @@ export function focusColour(accent: string): string {
 export function onAccentText(accent: string): string {
   const colour = accent || defaultAccent;
   return contrast(colour, "#111") >= contrast(colour, "#ffffff") ? "#111" : "#ffffff";
+}
+
+/**
+ * The colour of brand-coloured text (links, and the outline button's text) on the white page and in
+ * the mails (B129, D127). It is the accent when the accent has WCAG AA contrast (4.5:1) against white,
+ * else the accent with its HSL lightness stepped down until it has. The accent itself stays the fill
+ * of buttons and the bar, and the colour of borders, so only text takes this. Black is 21:1, so the
+ * step always ends.
+ */
+export function linkColour(accent: string): string {
+  const colour = accent || defaultAccent;
+  if (contrast(colour, "#ffffff") >= 4.5) {
+    return colour;
+  }
+  const { hue, saturation, lightness } = hsl(colour);
+  let stepped = lightness;
+  let candidate = colour;
+  while (contrast(candidate, "#ffffff") < 4.5) {
+    stepped = Math.max(0, stepped - 0.005);
+    candidate = fromHsl(hue, saturation, stepped);
+  }
+  return candidate;
 }
 
 /**

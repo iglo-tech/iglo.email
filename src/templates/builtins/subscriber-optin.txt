@@ -53,7 +53,7 @@
 
             .footer a,
             a {
-                color: {{ brand_accent }};
+                color: {{ brand_link }};
             }
 
             .button {
@@ -112,7 +112,7 @@
     </div>
 
     <div class="footer">
-        <p>{% if site_url != "" %}<a href="{{ site_url }}" style="color: {{ brand_accent }};">{{ site_name }}</a>{% else %}{{ site_name }}{% endif %}</p>
+        <p>{% if site_url != "" %}<a href="{{ site_url }}" style="color: {{ brand_link }};">{{ site_name }}</a>{% else %}{{ site_name }}{% endif %}</p>
     </div>
 </body>
 </html>

@@ -8,6 +8,7 @@ import {
   fontStack,
   googleFontUrl,
   headerMode,
+  linkColour,
   onAccentText,
 } from "@/public/brand";
 import type { BrandHeader } from "@/public/brand";
@@ -94,7 +95,7 @@ export function PublicShell({
   return (
     <html
       class={site.accent ? "branded" : undefined}
-      style={`--brand-accent: ${accent}; --brand-focus: ${focusColour(site.accent)}; --brand-on-accent: ${onAccentText(site.accent)}; --brand-font: ${fontStack(site.font)};`}
+      style={`--brand-accent: ${accent}; --brand-link: ${linkColour(site.accent)}; --brand-focus: ${focusColour(site.accent)}; --brand-on-accent: ${onAccentText(site.accent)}; --brand-font: ${fontStack(site.font)};`}
     >
       <head>
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
