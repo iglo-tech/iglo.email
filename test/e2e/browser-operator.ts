@@ -153,7 +153,9 @@ process.exitCode = await withStack(async ({ origin, dataDir, errors }) => {
     });
     see(
       "server log",
-      await value(`fetch("/api/logs?per_page=5").then((r) => r.text()).then((t) => t.slice(0, 1200))`),
+      await value(
+        `fetch("/api/logs?per_page=5").then((r) => r.text()).then((t) => t.slice(0, 1200))`,
+      ),
     );
     see(
       "journal (status, error, payload kept)",
@@ -196,9 +198,13 @@ process.exitCode = await withStack(async ({ origin, dataDir, errors }) => {
     await both(`/admin/sequences/enrollments/${enrollment}`, "timeline", async () => {
       see("timeline", await text('[data-testid="timeline"]'));
     });
-    await both(`/admin/subscribers/${subscriber}/enrollments`, "subscriber-enrollments", async () => {
-      see("enrollments tab", await text('[data-testid="enrollment-row"]'));
-    });
+    await both(
+      `/admin/subscribers/${subscriber}/enrollments`,
+      "subscriber-enrollments",
+      async () => {
+        see("enrollments tab", await text('[data-testid="enrollment-row"]'));
+      },
+    );
     await both(`/admin/sequences/enrollments/${exitedEnrollment}`, "exited-timeline", async () => {
       see("exited timeline", await text('[data-testid="timeline"]'));
     });

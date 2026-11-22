@@ -870,7 +870,8 @@ export const schemas = {
       exit_reason: nullable(string),
       exit_condition: {
         ...nullable(string),
-        description: "The step condition's JSON text that a condition exit ended the enrollment with.",
+        description:
+          "The step condition's JSON text that a condition exit ended the enrollment with.",
       },
       created_at: time,
       updated_at: time,
