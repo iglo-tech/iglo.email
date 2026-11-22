@@ -10,6 +10,7 @@ export const SYMBOLS: ReadonlyArray<readonly [string, string]> = [
   ["GT", ">"],
   ["COPY", "©"],
   ["REG", "®"],
+  ["fnof", "ƒ"],
   ["Alpha", "Α"],
   ["Beta", "Β"],
   ["Gamma", "Γ"],

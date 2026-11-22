@@ -1,6 +1,10 @@
 // The text/plain alternative's named references and lists (B135 item 8, D118): read through POST
 // /api/tx and the loopback SMTP sink, so the message is the one a reader receives.
 import { afterEach, expect, test } from "bun:test";
+import { createRealClock } from "@/clock";
+import { createTranslation } from "@/i18n/i18n";
+import { plainText } from "@/messaging/plain";
+import { createMessageBudget, createRenderer } from "@/templates/renderer";
 import { textPart } from "@/test/messaging/mime";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
@@ -28,6 +32,22 @@ test("named references the HTML spec lists decode, including the uppercase marku
     '∉ & & © <b> "x"',
   );
   expect(await plain("<p>&alpha;&Omega; &lang;x&rang; &hearts;</p>")).toBe("αΩ ⟨x⟩ ♥");
+});
+
+test("the HTML 4 symbol names decode, such as the florin sign", async () => {
+  expect(await plain("<p>&fnof;x &fnof; y</p>")).toBe("ƒx ƒ y");
+});
+
+test("a Markdown ordered list is numbered as an ordered list, and its nested list is indented", async () => {
+  const renderer = createRenderer(createRealClock(), createTranslation());
+  const { body } = await renderer.render({
+    body: "1. one\n2. two\n   - sub\n3. three",
+    data: "{}",
+    mode: "markdown",
+  });
+  expect(await plainText(body, createMessageBudget())).toBe(
+    "1. one\n2. two\n\n  - sub\n\n3. three",
+  );
 });
 
 test("a name the spec does not list is left as written, and a legacy name needs no semicolon", async () => {

@@ -3,6 +3,8 @@
 // emission or work budget is refused like the existing ones. Registration and arity live in
 // renderer.ts; the functions here hold the value rules.
 
+import { decodeReferences } from "@/messaging/plain";
+
 /** The budget a filter charges: work steps and emitted bytes (renderer.ts Budget). */
 export interface FilterBudget {
   step(count?: number): void;
@@ -504,14 +506,21 @@ const TAG_BLOCKS: ReadonlyArray<readonly [string, string]> = [
 
 /**
  * `strip_html`: the text without comments, `script` and `style` elements and tags, as LiquidJS
- * removes them. A block opener whose closer never comes is dropped from the search, so the scan is
- * linear in the text. The output is no longer than the input, which is charged first.
+ * removes them, and then with its character references decoded (D134), so `&lt;b&gt;` is the text
+ * `<b>` and an HTML output escapes it once. A block opener whose closer never comes is dropped from the
+ * search, so the scan is linear in the text. The output is no longer than the input, which is charged
+ * first (a reference decodes to no more bytes than it is written in).
  */
 export function stripHtml(value: unknown, b: FilterBudget): string {
   b.step();
   const input = scalar(value, b);
   b.step(Math.ceil(byteLength(input) / 1024));
   b.charge(byteLength(input));
+  return decodeReferences(stripTags(input));
+}
+
+/** The text of `input` without its comments, script and style elements and tags (see `stripHtml`). */
+function stripTags(input: string): string {
   const blocks = new Map(TAG_BLOCKS);
   let out = "";
   let i = 0;

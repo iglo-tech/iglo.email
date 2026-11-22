@@ -236,7 +236,7 @@ const REFERENCE = /&(?:#[xX]([0-9a-fA-F]{1,8});?|#([0-9]{1,8});?|([A-Za-z][A-Za-
  * a `=`, a letter or a digit follows stays literal, as a browser leaves it; in text the longest legacy
  * prefix decodes.
  */
-function decodeReferences(text: string, attribute = false): string {
+export function decodeReferences(text: string, attribute = false): string {
   if (!text.includes("&")) {
     return text;
   }
