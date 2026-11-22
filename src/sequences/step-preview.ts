@@ -5,6 +5,7 @@
 import type { Aggregate } from "@/events/aggregate";
 import type { EventRow, EventStore } from "@/events/store";
 import { dummyUUID } from "@/campaigns/render";
+import { must } from "@/invariant";
 import type { PreparedLinks } from "@/unsubscribe/message";
 import type { Sample } from "@/templates/sample";
 import type { StepData } from "@/sequences/step-data";
@@ -111,7 +112,7 @@ export function stepPreview(
   let measured: Record<string, number> = {};
   if (subscriber && computed.length) {
     const result = events.aggregate(
-      Object.fromEntries(computed.map((name) => [name, defined[name]!])),
+      Object.fromEntries(computed.map((name) => [name, must(defined[name], "step aggregate")])),
       {
         subscriberId: subscriber.id,
         // Without a trigger a step measures from now, as a manual enrollment's first step does.
@@ -135,7 +136,11 @@ export function stepPreview(
   const totals = Object.fromEntries(
     Object.keys(defined).map((name) => [
       name,
-      has(sampled, name) ? sampled[name]! : has(measured, name) ? measured[name]! : 0,
+      has(sampled, name)
+        ? must(sampled[name], "sampled aggregate")
+        : has(measured, name)
+          ? must(measured[name], "measured aggregate")
+          : 0,
     ]),
   );
 

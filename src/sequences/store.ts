@@ -4,6 +4,7 @@
 import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
+import { must } from "@/invariant";
 import type { ListReferences } from "@/lists/references";
 import { numberID } from "@/sequences/enrollments";
 import type { Enrollments } from "@/sequences/enrollments";
@@ -106,7 +107,7 @@ export function createSequenceStore(
     if (!current.length) {
       throw new SequenceConflict("steps", "an active sequence needs a step");
     }
-    const listId = row(id)!.list_id;
+    const listId = must(row(id), "sequence").list_id;
     for (const [i, s] of current.entries()) {
       if (s.template_id === null || templateType(s.template_id) !== "tx") {
         throw new SequenceConflict(
@@ -151,7 +152,7 @@ export function createSequenceStore(
           before = r;
         }
       }
-      return before ? placed.get(before.id)! + 1 : 0;
+      return before ? must(placed.get(before.id), "placed step") + 1 : 0;
     };
     const removed = active.filter((r) => !placed.has(r.id));
     const cursors = [
@@ -229,7 +230,7 @@ export function createSequenceStore(
       if (input.status === "active") {
         checkActivatable(id);
       }
-      return full(id)!;
+      return must(full(id), "sequence");
     },
     /** Replace a definition; kept steps keep their IDs. Null when it does not exist. */
     update(id: bigint, input: DefinitionInput) {
@@ -251,7 +252,7 @@ export function createSequenceStore(
       );
       writeSteps(id, input, now);
       changeStatus(id, current.status, status);
-      return full(id)!;
+      return must(full(id), "sequence");
     },
     setStatus(id: bigint, status: SequenceStatus) {
       const current = row(id);
@@ -261,7 +262,7 @@ export function createSequenceStore(
       const now = clock.now().toISOString();
       q.get("sequence-status").run(status, now, id);
       changeStatus(id, current.status, status);
-      return full(id)!;
+      return must(full(id), "sequence");
     },
     /** Delete a sequence that never had enrollments; archive it otherwise. */
     remove(id: bigint): "ok" | "missing" | "enrolled" {

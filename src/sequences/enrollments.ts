@@ -11,6 +11,7 @@ import { compareSQL } from "@/conditions/json";
 import type { Param } from "@/conditions/json";
 import type { Condition, Scalar } from "@/conditions/types";
 import { prepareNamedQueries } from "@/db/queries";
+import { must } from "@/invariant";
 import type { ExitThenTrigger, RecordedEvent } from "@/events/store";
 import type { SubscriberEffects } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
@@ -145,12 +146,13 @@ const noop = () => {};
 const bound = (since: string) => (e: RecordedEvent) => {
   // At trigger time the enrollment starts now and no step has run: `last_step` falls back
   // to the trigger, like the evaluator.
+  // An unparsed duration is NaN, as the unchecked subtraction gave, and that fails the bound later.
   const time =
     since === "trigger" || since === "last_step"
       ? Date.parse(e.occurredAt)
       : since === "enrollment"
         ? Date.parse(e.receivedAt)
-        : Date.parse(e.receivedAt) - parseDuration(since)!;
+        : Date.parse(e.receivedAt) - (parseDuration(since) ?? Number.NaN);
   return time < MIN_TIME ? "" : new Date(time).toISOString();
 };
 /** A manual or test trigger is the subscriber's own event under the sequence's trigger name. */
@@ -210,7 +212,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     }
     filters.set(trigger, filter);
     if (filters.size > CACHE) {
-      const [oldest, old] = filters.entries().next().value!;
+      const [oldest, old] = must(filters.entries().next().value, "oldest filter");
       filters.delete(oldest);
       old.statement.finalize();
     }
@@ -503,7 +505,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         false,
         false,
       );
-      return { enrollment: byId(id)! };
+      return { enrollment: must(byId(id), "enrollment") };
     },
     /**
      * Test mode (05-sequences.md#test-mode): enroll beside any real enrollment, with waits
@@ -547,11 +549,8 @@ export function createEnrollments(db: Database, clock: Clock) {
         }
       }
       const now = at();
-      return {
-        enrollment: byId(
-          start(sequenceId, subscriberId, trigger?.id ?? null, first, now, now, true, false),
-        )!,
-      };
+      const id = start(sequenceId, subscriberId, trigger?.id ?? null, first, now, now, true, false);
+      return { enrollment: must(byId(id), "enrollment") };
     },
     /** The steps of an enrollment's sequence, kept ones first in order, for its timeline. */
     steps(sequenceId: bigint) {
@@ -571,7 +570,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       if (!end(id, "canceled", "manual", at())) {
         return "inactive";
       }
-      return byId(id)!;
+      return must(byId(id), "enrollment");
     },
     /**
      * Scheduler claim (05-sequences.md#scheduler): lease up to `limit` due enrollments of
@@ -698,7 +697,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       }
       return {
         changed,
-        next: rows.length === limit ? rows.at(-1)!.id : null,
+        next: rows.length === limit ? must(rows.at(-1), "last enrollment").id : null,
         dueNow,
       };
     },
