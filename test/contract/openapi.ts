@@ -249,6 +249,23 @@ export async function runOpenApiContract(target: {
         }
       }
     }
+    // Every JSON failure is also the error envelope, which the operations' default response
+    // documents (B131, D129): a status names its own copy of it, so the envelope is checked here.
+    if (reply.status >= 400 && reply.type === "application/json") {
+      const problems = validate(
+        document,
+        { $ref: "#/components/schemas/Error" },
+        reply.body,
+        "$",
+        0,
+        checked,
+      );
+      if (problems.length) {
+        throw new Error(
+          `FAIL openapi-envelope ${key} ${reply.status}: ${problems.slice(0, 8).join("; ")}`,
+        );
+      }
+    }
     if (!seen.has(key)) {
       seen.set(key, new Set());
     }
