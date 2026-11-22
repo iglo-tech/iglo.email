@@ -203,6 +203,56 @@ test("rotating needs webhooks:manage and the usual auth", async () => {
   expect((await listed(f, created.id)).previous_secret_until).toBeNull();
 });
 
+/** The webhook's deliveries, as the API lists them. */
+async function deliveries(f: TxFixture, id: number) {
+  const page = await f.json(`/api/webhooks/${id}/deliveries?per_page=100`);
+  return page.body.data.results as Array<{
+    attempts: number;
+    status: string;
+    claimed_until: string | null;
+  }>;
+}
+/** Until the row has made `attempts` attempts and waits, unclaimed, for its next one. */
+const waitingAfter = (f: TxFixture, id: number, attempts: number) =>
+  until(async () => {
+    const [row] = await deliveries(f, id);
+    return row?.attempts === attempts && row.status === "queued" && !row.claimed_until;
+  });
+
+test("a delivery queued before a rotation is signed with both secrets in its window, and with the new one after it", async () => {
+  const f = await open();
+  let up = false;
+  const r = startReceiver(() => new Response(up ? "ok" : "down", { status: up ? 200 : 500 }));
+  cleanups.push(() => r.close());
+  const created = await hook(f, r);
+  // Attempted before the rotation while the receiver is down, so the row waits for its retry.
+  await deliver(f, "queued@example.test");
+  await r.waitFor(1);
+  await waitingAfter(f, created.id, 1);
+  expect(signatureCount(r.received[0]!)).toBe(1);
+  expect(signatureValid(r.received[0]!, created.secret)).toBe(true);
+  const rotated: { secret: string } = (await rotate(f, created.id, { overlap_hours: 1 })).body.data;
+
+  // The retry is due within 30 s of the failed attempt, well inside the hour: both secrets sign.
+  f.advanceWebhooks(30_000);
+  await r.waitFor(2);
+  await waitingAfter(f, created.id, 2);
+  const inWindow = r.received[1]!;
+  expect(signatureCount(inWindow)).toBe(2);
+  expect(signatureValid(inWindow, rotated.secret)).toBe(true);
+  expect(signatureValid(inWindow, created.secret)).toBe(true);
+
+  // Two hours on, past the window's end and within the delivery's day: the retry signs with the new secret alone.
+  up = true;
+  f.advanceWebhooks(2 * HOUR);
+  await r.waitFor(3);
+  const afterWindow = r.received[2]!;
+  expect(signatureCount(afterWindow)).toBe(1);
+  expect(signatureValid(afterWindow, rotated.secret)).toBe(true);
+  expect(signatureValid(afterWindow, created.secret)).toBe(false);
+  await until(async () => (await deliveries(f, created.id))[0]?.status === "delivered");
+});
+
 test("the retention pass ends a window once it has passed, and not before", async () => {
   const f = await open();
   const r = receiver();
