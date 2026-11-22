@@ -426,6 +426,17 @@ test("a send with no subject says why: skipped, wiped, or past the thirty-day re
     subject: null,
     subject_missing: "retention",
     to_email: "ada@example.test",
+    template_name: "fixture",
+  });
+  // The skipped row is read again after the pass: the pass changes only finished rows with a payload,
+  // so it is still skipped, and still says why it has no subject (B127 r2).
+  const refusedPast = (await f.json(`/api/sends/${refusedID}`)).body.data;
+  expect(refusedPast).toMatchObject({
+    status: "skipped",
+    subject: null,
+    subject_missing: "skipped",
+    skip_reason: "subscriber_blocklisted",
+    to_email: "grace@example.test",
   });
 
   expect((await f.json(`/api/subscribers/${ada}`, "DELETE")).status).toBe(200);
@@ -435,6 +446,8 @@ test("a send with no subject says why: skipped, wiped, or past the thirty-day re
     subject: null,
     subject_missing: "wiped",
     to_email: "",
+    // The template is not personal data: the wiped send still names it (B127 r2).
+    template_name: "fixture",
   });
   expect(f.errors).toEqual([]);
 });

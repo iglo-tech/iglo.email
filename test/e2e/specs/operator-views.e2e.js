@@ -189,6 +189,32 @@ test("an enrollment that an event exited names that event, on its timeline and t
   await expect(exitedLink).toHaveCSS("text-decoration-line", /underline/);
 });
 
+// B127 r2: a wiped send keeps its labels. Deleting the subscriber takes the address and the message,
+// and the send log still names the sequence and step the send was for, and its template.
+test("a wiped sequence send keeps its sequence and step, and its template's name", async ({
+  page,
+}) => {
+  await signIn(page);
+  const list = await audience(page);
+  const email = `${unique("op")}@example.com`;
+  const { sequence, subscriber } = await started(page, list, email);
+  let sendID = null;
+  await expect
+    .poll(async () => {
+      const sends = await api(page, `/api/subscribers/${subscriber}/sends?per_page=100`);
+      sendID = sends.body.data.results.find((send) => send.status === "sent")?.id ?? null;
+      return sendID;
+    })
+    .not.toBeNull();
+  expect((await api(page, `/api/subscribers/${subscriber}`, "DELETE")).status).toBe(200);
+
+  await page.goto("/admin/sends");
+  const wiped = page.locator(`[data-testid="send-row"][data-id="${sendID}"]`);
+  await expect(wiped).toContainText("Removed (data wiped)");
+  await expect(wiped).toContainText(`${sequence.name}, step 1`);
+  await expect(wiped).not.toContainText(email);
+});
+
 test("a send with no subject says why: a refused one was never prepared, a wiped one lost its address", async ({
   page,
 }) => {
