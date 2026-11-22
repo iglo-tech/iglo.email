@@ -163,7 +163,7 @@ test("an upgrade turns the stored false on, and every restart names the refused 
   expect((await api(upgraded.port, "GET", "/api/settings")).data[key]).toBe(true);
   // The public webhook, id 2, is never named.
   expect(await stopped(upgraded.child)).toEqual([refusedLine]);
-  expect(userVersion(dataDir)).toBe(25);
+  expect(userVersion(dataDir)).toBe(26);
 
   // A restart, with the target still refused: named again.
   const restarted = await up(dataDir);
