@@ -878,7 +878,8 @@ test("output over the cap is refused whole and the child is killed", async () =>
   await exact.close();
 });
 
-test("a child above the memory limit is killed", async () => {
+// The memory cap reads the child's resident size from /proc, which only Linux has (src/analytics/reader.ts).
+test.skipIf(process.platform !== "linux")("a child above the memory limit is killed", async () => {
   const hungry = createAnalyticsReader({
     path: "x",
     command: [

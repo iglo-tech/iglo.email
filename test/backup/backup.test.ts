@@ -9,6 +9,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -977,7 +978,8 @@ test("two backups into one parent that the first one made both succeed", async (
     supportedVersion: version,
     warn: (message) => firstWarnings.push(message),
   });
-  expect(first.path).toBe(join(shared, "a"));
+  // The result names the output by its real path: on macOS the temporary folder is under a link.
+  expect(first.path).toBe(join(realpathSync(shared), "a"));
   expect(names(shared)).toEqual(["a", "b"]);
   expect((await runBackup(executable, ["--verify", join(shared, "a")])).exitCode).toBe(0);
   expect((await runBackup(executable, ["--verify", join(shared, "b")])).exitCode).toBe(0);
@@ -1009,7 +1011,8 @@ test("a parent that another backup creates after this one checked it is used, an
     available: otherBackup,
     warn: (message) => warnings.push(message),
   });
-  expect(first.path).toBe(join(shared, "a"));
+  // The result names the output by its real path: on macOS the temporary folder is under a link.
+  expect(first.path).toBe(join(realpathSync(shared), "a"));
   expect(names(shared)).toEqual(["a", "b"]);
   expect(warnings).toEqual([]);
 });
@@ -1059,7 +1062,7 @@ test("a forced backup whose replaced copy cannot be removed is published, warned
       beforePublish: () => chmodSync(join(output, "uploads"), 0o500),
       warn: (message) => warnings.push(message),
     });
-    expect(result.path).toBe(output);
+    expect(result.path).toBe(realpathSync(output));
     const [replaced] = entriesStarting(base, REPLACED_PREFIX);
     expect(replaced).toBeDefined();
     expect(warnings).toEqual([expect.stringContaining(join(base, replaced!))]);
