@@ -44,7 +44,9 @@ export function createSummaries(db: Database, clock: Clock, reader: AnalyticsRea
       if (get(name) === null) {
         await this.refresh();
       }
-      return JSON.parse(get(name)!);
+      const stored = get(name);
+      // A name still missing after the refresh reads as null, as JSON.parse(null) gave.
+      return stored === null ? null : JSON.parse(stored);
     },
     /** Turning caching off forgets the rows, so turning it on again never shows old ones. */
     clear: () => writeTransaction(db, () => void q.get("clear-summaries").run()),

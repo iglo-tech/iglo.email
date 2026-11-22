@@ -2,6 +2,7 @@
 // github.com/gdgvda/cron v0.7.0's five fields, descriptors and @every, in server time or TZ=.
 // Its calendar forms (L, W, #) are not evaluated: such a day field matches every day, so the
 // refresh runs more often than the spec and never less.
+import { must } from "@/invariant";
 import { cronDuration } from "@/settings/duration";
 
 const descriptors = new Map([
@@ -26,7 +27,7 @@ const MINUTE = 60_000;
 
 /** The values of one field, or null where every value matches. */
 function field(text: string, index: number): Set<number> | null {
-  const [min, max] = bounds[index]!;
+  const [min, max] = must(bounds[index], "cron bounds");
   const names = index === 3 ? months : index === 4 ? days : [];
   const value = (s: string) => {
     const found = names.indexOf(s.toLowerCase());
@@ -56,7 +57,11 @@ function zoned(at: Date, format: Intl.DateTimeFormat | null) {
     return [at.getMinutes(), at.getHours(), at.getDate(), at.getMonth() + 1, at.getDay()] as const;
   }
   const parts = format.formatToParts(at);
-  const part = (type: string) => parts.find((p) => p.type === type)!.value;
+  const part = (type: string) =>
+    must(
+      parts.find((p) => p.type === type),
+      "date part",
+    ).value;
   return [
     Number(part("minute")),
     Number(part("hour")),
@@ -100,9 +105,13 @@ function matcher(spec: string, zone: Intl.DateTimeFormat | null) {
     throw new Error(`Invalid cron expression: ${spec}`);
   }
   const sets = fields.map(field);
-  const has = (index: number, value: number) => sets[index] === null || sets[index]!.has(value);
+  const has = (index: number, value: number) => {
+    const set = sets[index];
+    return set === null || must(set, "cron field set").has(value);
+  };
   // Robfig semantics: two restricted day fields match when either does.
-  const anyDay = !wild(fields[2]!) && !wild(fields[4]!);
+  const anyDay =
+    !wild(must(fields[2], "cron day of month")) && !wild(must(fields[4], "cron weekday"));
   return (at: Date) => {
     const [minute, hour, day, month, weekday] = zoned(at, zone);
     if (!has(0, minute) || !has(1, hour) || !has(3, month)) {

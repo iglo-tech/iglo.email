@@ -1,6 +1,7 @@
 // Adapted from listmonk internal/auth/auth.go, cmd/auth.go and cmd/init.go at 6fcd95f.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Clock } from "@/clock";
+import { must } from "@/invariant";
 import type { Roles } from "@/roles/roles";
 import type { Middleware, RequestContext } from "@/server/context";
 import { HttpError } from "@/server/response";
@@ -51,7 +52,7 @@ export function cookie(request: Request, name: string): string {
     .split(";")
     .map((part) => part.trim())
     .filter((part) => part.startsWith(`${name}=`));
-  return values.length === 1 ? values[0]!.slice(name.length + 1) : "";
+  return values.length === 1 ? must(values[0], "cookie").slice(name.length + 1) : "";
 }
 
 function parseAuthorization(header: string) {
@@ -287,7 +288,7 @@ export async function createAuthentication(
         user?.type === "api" &&
         user.status === "enabled" &&
         /^[a-f0-9]{64}$/.test(user.password ?? "");
-      const stored = eligible ? user!.password! : "0".repeat(64);
+      const stored = eligible ? must(user?.password, "API key digest") : "0".repeat(64);
       if (!equal(digest, stored) || !eligible) {
         throw new HttpError(403, "invalid API credentials");
       }

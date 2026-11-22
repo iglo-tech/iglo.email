@@ -1,5 +1,6 @@
 // Adapted from listmonk cmd/users.go and cmd/auth.go at 6fcd95f.
 import QRCode from "qrcode";
+import { must } from "@/invariant";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import { getID } from "@/server/validation";
@@ -105,10 +106,16 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
         throw invalid();
       }
       if (
-        !store.setFactor(identity.user, "totp", secret, identity.sessionId!, () => {
-          auth.revalidate(context);
-          self(context);
-        })
+        !store.setFactor(
+          identity.user,
+          "totp",
+          secret,
+          must(identity.sessionId, "session id"),
+          () => {
+            auth.revalidate(context);
+            self(context);
+          },
+        )
       ) {
         throw new HttpError(403, "invalid session");
       }
@@ -141,10 +148,16 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
         throw new HttpError(403, "invalid session");
       }
       if (
-        !store.setFactor(identity.user, "none", null, identity.sessionId!, () => {
-          auth.revalidate(context);
-          self(context);
-        })
+        !store.setFactor(
+          identity.user,
+          "none",
+          null,
+          must(identity.sessionId, "session id"),
+          () => {
+            auth.revalidate(context);
+            self(context);
+          },
+        )
       ) {
         throw new HttpError(403, "invalid session");
       }

@@ -31,7 +31,7 @@ const SPECIAL_EXTRA = new Map([
 function escapedBound(value: string): number {
   let total = bytes(value);
   for (let i = 0; i < value.length; i++) {
-    total += SPECIAL_EXTRA.get(value[i]!) ?? 0;
+    total += SPECIAL_EXTRA.get(value.charAt(i)) ?? 0;
   }
   return total;
 }

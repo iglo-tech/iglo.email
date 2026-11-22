@@ -1,6 +1,7 @@
 // Adapted from listmonk internal/core/templates.go and queries/templates.sql at 6fcd95f.
 import type { Database } from "bun:sqlite";
 import type { Clock } from "@/clock";
+import { must } from "@/invariant";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 import type { CampaignTemplateReferences } from "@/campaigns/template-references";
@@ -131,7 +132,7 @@ export function createTemplateStore(
       const value = { ...input, subject: input.type === "campaign" ? "" : input.subject };
       validate(value);
       const id = insert(value);
-      return byId(id)!;
+      return must(byId(id), "template");
     });
     return result;
   }
@@ -163,7 +164,7 @@ export function createTemplateStore(
         clock.now().toISOString(),
         id,
       );
-      return byId(id)!;
+      return must(byId(id), "template");
     });
     return result;
   }

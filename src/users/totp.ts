@@ -1,5 +1,6 @@
 // TOTP parameters adapted from github.com/pquerna/otp v1.5.0 and listmonk cmd/auth.go at 6fcd95f.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { must } from "@/invariant";
 
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 export function newSecret(): string {
@@ -43,7 +44,7 @@ export function verifyTOTP(secret: string, code: string, now: Date): boolean {
     const buffer = Buffer.alloc(8);
     buffer.writeBigUInt64BE(BigInt(counter + offset));
     const mac = createHmac("sha1", key).update(buffer).digest();
-    const index = mac[19]! & 15;
+    const index = must(mac[19], "digest byte") & 15;
     const value = String((mac.readUInt32BE(index) & 0x7f_ff_ff_ff) % 1_000_000).padStart(6, "0");
     if (timingSafeEqual(Buffer.from(value), Buffer.from(code))) {
       return true;

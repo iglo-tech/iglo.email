@@ -76,7 +76,7 @@ function jsonMembers(body: string): Array<[string, unknown]> {
     quoted = false,
     escaped = false;
   for (let i = start; i < body.length; i++) {
-    const c = body[i]!;
+    const c = body.charAt(i);
     if (quoted) {
       if (escaped) {
         escaped = false;

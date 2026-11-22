@@ -1,6 +1,7 @@
 // Adapted from listmonk cmd/users.go, internal/core/users.go and queries/users.sql at 6fcd95f.
 import { createHash, randomBytes } from "node:crypto";
 import { isIP } from "node:net";
+import { must } from "@/invariant";
 import type { Roles } from "@/roles/roles";
 import type { Handler, RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
@@ -118,7 +119,7 @@ const atom = (part: string) =>
   !part.endsWith(".") &&
   !part.includes("..") &&
   !Array.from(part).some((character) => {
-    const code = character.codePointAt(0)!;
+    const code = must(character.codePointAt(0), "code point");
     return (
       code <= 32 ||
       code === 127 ||

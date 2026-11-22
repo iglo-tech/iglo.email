@@ -6,6 +6,7 @@ import { projectCampaign } from "@/campaigns/routes";
 import { createCampaignStore } from "@/campaigns/store";
 import { createRealClock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
+import { must } from "@/invariant";
 import { createListCounts } from "@/subscribers/list-counts";
 import eventsSql from "@/analytics/events.sql" with { type: "text" };
 import sql from "@/analytics/queries.sql" with { type: "text" };
@@ -82,7 +83,8 @@ function* rows(found: Iterable<Row>, interval: Interval, list: boolean): Generat
       current = timestamp;
       counts.clear();
     }
-    const owner = list ? row.list_id! : row.campaign_id!;
+    // The query filters to the requested owner's IDs, so that ID is always present.
+    const owner = list ? must(row.list_id, "list id") : must(row.campaign_id, "campaign id");
     counts.set(owner, (counts.get(owner) ?? 0) + Number(row.count));
   }
   if (current !== undefined) {
