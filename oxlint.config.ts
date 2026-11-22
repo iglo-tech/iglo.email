@@ -164,7 +164,7 @@ export default defineConfig({
         "src/sequences/input.ts", // stored step definition JSON
         "src/sequences/routes.ts", // request body JSON
         "src/sequences/step-preview.ts", // stored step and trigger JSON
-        "src/server/response.ts", // response body and extra headers
+        "src/server/response.ts", // response body and extra body members
         "src/settings/store.ts", // settings record (any value per key)
         "src/settings/validate.ts", // settings record and shapes
         "src/settings/xml.ts", // settings record and shapes
