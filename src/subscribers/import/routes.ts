@@ -58,14 +58,14 @@ function parseParams(raw: string) {
   }
   const params = value as Params;
   const lists = params.lists ?? [];
-  if (!Array.isArray(lists) || !lists.every((id) => Number.isSafeInteger(id))) {
+  if (!Array.isArray(lists) || !lists.every((id): id is number => Number.isSafeInteger(id))) {
     throw new Error("expected a list of integers");
   }
   return {
     mode: text(params.mode),
     status: text(params.subscription_status),
     delim: text(params.delim),
-    listIds: [...new Set((lists as Array<number>).map(BigInt))],
+    listIds: [...new Set(lists.map(BigInt))],
     overwrite: flag(params.overwrite),
     overwriteUserInfo: flag(params.overwrite_userinfo),
     overwriteStatus: flag(params.overwrite_subscription_status),

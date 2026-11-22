@@ -412,7 +412,6 @@ export default defineConfig({
         "src/sequences/routes.ts", // request body JSON
         "src/settings/hold.ts", // stored hold JSON
         "src/subscribers/export.ts", // subscriber attributes JSON
-        "src/subscribers/import/routes.ts", // request body and import JSON
         "src/subscribers/input.ts", // subscriber request JSON
         "src/subscribers/routes.ts", // request body JSON
         "src/templates/data.ts", // template data JSON
