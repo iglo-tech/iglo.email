@@ -18,17 +18,21 @@ import { parseTemplateData } from "@/templates/data";
 import type { TemplateData } from "@/templates/data";
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
 import {
+  LineBreaks,
   LOOP_PRINT,
   append,
   arithmetic,
   byteLength,
   capitalize,
   downcase,
+  escapedBytes,
+  escapeHtml,
   first,
   join,
   json,
   kindOf,
   last,
+  newlineToBr,
   numberOf,
   prepend,
   replace,
@@ -330,21 +334,6 @@ export interface RenderTracking {
   readonly link?: (url: string) => string;
 }
 const attribute = (value: string) => value.replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-/** The bytes an HTML output of `text` takes, counted before it is escaped (D54). */
-function escapedBytes(text: string): number {
-  let size = 0;
-  for (const c of text) {
-    size += c === "&" ? 5 : c === "<" || c === ">" ? 4 : c === '"' || c === "'" ? 5 : byteLength(c);
-  }
-  return size;
-}
-/** `text` with the characters HTML escapes written as references, as the HTML output does. */
-function escapeHtml(text: string): string {
-  return text.replaceAll(/[&<>"']/g, (c) =>
-    must({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" }[c], "escape"),
-  );
-}
-
 const pad = (n: number) => String(n).padStart(2, "0");
 const MONTHS = [
   "January",
@@ -635,6 +624,9 @@ type FilterHandler = Extract<FilterImplOptions, (...args: Array<never>) => unkno
  * text, refused when it is printed or read by a filter.
  */
 function plainValue(value: unknown) {
+  if (value instanceof LineBreaks) {
+    return value.text;
+  }
   if (value instanceof Drop) {
     const text: unknown = value.valueOf();
     if (text === null || text === "") {
@@ -762,6 +754,10 @@ export function createRenderer(clock: Clock, translation: Translation) {
     // The HTML engine escapes output; the plain-text engine has no escape option at all.
     if (html) {
       options.outputEscape = function outputEscape(this: { context: Context }, value: unknown) {
+        // A line break output is marked up already, escaped and charged when it was built (B135 review N5).
+        if (value instanceof LineBreaks) {
+          return value.markup;
+        }
         const b = budget(this.context);
         const input = scalar(plainValue(value), b);
         b.charge(escapedBytes(input));
@@ -799,7 +795,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
       handler(value) {
         const b = budget(this.context);
         b.step();
-        return scalar(plainValue(value), b);
+        // A line break output is written as its markup, which is already escaped (B135 review N5).
+        return value instanceof LineBreaks ? value.markup : scalar(plainValue(value), b);
       },
     });
     liquid.registerFilter("default", function (value, fallback) {
@@ -984,25 +981,10 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("url_encode", function (value: unknown) {
       return urlEncode(value, budget(this.context));
     });
-    // A raw filter: its output is not escaped again, so it escapes its own text in an HTML output (as
-    // every other value is escaped there) before it writes each line break as `<br />`.
-    liquid.registerFilter("newline_to_br", {
-      raw: true,
-      handler(value) {
-        const b = budget(this.context);
-        b.step();
-        const text = scalar(plainValue(value), b);
-        let breaks = 0;
-        for (const c of text) {
-          if (c === "\n") {
-            breaks++;
-          }
-        }
-        b.step(breaks);
-        // Each break grows to `<br />` and its newline, seven bytes; the escaped text is charged first.
-        b.charge((html ? escapedBytes(text) : byteLength(text)) + breaks * 7);
-        return (html ? escapeHtml(text) : text).replaceAll(/\r?\n/g, "<br />\n");
-      },
+    // Not a raw filter: its output is a LineBreaks value, which an HTML output writes as its markup (escaped once)
+    // and a later filter reads as its text, so that filter escapes it once (B135 review N5).
+    liquid.registerFilter("newline_to_br", function (value: unknown) {
+      return newlineToBr(value, html, budget(this.context));
     });
     liquid.registerFilter("number", function (value: unknown) {
       const b = budget(this.context);

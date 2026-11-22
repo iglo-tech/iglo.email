@@ -3,6 +3,7 @@
 // emission or work budget is refused like the existing ones. Registration and arity live in
 // renderer.ts; the functions here hold the value rules.
 
+import { must } from "@/invariant";
 import { decodeReferences } from "@/messaging/plain";
 
 /** The budget a filter charges: work steps and emitted bytes (renderer.ts Budget). */
@@ -25,6 +26,18 @@ export class ValueError extends Error {}
  */
 export const LOOP_PRINT =
   "a loop object (forloop or tablerowloop) cannot be printed; print one of its properties, such as forloop.index";
+
+/**
+ * The output of `newline_to_br` (B135 review N5): its `text`, which a later filter reads (so that filter escapes
+ * it once), and its `markup`, which an HTML output writes as it is: the text escaped, each line break as `<br />`.
+ * A plain-text output writes the text, with its line breaks as they are.
+ */
+export class LineBreaks {
+  constructor(
+    readonly text: string,
+    readonly markup: string,
+  ) {}
+}
 
 export const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
 
@@ -727,5 +740,40 @@ export function urlEncode(value: unknown, b: FilterBudget): string {
   return encodeURIComponent(text).replaceAll(
     /[!'()*]/g,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+/**
+ * `newline_to_br` (B135 review N5): the text with each line break written as `<br />` in an HTML output. Its markup
+ * escapes the text once, and the text a later filter reads is the unescaped one. The bytes are charged before the
+ * markup is built: the escaped text, and seven bytes per break.
+ */
+export function newlineToBr(value: unknown, html: boolean, b: FilterBudget): LineBreaks {
+  b.step();
+  const text = scalar(value, b);
+  let breaks = 0;
+  for (const c of text) {
+    if (c === "\n") {
+      breaks++;
+    }
+  }
+  b.step(breaks);
+  b.charge((html ? escapedBytes(text) : byteLength(text)) + breaks * 7);
+  return new LineBreaks(text, html ? escapeHtml(text).replaceAll(/\r?\n/g, "<br />\n") : text);
+}
+
+/** The bytes an HTML output of `text` takes, counted before it is escaped (D54). */
+export function escapedBytes(text: string): number {
+  let size = 0;
+  for (const c of text) {
+    size += c === "&" ? 5 : c === "<" || c === ">" ? 4 : c === '"' || c === "'" ? 5 : byteLength(c);
+  }
+  return size;
+}
+
+/** `text` with the characters HTML escapes written as references, as the HTML output does. */
+export function escapeHtml(text: string): string {
+  return text.replaceAll(/[&<>"']/g, (c) =>
+    must({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" }[c], "escape"),
   );
 }

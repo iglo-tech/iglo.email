@@ -372,3 +372,23 @@ test("a divisor written with a decimal point divides as a float; an integer divi
   expect(sent.http).toBe(200);
   expect(sent.message).toContain("[2.5][2][2.2222222222222223][2][3.5]");
 });
+
+test("newline_to_br escapes its text once in an HTML part, however it is printed (B135 review N5)", () => {
+  const renderer = createRenderer(createRealClock(), createTranslation());
+  const data = String.raw`{"data":{"t":"a&\nb<c"}}`;
+  const html = (body: string) => renderer.renderSync({ body, mode: "html", data }).body;
+  expect(html("{{ data.t | newline_to_br }}")).toBe("a&amp;<br />\nb&lt;c");
+  expect(html("{{ data.t | newline_to_br | raw }}")).toBe("a&amp;<br />\nb&lt;c");
+  expect(html("{% assign y = data.t | newline_to_br %}{{ y }}")).toBe("a&amp;<br />\nb&lt;c");
+  // A filter after it reads the text, so the text is escaped once and the line breaks stay newlines.
+  expect(html("{{ data.t | newline_to_br | upcase }}")).toBe("A&amp;\nB&lt;C");
+});
+
+test("newline_to_br in a plain-text part keeps its line breaks as newlines and writes no break", () => {
+  const renderer = createRenderer(createRealClock(), createTranslation());
+  const data = String.raw`{"data":{"t":"a&\nb<c"}}`;
+  const plain = (body: string) => renderer.renderSync({ body, mode: "plain", data }).body;
+  expect(plain("{{ data.t | newline_to_br }}")).toBe("a&\nb<c");
+  expect(plain("{{ data.t | newline_to_br | raw }}")).toBe("a&\nb<c");
+  expect(plain("{% assign y = data.t | newline_to_br %}{{ y }}")).toBe("a&\nb<c");
+});
