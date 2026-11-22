@@ -279,7 +279,7 @@ async function lockHolds() {
     };
     await importer.close();
     webhooks.close();
-    store!.close();
+    store.close();
     lists.close();
     db.close(true);
     return result;

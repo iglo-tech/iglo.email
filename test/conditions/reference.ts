@@ -56,7 +56,7 @@ function ordered(actual: unknown, op: string, expected: unknown): boolean {
 
 function durationMs(text: string): number {
   const m = /^P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(text)!;
-  const [w, d, h, min, s] = m.slice(1).map((part) => Number(part ?? 0)) as Array<number>;
+  const [w, d, h, min, s] = m.slice(1).map((part) => Number(part ?? 0));
   return ((((w! * 7 + d!) * 24 + h!) * 60 + min!) * 60 + s!) * 1000;
 }
 
