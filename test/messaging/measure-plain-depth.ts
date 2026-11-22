@@ -1,12 +1,13 @@
 // B135 review (blocker 3, D118): the text/plain converter on deeply nested lists. One process per round, so
 // the base (origin/main) and the head trees can run alternately in one container. Run from a checkout:
-// `bun test/messaging/measure-plain-depth.ts`. It prints one JSON line: the median time in milliseconds of
-// five conversions of the review's shape (1,000 open lists, then 100,000 items), the output's length, and
-// the process's resident memory after them. The shape is 1.1 MB of HTML.
+// `bun test/messaging/measure-plain-depth.ts [items]`. It prints one JSON line: the median time in
+// milliseconds of five conversions of the review's shape (1,000 open lists, then `items` items; 100,000 by
+// default, which is 1.1 MB of HTML), the output's length, and the process's resident memory after them.
 import { plainText } from "@/messaging/plain";
 import { createMessageBudget } from "@/templates/renderer";
 
-const html = "<ul>".repeat(1000) + "<li>x</li>".repeat(100_000);
+const items = Number(process.argv[2] ?? 100_000);
+const html = "<ul>".repeat(1000) + "<li>x</li>".repeat(items);
 const samples: Array<number> = [];
 let output = "";
 for (let run = 0; run < 5; run++) {

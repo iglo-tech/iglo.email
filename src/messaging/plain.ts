@@ -36,7 +36,8 @@ const HELD_CAP = 1024;
 /**
  * Indentation stops at this many levels: a list nested deeper is indented as at this depth. Each level of
  * indent is two characters on every item, so an unbounded depth made the output grow with items x depth
- * (B135 review, D118).
+ * (B135 review, D118). Indentation can still make the text longer than the HTML (short items in deep
+ * lists), in which case the text is written without it (see `plainText`).
  */
 const MAX_INDENT = 8;
 /** Block elements: a line break before and after. A list item gets a bullet instead. */
@@ -388,21 +389,37 @@ const INDENT = "\u0000\u0000";
 
 /**
  * Converts an HTML message to its text/plain alternative and charges the output to `budget`. The
- * output is never longer than the input, and a conversion fault or an over-long result sends the
- * message without a text part, as before D118. A link is written as its text and its URL in angle
- * brackets, `text <URL>`, the URL alone when the text is the URL or empty. A link whose text is only a
- * symbol is decoration and writes nothing; consecutive links with the same href write the URL once.
+ * output is never longer than the input, and a conversion fault sends the message without a text part,
+ * as before D118. A link is written as its text and its URL in angle brackets, `text <URL>`, the URL
+ * alone when the text is the URL or empty. A link whose text is only a symbol is decoration and writes
+ * nothing; consecutive links with the same href write the URL once.
+ *
+ * The text is indented first. When that text would be longer than the HTML, it is written again without
+ * indentation, which is the text this converter wrote before B135, so a message keeps its text part
+ * (B135 review, D134). Each pass stops once its output passes the HTML's size, so the two passes
+ * together stay linear. Only a text longer than the HTML even without indentation goes without a text
+ * part.
  */
 export async function plainText(html: string, budget: MessageBudget): Promise<string> {
   try {
-    return await convert(html, budget);
+    const text = (await convert(html, true)) ?? (await convert(html, false));
+    if (text === undefined) {
+      return "";
+    }
+    budget.charge(Buffer.byteLength(text));
+    return text;
   } catch {
     // A fault in the conversion never fails a send. The message goes without a text part.
     return "";
   }
 }
 
-async function convert(html: string, budget: MessageBudget): Promise<string> {
+/**
+ * One pass over the HTML. Returns the text, or undefined when the output would be longer than the HTML
+ * (the check runs as the output grows, so the pass stops at the HTML's size) or longer than its input
+ * once finished. `indented` writes list items indented by their list depth.
+ */
+async function convert(html: string, indented: boolean): Promise<string | undefined> {
   const parts: Array<string> = [];
   const stack: Array<Entry> = [];
   const open = new Map<string, Array<Entry>>();
@@ -420,10 +437,12 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   // the final text is never longer than. The check runs as the output grows, so a document that would
   // exceed it stops at once, not after it has been built (linear time and memory in the input).
   let produced = 0;
+  let overflow = false;
   const limit = Buffer.byteLength(html);
   const emit = (text: string) => {
     produced += text.length;
     if (produced > limit) {
+      overflow = true;
       throw new Error("output too long");
     }
     parts.push(text);
@@ -447,7 +466,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   const itemMarker = () => {
     const list = newest("ul", "ol");
     const depth = (open.get("ul")?.length ?? 0) + (open.get("ol")?.length ?? 0);
-    const indent = INDENT.repeat(Math.min(MAX_INDENT, Math.max(0, depth - 1)));
+    const indent = indented ? INDENT.repeat(Math.min(MAX_INDENT, Math.max(0, depth - 1))) : "";
     if (list?.name === "ol") {
       return `\n${indent}${list.next++}. `;
     }
@@ -655,7 +674,16 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
         }
       },
     });
-  await rewriter.transform(new Response(html)).text();
+  try {
+    await rewriter.transform(new Response(html)).text();
+  } catch (error) {
+    if (!overflow) {
+      throw error;
+    }
+  }
+  if (overflow) {
+    return undefined;
+  }
   const text = parts
     .join("")
     .replaceAll(/ {2,}/g, " ")
@@ -664,10 +692,10 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
     .trim()
     .replaceAll("\u0000", " ");
   // A backstop: the output is never longer than the input. Markup is always longer than the text
-  // that replaces it, so this only matters for a URL escaped longer than the markup around it.
+  // that replaces it, so this only matters for a URL escaped longer than the markup around it, or
+  // indentation that the pass above did not stop at.
   if (Buffer.byteLength(text) > Buffer.byteLength(html)) {
-    return "";
+    return undefined;
   }
-  budget.charge(Buffer.byteLength(text));
   return text;
 }
