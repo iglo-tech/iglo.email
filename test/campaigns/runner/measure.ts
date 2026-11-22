@@ -37,7 +37,7 @@ const free = () =>
 const head = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: repository })
   .stdout.toString()
   .trim();
-function record<T extends object>(entry: T) {
+function record(entry: Record<string, unknown>) {
   appendFileSync(results, JSON.stringify({ at: new Date().toISOString(), head, ...entry }) + "\n");
   console.log(JSON.stringify(entry, null, 2));
 }
