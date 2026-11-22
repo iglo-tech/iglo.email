@@ -11,25 +11,22 @@ const uuid = { type: "string", format: "uuid" };
 /** A free-form JSON object. */
 export const free = { type: "object", additionalProperties: true };
 
-export const ref = (name: string): Schema => ({ $ref: `#/components/schemas/${name}` });
-export const array = (items: Schema): Schema => ({ type: "array", items });
-export const nullable = (schema: Schema): Schema =>
+export const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+export const array = (items: Schema) => ({ type: "array", items });
+export const nullable = (schema: Schema) =>
   schema.$ref !== undefined || schema.oneOf !== undefined
     ? { anyOf: [schema, { type: "null" }] }
     : { ...schema, type: [schema.type, "null"] };
-const choice = (...values: Array<string>): Schema => ({ type: "string", enum: values });
+const choice = (...values: Array<string>) => ({ type: "string", enum: values });
 /** Every property is required unless it is named in `optional`. */
-export const object = (
-  properties: Record<string, Schema>,
-  optional: Array<string> = [],
-): Schema => ({
+export const object = (properties: Record<string, Schema>, optional: Array<string> = []) => ({
   type: "object",
   properties,
   required: Object.keys(properties).filter((name) => !optional.includes(name)),
 });
-const map = (value: Schema): Schema => ({ type: "object", additionalProperties: value });
+const map = (value: Schema) => ({ type: "object", additionalProperties: value });
 /** A write body: nothing is required unless it is named. */
-const input = (properties: Record<string, Schema>, required: Array<string> = []): Schema => ({
+const input = (properties: Record<string, Schema>, required: Array<string> = []) => ({
   type: "object",
   properties,
   ...(required.length ? { required } : {}),
@@ -279,7 +276,7 @@ const settings = (smtp: string, mailbox: string): Schema =>
     ["upload.s3.aws_secret_access_key"],
   );
 
-export const schemas: Record<string, Schema> = {
+export const schemas = {
   Error: {
     ...object({ message: string }),
     description: "Every failure under `/api/` and `/webhooks/`.",
@@ -1141,4 +1138,4 @@ export const schemas: Record<string, Schema> = {
   BounceMailboxInput: bounceMailbox(true),
   Settings: settings("SmtpServer", "BounceMailbox"),
   SettingsInput: settings("SmtpServerInput", "BounceMailboxInput"),
-};
+} satisfies Record<string, Schema>;

@@ -6,7 +6,7 @@ import { writeTransaction } from "@/db/transaction";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import { newMessageId } from "@/messaging/email";
-import type { Message, Outcome } from "@/messaging/email";
+import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import type { TestSends } from "@/messaging/test-sends";
@@ -952,7 +952,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
             "The test send is too large: send it to fewer recipients or reduce the rendered size.",
           );
         }
-        const headers: Record<string, string | Array<string>> = {
+        const headers: MessageHeaders = {
           "X-Listmonk-Campaign": stored.uuid,
           "X-Listmonk-Subscriber": sub.uuid,
         };

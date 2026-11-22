@@ -75,13 +75,13 @@ interface Row {
 /** Expired receipts one provider request removes. A request adds at most one. */
 const RECEIPT_PRUNE_BATCH = 100;
 // Upstream's `campaign_name` names no column and fails with a 500 (07-api-and-ui.md).
-const sortColumns: Record<string, string> = {
-  email: "email",
-  campaign_name: "c.name",
-  source: "b.source",
-  created_at: "b.created_at",
-  type: "b.type",
-};
+const sortColumns = new Map([
+  ["email", "email"],
+  ["campaign_name", "c.name"],
+  ["source", "b.source"],
+  ["created_at", "b.created_at"],
+  ["type", "b.type"],
+]);
 const safeID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER)
     ? Number(id)
@@ -129,7 +129,7 @@ export function createBounceStore(
   const rows = (filter: BounceFilter) => {
     // B80: order takes any case; anything but asc sorts descending, as before.
     const direction = filter.order?.toLowerCase() === "asc" ? "ASC" : "DESC";
-    const column = sortColumns[filter.orderBy ?? ""] ?? "b.created_at";
+    const column = sortColumns.get(filter.orderBy ?? "") ?? "b.created_at";
     // Postgres sorts nulls as the largest value; the ID settles ties in stored rows.
     const order = `${column} ${direction} NULLS ${direction === "ASC" ? "LAST" : "FIRST"}, b.id DESC`;
     return db

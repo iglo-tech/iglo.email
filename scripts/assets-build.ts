@@ -119,14 +119,14 @@ async function files(directory: string): Promise<Array<string>> {
   }
   return result.sort();
 }
-const mime: Record<string, string> = {
-  ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".woff2": "font/woff2",
-  ".txt": "text/plain; charset=utf-8",
-};
+const mime = new Map([
+  [".css", "text/css; charset=utf-8"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".svg", "image/svg+xml"],
+  [".png", "image/png"],
+  [".woff2", "font/woff2"],
+  [".txt", "text/plain; charset=utf-8"],
+]);
 const paths = await files(destination);
 const version = createHash("sha256");
 const imports: Array<string> = [];
@@ -134,7 +134,7 @@ const entries: Array<string> = [];
 for (let index = 0; index < paths.length; index++) {
   const path = paths[index]!;
   const name = relative(destination, path).replaceAll("\\", "/");
-  const type = mime[extname(name)];
+  const type = mime.get(extname(name));
   if (!type) {
     throw new Error(`Unsupported asset type: ${name}`);
   }

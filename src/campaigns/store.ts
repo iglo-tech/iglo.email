@@ -58,6 +58,11 @@ export interface CampaignRow {
   media: string;
 }
 /** The writable campaign fields after request binding and validation. */
+/** One page of campaigns, and how many match the filter in all. */
+export interface CampaignPage {
+  rows: Array<CampaignRow>;
+  total: number;
+}
 export interface WritableCampaign {
   type: "regular" | "optin";
   name: string;
@@ -200,7 +205,7 @@ export function createCampaignStore(db: Database, clock: Clock, refs: CampaignRe
       order: string,
       offset: number,
       limit: number,
-    ): { rows: Array<CampaignRow>; total: number } {
+    ): CampaignPage {
       const field = sortFields.has(orderBy) ? orderBy : "created_at";
       // B80: order takes any case; anything but asc sorts descending, as before.
       const direction = order.toLowerCase() === "asc" ? "ASC" : "DESC";

@@ -20,12 +20,18 @@ const bytes = (value: string) => Buffer.byteLength(value, "utf-8");
 
 // Bytes an HTML escape can add, per special character: `&amp;`, `&lt;`, `&gt;`, `&quot;`, and `&#x27;` for an
 // apostrophe (Bun writes it in attributes, and the bound charges it everywhere, to be safe).
-const SPECIAL_EXTRA: Readonly<Record<string, number>> = { "&": 4, "<": 3, ">": 3, '"': 5, "'": 5 };
+const SPECIAL_EXTRA = new Map([
+  ["&", 4],
+  ["<", 3],
+  [">", 3],
+  ['"', 5],
+  ["'", 5],
+]);
 /** Upper bound on the bytes of `value` once written as escaped HTML text. */
 function escapedBound(value: string): number {
   let total = bytes(value);
   for (let i = 0; i < value.length; i++) {
-    total += SPECIAL_EXTRA[value[i]!] ?? 0;
+    total += SPECIAL_EXTRA.get(value[i]!) ?? 0;
   }
   return total;
 }

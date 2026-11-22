@@ -317,28 +317,33 @@ export function registerMediaRoutes(
     const type = /script/.test(known) ? "application/octet-stream" : known;
     const tag = `"${file.size.toString(16)}-${Math.floor(file.modified).toString(16)}"`;
     const modified = new Date(file.modified).toUTCString();
-    const headers: Record<string, string> = {
-      "Content-Type": type.startsWith("text/") ? `${type}; charset=utf-8` : type,
-      "Cache-Control": CACHE_CONTROL,
-      ETag: tag,
-      "Last-Modified": modified,
-      "X-Content-Type-Options": "nosniff",
-    };
+    const headers = new Map([
+      ["Content-Type", type.startsWith("text/") ? `${type}; charset=utf-8` : type],
+      ["Cache-Control", CACHE_CONTROL],
+      ["ETag", tag],
+      ["Last-Modified", modified],
+      ["X-Content-Type-Options", "nosniff"],
+    ]);
     // A CSP sandbox can stop a browser's built-in viewer, so a PDF has none and `nosniff` keeps
     // it a PDF. That viewers are isolated from the origin is their design, not verified here.
     if (type !== "application/pdf") {
-      headers["Content-Security-Policy"] = SANDBOX;
+      headers.set("Content-Security-Policy", SANDBOX);
     }
     if (type !== "application/pdf" && !inlineTypes.test(type)) {
-      headers["Content-Disposition"] = `attachment; filename*=UTF-8''${encodeURIComponent(name)}`;
+      headers.set(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+      );
     }
     const since = c.request.headers.get("if-modified-since");
     const match = c.request.headers.get("if-none-match");
     if (match === tag || (!match && since && Date.parse(since) >= Date.parse(modified))) {
-      return new Response(null, { status: 304, headers });
+      return new Response(null, { status: 304, headers: Object.fromEntries(headers) });
     }
-    headers["Content-Length"] = String(file.size);
-    return new Response(method === "HEAD" ? null : Bun.file(file.path), { headers });
+    headers.set("Content-Length", String(file.size));
+    return new Response(method === "HEAD" ? null : Bun.file(file.path), {
+      headers: Object.fromEntries(headers),
+    });
   };
 
   router.use(serve);

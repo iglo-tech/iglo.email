@@ -54,7 +54,7 @@ export function cookie(request: Request, name: string): string {
   return values.length === 1 ? values[0]!.slice(name.length + 1) : "";
 }
 
-function parseAuthorization(header: string): { user: string; token: string } {
+function parseAuthorization(header: string) {
   let pair: string;
   if (header.startsWith("token")) {
     pair = header.slice(5).replaceAll(/^ +| +$/g, "");
@@ -196,7 +196,7 @@ export async function createAuthentication(
     }
     return value;
   }
-  function newChallenge(user: UserRow): { token: string } {
+  function newChallenge(user: UserRow) {
     for (const key of challenges.keys()) {
       challenge(key);
     }

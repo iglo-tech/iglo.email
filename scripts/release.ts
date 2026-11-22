@@ -10,8 +10,11 @@ const root = resolve(import.meta.dir, "..");
 // D89: Linux x86-64 and Linux arm64 only. Each runner builds and verifies its own architecture, so
 // the architecture of this process names the file. `bun build --compile --target=bun-linux-arm64`
 // cross-compiles the other one.
-const architectures: Record<string, string | undefined> = { x64: "x64", arm64: "arm64" };
-const architecture = architectures[process.arch];
+const architectures = new Map([
+  ["x64", "x64"],
+  ["arm64", "arm64"],
+]);
+const architecture = architectures.get(process.arch);
 if (process.platform !== "linux" || architecture === undefined) {
   throw new Error(`Unsupported platform ${process.platform}/${process.arch}: Linux x64 and arm64`);
 }

@@ -15,22 +15,23 @@ import { HttpError } from "@/server/response";
 import { getID } from "@/server/validation";
 
 const docs = "https://listmonk.app/docs/roles-and-permissions";
-const risky: Record<string, string> = {
-  "subscribers:sql_query": `${docs}/#subscriberssql_query`,
-  "users:manage": `${docs}/#:~:text=users:manage`,
-};
+const risky = new Map([
+  ["subscribers:sql_query", `${docs}/#subscriberssql_query`],
+  ["users:manage", `${docs}/#:~:text=users:manage`],
+]);
 /** The groups of upstream's permissions.json, by prefix; a native permission brings its own. */
-const groupOf: Record<string, string> = {
-  tx: "subscribers",
-  subscriber_events: "subscribers",
-  suppressions: "subscribers",
-  roles: "users",
-};
+const groupOf = new Map([
+  ["tx", "subscribers"],
+  ["subscriber_events", "subscribers"],
+  ["suppressions", "subscribers"],
+  ["roles", "users"],
+]);
 function permissionGroups(): Array<{ group: string; permissions: Array<string> }> {
   const groups = new Map<string, Array<string>>();
   for (const permission of validPermissions) {
     const prefix = permission.split(":", 1)[0]!;
-    const group = permission === "webhooks:post_bounce" ? "bounces" : (groupOf[prefix] ?? prefix);
+    const group =
+      permission === "webhooks:post_bounce" ? "bounces" : (groupOf.get(prefix) ?? prefix);
     groups.set(group, [...(groups.get(group) ?? []), permission]);
   }
   return [...groups].map(([group, permissions]) => ({ group, permissions }));
@@ -41,7 +42,7 @@ const defaultPermissions = permissions.filter(
 );
 
 function Permission({ value }: { value: string }) {
-  const href = risky[value];
+  const href = risky.get(value);
   return (
     <label>
       <input type="checkbox" value={value} x-model="form.permissions" x-bind:disabled="disabled" />{" "}

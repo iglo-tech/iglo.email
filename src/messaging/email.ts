@@ -30,6 +30,8 @@ export interface SMTPServer {
   from_addresses: Array<string> | null;
   dkim?: { domain_name: string; key_selector: string; private_key: string } | null;
 }
+/** Extra message headers by name; a repeated name carries several values. */
+export type MessageHeaders = Record<string, string | Array<string>>;
 export interface Message {
   from: string;
   to: Array<string>;
@@ -37,7 +39,7 @@ export interface Message {
   contentType: "plain" | "html";
   body: Uint8Array;
   altBody?: Uint8Array;
-  headers?: Record<string, string | Array<string>>;
+  headers?: MessageHeaders;
   attachments?: Array<{
     name: string;
     content: Uint8Array;

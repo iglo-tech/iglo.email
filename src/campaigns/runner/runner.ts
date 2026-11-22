@@ -13,7 +13,7 @@ import { sendingHeld } from "@/settings/hold";
 import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
-import type { Message, Outcome } from "@/messaging/email";
+import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
 import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
@@ -528,7 +528,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         const altBody =
           out.altBody ??
           (c.content_type === "plain" ? null : (await plainText(out.body, budget)) || null);
-        const headers: Record<string, string | Array<string>> = {
+        const headers: MessageHeaders = {
           "X-Listmonk-Campaign": c.uuid,
           "X-Listmonk-Subscriber": sub.uuid,
         };

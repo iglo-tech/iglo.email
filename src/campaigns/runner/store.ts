@@ -27,6 +27,12 @@ export interface RunnableCampaign {
 }
 export type DeliveryStatus = "sent" | "failed" | "unknown" | "skipped";
 
+/** The deliveries a stopped runner left unfinished for one campaign, and the range they span. */
+export interface AbandonedDeliveries {
+  count: number;
+  first: bigint | null;
+  last: bigint | null;
+}
 export function createRunnerStore(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "campaigns/runner/store", sql }]);
   return {
@@ -102,7 +108,7 @@ export function createRunnerStore(db: Database) {
     claimedCampaigns(): Array<{ id: bigint; name: string }> {
       return q.get("claimed-campaigns").all() as Array<{ id: bigint; name: string }>;
     },
-    abandon(id: bigint, now: string): { count: number; first: bigint | null; last: bigint | null } {
+    abandon(id: bigint, now: string): AbandonedDeliveries {
       const found = q.get("abandoned-deliveries").get(id) as {
         count: bigint;
         first: bigint | null;

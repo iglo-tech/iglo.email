@@ -1,5 +1,5 @@
 // Versioned prepared messages are private journal data, never HTTP projections.
-import type { Message } from "@/messaging/email";
+import type { Message, MessageHeaders } from "@/messaging/email";
 import { parseAddress } from "@/settings/mail";
 
 const maxBody = 1024 * 1024;
@@ -55,7 +55,7 @@ function prepare(message: Message, subscriberUuid: string | null, encode: boolea
   ) {
     invalid();
   }
-  const headers: Record<string, string | Array<string>> = {};
+  const headers: MessageHeaders = {};
   const entries = Object.entries(message.headers ?? {});
   if (entries.length > 64) {
     invalid();
@@ -141,10 +141,12 @@ function prepare(message: Message, subscriberUuid: string | null, encode: boolea
   }
   return payload;
 }
-export function decodePayload(payload: string): {
+/** A payload read back: its message, and the subscriber it was built for. */
+export interface DecodedPayload {
   message: Message;
   subscriberUuid: string | null;
-} {
+}
+export function decodePayload(payload: string): DecodedPayload {
   if (typeof payload !== "string" || Buffer.byteLength(payload) > maxPayload) {
     invalid();
   }

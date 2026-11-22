@@ -72,6 +72,7 @@ function toolNames(candidates: Array<Operation>): Map<string, string> {
   );
 }
 
+const isSchemaName = (name: string): name is keyof typeof schemas => Object.hasOwn(schemas, name);
 /** A `$ref` inlined from the document's schemas. A schema that refers back to itself becomes `{}`. */
 function inline(value: unknown, stack: Array<string> = []): unknown {
   if (Array.isArray(value)) {
@@ -86,7 +87,7 @@ function inline(value: unknown, stack: Array<string> = []): unknown {
     if (stack.includes(name)) {
       return {};
     }
-    const target = schemas[name];
+    const target = isSchemaName(name) ? schemas[name] : undefined;
     if (target === undefined) {
       throw new Error(`no schema ${name} for an MCP tool`);
     }

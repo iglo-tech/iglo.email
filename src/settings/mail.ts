@@ -2,6 +2,12 @@
 // The complete BSD notice is embedded from assets/licenses/go-1.27.2-BSD.txt.
 import { isIP } from "node:net";
 
+/** One encoded word after decoding; `encoded` is false for a word that stays literal. */
+interface DecodedWord {
+  encoded: boolean;
+  content: string;
+  error: boolean;
+}
 export function parseAddress(input: string): string | undefined {
   let pos = 0;
   let mailbox: string | undefined;
@@ -14,7 +20,7 @@ export function parseAddress(input: string): string | undefined {
   const atext = (c: string) => visible(c) && !String.raw`()<>[]:;@\,"`.includes(c);
   // Decode syntax before charset conversion, as mime.WordDecoder does. Invalid
   // encoded words remain literal; only an unsupported charset is fatal.
-  const decodeWord = (word: string): { encoded: boolean; content: string; error: boolean } => {
+  const decodeWord = (word: string): DecodedWord => {
     const match = /^=\?([^?]+)\?([bBqQ])\?([^?]*)\?=$/.exec(word);
     if (!match) {
       return { encoded: false, content: word, error: false };

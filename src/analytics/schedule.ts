@@ -4,15 +4,15 @@
 // refresh runs more often than the spec and never less.
 import { cronDuration } from "@/settings/duration";
 
-const descriptors: Record<string, string> = {
-  "@yearly": "0 0 1 1 *",
-  "@annually": "0 0 1 1 *",
-  "@monthly": "0 0 1 * *",
-  "@weekly": "0 0 * * 0",
-  "@daily": "0 0 * * *",
-  "@midnight": "0 0 * * *",
-  "@hourly": "0 * * * *",
-};
+const descriptors = new Map([
+  ["@yearly", "0 0 1 1 *"],
+  ["@annually", "0 0 1 1 *"],
+  ["@monthly", "0 0 1 * *"],
+  ["@weekly", "0 0 * * 0"],
+  ["@daily", "0 0 * * *"],
+  ["@midnight", "0 0 * * *"],
+  ["@hourly", "0 * * * *"],
+]);
 const months = "jan feb mar apr may jun jul aug sep oct nov dec".split(" ");
 const days = "sun mon tue wed thu fri sat".split(" ");
 const bounds = [
@@ -66,10 +66,7 @@ function zoned(at: Date, format: Intl.DateTimeFormat | null) {
 }
 
 /** The zone prefix and the rest of a spec. No prefix and Local are the system zone. */
-function parts(input: string): {
-  zone: Intl.DateTimeFormat | null;
-  spec: string;
-} {
+function parts(input: string) {
   const spec = input.trim();
   if (!spec.startsWith("TZ=") && !spec.startsWith("CRON_TZ=")) {
     return { zone: null, spec };
@@ -96,7 +93,7 @@ function parts(input: string): {
 
 /** Whether a cron expression matches the minute that starts at an instant. */
 function matcher(spec: string, zone: Intl.DateTimeFormat | null) {
-  const fields = (descriptors[spec] ?? spec).split(/\s+/);
+  const fields = (descriptors.get(spec) ?? spec).split(/\s+/);
   if (fields.length !== 5) {
     throw new Error(`Invalid cron expression: ${spec}`);
   }

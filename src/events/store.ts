@@ -103,12 +103,16 @@ const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJS
 const numberID = (id: bigint) =>
   id <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(id) : rawJSON(id.toString());
 
+interface StoredOutcome {
+  enrollments: Enrollments;
+  grants: Array<Grant>;
+}
 /**
  * What the first request under an idempotency key did, as stored in `events.enrollments`:
  * `{started, ended, grants, skipped}`. A row written before grants existed has no `grants`, and
  * one written before B116 has no `skipped`.
  */
-function storedOutcome(text: string | null): { enrollments: Enrollments; grants: Array<Grant> } {
+function storedOutcome(text: string | null): StoredOutcome {
   if (text === null) {
     return { enrollments: { started: [], ended: [], skipped: [] }, grants: [] };
   }

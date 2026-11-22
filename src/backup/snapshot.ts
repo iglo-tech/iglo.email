@@ -351,7 +351,11 @@ function realFolder(path: string): boolean {
  * with createFolders. The caller resolves the parent as the realpath of `existing`, joined with the
  * folders still to be made, so an alias in the existing part is followed as the kernel would.
  */
-function missingFolders(directory: string): { existing: string; missing: Array<string> } {
+interface MissingFolders {
+  existing: string;
+  missing: Array<string>;
+}
+function missingFolders(directory: string): MissingFolders {
   const names = directory.split(sep).filter(Boolean);
   let existing: string = sep;
   for (const [index, name] of names.entries()) {

@@ -16,16 +16,16 @@ const MAX_WORK = 10_000;
 const MAX_DEPTH = 32;
 const dangerous = new Set(["__proto__", "prototype", "constructor"]);
 const loopProperties = new Set(["index", "index0", "rindex", "rindex0", "first", "last", "length"]);
-const filterArguments: Readonly<Record<string, number>> = {
-  raw: 0,
-  default: 1,
-  upcase: 0,
-  strip: 0,
-  t: 8,
-  date: 1,
-  track_link: 0,
-  number: 0,
-};
+const filterArguments = new Map([
+  ["raw", 0],
+  ["default", 1],
+  ["upcase", 0],
+  ["strip", 0],
+  ["t", 8],
+  ["date", 1],
+  ["track_link", 0],
+  ["number", 0],
+]);
 const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
 
 export class TemplateSourceError extends Error {
@@ -361,16 +361,16 @@ export function createRenderer(clock: Clock, translation: Translation) {
         throw new Error("Invalid date");
       }
       const pad = (n: number) => String(n).padStart(2, "0");
-      const values: Record<string, string> = {
-        "%": "%",
-        Y: String(date.getUTCFullYear()),
-        m: pad(date.getUTCMonth() + 1),
-        d: pad(date.getUTCDate()),
-        H: pad(date.getUTCHours()),
-        M: pad(date.getUTCMinutes()),
-        S: pad(date.getUTCSeconds()),
-      };
-      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => values[key]!);
+      const values = new Map([
+        ["%", "%"],
+        ["Y", String(date.getUTCFullYear())],
+        ["m", pad(date.getUTCMonth() + 1)],
+        ["d", pad(date.getUTCDate())],
+        ["H", pad(date.getUTCHours())],
+        ["M", pad(date.getUTCMinutes())],
+        ["S", pad(date.getUTCSeconds())],
+      ]);
+      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => values.get(key)!);
       b.charge(byteLength(out));
       return out;
     });
@@ -470,7 +470,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     compiled?: Compiled,
     tracking?: RenderTracking,
     budget?: MessageBudget,
-  ): { body: string; subject: string } {
+  ) {
     if (budget !== undefined && !(budget instanceof Budget)) {
       throw new Error("Invalid budget");
     }
@@ -528,11 +528,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
         if (name === "[object Function]" && count === 0) {
           return;
         }
-        if (
-          !Object.hasOwn(filterArguments, name) ||
-          count > filterArguments[name]! ||
-          (name === "t" && count % 2 !== 0)
-        ) {
+        const maximum = filterArguments.get(name);
+        if (maximum === undefined || count > maximum || (name === "t" && count % 2 !== 0)) {
           throw new Error("Invalid filter arguments");
         }
       };
@@ -657,10 +654,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     return { body, subject };
   }
 
-  function renderSync(
-    request: RenderRequest,
-    budget?: MessageBudget,
-  ): { body: string; subject: string } {
+  function renderSync(request: RenderRequest, budget?: MessageBudget) {
     if (active >= 4) {
       throw new RenderCapacityError();
     }

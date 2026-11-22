@@ -345,17 +345,17 @@ function jsonInput(
 }
 function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
   const out: SubscriberInput = {};
-  const names: Record<string, string> = {
-    Email: "email",
-    Name: "name",
-    Status: "status",
-    ExternalID: "external_id",
-    Lists: "lists",
-    PreconfirmSubs: "preconfirm_subscriptions",
-    SubscriberIDs: "ids",
-    TargetListIDs: "target_list_ids",
-    Action: "action",
-  };
+  const names = new Map([
+    ["Email", "email"],
+    ["Name", "name"],
+    ["Status", "status"],
+    ["ExternalID", "external_id"],
+    ["Lists", "lists"],
+    ["PreconfirmSubs", "preconfirm_subscriptions"],
+    ["SubscriberIDs", "ids"],
+    ["TargetListIDs", "target_list_ids"],
+    ["Action", "action"],
+  ]);
   let depth = 0,
     complete = false,
     field: string | undefined,
@@ -384,7 +384,7 @@ function xmlInput(body: Buffer, allowed: ReadonlySet<string>): SubscriberInput {
       if (local === "Attribs" && allowed.has("attribs")) {
         throw new Error("unsupported XML map");
       }
-      field = names[local];
+      field = names.get(local);
       if (field && !allowed.has(field)) {
         field = undefined;
       }

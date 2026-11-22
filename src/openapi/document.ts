@@ -11,18 +11,18 @@ const error = { $ref: "#/components/responses/Error" };
 const errorContent = {
   "application/json": { schema: { $ref: "#/components/schemas/Error" } },
 };
-const refused: Record<number, string> = {
-  400: "Invalid input.",
-  401: "No valid credential.",
-  403: "No valid credential, or a missing permission.",
-  404: "Not found.",
-  405: "Method not allowed.",
-  406: "Refused, without a retry.",
-  409: "Conflict.",
-  413: "Too large.",
-  429: "Too many requests.",
-  503: "The feature is off.",
-};
+const refused = new Map<number, string>([
+  [400, "Invalid input."],
+  [401, "No valid credential."],
+  [403, "No valid credential, or a missing permission."],
+  [404, "Not found."],
+  [405, "Method not allowed."],
+  [406, "Refused, without a retry."],
+  [409, "Conflict."],
+  [413, "Too large."],
+  [429, "Too many requests."],
+  [503, "The feature is off."],
+]);
 
 function applies(entry: string, operation: Operation): boolean {
   if (entry === "*id") {
@@ -45,7 +45,7 @@ const pathParameters = ({ route, path }: Operation) =>
     schema: path?.[name!] ?? (name === "id" ? { type: "integer", minimum: 1 } : { type: "string" }),
   }));
 
-function build(operation: Operation): Record<string, unknown> {
+function build(operation: Operation) {
   const statuses = new Set(operation.errors);
   if (!operation.anonymous) {
     statuses.add(403);
@@ -105,7 +105,7 @@ function build(operation: Operation): Record<string, unknown> {
       ...Object.fromEntries(
         [...statuses]
           .sort((a, b) => a - b)
-          .map((status) => [status, { description: refused[status], content: errorContent }]),
+          .map((status) => [status, { description: refused.get(status), content: errorContent }]),
       ),
       default: error,
     },

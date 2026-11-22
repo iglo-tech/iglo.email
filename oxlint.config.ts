@@ -107,6 +107,30 @@ export default defineConfig({
       ],
       rules: { "quality/no-unknown-returns": "off" },
     },
+    // Exceptions, for the lead to decide at review (no-known-value-widening). The first group is a value that is
+    // `unknown` until a boundary check (parsed JSON or form bodies, ordered settings JSON, an OpenAPI schema walk, an
+    // XML value, a cast that writes known keys from a string list, the Nodemailer envelope), where an explicit
+    // literal type would be a lie. The rest are `Record<string, unknown>` dictionaries of parsed values: they are
+    // typed by no-unsafe-dictionary-type (B134d), which removes their entries here.
+    {
+      files: [
+        "src/campaigns/input.ts", // cast that writes known keys from a string list
+        "src/mcp/generated.ts", // OpenAPI schema JSON walk
+        "src/messaging/email.ts", // Nodemailer envelope boundary cast
+        "src/roles/routes.ts", // parsed request JSON
+        "src/settings/json.ts", // ordered settings JSON
+        "src/settings/routes.ts", // parsed request body
+        "src/settings/xml.ts", // settings values from XML
+        "src/users/handlers.ts", // parsed request JSON
+        "src/mcp/tools.ts", // dictionary of tool arguments (no-unsafe-dictionary-type)
+        "src/settings/validate.ts", // dictionary of settings shapes (no-unsafe-dictionary-type)
+        "src/subscribers/input.ts", // dictionary cast (no-unsafe-dictionary-type)
+        "src/subscribers/query-routes.ts", // dictionary binding (no-unsafe-dictionary-type)
+        "src/subscribers/store.ts", // dictionary binding (no-unsafe-dictionary-type)
+        "src/templates/sample.ts", // dictionary of template data (no-unsafe-dictionary-type)
+      ],
+      rules: { "quality/no-known-value-widening": "off" },
+    },
     // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
     // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
     {
@@ -137,6 +161,7 @@ export default defineConfig({
         "@nkzw/no-instanceof": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
         "quality/no-unknown-returns": "off", // B134c: test/ still has the rule's findings.
+        "quality/no-known-value-widening": "off", // B134c: test/ still has the rule's findings.
       },
     },
     // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
@@ -171,7 +196,6 @@ export default defineConfig({
     "typescript/no-unsafe-return": "off", // B134e
     "typescript/no-unsafe-type-assertion": "off", // B134e
     "quality/no-conditional-empty-object-spread": "off", // B134d
-    "quality/no-known-value-widening": "off", // B134d
     "quality/no-unsafe-dictionary-type": "off", // B134d
     "unicorn/consistent-function-scoping": "off", // B134d
 

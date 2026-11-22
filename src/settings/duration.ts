@@ -4,17 +4,19 @@ const fail = (): never => {
   throw new HttpError(400, "Invalid data.");
 };
 function duration(input: string, days = false): number {
-  const units: Record<string, number> = {
-    ns: 1e-6,
-    us: 1e-3,
-    µs: 1e-3,
-    μs: 1e-3,
-    ms: 1,
-    s: 1000,
-    m: 60_000,
-    h: 3_600_000,
-    ...(days ? { d: 86_400_000 } : {}),
-  };
+  const units = new Map<string, number>([
+    ["ns", 1e-6],
+    ["us", 1e-3],
+    ["µs", 1e-3],
+    ["μs", 1e-3],
+    ["ms", 1],
+    ["s", 1000],
+    ["m", 60_000],
+    ["h", 3_600_000],
+  ]);
+  if (days) {
+    units.set("d", 86_400_000);
+  }
   let total = 0,
     pos = 0;
   const re = /(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h|d)/gy;
@@ -24,10 +26,11 @@ function duration(input: string, days = false): number {
     if (!m) {
       return Number.NaN;
     }
-    if (!Object.hasOwn(units, m[2]!)) {
+    const factor = units.get(m[2]!);
+    if (factor === undefined) {
       return Number.NaN;
     }
-    total += Number(m[1]) * units[m[2]!]!;
+    total += Number(m[1]) * factor;
     pos = re.lastIndex;
   }
   return total;
@@ -63,9 +66,14 @@ export function goDuration(input: string): number {
   return negative ? -result : result;
 }
 
+/** A parsed cron-style duration in nanoseconds, or the error that refused it. */
+interface CronDuration {
+  nanos: bigint;
+  error: string | null;
+}
 // Go 1.27.2 time.ParseDuration, in nanoseconds. Keep the signed 64-bit
 // boundary and classify errors before handing milliseconds to the cron helper.
-export function cronDuration(input: string): { nanos: bigint; error: string | null } {
+export function cronDuration(input: string): CronDuration {
   const quote = (value: string) => JSON.stringify(value);
   const fail = (kind: string) => ({ nanos: 0n, error: `time: ${kind} ${quote(input)}` });
   let rest = input;
@@ -79,16 +87,16 @@ export function cronDuration(input: string): { nanos: bigint; error: string | nu
   if (!rest) {
     return fail("invalid duration");
   }
-  const units: Record<string, bigint> = {
-    ns: 1n,
-    us: 1000n,
-    µs: 1000n,
-    μs: 1000n,
-    ms: 1_000_000n,
-    s: 1_000_000_000n,
-    m: 60_000_000_000n,
-    h: 3_600_000_000_000n,
-  };
+  const units = new Map<string, bigint>([
+    ["ns", 1n],
+    ["us", 1000n],
+    ["µs", 1000n],
+    ["μs", 1000n],
+    ["ms", 1_000_000n],
+    ["s", 1_000_000_000n],
+    ["m", 60_000_000_000n],
+    ["h", 3_600_000_000_000n],
+  ]);
   const limit = 9_223_372_036_854_775_808n;
   let total = 0n;
   while (rest) {
@@ -103,11 +111,11 @@ export function cronDuration(input: string): { nanos: bigint; error: string | nu
     if (!unit) {
       return fail("missing unit in duration");
     }
-    if (!Object.hasOwn(units, unit)) {
+    const factor = units.get(unit);
+    if (factor === undefined) {
       return fail(`unknown unit ${quote(unit)} in duration`);
     }
     rest = rest.slice(unit.length);
-    const factor = units[unit]!;
     let value = BigInt(integer || "0") * factor;
     if (value > limit) {
       return fail("invalid duration");

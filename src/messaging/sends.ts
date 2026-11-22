@@ -196,10 +196,7 @@ export function createSends(options: {
    * from these headers by splitting on commas, so filtering the same parts here covers
    * every effective recipient. Unparseable parts are kept for the emailer to reject.
    */
-  function withoutBlockedCopies(message: Message): {
-    message: Message;
-    removed: number;
-  } {
+  function withoutBlockedCopies(message: Message) {
     if (!message.headers) {
       return { message, removed: 0 };
     }
