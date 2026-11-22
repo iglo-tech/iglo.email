@@ -569,7 +569,7 @@ export async function runImportContract(target: {
       for (const id of hooks) {
         await call(`/api/webhooks/${id}`, "DELETE");
       }
-      receiver.close();
+      await receiver.close();
     }
     check(await drained(), "temporary-empty-after");
   } finally {

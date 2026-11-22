@@ -246,6 +246,12 @@ export default defineConfig({
         "typescript/no-unsafe-type-assertion": "off", // B134g: test/ still asserts from any and unknown.
       },
     },
+    // Exception, for the lead to decide at review (no-floating-promises). The m14 browser scripts are evaluated as an
+    // expression by agent-browser, and their async IIFE is that expression's value, the promise the browser awaits.
+    {
+      files: ["test/users/m14-browser-setup.js", "test/users/m14-browser-submit.js"],
+      rules: { "typescript/no-floating-promises": "off" },
+    },
     // Exception, for the lead to decide at review (await-thenable). bun:test types the `rejects` matchers as returning
     // void, so `await expect(promise).rejects...` is flagged; the await is what makes the rejection assertion run.
     {
@@ -492,12 +498,6 @@ export default defineConfig({
     {
       files: ["src/main.ts", "src/settings/validate.ts"],
       rules: { "typescript/no-unsafe-return": "off" },
-    },
-    // The preset's TypeScript override re-enables this rule under its alias in every TypeScript file. B134c:
-    // test/ still has unawaited promises; src/ and scripts/ are fixed (B134b).
-    {
-      files: ["test/**"],
-      rules: { "@typescript-eslint/no-floating-promises": "off" },
     },
   ],
   rules: {

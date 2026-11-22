@@ -1683,7 +1683,7 @@ export async function runOpenApiContract(target: {
       }
     }
   } finally {
-    receiver.close();
+    await receiver.close();
     refusing.stop(true);
   }
 }

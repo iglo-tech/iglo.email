@@ -289,7 +289,7 @@ try {
       SELECT lower(hex(randomblob(16))), 'hooked' || i || '@example.test', 'h', 'blocklisted' FROM n`);
     again.close();
     await measured("Blocklisted, 50,000 with one webhook", () => remove("subscribers/blocklisted"));
-    receiver.stop(true);
+    await receiver.stop(true);
 
     // Why not one statement: the same kind of delete, on the server's own connection settings.
     const direct = new Database(file);

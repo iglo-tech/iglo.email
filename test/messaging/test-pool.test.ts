@@ -57,7 +57,8 @@ async function holdingSink(holds: Array<string>) {
           } else {
             socket.write("250 queued\r\n");
           }
-          dataDone(recipient);
+          // Creates the waiter if none exists yet; the resolver below settles it.
+          void dataDone(recipient);
           dataResolvers.get(recipient)?.();
           continue;
         }

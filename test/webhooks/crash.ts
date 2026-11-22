@@ -139,7 +139,7 @@ try {
 } finally {
   release();
   child?.kill("SIGKILL");
-  receiver.close();
+  await receiver.close();
   rmSync(directory, { recursive: true, force: true });
 }
 console.log("PASS webhook crash");

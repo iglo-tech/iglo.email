@@ -817,7 +817,7 @@ export async function runBouncesContract(target: {
         await setting("security.public_rate_limit", budget);
       }
     } finally {
-      receiver.close();
+      await receiver.close();
       await sink.close();
     }
   }

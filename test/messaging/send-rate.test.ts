@@ -481,11 +481,11 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
       return { emailer, outbox, runner };
     },
     async close() {
-      scheduler.stop();
-      runner.stop();
+      const schedulerStopped = scheduler.stop();
+      const runnerStopped = runner.stop();
       const outboxStopped = outbox.stop();
       await emailer.close();
-      await outboxStopped;
+      await Promise.all([schedulerStopped, runnerStopped, outboxStopped]);
       settingsStore.close();
       db.close(true);
       await sink.close();

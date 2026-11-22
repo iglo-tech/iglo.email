@@ -476,7 +476,7 @@ async function createNotifyFixture(
       }
       await outbox.stop();
       await webhookDelivery.stop();
-      sink.close();
+      await sink.close();
       db.close();
       rmSync(directory, { recursive: true, force: true });
     },
@@ -707,7 +707,7 @@ describe("B38 admin notification mails", () => {
     await f.drainOutbox();
 
     expect(manualSink.messages.length).toBe(0);
-    manualSink.close();
+    await manualSink.close();
   });
 
   test("4. An import that finishes, and one that fails on a bad CSV, each produce one import-status mail", async () => {

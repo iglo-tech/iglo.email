@@ -55,7 +55,7 @@ try {
       stdout: "pipe",
       stderr: "ignore",
     });
-    child.stdin.write(JSON.stringify({ path: db.filename, method, args }));
+    await child.stdin.write(JSON.stringify({ path: db.filename, method, args }));
     await child.stdin.end();
     let bytes = 0;
     for await (const chunk of child.stdout) {

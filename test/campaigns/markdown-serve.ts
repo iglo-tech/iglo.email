@@ -31,6 +31,7 @@ console.log(
   JSON.stringify({ origin: `http://127.0.0.1:${server.port}`, campaign: campaign.id, headers }),
 );
 process.on("SIGTERM", () => {
-  server.stop(true);
+  // The signal handler cannot await: the stop and the fixture close run to completion, then the process exits.
+  void server.stop(true);
   void f.close().then(() => process.exit(0));
 });

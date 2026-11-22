@@ -53,8 +53,8 @@ test("BEGIN IMMEDIATE serializes writers in separate processes", async () => {
         Bun.sleep(100).then(() => "waiting"),
       ]),
     ).toBe("waiting");
-    locker.stdin.write("x");
-    locker.stdin.end();
+    await locker.stdin.write("x");
+    await locker.stdin.end();
     expect(await bounded(locker.exited, "Lock release timeout")).toBe(0);
     expect(await bounded(writer.exited, "Writer completion timeout")).toBe(0);
     locked.releaseLock();

@@ -132,5 +132,5 @@ try {
   );
   process.stdout.write(`${JSON.stringify(result)}\n`);
 } finally {
-  receiver.stop(true);
+  await receiver.stop(true);
 }
