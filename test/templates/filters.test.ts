@@ -198,6 +198,131 @@ test("replace charges its output to the emission budget before it builds the tex
   expect(sent.http).toBe(400);
 });
 
+test("split drops trailing empty parts and its parts loop; nil splits to nothing", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "{% assign parts = 'a,b,,c,' | split: ',' %}{% for p in parts %}[{{ p }}]{% endfor %} " +
+      "{% assign none = data.missing | split: ',' %}{% for p in none %}[{{ p }}]{% endfor %}|" +
+      "{% assign words = 'x y' | split: ' ' %}{% for p in words %}<{{ p }}>{% endfor %}",
+    {},
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[a][b][][c] |<x><y>");
+});
+
+test("join prints an array's items with a separator, a space by default, and nil as empty", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ data.list | join: ', ' }}] [{{ data.words | join }}] [{{ data.missing | join: ',' }}] " +
+      "[{{ 'xy' | join: '-' }}]",
+    { list: ["a", 1, true, null], words: ["p", "q"] },
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[a, 1, true, ] [p q] [] [xy]");
+});
+
+test("join refuses an item that has no text form", async () => {
+  const f = await open();
+  const sent = await render(f, "{{ data.nested | join: ',' }}", { nested: [[1, 2]] });
+  expect(sent.http).toBe(400);
+});
+
+test("slice takes characters with a negative start, or items of an array, and nil is empty", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ 'hello' | slice: 1, 3 }}] [{{ 'hello' | slice: -3 }}] [{{ 'hello' | slice: -3, 2 }}] " +
+      "[{{ 'hi' | slice: 5 }}] [{{ data.missing | slice: 0 }}] " +
+      "{% assign picked = data.arr | slice: 1, 2 %}{% for x in picked %}<{{ x }}>{% endfor %}",
+    { arr: [1, 2, 3, 4] },
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[ell] [l] [ll] [] [] <2><3>");
+});
+
+test("slice refuses an argument that is not an integer, when a message supplies it", async () => {
+  const f = await open();
+  const sent = await render(f, "{{ 'hello' | slice: data.at }}", { at: 1.5 });
+  expect(sent.http).toBe(400);
+});
+
+test("truncate cuts a longer text to its limit with an ellipsis, and keeps a shorter one", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ 'abcdefghij' | truncate: 5 }}] [{{ 'abc' | truncate: 5 }}] " +
+      "[{{ 'abcdefghij' | truncate: 6, '~' }}] [{{ data.long | truncate }}]",
+    { long: "x".repeat(60) },
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain(`[ab...] [abc] [abcde~] [${"x".repeat(47)}...]`);
+});
+
+test("truncatewords keeps the first words and adds the ellipsis only when words are left out", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ 'one two three four' | truncatewords: 2 }}] [{{ 'one two' | truncatewords: 2 }}] " +
+      "[{{ '  lead  space   words  ' | truncatewords: 2, '~' }}] [{{ 'a b' | truncatewords: 0 }}] " +
+      "[{{ data.words | truncatewords }}]",
+    { words: Array.from({ length: 20 }, () => "w").join(" ") },
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain(
+    `[one two...] [one two] [lead space~] [a...] [${Array.from({ length: 15 }, () => "w").join(" ")}...]`,
+  );
+});
+
+test("strip_html removes tags, comments, script and style, and an unclosed block", async () => {
+  const f = await open();
+  const sent = await render(
+    f,
+    "[{{ '<p>Hi <b>there</b></p><!-- c --><script>x</script>!' | strip_html }}] " +
+      "[{{ 'a<script>b' | strip_html }}] [{{ '1 < 2' | strip_html }}] " +
+      "[{{ '<i>x</i> & y' | strip_html }}]",
+    {},
+  );
+  expect(sent.status).toBe("sent");
+  expect(sent.message).toContain("[Hi there!] [ab] [1 &lt; 2] [x &amp; y]");
+});
+
+test("strip_html charges its input to the emission budget before it scans", async () => {
+  const f = await open();
+  // Each call charges its 64 KB input, so 66 calls are over the 4 MiB budget (D54).
+  const sent = await render(
+    f,
+    "{% for i in (1..70) %}{% assign t = data.big | strip_html %}{% endfor %}ok",
+    { big: "<b>a</b>".repeat(8000) },
+  );
+  expect(sent.http).toBe(400);
+});
+
+/** Save a transactional template and return the API's answer. */
+async function save(f: TxFixture, body: string) {
+  return f.json("/api/templates", "POST", { name: "saved", type: "tx", subject: "s", body });
+}
+
+test("a save names an unknown filter and points to template_reference", async () => {
+  const f = await open();
+  const refused = await save(f, "{{ data.list | first }}");
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain('unknown filter "first" (see template_reference)');
+});
+
+test("a save refuses a for loop whose collection has a filter, which would be dropped", async () => {
+  const f = await open();
+  const refused = await save(f, "{% for x in data.arr | slice: 1 %}{{ x }}{% endfor %}");
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain("a for loop cannot take a filter");
+  const kept = await save(
+    f,
+    "{% assign picked = data.arr | slice: 1 %}{% for x in picked %}{{ x }}{% endfor %}",
+  );
+  expect(kept.status).toBe(200);
+});
+
 test("size keeps the work budget: a loop that sizes a large object is refused", async () => {
   const f = await open();
   const big = Object.fromEntries(Array.from({ length: 200 }, (_, n) => [`k${n}`, n]));

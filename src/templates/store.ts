@@ -31,6 +31,7 @@ export interface WritableTemplate {
 }
 export type TemplatePatch = Partial<WritableTemplate>;
 export class TemplateError extends Error {
+  /** `detail` names an unknown filter, for the save message (D134); it is empty otherwise. */
   constructor(
     readonly reason:
       | "name"
@@ -39,9 +40,12 @@ export class TemplateError extends Error {
       | "subject-syntax"
       | "slot"
       | "body"
+      | "loop"
       | "missing"
       | "default"
-      | "delete",
+      | "delete"
+      | "capacity",
+    readonly detail = "",
   ) {
     super(reason);
   }
@@ -113,6 +117,12 @@ export function createTemplateStore(
       }
       if (error instanceof TemplateSourceError && error.field === "slot") {
         throw new TemplateError("slot");
+      }
+      if (error instanceof TemplateSourceError && error.field === "loop") {
+        throw new TemplateError("loop");
+      }
+      if (error instanceof TemplateSourceError) {
+        throw new TemplateError("body", error.detail);
       }
       throw new TemplateError("body");
     }

@@ -13,12 +13,18 @@ import {
   byteLength,
   capitalize,
   downcase,
+  join,
   json,
   prepend,
   replace,
   replaceFirst,
   scalar,
   sizeOf,
+  slice,
+  split,
+  stripHtml,
+  truncate,
+  truncatewords,
 } from "@/templates/filters";
 
 const SOURCE_LIMIT = 64 * 1024;
@@ -46,14 +52,34 @@ const filterArguments = new Map([
   ["append", 1],
   ["replace", 2],
   ["replace_first", 2],
+  ["split", 1],
+  ["join", 1],
+  ["slice", 2],
+  ["truncate", 2],
+  ["truncatewords", 2],
+  ["strip_html", 0],
 ]);
 /** The filters the renderer registers, in the order of its arity table (the documented allow-list). */
 export const registeredFilters: ReadonlyArray<string> = [...filterArguments.keys()];
 
 export class TemplateSourceError extends Error {
-  constructor(readonly field: "body" | "subject" | "slot") {
+  /**
+   * `detail` names the unknown filter of a body or subject (D134), or is empty. A `loop` is a `for`
+   * tag whose collection has a filter, which LiquidJS would silently drop.
+   */
+  constructor(
+    readonly field: "body" | "subject" | "slot" | "loop",
+    readonly detail = "",
+  ) {
     super(field);
   }
+}
+/** A `for` tag with a `|` in it: LiquidJS reads only the collection's value and ignores the rest. */
+const forWithFilter = /\{%-?\s*for\s[^%]*\|/;
+/** The name of an unknown filter in a parse error, or "" (the library's text is not shown). */
+function unknownFilter(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  return /^undefined filter: ([^\s,]+)/.exec(message)?.[1] ?? "";
 }
 export class RenderCapacityError extends Error {
   constructor() {
@@ -432,6 +458,27 @@ export function createRenderer(clock: Clock, translation: Translation) {
         return replaceFirst(value, pattern, replacement, budget(this.context));
       },
     );
+    liquid.registerFilter("split", function (value: unknown, separator: unknown) {
+      return split(value, separator, budget(this.context));
+    });
+    liquid.registerFilter("join", function (value: unknown, separator: unknown) {
+      return join(value, separator, budget(this.context));
+    });
+    liquid.registerFilter("slice", function (value: unknown, begin: unknown, count: unknown) {
+      return slice(value, begin, count, budget(this.context));
+    });
+    liquid.registerFilter("truncate", function (value: unknown, limit: unknown, ellipsis: unknown) {
+      return truncate(value, limit, ellipsis, budget(this.context));
+    });
+    liquid.registerFilter(
+      "truncatewords",
+      function (value: unknown, count: unknown, ellipsis: unknown) {
+        return truncatewords(value, count, ellipsis, budget(this.context));
+      },
+    );
+    liquid.registerFilter("strip_html", function (value: unknown) {
+      return stripHtml(value, budget(this.context));
+    });
     liquid.registerFilter("number", function (value: unknown) {
       const b = budget(this.context);
       b.step();
@@ -489,13 +536,16 @@ export function createRenderer(clock: Clock, translation: Translation) {
     let compiled: Array<Template>;
     try {
       compiled = parse(body, true);
-    } catch {
-      throw new TemplateSourceError("body");
+    } catch (error) {
+      throw new TemplateSourceError("body", unknownFilter(error));
     }
     try {
       parse(subject, false, SUBJECT_LIMIT);
-    } catch {
-      throw new TemplateSourceError("subject");
+    } catch (error) {
+      throw new TemplateSourceError("subject", unknownFilter(error));
+    }
+    if (forWithFilter.test(body) || forWithFilter.test(subject)) {
+      throw new TemplateSourceError("loop");
     }
     if (campaign && !hasContent(compiled)) {
       throw new TemplateSourceError("slot");

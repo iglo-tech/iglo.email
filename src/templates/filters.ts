@@ -229,6 +229,192 @@ export function replaceFirst(
   return input.slice(0, at) + withText + input.slice(at + find.length);
 }
 
+/** An integer argument. A nil or non-integer argument often comes from data, so it is a value failure. */
+function integer(value: unknown): number {
+  if (typeof value === "number" && Number.isSafeInteger(value)) {
+    return value;
+  }
+  if (typeof value === "string" && /^-?\d{1,15}$/.test(value)) {
+    return Number(value);
+  }
+  throw new ValueError("Invalid filter arguments");
+}
+
+/**
+ * `split`: the parts of a text around a literal separator, with trailing empty parts dropped (the
+ * rule of LiquidJS, which follows Ruby). Its parts are counted before the array is built, and an
+ * array holds at most 1,024 items (D54).
+ */
+export function split(value: unknown, separator: unknown, b: FilterBudget): Array<string> {
+  b.step();
+  const input = scalar(value);
+  const find = scalar(separator);
+  const count = separators(input, find) + 1;
+  if (count > 1024) {
+    throw new Error("Array limit");
+  }
+  b.step(count);
+  b.charge(byteLength(input));
+  const parts = input.split(find);
+  while (parts.length > 0 && parts.at(-1) === "") {
+    parts.pop();
+  }
+  return parts;
+}
+
+/**
+ * `join`: an array's items, each printed as text, with a literal separator (a single space when
+ * none is given). Any other value is printed as its text, so nil is empty. The bytes of the result
+ * are counted before it is joined.
+ */
+export function join(value: unknown, separator: unknown, b: FilterBudget): string {
+  b.step();
+  const find = separator === undefined ? " " : scalar(separator);
+  if (!Array.isArray(value)) {
+    return scalar(value);
+  }
+  if (value.length > 1024) {
+    throw new Error("Array limit");
+  }
+  const items = value.map((item: unknown) => scalar(item));
+  let bytes = Math.max(0, items.length - 1) * byteLength(find);
+  for (const item of items) {
+    bytes += byteLength(item);
+  }
+  b.step(items.length);
+  b.charge(bytes);
+  return items.join(find);
+}
+
+/**
+ * `slice`: `count` characters of a text from `begin` (a negative `begin` counts from the end; the
+ * count defaults to one), or `count` items of an array. A nil text is empty.
+ */
+export function slice(
+  value: unknown,
+  begin: unknown,
+  count: unknown,
+  b: FilterBudget,
+): string | Array<unknown> {
+  b.step();
+  const from = integer(begin);
+  const take = count === undefined ? 1 : integer(count);
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (Array.isArray(value)) {
+    const start = from < 0 ? value.length + from : from;
+    if (start < 0 || take < 0) {
+      return [];
+    }
+    const items: Array<unknown> = value.slice(start, start + take);
+    b.step(items.length);
+    return items;
+  }
+  const text = scalar(value);
+  const start = from < 0 ? text.length + from : from;
+  if (start < 0 || take < 0) {
+    return "";
+  }
+  const out = text.slice(start, start + take);
+  b.charge(byteLength(out));
+  return out;
+}
+
+/**
+ * `truncate`: a text no longer than `limit` characters (50 when none is given) is unchanged;
+ * a longer one is cut to `limit` characters including the ellipsis (`...` when none is given).
+ */
+export function truncate(
+  value: unknown,
+  limit: unknown,
+  ellipsis: unknown,
+  b: FilterBudget,
+): string {
+  b.step();
+  const input = scalar(value);
+  const max = limit === undefined ? 50 : integer(limit);
+  const dots = ellipsis === undefined ? "..." : scalar(ellipsis);
+  b.charge(byteLength(input) + byteLength(dots));
+  if (input.length <= max) {
+    return input;
+  }
+  return input.slice(0, Math.max(0, max - dots.length)) + dots;
+}
+
+/**
+ * `truncatewords`: the first `count` words (15 when none is given, at least one), joined by single
+ * spaces. The ellipsis is added only when words were left out, which is Shopify's rule; LiquidJS
+ * also adds it when the count matches exactly. A word is a run of non-space characters.
+ */
+export function truncatewords(
+  value: unknown,
+  count: unknown,
+  ellipsis: unknown,
+  b: FilterBudget,
+): string {
+  b.step();
+  const input = scalar(value);
+  const keep = Math.max(1, count === undefined ? 15 : integer(count));
+  const dots = ellipsis === undefined ? "..." : scalar(ellipsis);
+  b.charge(byteLength(input) + byteLength(dots));
+  const words: Array<string> = [];
+  let more = false;
+  for (const match of input.matchAll(/\S+/g)) {
+    b.step();
+    if (words.length === keep) {
+      more = true;
+      break;
+    }
+    words.push(match[0]);
+  }
+  return words.join(" ") + (more ? dots : "");
+}
+
+const TAG_BLOCKS: ReadonlyArray<readonly [string, string]> = [
+  ["<script", "</script>"],
+  ["<style", "</style>"],
+  ["<!--", "-->"],
+  ["<", ">"],
+];
+
+/**
+ * `strip_html`: the text without comments, `script` and `style` elements and tags, as LiquidJS
+ * removes them. A block opener whose closer never comes is dropped from the search, so the scan is
+ * linear in the text. The output is no longer than the input, which is charged first.
+ */
+export function stripHtml(value: unknown, b: FilterBudget): string {
+  b.step();
+  const input = scalar(value);
+  b.step(Math.ceil(byteLength(input) / 1024));
+  b.charge(byteLength(input));
+  const blocks = new Map(TAG_BLOCKS);
+  let out = "";
+  let i = 0;
+  while (i < input.length) {
+    const lt = input.indexOf("<", i);
+    if (lt < 0) {
+      return out + input.slice(i);
+    }
+    out += input.slice(i, lt);
+    for (const [opener, closer] of blocks) {
+      if (!input.startsWith(opener, lt)) {
+        continue;
+      }
+      const end = input.indexOf(closer, lt + opener.length);
+      if (end >= 0) {
+        i = end + closer.length;
+        break;
+      }
+      blocks.delete(opener);
+    }
+    if (i <= lt) {
+      return out + input.slice(lt);
+    }
+  }
+  return out;
+}
+
 /**
  * `size`: the length of a string in characters (JavaScript's `length`, so a character outside the
  * Basic Multilingual Plane counts as two), the items of an array, or the own keys of a plain

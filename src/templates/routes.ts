@@ -68,7 +68,27 @@ function translateError(context: RequestContext, error: unknown): never {
       case "default":
         throw new HttpError(400, t.Ts("globals.messages.invalidFields", "name", "template"));
       case "body":
-        throw new HttpError(400, t.Ts("templates.errorCompiling", "error", "invalid body"));
+        throw new HttpError(
+          400,
+          t.Ts(
+            "templates.errorCompiling",
+            "error",
+            error.detail
+              ? `unknown filter "${error.detail}" (see template_reference)`
+              : "invalid body",
+          ),
+        );
+      case "loop":
+        throw new HttpError(
+          400,
+          t.Ts(
+            "templates.errorCompiling",
+            "error",
+            "a for loop cannot take a filter; assign the filtered value first",
+          ),
+        );
+      case "capacity":
+        throw new HttpError(429, "Too many template renders in progress.");
     }
   }
   throw new HttpError(500);
