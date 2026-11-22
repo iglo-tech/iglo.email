@@ -61,7 +61,8 @@ describe("--version", () => {
   });
 });
 
-describe("release verify", () => {
+// scripts/release.ts runs on Linux only (D89), so every case of these two describes is Linux-only.
+describe.skipIf(process.platform !== "linux")("release verify", () => {
   test("passes on a tag that matches and on a dry run", async () => {
     for (const env of [
       { GITHUB_REF_TYPE: "tag", GITHUB_REF_NAME: `v${version}` },
@@ -92,7 +93,7 @@ describe("release verify", () => {
   });
 });
 
-describe("release package", () => {
+describe.skipIf(process.platform !== "linux")("release package", () => {
   test("writes the executable, notices and checksums, and nothing else", async () => {
     const output = join(temporaryDirectory, "release");
     const result = await run(script("package", executable, output));

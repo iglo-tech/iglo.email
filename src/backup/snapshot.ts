@@ -45,6 +45,7 @@ import {
 } from "node:fs";
 import type { Stats } from "node:fs";
 import { open } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Clock } from "@/clock";
 import { withStoppedDatabase } from "@/db/connection";
@@ -203,7 +204,7 @@ export function inspectBackup(path: string, clock: Clock, supportedVersion: numb
 
 /** Child entry: sync a file until stdin closes. Failing only makes the final sync larger. */
 export async function runFlushChild(): Promise<void> {
-  const file = await open(must(process.argv[3], "flush path"), "r");
+  const path = must(process.argv[3], "flush path");
   let running = true;
   void (async () => {
     for await (const _ of Bun.stdin.stream()) {
@@ -211,11 +212,30 @@ export async function runFlushChild(): Promise<void> {
     }
     running = false;
   })();
-  while (running) {
+  const file = await openWhenCreated(path, () => running);
+  while (file && running) {
     await file.sync();
     await Bun.sleep(FLUSH_INTERVAL_MS);
   }
   process.exit(0);
+}
+
+/** Opens `path` once VACUUM INTO has created it, or returns undefined when `wanted` turns false. */
+async function openWhenCreated(
+  path: string,
+  wanted: () => boolean,
+): Promise<FileHandle | undefined> {
+  while (wanted()) {
+    try {
+      return await open(path, "r");
+    } catch (error) {
+      if (errorCode(error) !== "ENOENT") {
+        throw error;
+      }
+    }
+    await Bun.sleep(10);
+  }
+  return undefined;
 }
 
 function backupName(clock: Clock): string {
@@ -724,10 +744,13 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     const made = openPartial(wanted, parent, folders.missing, created);
     partial = made;
     const snapshot = join(made.path, DATABASE);
-    // The directory is 0700 from mkdtemp and the database 0600 from its first byte: SQLite writes
-    // into an empty file it finds and keeps its mode.
+    // The directory is 0700 from mkdtemp, so only this user and root can reach the database while
+    // VACUUM INTO creates it with the umask mode (0644 under umask 022). It is made 0600 right after.
+    // The flusher runs as this user and may open the file during VACUUM, so the directory is what
+    // protects it in that window.
+    // VACUUM INTO refuses a path that exists, even an empty file (macOS's SQLite does), so the
+    // flusher may start before the file does and waits for it.
     const source = whileMade(made, () => {
-      closeSync(openSync(snapshot, "wx", 0o600));
       flusher = Bun.spawn([process.execPath, flushChildArgument, snapshot], {
         stdin: "pipe",
         stdout: "ignore",
@@ -735,6 +758,7 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
       });
       const since = clock.now().toISOString();
       db.run("VACUUM INTO ?", [snapshot]);
+      chmodSync(snapshot, 0o600);
       flusher.kill();
       const sealed = sealSnapshot(snapshot, since, data);
       sync(snapshot);

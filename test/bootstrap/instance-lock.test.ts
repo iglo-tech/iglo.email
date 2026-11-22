@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -144,9 +145,11 @@ test("every path to one directory meets the same lock", async () => {
   expect(throughLink.exitCode).toBe(1);
   expect(throughLink.stderr).toBe(inUse(alias));
 
+  // A relative path resolves against the working directory, which the OS reports with symlinks
+  // resolved (macOS: /var is /private/var), so the message names the directory by that path.
   const relative = await secondServer("./data", { cwd: base });
   expect(relative.exitCode).toBe(1);
-  expect(relative.stderr).toBe(inUse(data));
+  expect(relative.stderr).toBe(inUse(realpathSync(data)));
 });
 
 test("of two servers started together, exactly one serves", async () => {
