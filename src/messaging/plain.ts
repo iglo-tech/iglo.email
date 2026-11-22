@@ -33,6 +33,12 @@ const HEAD_CONTENT = new Set([
  * (D118). The one cap bounds both costs.
  */
 const HELD_CAP = 1024;
+/**
+ * Indentation stops at this many levels: a list nested deeper is indented as at this depth. Each level of
+ * indent is two characters on every item, so an unbounded depth made the output grow with items x depth
+ * (B135 review, D118).
+ */
+const MAX_INDENT = 8;
 /** Block elements: a line break before and after. A list item gets a bullet instead. */
 const BLOCK = new Set([
   "address",
@@ -410,6 +416,18 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   let activeLink: Link | undefined;
   // End-tag handlers the rewriter holds: registered, and not yet fired (see HELD_CAP).
   let held = 0;
+  // The characters the output parts hold now, and the most they may hold: the HTML's size in bytes, which
+  // the final text is never longer than. The check runs as the output grows, so a document that would
+  // exceed it stops at once, not after it has been built (linear time and memory in the input).
+  let produced = 0;
+  const limit = Buffer.byteLength(html);
+  const emit = (text: string) => {
+    produced += text.length;
+    if (produced > limit) {
+      throw new Error("output too long");
+    }
+    parts.push(text);
+  };
 
   const latest = (name: string) => open.get(name)?.at(-1);
   const indexOf = (name: string) => latest(name)?.index ?? -1;
@@ -429,7 +447,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   const itemMarker = () => {
     const list = newest("ul", "ol");
     const depth = (open.get("ul")?.length ?? 0) + (open.get("ol")?.length ?? 0);
-    const indent = INDENT.repeat(Math.max(0, depth - 1));
+    const indent = INDENT.repeat(Math.min(MAX_INDENT, Math.max(0, depth - 1)));
     if (list?.name === "ol") {
       return `\n${indent}${list.next++}. `;
     }
@@ -437,7 +455,9 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   };
 
   const finishLink = (link: Link) => {
-    const text = parts.slice(link.at).join("").replaceAll(/\s+/g, " ").trim();
+    const removed = parts.slice(link.at).join("");
+    produced -= removed.length;
+    const text = removed.replaceAll(/\s+/g, " ").trim();
     parts.length = link.at;
     // A symbol with no letter or digit (an arrow, an emoji) is empty text: a reader still needs its URL.
     const shown = text !== "" && !/[\p{L}\p{N}]/u.test(text) ? "" : text;
@@ -450,13 +470,13 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
       !gap.includes("\n")
     ) {
       if (shown !== "") {
-        parts.push(` ${shown}`);
+        emit(` ${shown}`);
       }
       lastLink = { href: link.href, end: parts.length };
       return;
     }
     const url = `<${escapeUrl(link.href)}>`;
-    parts.push(shown === "" || shown === link.href ? ` ${url}` : ` ${shown} ${url}`);
+    emit(shown === "" || shown === link.href ? ` ${url}` : ` ${shown} ${url}`);
     lastLink = { href: link.href, end: parts.length };
   };
 
@@ -481,7 +501,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
       finishOnce(entry.link);
     }
     if (BLOCK.has(entry.name)) {
-      parts.push("\n");
+      emit("\n");
     }
   };
   // Closes an entry and everything above it, as an end tag or an implied end does.
@@ -557,11 +577,11 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
         const shown = hidden === 0;
         if (shown) {
           if (name === "li") {
-            parts.push(itemMarker());
+            emit(itemMarker());
           } else if (name === "td" || name === "th") {
-            parts.push(" ");
+            emit(" ");
           } else if (BLOCK.has(name) || name === "br" || name === "hr") {
-            parts.push("\n");
+            emit("\n");
           }
         }
         let link: Link | undefined;
@@ -625,7 +645,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
           close(top);
         }
         if (hidden === 0) {
-          parts.push(value);
+          emit(value);
         }
       },
       end() {
