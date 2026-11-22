@@ -232,7 +232,9 @@ export function toolFor(name: string, op: Operation): ToolDefinition {
     );
   } else if (op.body) {
     properties.body = inline(op.body);
-    required.push("body");
+    if (!op.bodyOptional) {
+      required.push("body");
+    }
   }
 
   const note =
@@ -327,6 +329,10 @@ export function operationRequest(op: Operation, args: Record<string, unknown>): 
   }
 
   if (!op.body) {
+    return { method, path: url };
+  }
+  // An optional body that is not given is no body at all, so the route applies its defaults.
+  if (op.bodyOptional && args.body === undefined) {
     return { method, path: url };
   }
 
