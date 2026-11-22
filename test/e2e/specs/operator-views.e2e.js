@@ -176,6 +176,10 @@ test("an enrollment that an event exited names that event, on its timeline and t
   await expect(page.getByTestId("timeline")).toContainText(`Event ${stop}`);
   await page.goto(`/admin/subscribers/${subscriber}/enrollments`);
   await expect(page.getByTestId("enrollment-row").first()).toContainText(`Event ${stop} at`);
+  // The events tab names the sequence each event started and exited.
+  await page.goto(`/admin/subscribers/${subscriber}/events`);
+  await expect(page.getByTestId("event-started").first()).toContainText(made.body.data.name);
+  await expect(page.getByTestId("event-exited").first()).toContainText(made.body.data.name);
 });
 
 test("a send with no subject says why: a refused one was never prepared, a wiped one lost its address", async ({

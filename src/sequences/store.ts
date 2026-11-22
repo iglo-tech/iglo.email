@@ -204,6 +204,14 @@ export function createSequenceStore(
       }
       return labels;
     },
+    /** The name of each listed sequence, for an events row's refused starts (B127). */
+    names(ids: Array<bigint>): Map<bigint, string> {
+      const rows = q.get("sequence-names").all(`[${ids.join(",")}]`) as Array<{
+        id: bigint;
+        name: string;
+      }>;
+      return new Map(rows.map((row) => [row.id, row.name]));
+    },
     list(filter: { status?: string; page: number; perPage: number }) {
       const status = filter.status ?? null;
       const rows = q

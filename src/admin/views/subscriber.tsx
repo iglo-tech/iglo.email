@@ -521,6 +521,39 @@ function Pages() {
     </nav>
   );
 }
+// A sequence of an event, named (B127). The name links to the sequence only for a viewer who may
+// read sequences; any other viewer reads the name as plain text.
+function SequenceName({ item }: { item: string }) {
+  return (
+    <>
+      <template x-if="canSequences">
+        <a
+          class="unstyled"
+          x-bind:href={`'/admin/sequences/' + ${item}.sequence_id`}
+          x-text={`sequenceLabel(${item})`}
+        ></a>
+      </template>
+      <template x-if="!canSequences">
+        <span x-text={`sequenceLabel(${item})`}></span>
+      </template>
+    </>
+  );
+}
+// The sequences an event started or exited, under a label (B127); nothing when there are none.
+function SequenceLinks({ list, label, testId }: { list: string; label: string; testId: string }) {
+  return (
+    <template x-if={`${list}.length`}>
+      <div class="text-light" data-testid={testId}>
+        {label}:{" "}
+        <template x-for={`s in ${list}`} x-bind:key="s.sequence_id">
+          <span>
+            <SequenceName item="s" />{" "}
+          </span>
+        </template>
+      </div>
+    </template>
+  );
+}
 function Events({ t }: { t: Translation }) {
   const data = t.T("subscribers.eventData");
   return (
@@ -532,7 +565,7 @@ function Events({ t }: { t: Translation }) {
               <th>{t.T("globals.fields.name")}</th>
               <th>{data}</th>
               <th>{t.T("subscribers.occurredAt")}</th>
-              <th>{t.T("subscribers.notStarted")}</th>
+              <th>{t.T("subscribers.sequences")}</th>
             </tr>
           </thead>
           <tbody>
@@ -546,15 +579,23 @@ function Events({ t }: { t: Translation }) {
                   data-label={t.T("subscribers.occurredAt")}
                   x-text="niceDate(row.occurred_at, true)"
                 ></td>
-                <td data-label={t.T("subscribers.notStarted")}>
+                <td data-label={t.T("subscribers.sequences")}>
+                  <SequenceLinks
+                    list="row.started"
+                    label={t.T("subscribers.started")}
+                    testId="event-started"
+                  />
+                  <SequenceLinks
+                    list="row.exited"
+                    label={t.T("subscribers.exited")}
+                    testId="event-exited"
+                  />
                   <template x-for="s in row.skipped" x-bind:key="s.sequence_id + ':' + s.reason">
                     <div class="text-light" data-testid="event-skipped">
-                      <a
-                        class="unstyled"
-                        x-bind:href="'/admin/sequences/' + s.sequence_id"
-                        x-text="sequenceName(s.sequence_id)"
-                      ></a>
-                      : <span x-text="skipLabel(s.reason)"></span>
+                      {t.T("subscribers.notStarted")}: <SequenceName item="s" />
+                      {" ("}
+                      <span x-text="skipLabel(s.reason)"></span>
+                      {")"}
                     </div>
                   </template>
                 </td>
@@ -795,7 +836,12 @@ export function subscriberView(tab: SubscriberTab): AdminView {
       pageId: "subscribers.all",
       script: "subscribers",
       translationKeys: keys,
-      config: { subscriber_id: id, tab, can_sends: can("sends:get") },
+      config: {
+        subscriber_id: id,
+        tab,
+        can_sends: can("sends:get"),
+        can_sequences: can("sequences:get"),
+      },
       body: (
         <section class="subscribers" x-data="subscribersView">
           <Breadcrumbs

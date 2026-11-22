@@ -683,14 +683,27 @@ export const schemas = {
         "One entry per sequence the event would have started or replaced but cannot (B116, D131), in sequence ID order; empty when none. Nothing is enrolled for it.",
     },
   }),
-  SequenceSkip: object({
-    sequence_id: integer,
-    reason: {
-      type: "string",
-      enum: ["subscriber_blocklisted", "suppressed"],
-      description:
-        "subscriber_blocklisted: the subscriber is blocklisted, so no sequence starts. suppressed: the person wiped their data and has not confirmed again (D125), so no marketing sequence starts; a transactional one still does.",
+  SequenceSkip: object(
+    {
+      sequence_id: integer,
+      reason: {
+        type: "string",
+        enum: ["subscriber_blocklisted", "suppressed"],
+        description:
+          "subscriber_blocklisted: the subscriber is blocklisted, so no sequence starts. suppressed: the person wiped their data and has not confirmed again (D125), so no marketing sequence starts; a transactional one still does.",
+      },
+      sequence_name: {
+        ...nullable(string),
+        description:
+          "On a subscriber's event list only (B127): the sequence's name, null once the sequence is deleted.",
+      },
     },
+    ["sequence_name"],
+  ),
+  EventSequenceLink: object({
+    enrollment_id: integer,
+    sequence_id: integer,
+    sequence_name: nullable(string),
   }),
   EventGrants: {
     ...array(
@@ -737,6 +750,16 @@ export const schemas = {
       ...array(ref("SequenceSkip")),
       description:
         "The sequence starts this event was refused, with the reason for each (B116, D131), in sequence ID order; empty when none. An event recorded before schema 25 shows none, since its refusals were not kept.",
+    },
+    started: {
+      ...array(ref("EventSequenceLink")),
+      description:
+        "The enrollments this event started, in ID order (B127); empty when none. Read from the enrollments, so an event recorded before this release shows them too.",
+    },
+    exited: {
+      ...array(ref("EventSequenceLink")),
+      description:
+        "The enrollments this event exited, by the `exit_on` it names, in ID order (B127); empty when none.",
     },
   }),
   CampaignSkippedDelivery: object({

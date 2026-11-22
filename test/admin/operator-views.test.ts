@@ -90,8 +90,19 @@ test("a subscriber's counts name what they count, and the sends tab shows the jo
 test("the events tab names each refused sequence start by its sequence and its reason", async () => {
   const html = await (await get(f, "/admin/subscribers/7/events", cookie)).text();
   expect(html).toContain('data-testid="event-skipped"');
-  expect(html).toContain("sequenceName(s.sequence_id)");
+  expect(html).toContain("sequenceLabel(s)");
   expect(html).toContain("skipLabel(s.reason)");
+  // The events a sequence started or exited are named on the same tab (B127).
+  expect(html).toContain('data-testid="event-started"');
+  expect(html).toContain('data-testid="event-exited"');
+  // A viewer who may not read sequences gets the names as plain text, not links.
+  expect(html).toContain('"can_sequences":true');
+  const plain = await userWith(f, cookie, "events-plain", [
+    "subscribers:get",
+    "subscriber_events:get",
+  ]);
+  const quiet = await (await get(f, "/admin/subscribers/7/events", plain)).text();
+  expect(quiet).toContain('"can_sequences":false');
   expect(html).toContain('"skipReasons.subscriber_blocklisted"');
 });
 

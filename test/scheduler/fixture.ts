@@ -47,6 +47,7 @@ import type { ConditionEvaluator } from "@/conditions/evaluate";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
+import { linkEvents } from "@/sequences/event-links";
 import { listedWithHolds } from "@/sequences/timeline";
 import { startScheduler, SCHEDULER_INTERVAL_MS } from "@/scheduler/scheduler";
 import { TestClock } from "@/test/server/fixture";
@@ -252,7 +253,8 @@ export async function schedulerFixture(
   registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth, undefined, undefined, {
-    events: (id, page, perPage) => events.page(id, page, perPage),
+    events: (id, page, perPage) =>
+      linkEvents(events.page(id, page, perPage), id, enrollments, sequences),
     // The same listing main.ts wires, with each enrollment's cap hold (B127).
     enrollments: (id, page, perPage) =>
       enrollments.list({ subscriberId: id, page, perPage }, (rows) =>

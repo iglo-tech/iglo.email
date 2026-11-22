@@ -49,3 +49,7 @@ SELECT id, uuid, name, status, trigger, exit_on, reentry, list_id, created_at, u
   FROM sequences WHERE ?1 IS NULL OR status = ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3;
 -- name: sequences-count
 SELECT count(*) AS n FROM sequences WHERE ?1 IS NULL OR status = ?1;
+-- name: sequence-names
+-- The name of each listed sequence, for an events row's refused starts (B127). The one parameter is a
+-- JSON array of IDs, read by ID so the names do not depend on a page of sequences.
+SELECT id, name FROM sequences WHERE id IN (SELECT CAST(value AS INTEGER) FROM json_each(?));

@@ -81,8 +81,8 @@ function component() {
     clicks: [],
     // Sends (transactional and sequence) the subscriber has, from the journal's count (B127).
     sendCount: '-',
-    // Sequence names by ID, for the events' refused starts.
-    sequenceNames: {},
+    // A viewer who may read sequences gets a link to each sequence on the events tab (B127).
+    canSequences: config.can_sequences === true,
     currentList: null,
     bounces: [],
 
@@ -139,18 +139,16 @@ function component() {
       try {
         const data = await read(`/subscribers?${query}`);
         let results = data.results || [];
-        let total = data.total;
-        // A search that is exactly an external ID also finds that subscriber (B127), on the first
-        // page, through the external-ID route the API already has. The search API is unchanged.
+        // A search that is exactly an external ID also finds that subscriber (B127), on the first page,
+        // through the external-ID route the API already has. It is shown above the search's own rows and
+        // is not counted: the count and the pages are the search's, so no later page is short or empty.
         const exact = await this.externalMatch();
         if (exact) {
-          const others = results.filter((s) => s.id !== exact.id);
-          total += others.length === results.length ? 1 : 0;
-          results = [exact, ...others];
+          results = [exact, ...results.filter((s) => s.id !== exact.id)];
         }
         this.subscribers = results;
-        this.page = { ...data, total };
-        this.pages = pageLinks(params, data.page, data.per_page, total);
+        this.page = data;
+        this.pages = pageLinks(params, data.page, data.per_page, data.total);
       } catch (e) {
         this.error = e.message;
       }
@@ -201,22 +199,9 @@ function component() {
           this.activity = data.results || [];
           this.activityPages = pageLinks(params, data.page, data.per_page, data.total);
         }
-        if (config.tab === 'events') {
-          this.sequenceNames = await this.fetchSequenceNames();
-        }
         this.ready = true;
       } catch (e) {
         this.error = e.message;
-      }
-    },
-
-    // Names are optional: a viewer who may not read sequences keeps each refused start's ID.
-    async fetchSequenceNames() {
-      try {
-        const sequences = await read('/sequences?per_page=100');
-        return Object.fromEntries((sequences.results || []).map((s) => [s.id, s.name]));
-      } catch (e) {
-        return {};
       }
     },
 
@@ -228,8 +213,9 @@ function component() {
     statusIcon,
     niceDate: u.niceDate,
 
-    sequenceName(id) {
-      return this.sequenceNames[id] || `#${id}`;
+    // The sequence's name, as the events API names it, or its ID once the sequence is deleted.
+    sequenceLabel(item) {
+      return item.sequence_name || `#${item.sequence_id}`;
     },
 
     // The send labels are the send log's (send-labels.js), so one status and reason read the same.

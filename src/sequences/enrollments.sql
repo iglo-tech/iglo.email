@@ -103,3 +103,15 @@ UPDATE enrollments SET due_at = ?1 WHERE id = ?2 AND status = 'active' AND step_
   AND (claimed_until IS NULL OR claimed_until < ?4);
 -- name: reschedule-step
 SELECT wait FROM sequence_steps WHERE id = ? AND sequence_id = ? AND status = 'active';
+-- name: subscriber-event-links
+-- B127: a subscriber's enrollments that a page of its events started (the trigger) or exited (the
+-- event's name and the time it was received, which the exit recorded). The subscriber's own index
+-- bounds the read; the two JSON arrays hold the page's event IDs and its {name, at} pairs.
+SELECT e.id, e.sequence_id, e.trigger_event_id, e.exit_reason, e.finished_at,
+    (SELECT name FROM sequences WHERE sequences.id = e.sequence_id) AS sequence_name
+  FROM enrollments e
+  WHERE e.subscriber_id = ?1
+    AND (e.trigger_event_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?2))
+      OR EXISTS (SELECT 1 FROM json_each(?3) j
+        WHERE e.exit_reason = 'event:' || json_extract(j.value, '$.name')
+          AND e.finished_at = json_extract(j.value, '$.at')));

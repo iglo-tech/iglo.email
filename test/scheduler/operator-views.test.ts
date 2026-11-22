@@ -88,6 +88,46 @@ test("a sequence send names its subject, its sequence and its step, and the send
   expect(Object.keys(row)).not.toContain("body");
 }, 60_000);
 
+// B127 r1: an event's row names the sequences it started and the ones it exited, each by its name read
+// by ID, so the names do not depend on a page of sequences (the first hundred are not special).
+test("an event names the sequences it started and exited, past the first hundred sequences", async () => {
+  const f = await open();
+  const template = await f.template("<p>Hi</p>", "Waiting");
+  const count = 101;
+  for (let i = 1; i <= count; i++) {
+    await f.sequence({
+      name: `Seq ${i}`,
+      reentry: "always",
+      trigger: { event: "links_start" },
+      exit_on: ["links_stop"],
+      steps: [tx(template, { wait: "P1D" })],
+    });
+  }
+  const ana = await f.subscriber("links@example.test");
+  const started = await f.event("links@example.test", "links_start", {
+    subscriber: { email: "links@example.test", name: "Ana" },
+  });
+  expect(started.enrollments.started.length).toBe(count);
+  await f.event("links@example.test", "links_stop", {
+    subscriber: { email: "links@example.test", name: "Ana" },
+  });
+
+  const rows = asBody<
+    Array<{
+      name: string;
+      started: Array<{ sequence_name: string }>;
+      exited: Array<{ sequence_name: string }>;
+    }>
+  >((await f.json(`/api/subscribers/${ana}/subscriber-events`)).body.data.results);
+  const stopped = rows.find((row) => row.name === "links_stop")!;
+  expect(stopped.exited.length).toBe(count);
+  expect(stopped.exited.map((link) => link.sequence_name)).toContain("Seq 101");
+  const begun = rows.find((row) => row.name === "links_start")!;
+  expect(begun.started.length).toBe(count);
+  expect(begun.started.map((link) => link.sequence_name)).toContain("Seq 101");
+  expect(begun.exited.length).toBe(0);
+}, 60_000);
+
 test("a marketing wait the frequency cap holds names the cap and when it frees the step; a transactional wait names none", async () => {
   const f = await open();
   f.marketing.minInterval = "P7D";

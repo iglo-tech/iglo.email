@@ -38,6 +38,12 @@ export interface EnrollmentRow {
   test: bigint | number;
   sequence_name?: string | null;
 }
+/** An enrollment an event started or exited, as an events row names it (B127). */
+export interface EventLink {
+  enrollment_id: number | object;
+  sequence_id: number | object;
+  sequence_name: string | null;
+}
 export interface EnrollmentFilter {
   sequenceId?: bigint;
   subscriberId?: bigint;
@@ -551,6 +557,50 @@ export function createEnrollments(db: Database, clock: Clock) {
       const now = at();
       const id = start(sequenceId, subscriberId, trigger?.id ?? null, first, now, now, true, false);
       return { enrollment: must(byId(id), "enrollment") };
+    },
+    /**
+     * B127: the enrollments one page of a subscriber's events started or exited, by event ID. An event
+     * started an enrollment it triggered, and exited one whose `exit_on` it names, at the time it was
+     * received (the `at` given here, which an exit records as its finish).
+     */
+    eventLinks(
+      subscriberId: bigint,
+      events: Array<{ id: bigint; name: string; receivedAt: string }>,
+    ): Map<bigint, { started: Array<EventLink>; exited: Array<EventLink> }> {
+      const links = new Map<bigint, { started: Array<EventLink>; exited: Array<EventLink> }>();
+      for (const event of events) {
+        links.set(event.id, { started: [], exited: [] });
+      }
+      const rows = q
+        .get("subscriber-event-links")
+        .all(
+          subscriberId,
+          JSON.stringify(events.map((event) => event.id.toString())),
+          JSON.stringify(events.map((event) => ({ name: event.name, at: event.receivedAt }))),
+        ) as Array<{
+        id: bigint;
+        sequence_id: bigint;
+        trigger_event_id: bigint | null;
+        exit_reason: string | null;
+        finished_at: string | null;
+        sequence_name: string | null;
+      }>;
+      for (const row of rows) {
+        const link = {
+          enrollment_id: numberID(row.id),
+          sequence_id: numberID(row.sequence_id),
+          sequence_name: row.sequence_name,
+        };
+        if (row.trigger_event_id !== null) {
+          links.get(row.trigger_event_id)?.started.push(link);
+        }
+        for (const event of events) {
+          if (row.exit_reason === `event:${event.name}` && row.finished_at === event.receivedAt) {
+            links.get(event.id)?.exited.push(link);
+          }
+        }
+      }
+      return links;
     },
     /** The steps of an enrollment's sequence, kept ones first in order, for its timeline. */
     steps(sequenceId: bigint) {
