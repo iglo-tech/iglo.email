@@ -142,7 +142,7 @@ export async function runSettingsCouncilFinal(target: {
     const after = await read();
     if (!allowed) {
       check(
-        JSON.stringify(await response.json()) ===
+        JSON.stringify(listmonkEnvelope(await response.json())) ===
           JSON.stringify({
             message:
               "At least one enabled SMTP server must be included in the default 'email' messenger.",
