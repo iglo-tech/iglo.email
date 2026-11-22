@@ -369,8 +369,48 @@ export function join(value: unknown, separator: unknown, b: FilterBudget): strin
 }
 
 /**
+ * The code points of a text, counted without building them (D54: the scan is charged per KiB). A low
+ * surrogate that follows a high one is the second half of a character outside the Basic Multilingual
+ * Plane, so it is not counted again: the count is the one `for...of` walks.
+ */
+function codePointCount(text: string, b: FilterBudget): number {
+  b.step(Math.ceil(byteLength(text) / 1024));
+  let count = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    const pairs =
+      c >= 0xdc_00 &&
+      c <= 0xdf_ff &&
+      i > 0 &&
+      text.charCodeAt(i - 1) >= 0xd8_00 &&
+      text.charCodeAt(i - 1) <= 0xdb_ff;
+    if (!pairs) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/** `count` code points of a text from `start`, which is at least zero. A surrogate pair is never split. */
+function sliceCodePoints(text: string, start: number, count: number): string {
+  let out = "";
+  let index = 0;
+  for (const character of text) {
+    if (index >= start + count) {
+      break;
+    }
+    if (index >= start) {
+      out += character;
+    }
+    index++;
+  }
+  return out;
+}
+
+/**
  * `slice`: `count` characters of a text from `begin` (a negative `begin` counts from the end; the
- * count defaults to one), or `count` items of an array. A nil text is empty.
+ * count defaults to one), or `count` items of an array. A character is a code point, so a character
+ * outside the Basic Multilingual Plane is one character and is never split. A nil text is empty.
  */
 export function slice(
   value: unknown,
@@ -394,18 +434,19 @@ export function slice(
     return items;
   }
   const text = scalar(value, b);
-  const start = from < 0 ? text.length + from : from;
+  const start = from < 0 ? codePointCount(text, b) + from : from;
   if (start < 0 || take < 0) {
     return "";
   }
-  const out = text.slice(start, start + take);
+  const out = sliceCodePoints(text, start, take);
   b.charge(byteLength(out));
   return out;
 }
 
 /**
- * `truncate`: a text no longer than `limit` characters (50 when none is given) is unchanged;
- * a longer one is cut to `limit` characters including the ellipsis (`...` when none is given).
+ * `truncate`: a text no longer than `limit` characters (50 when none is given) is unchanged; a longer
+ * one is cut to `limit` characters including the ellipsis (`...` when none is given). Characters are
+ * code points, so a cut never splits a surrogate pair.
  */
 export function truncate(
   value: unknown,
@@ -418,10 +459,11 @@ export function truncate(
   const max = limit === undefined ? 50 : integer(limit);
   const dots = ellipsis === undefined ? "..." : scalar(ellipsis, b);
   b.charge(byteLength(input) + byteLength(dots));
-  if (input.length <= max) {
+  const length = codePointCount(input, b);
+  if (length <= max) {
     return input;
   }
-  return input.slice(0, Math.max(0, max - dots.length)) + dots;
+  return sliceCodePoints(input, 0, Math.max(0, max - codePointCount(dots, b))) + dots;
 }
 
 /**

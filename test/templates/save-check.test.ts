@@ -41,7 +41,7 @@ test("a template whose text cannot render is refused at save, with its cause", a
 test("a literal failure in the template's own text is refused at save, whatever data arrives", async () => {
   const f = await open();
   // Each expression reads no data, so the template's text alone makes it fail (D134).
-  const literal = [
+  const literal: Array<[string, string]> = [
     ['{{ "abc" | truncate: "x" }}', "needs a whole-number argument, got text"],
     ['{{ "2026-02-30" | date: "%Y-%m-%d" }}', "needs a valid date"],
     [`{{ "${"a,".repeat(1100)}" | split: "," }}`, "split would make 1101 parts"],
