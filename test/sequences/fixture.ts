@@ -187,7 +187,7 @@ export async function sequencesFixture(
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
   registerSubscriberQueryRoutes(router, query, subscribers, roles, auth);
-  registerTemplateRoutes(router, templates, renderer, auth);
+  registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
   registerSendRoutes(router, sends, auth);
   registerTxRoutes(router, {
     auth,
@@ -221,6 +221,9 @@ export async function sequencesFixture(
       subscriptionPage: false,
       archive: false,
       siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
       allowBlocklist: marketing.allowBlocklist,
       allowPreferences: false,
       allowExport: false,

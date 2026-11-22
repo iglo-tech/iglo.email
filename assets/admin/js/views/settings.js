@@ -7,7 +7,7 @@
 import Alpine from '@alpinejs/csp';
 import { read } from '@/assets/admin/js/listing.js';
 import {
-  api, config, i18n,
+  api, config, csrfToken, i18n, urls,
 } from '@/assets/admin/js/main.js';
 import * as u from '@/assets/admin/js/utils.js';
 
@@ -334,6 +334,37 @@ function component() {
 
     // ===============
     // Submit.
+    // B129 (D127): a logo or favicon goes to media, and its URL is set in the form; Save stores it.
+    async uploadImage(key, event) {
+      const input = event.target;
+      const file = input.files?.[0];
+      input.value = '';
+      if (!file) {
+        return;
+      }
+      const params = new FormData();
+      params.set('file', file);
+      try {
+        const resp = await fetch(`${urls.api}/media`, {
+          method: 'POST',
+          body: params,
+          headers: { Accept: 'application/json', 'X-CSRF-Token': csrfToken() },
+        });
+        const out = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(out.message || resp.statusText);
+        }
+        this.form[key] = out.data.url;
+        u.toast(i18n.ts('settings.general.imageUploaded'), 'success');
+      } catch (err) {
+        u.toast(err.message, 'danger');
+      }
+    },
+
+    clearImage(key) {
+      this.form[key] = '';
+    },
+
     async onSubmit() {
       if (!config.can_manage) {
         return;

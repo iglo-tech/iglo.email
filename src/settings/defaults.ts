@@ -4,7 +4,9 @@ export const defaults = {
   // Native (B126, D123): the operator's own site. Empty is none. Validated as a root URL is (D107).
   "app.site_url": "",
   "app.favicon_url": "",
-  "app.from_email": ["listmonk <noreply@listmonk.yoursite.com>"],
+  // A placeholder for a new install (B129 review, N1): it names no product, and an existing install
+  // keeps its stored sender.
+  "app.from_email": ["Newsletter <noreply@example.com>"],
   "app.logo_url": "",
   "app.concurrency": 10,
   "app.message_rate": 10,
@@ -176,12 +178,17 @@ export const defaults = {
       auth_protocol: "userpass",
       username: "username",
       password: "password",
-      return_path: "bounce@listmonk.yoursite.com",
+      return_path: "bounce@example.com",
       scan_interval: "15m",
       tls_enabled: true,
       tls_skip_verify: false,
     },
   ],
+  // Native (B129, D127): the operator's brand. An empty accent is the built-in blue; the font is a
+  // system stack or a validated Google Fonts family; `auto` is the logo when one is set, else the name.
+  "appearance.brand.accent": "",
+  "appearance.brand.font": "system-sans",
+  "appearance.brand.header": "auto",
   "appearance.admin.custom_css": "",
   "appearance.admin.custom_js": "",
   "appearance.public.custom_css": "",

@@ -53,12 +53,12 @@
 
             .footer a,
             a {
-                color: #0055d4;
+                color: {{ brand_link }};
             }
 
             .button {
-                background: #0055d4;
-                color: #fff !important;
+                background: {{ brand_accent }};
+                color: {{ brand_on_accent }} !important;
                 display: inline-block;
                 border-radius: 3px;
                 padding: 10px 30px;
@@ -79,13 +79,15 @@
             }
         </style>
     </head>
-<body style="background-color: #f4f4f5;">
+<body style="background-color: #f4f4f5;{% if brand_font != "" %} font-family: {{ brand_font }};{% endif %}">
     <div class="wrap">
         <div class="header">
-            {% if logo_url != "" %}
+            {% if brand_header == "logo" %}
                 <img src="{{ logo_url }}" alt="{{ site_name }}" />
+            {% elsif brand_header == "logo_and_name" %}
+                <img src="{{ logo_url }}" alt="" style="max-height: 40px; max-width: 120px; vertical-align: middle; margin-right: 12px;" /><span class="site-name" style="vertical-align: middle;">{{ site_name }}</span>
             {% else %}
-                <p class="site-name">{{ site_name }}</p>
+                <p class="site-name" style="margin: 0;">{{ site_name }}</p>
             {% endif %}
         </div>
 
@@ -103,14 +105,14 @@
 </ul>
 <p>{{ "email.optin.confirmSubHelp" | t }}</p>
 <p>
-    <a href="{{ optin_url }}" class="button">{{ "globals.buttons.confirmSubscription" | t }}</a>
+    <a href="{{ optin_url }}" class="button" style="background: {{ brand_accent }}; color: {{ brand_on_accent }};">{{ "globals.buttons.confirmSubscription" | t }}</a>
 </p>
 <a href="{{ manage_url }}">{{ "globals.buttons.unsubscribe" | t }}</a>
 
     </div>
 
     <div class="footer">
-        <p>{% if site_url != "" %}<a href="{{ site_url }}">{{ site_name }}</a>{% else %}{{ site_name }}{% endif %}</p>
+        <p>{% if site_url != "" %}<a href="{{ site_url }}" style="color: {{ brand_link }};">{{ site_name }}</a>{% else %}{{ site_name }}{% endif %}</p>
     </div>
 </body>
 </html>

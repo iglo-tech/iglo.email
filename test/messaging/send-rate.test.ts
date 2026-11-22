@@ -1,5 +1,6 @@
 // B37: One shared send-rate cap for SES (D92).
 import { describe, expect, test } from "bun:test";
+import type { BrandSite } from "@/public/brand";
 import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -213,7 +214,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   registerSettingsRoutes(router, settingsStore, auth, smtpTest);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
-  registerTemplateRoutes(router, templates, renderer, auth);
+  registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
 
   registerTxRoutes(router, {
     auth,
@@ -247,6 +248,14 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     return {
       fromEmail: current["app.from_email"][0] ?? "noreply@fixture.test",
       rootUrl: root,
+      brand: {
+        logoUrl: "",
+        siteName: "Fixture",
+        siteUrl: "",
+        accent: "",
+        font: "system-sans",
+        header: "auto",
+      } satisfies BrandSite,
       siteName: "Fixture",
       messengers: ["email", "sink"],
       unsubscribeHeader: true,
@@ -288,6 +297,14 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
       slidingWindowDuration: "1h",
       slidingWindowRate: 10_000,
       rootUrl: root,
+      brand: {
+        logoUrl: "",
+        siteName: "Fixture",
+        siteUrl: "",
+        accent: "",
+        font: "system-sans",
+        header: "auto",
+      } satisfies BrandSite,
       messengers: ["email", "sink"],
       unsubscribeHeader: true,
       disableTracking: false,

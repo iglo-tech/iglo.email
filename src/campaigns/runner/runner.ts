@@ -18,6 +18,7 @@ import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
 import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
+import type { BrandSite } from "@/public/brand";
 import { goDuration } from "@/settings/duration";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
@@ -38,6 +39,8 @@ export interface RunnerSettings {
   slidingWindowDuration: string;
   slidingWindowRate: number;
   rootUrl: string;
+  /** The site's brand, which a campaign template reads (B129, D127). */
+  brand: BrandSite;
   /** "email" and the names of enabled SMTP servers. */
   messengers: Array<string>;
   unsubscribeHeader: boolean;
@@ -524,7 +527,12 @@ export function createCampaignRunner(deps: RunnerDeps) {
         const budget = createMessageBudget();
         const out = pipe.compiled.render(
           subscriber,
-          { rootUrl: root, unsubscribeUrl, ...(tracking ? { tracking } : {}) },
+          {
+            rootUrl: root,
+            unsubscribeUrl,
+            brand: settings.brand,
+            ...(tracking ? { tracking } : {}),
+          },
           budget,
         );
         // An HTML campaign without a stored altbody gets a generated text part (B120, D118); none

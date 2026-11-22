@@ -11,4 +11,7 @@ export const fixturePageSite = (): PageSite => ({
   subscriptionPage: false,
   archive: false,
   siteUrl: "",
+  accent: "",
+  font: "system-sans",
+  header: "auto",
 });

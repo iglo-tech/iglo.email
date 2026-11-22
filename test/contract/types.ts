@@ -31,6 +31,8 @@ export type ExpectedBody =
       readonly heading: string;
       /** The logo's alt text: upstream's 404 uses its title; the production shell uses the site name. */
       readonly logoAlt: string;
+      /** Whether the header shows the logo (upstream); production's default header shows the name (B129, D127). */
+      readonly logoShown: boolean;
       /** Empty when the page has no footer (B126: production's shell has none). */
       readonly footerText: string;
       readonly footerLinks: ReadonlyArray<{ readonly text: string; readonly href: string }>;

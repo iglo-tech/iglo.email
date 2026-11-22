@@ -5,7 +5,7 @@ import type { ErrorLogger } from "@/app";
 import { render } from "@/jsx/render";
 import type { Child } from "@/jsx/render";
 import type { Dispatch, Message } from "@/messaging/email";
-import { safeLogo } from "@/messaging/test";
+import { mailBrand } from "@/public/brand";
 import { PublicShell } from "@/public/layout";
 import type { PageSite } from "@/public/layout";
 import { publicMessage } from "@/public/message";
@@ -100,8 +100,7 @@ export function createPasswordReset(deps: ResetDeps) {
         mode: "html",
         data: JSON.stringify({
           reset_url: `${current.rootUrl}/admin/reset?${query}`,
-          logo_url: safeLogo(current.logoUrl),
-          site_name: current.siteName,
+          ...mailBrand(current),
         }),
       },
       budget,

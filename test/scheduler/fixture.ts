@@ -252,7 +252,7 @@ export async function schedulerFixture(
     enrollments: (id, page, perPage) => enrollments.list({ subscriberId: id, page, perPage }),
     sends: (id, page, perPage) => sends.list({ subscriberId: id, page, perPage }),
   });
-  registerTemplateRoutes(router, templates, renderer, auth);
+  registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
   registerSendRoutes(router, sends, auth);
   registerUnsubscribeRoutes(router, {
     db,
@@ -269,6 +269,9 @@ export async function schedulerFixture(
       subscriptionPage: false,
       archive: false,
       siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
       allowBlocklist: marketing.allowBlocklist,
       allowPreferences: false,
       allowExport: false,
@@ -290,6 +293,9 @@ export async function schedulerFixture(
         subscriptionPage: false,
         archive: false,
         siteUrl: "",
+        accent: "",
+        font: "system-sans",
+        header: "auto",
         allowBlocklist: marketing.allowBlocklist,
         allowPreferences: false,
         allowExport: false,

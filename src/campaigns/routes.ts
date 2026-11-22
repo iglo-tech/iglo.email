@@ -11,6 +11,7 @@ import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { SendPriority } from "@/messaging/rate";
 import type { TestSends } from "@/messaging/test-sends";
+import type { BrandSite } from "@/public/brand";
 import type { PageSite } from "@/public/layout";
 import { publicMessage } from "@/public/message";
 import type { ListReferences } from "@/lists/references";
@@ -59,6 +60,8 @@ export interface CampaignSettings {
   fromEmail: string;
   rootUrl: string;
   siteName: string;
+  /** The site's brand, which a campaign or archive template reads (B129, D127). */
+  brand: BrandSite;
   /** "email" and the names of enabled SMTP servers (listmonk's messengers). */
   messengers: Array<string>;
   unsubscribeHeader: boolean;
@@ -528,6 +531,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       body = compiled.render(dummySubscriber, {
         rootUrl: deps.settings().rootUrl,
         unsubscribeUrl: `${deps.settings().rootUrl.replace(/\/+$/, "")}/subscription/${dummyUUID}/${dummyUUID}`,
+        brand: deps.settings().brand,
       }).body;
     } catch (error) {
       return renderFailure(context, error, "templates.errorRendering");
@@ -572,7 +576,11 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         ...writable(stored),
         uuid: stored.uuid,
         templateBody: templateBody(templateId > 0 ? BigInt(templateId) : stored.template_id),
-      }).render(subscriber, { rootUrl: deps.settings().rootUrl, unsubscribeUrl: "" }).body;
+      }).render(subscriber, {
+        rootUrl: deps.settings().rootUrl,
+        unsubscribeUrl: "",
+        brand: deps.settings().brand,
+      }).body;
       return new Response(body, { headers: previewHeaders });
     } catch (error) {
       if (error instanceof RenderCapacityError) {
@@ -930,7 +938,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         try {
           out = compiled.render(
             subscriberContext(sub),
-            { rootUrl: root, unsubscribeUrl, test: true },
+            { rootUrl: root, unsubscribeUrl, test: true, brand: settings.brand },
             budget,
           );
           altBody =

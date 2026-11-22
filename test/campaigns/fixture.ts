@@ -148,6 +148,14 @@ export async function campaignsFixture(
     fromEmail: "Fixture <noreply@fixture.test>",
     rootUrl: root,
     siteName: "Fixture list",
+    brand: {
+      logoUrl: "",
+      siteName: "Fixture list",
+      siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
+    },
     messengers: ["email", "fixture"],
     unsubscribeHeader: true,
     allowBlocklist: true,
@@ -185,7 +193,7 @@ export async function campaignsFixture(
   registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
-  registerTemplateRoutes(router, templates, renderer, auth);
+  registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
   registerCampaignRoutes(router, {
     page: fixturePageSite,
     store,
@@ -217,6 +225,9 @@ export async function campaignsFixture(
       subscriptionPage: false,
       archive: false,
       siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
       allowBlocklist: settings.allowBlocklist,
       allowPreferences: false,
       allowExport: false,

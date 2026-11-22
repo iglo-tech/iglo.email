@@ -1,6 +1,17 @@
 // Adapted from listmonk static/public/templates/index.html at 6fcd95f. B126 (D123): the shell
-// carries no product credit, and its logo links to the operator's own site when one is set.
+// carries no product credit, and its logo links to the operator's own site when one is set. B129
+// (D127): the brand (accent, font, header) is set on the document element as custom properties.
 import type { Child } from "@/jsx/render";
+import {
+  defaultAccent,
+  focusColour,
+  fontStack,
+  googleFontUrl,
+  headerMode,
+  linkColour,
+  onAccentText,
+} from "@/public/brand";
+import type { BrandHeader } from "@/public/brand";
 
 /** The site settings the shell links to. */
 export interface ShellSite {
@@ -11,6 +22,10 @@ export interface ShellSite {
   readonly archive: boolean;
   /** The operator's own site (`app.site_url`, B126), or empty. */
   readonly siteUrl: string;
+  /** The brand (B129): the accent colour (hex, or empty for the built-in blue), the font and the header. */
+  readonly accent: string;
+  readonly font: string;
+  readonly header: BrandHeader;
 }
 /**
  * What every page shows of the site: its name and the shell settings above. Public, sign-in and
@@ -58,12 +73,30 @@ export function PublicShell({
     throw new TypeError("Invalid asset version");
   }
   const siteName = site.siteName;
-  const logo = (
-    <img src={site.logoUrl || `/public/static/logo.svg?v=${assetVersion}`} alt={siteName} />
+  // The brand values are validated when saved (D127), so they go into the style attribute as they are.
+  const accent = site.accent || defaultAccent;
+  const fontUrl = googleFontUrl(site.font);
+  const mode = headerMode(site.header, site.logoUrl !== "");
+  // A logo is shown only when one is set (headerMode), so no bundled image ever stands in for it. The
+  // name beside a logo says it already, so the image has no alt text then (B129 review, N2).
+  const brand = (
+    <>
+      {mode !== "name" ? (
+        <img src={site.logoUrl} alt={mode === "logo_and_name" ? "" : siteName} />
+      ) : null}
+      {mode !== "logo" ? <span class="site-name">{siteName}</span> : null}
+    </>
   );
+  // Both together form one centred row, the logo beside the name (B129 adopter check): the name never
+  // drops under the logo, whatever the width.
+  const lockup = mode === "logo_and_name";
+  const content = lockup ? <span class="lockup">{brand}</span> : brand;
   const href = logoHref(site);
   return (
-    <html>
+    <html
+      class={site.accent ? "branded" : undefined}
+      style={`--brand-accent: ${accent}; --brand-link: ${linkColour(site.accent)}; --brand-focus: ${focusColour(site.accent)}; --brand-on-accent: ${onAccentText(site.accent)}; --brand-font: ${fontStack(site.font)};`}
+    >
       <head>
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
         <title>
@@ -79,6 +112,7 @@ export function PublicShell({
             href={`${site.rootUrl}/archive.xml`}
           />
         ) : null}
+        {fontUrl ? <link rel="stylesheet" href={fontUrl} /> : null}
         <link
           href={`/public/static/style.css?v=${assetVersion}`}
           rel="stylesheet"
@@ -95,7 +129,9 @@ export function PublicShell({
       <body>
         <div class="container wrap">
           <header class="header">
-            <div class="logo">{href ? <a href={href}>{logo}</a> : logo}</div>
+            <div class={lockup ? "logo logo-lockup" : "logo"}>
+              {href ? <a href={href}>{content}</a> : content}
+            </div>
           </header>
           {children}
         </div>

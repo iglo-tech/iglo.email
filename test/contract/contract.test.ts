@@ -368,7 +368,7 @@ describe("normalization at the HTTP boundary", () => {
 // B121 (D119): the production 404 is the branded shell with the site's settings (the defaults).
 // The archive link's port is free: the matcher checks the loopback host and that a port is set.
 const public404Page =
-  '<!DOCTYPE html><html><head><title>Page not found - Mailing list</title><link rel="alternate" type="application/rss+xml" title="Mailing list archive - Mailing list" href="http://127.0.0.1:9/archive.xml"><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="stylesheet" href="/public/custom.css?v=0123456789"><script src="/public/custom.js?v=0123456789" async defer></script><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><a href="http://127.0.0.1:9/subscription/form"><img src="/public/static/logo.svg?v=0123456789" alt="Mailing list"></a></div></header><h2>Page not found</h2><div></div></div></body></html>';
+  '<!DOCTYPE html><html><head><title>Page not found - Mailing list</title><link rel="alternate" type="application/rss+xml" title="Mailing list archive - Mailing list" href="http://127.0.0.1:9/archive.xml"><link rel="stylesheet" href="/public/static/style.css?v=0123456789"><link rel="stylesheet" href="/public/custom.css?v=0123456789"><script src="/public/custom.js?v=0123456789" async defer></script><link rel="icon" href="/public/static/favicon.png?v=0123456789"></head><body><div class="wrap"><header><div class="logo"><a href="http://127.0.0.1:9/subscription/form"><span class="site-name">Mailing list</span></a></div></header><h2>Page not found</h2><div></div></div></body></html>';
 
 test("public HTML contract rejects missing, duplicated, incorrect, or unsafe page elements", async () => {
   const page = public404Page;
@@ -397,10 +397,14 @@ test("public HTML contract rejects missing, duplicated, incorrect, or unsafe pag
       page.replace("Page not found - Mailing list", "wrong title"),
       page.replace("<h2>Page not found</h2>", "<h2>Page not found</h2><h2>Page not found</h2>"),
       page.replace("/public/static/style.css?v=0123456789", "/public/static/style.css?v=bad"),
-      page.replace("/public/static/logo.svg?v=0123456789", "/public/static/logo.svg?v=1111111111"),
+      // B129 (D127): the default header shows the name, so a logo image is an unexpected element.
+      page.replace(
+        '<span class="site-name">',
+        '<img src="/public/static/logo.svg?v=0123456789" alt="Mailing list"><span class="site-name">',
+      ),
       page.replace("<div></div>", "<div>unexpected message</div>"),
       page.replace("<div></div>", "<script>alert(1)</script><div></div>"),
-      page.replace('alt="Mailing list"', 'alt="Mailing list" onerror="alert(1)"'),
+      page.replace('<span class="site-name">', '<span class="site-name" onclick="alert(1)">'),
       page.replace('href="http://127.0.0.1:9/subscription/form"', 'href="javascript:alert(1)"'),
     ]) {
       body = invalid;
