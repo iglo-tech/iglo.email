@@ -233,7 +233,6 @@ export default defineConfig({
         "typescript/array-type": "off",
         "no-useless-assignment": "off",
         "typescript/require-array-sort-compare": "off",
-        "typescript/await-thenable": "off",
         "no-promise-executor-return": "off",
         "quality/no-object-parameters": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
@@ -246,6 +245,22 @@ export default defineConfig({
         "typescript/no-unsafe-return": "off", // B134g: test/ still returns values typed any.
         "typescript/no-unsafe-type-assertion": "off", // B134g: test/ still asserts from any and unknown.
       },
+    },
+    // Exception, for the lead to decide at review (await-thenable). bun:test types the `rejects` matchers as returning
+    // void, so `await expect(promise).rejects...` is flagged; the await is what makes the rejection assertion run.
+    {
+      files: [
+        "test/analytics/analytics.test.ts",
+        "test/analytics/budget.test.ts",
+        "test/contract/boundary.test.ts",
+        "test/messaging/notify.test.ts",
+        "test/scheduler/scheduler.test.ts",
+        "test/sends/lease.test.ts",
+        "test/subscribers/query.test.ts",
+        "test/templates/markdown-budget.test.ts",
+        "test/templates/render.test.ts",
+      ],
+      rules: { "typescript/await-thenable": "off" },
     },
     // Exception, for the lead to decide at review (no-reflect-get). The crash fixture's Proxy get trap forwards
     // a property with Reflect.get and the proxy as receiver, so a getter on the owner sees the proxy as `this`;

@@ -536,14 +536,13 @@ describe("B37: send rate cap", () => {
       const campId = campRes.body.data.id;
 
       // Warm up the pool socket so connection establishment doesn't add an initial phase shift
-      const warmup = await h.json("/api/tx", "POST", {
+      await h.json("/api/tx", "POST", {
         subscriber_email: "warmup@example.test",
         template_id: txTemplateId,
         data: {},
         messenger: "email",
       });
       await h.drive(() => h.sink.messages.length === 1, 10);
-      await warmup;
       h.sink.messages.length = 0;
       h.clock.advance(1000);
 

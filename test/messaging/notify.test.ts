@@ -1214,7 +1214,8 @@ describe("B38 admin notification mails", () => {
 
   test("12. A cancel during a failing batch sends no Paused mail", async () => {
     let cancelled = false;
-    let cancelPromise: Promise<any> | null = null;
+    // A holder, not a variable: TypeScript does not see the assignment made inside sinkReject.
+    const cancel: { promise?: Promise<unknown> } = {};
     let campaignId = 0n;
 
     f = await createNotifyFixture({
@@ -1223,7 +1224,7 @@ describe("B38 admin notification mails", () => {
         if (!to.includes("ops@example.com")) {
           if (!cancelled && campaignId !== 0n) {
             cancelled = true;
-            cancelPromise = f.json(`/api/campaigns/${campaignId}/status`, "PUT", {
+            cancel.promise = f.json(`/api/campaigns/${campaignId}/status`, "PUT", {
               status: "cancelled",
             });
           }
@@ -1269,8 +1270,8 @@ describe("B38 admin notification mails", () => {
 
     const runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
     await f.waitUntil(() => cancelled, "the cancel to be issued", 50);
-    if (cancelPromise) {
-      await cancelPromise;
+    if (cancel.promise) {
+      await cancel.promise;
     }
     await f.waitUntil(
       () => f.runnerStore.state(campaignId)?.status === "cancelled",
