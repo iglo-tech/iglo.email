@@ -458,6 +458,11 @@ export async function runOpenApiContract(target: {
         },
       })
     ).body.data;
+    // A duplicate address answers 409 in the documented envelope (B131, D129).
+    await op("POST /api/subscribers", {
+      body: { email: "two@fixture.test", name: "Again", status: "enabled" },
+      expect: 409,
+    });
     const external = (
       await op("POST /api/subscribers", {
         body: {

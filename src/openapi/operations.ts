@@ -391,6 +391,7 @@ const subscribers: Array<Operation> = [
     tag: "Subscribers",
     summary: "Create a subscriber.",
     permissions: ["subscribers:manage"],
+    errors: [400, 409],
     body: ref("SubscriberInput"),
     data: ref("Subscriber"),
   },
