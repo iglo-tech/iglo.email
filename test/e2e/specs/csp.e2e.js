@@ -7,6 +7,21 @@ import { generateRuntimeFunction } from "@alpinejs/csp/src/parser.js";
 import { expect } from "@playwright/test";
 import { api, ORIGIN, test, unique, signIn } from "../helpers.js";
 
+const asScript = (page, paths) =>
+  page.evaluate(async (list) => {
+    const outcomes = {};
+    for (const path of list) {
+      outcomes[path] = await new Promise((resolve) => {
+        const script = document.createElement("script");
+        script.onload = () => resolve("ran");
+        script.onerror = () => resolve("refused");
+        script.src = path;
+        document.head.append(script);
+      });
+    }
+    return { outcomes, ran: window.__authored ?? null };
+  }, paths);
+
 async function ok(page, path, method, body) {
   const response = await api(page, path, method, body);
   expect(response.status, JSON.stringify(response.body)).toBe(200);
@@ -127,20 +142,6 @@ test("every screen works under the policy", async ({ page }) => {
 
 test.describe("responses that hold authored text", () => {
   // Loads each address as a classic script on an admin page, as injected markup would.
-  const asScript = (page, paths) =>
-    page.evaluate(async (list) => {
-      const outcomes = {};
-      for (const path of list) {
-        outcomes[path] = await new Promise((resolve) => {
-          const script = document.createElement("script");
-          script.onload = () => resolve("ran");
-          script.onerror = () => resolve("refused");
-          script.src = path;
-          document.head.append(script);
-        });
-      }
-      return { outcomes, ran: window.__authored ?? null };
-    }, paths);
 
   test("do not run as same-origin script", async ({ page }) => {
     await signIn(page);

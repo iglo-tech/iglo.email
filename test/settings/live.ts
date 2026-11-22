@@ -2,6 +2,12 @@
 import { createConnection } from "node:net";
 import type { Credentials } from "@/test/contract/types";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL settings-live-${label}`);
+  }
+}
+
 export async function runSettingsLive(target: {
   baseUrl: string;
   credentials: Credentials;
@@ -10,11 +16,6 @@ export async function runSettingsLive(target: {
 }) {
   const base = target.baseUrl;
   const adminAuth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL settings-live-${label}`);
-    }
-  }
   const request = (path: string, method = "GET", body?: unknown, auth = adminAuth) =>
     fetch(base + path, {
       method,

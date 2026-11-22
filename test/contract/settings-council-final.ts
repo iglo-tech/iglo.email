@@ -3,6 +3,12 @@ import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL settings-council-final-${label}`);
+  }
+}
+
 export async function runSettingsCouncilFinal(target: {
   mode: Mode;
   baseUrl: string;
@@ -19,11 +25,6 @@ export async function runSettingsCouncilFinal(target: {
       },
       target.mode === "reference",
     );
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL settings-council-final-${label}`);
-    }
-  }
   async function read() {
     const response = await request();
     check(response.status === 200, "read");

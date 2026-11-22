@@ -19,6 +19,12 @@ type Row = {
   updated_at: string;
 };
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL templates-${label}`);
+  }
+};
+
 export async function runTemplatesContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -40,11 +46,6 @@ export async function runTemplatesContract(target: {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL templates-${label}`);
-    }
-  };
   const campaignBody = reference
     ? '<div>{{ template "content" . }}</div>'
     : "<div>{{ content | raw }}</div>";

@@ -32,6 +32,20 @@ import {
   subRowIDs,
 } from "../subscribers-helpers.js";
 
+async function rowAction(page, name, testid) {
+  const row = listRow(page, name);
+  await openMenu(row);
+  await Promise.all([
+    page.waitForEvent("load"),
+    (async () => {
+      await row.getByTestId(testid).click();
+      await confirm(page);
+    })(),
+  ]);
+}
+
+const listRow = (page, name) => page.locator(".subscriptions tbody tr").filter({ hasText: name });
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("Subscribers: listing, search & sort", () => {
@@ -450,20 +464,6 @@ test.describe("Subscribers: bulk actions", () => {
 });
 
 test.describe("Subscriber detail: lists & subscriptions", () => {
-  const listRow = (page, name) => page.locator(".subscriptions tbody tr").filter({ hasText: name });
-
-  async function rowAction(page, name, testid) {
-    const row = listRow(page, name);
-    await openMenu(row);
-    await Promise.all([
-      page.waitForEvent("load"),
-      (async () => {
-        await row.getByTestId(testid).click();
-        await confirm(page);
-      })(),
-    ]);
-  }
-
   let seed;
   const here = () => `${SUBSCRIBERS}/${seed.JOHN}/lists`;
   test.beforeEach(async ({ page }) => {

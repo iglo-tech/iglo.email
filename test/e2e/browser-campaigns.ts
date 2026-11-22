@@ -4,6 +4,12 @@ import { randomBytes } from "node:crypto";
 import { withStack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
 
+const shot = (name: string) => {
+  if (shots) {
+    browser("screenshot", `${shots}/${name}.png`);
+  }
+};
+
 const session = `m43-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
 function browser(...args: Array<string>): string {
@@ -27,11 +33,6 @@ process.exitCode = await withStack(async ({ origin }) => {
   const visit = (path: string, name: string) => {
     browser("open", `${origin}${path}`);
     settle();
-    if (shots) {
-      browser("screenshot", `${shots}/${name}.png`);
-    }
-  };
-  const shot = (name: string) => {
     if (shots) {
       browser("screenshot", `${shots}/${name}.png`);
     }

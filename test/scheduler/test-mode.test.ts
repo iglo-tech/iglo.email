@@ -5,6 +5,8 @@ import { day, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
+const tab = (id: number, path: string) => `/api/subscribers/${id}/${path}`;
+
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
@@ -409,7 +411,6 @@ test("subscriber records follow the subscriber's list scope and their own permis
 test("each subscriber tab refuses a reader outside the list or without its permission", async () => {
   const f = await open();
   const { shown, hidden, onA } = await scoped(f);
-  const tab = (id: number, path: string) => `/api/subscribers/${id}/${path}`;
   // B123: the events tab needs its own permission, as the other two tabs need theirs.
   const everything = await f.apiUser(
     "tabs-on-a",

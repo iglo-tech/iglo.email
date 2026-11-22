@@ -8,6 +8,8 @@ import type { AltchaChallenge } from "@/test/public/altcha-solver";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
 
+const flip = (hex: string) => (hex[0] === "0" ? "1" : "0") + hex.slice(1);
+
 const fixtures: Array<PublicFixture> = [];
 const servers: Array<{ stop(force?: boolean): unknown }> = [];
 afterEach(async () => {
@@ -142,7 +144,6 @@ test("a tampered or malformed ALTCHA payload is refused", async () => {
   const c = await challenge(f);
   const solution = solveAltcha(c);
   const other = await challenge(f);
-  const flip = (hex: string) => (hex[0] === "0" ? "1" : "0") + hex.slice(1);
   const cases: Array<string> = [
     altchaPayload(c, { ...solution, counter: solution.counter + 1 }),
     altchaPayload(c, { ...solution, derivedKey: flip(solution.derivedKey) }),

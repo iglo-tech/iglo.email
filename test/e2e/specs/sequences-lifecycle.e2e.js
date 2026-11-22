@@ -8,6 +8,8 @@ import { ascending } from "../../order.ts";
 import { startSink } from "../../tx/sink.ts";
 import { api, mailFor, ok, requestAdmin, signIn, test, unique } from "../helpers.js";
 
+const sequenceIDs = (rows) => rows.map((row) => row.sequence_id);
+
 // The scheduler's tick (src/scheduler/scheduler.ts, SCHEDULER_INTERVAL_MS).
 const TICK_MS = 15_000;
 const FINISH = { timeout: 60_000 };
@@ -145,7 +147,6 @@ test("re-entry: never stays out after a run, after_exit waits for the exit, alwa
   });
   const always = await sequence(page, { trigger: { event: evt }, reentry: "always", steps });
   const who = await subscriber(page);
-  const sequenceIDs = (rows) => rows.map((row) => row.sequence_id);
 
   // The first event starts all three.
   const first = await fire(page, who.email, evt);

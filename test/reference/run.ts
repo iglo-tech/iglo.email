@@ -9,6 +9,14 @@ import type { GroupChild } from "@/test/reference/command";
 import { cache, prepare } from "@/test/reference/prepare";
 import { startReceiver } from "@/test/reference/webhook";
 
+async function docker(args: Array<string>, timeout = 30_000) {
+  const result = await command(["docker", ...args], { timeout });
+  if (result.code !== 0) {
+    throw new Error(`docker ${args[0]} failed: ${result.stderr.trim()}`);
+  }
+  return result.stdout.trim();
+}
+
 const label = "io.iglo.email.reference.run";
 const adminUser = "reference-admin";
 const adminPassword = "reference-admin-password";
@@ -218,13 +226,6 @@ async function run(args: Array<string>): Promise<number> {
 
   // Docker operations finish before cleanup starts, even if a signal arrives in
   // the middle of creation. The exact name and label identify what we own.
-  async function docker(args: Array<string>, timeout = 30_000) {
-    const result = await command(["docker", ...args], { timeout });
-    if (result.code !== 0) {
-      throw new Error(`docker ${args[0]} failed: ${result.stderr.trim()}`);
-    }
-    return result.stdout.trim();
-  }
   async function removeOwned(type: "container" | "volume") {
     const inspectArgs =
       type === "container" ? ["inspect", "--type", "container", name] : ["volume", "inspect", name];

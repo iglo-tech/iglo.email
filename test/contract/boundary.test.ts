@@ -7,6 +7,29 @@ import { withProduction } from "@/test/contract/owned";
 import { runContract } from "@/test/contract/runner";
 import type { ContractCase, ContractTarget, Difference } from "@/test/contract/types";
 
+const create = (id: number, created: string, updated: string) =>
+  Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const data = new URL(request.url).pathname.endsWith("/reference")
+        ? { id }
+        : {
+            id,
+            owner_id: id,
+            other_id: id + 1,
+            created_at: created,
+            created_copy: created,
+            updated_at: updated,
+            label: "synthetic 101",
+            fixed: { id: 77 },
+          };
+      return new Response(`${JSON.stringify({ data })}\n`, {
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
 const repository = resolve(import.meta.dir, "../..");
 let directory = "";
 let executable = "";
@@ -282,28 +305,6 @@ describe("difference metadata and strict transport", () => {
   });
 
   test("concurrent runs keep independent ID and timestamp bindings", async () => {
-    const create = (id: number, created: string, updated: string) =>
-      Bun.serve({
-        hostname: "127.0.0.1",
-        port: 0,
-        fetch(request) {
-          const data = new URL(request.url).pathname.endsWith("/reference")
-            ? { id }
-            : {
-                id,
-                owner_id: id,
-                other_id: id + 1,
-                created_at: created,
-                created_copy: created,
-                updated_at: updated,
-                label: "synthetic 101",
-                fixed: { id: 77 },
-              };
-          return new Response(`${JSON.stringify({ data })}\n`, {
-            headers: { "content-type": "application/json" },
-          });
-        },
-      });
     const first = create(101, "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:01.000Z");
     const second = create(202, "2027-01-01T00:00:00.000Z", "2027-01-01T00:00:01.000Z");
     try {

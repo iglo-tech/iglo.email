@@ -6,6 +6,17 @@ import { join } from "node:path";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { imagePng, imagePngSize, imageGif, imageJpeg } from "@/test/media/images";
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL media-${label}`);
+  }
+};
+const form = (name: string, content: BlobPart, type: string, field = "file") => {
+  const data = new FormData();
+  data.append(field, new File([content], name, { type }));
+  return data;
+};
+
 export async function runMediaContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -15,11 +26,6 @@ export async function runMediaContract(target: {
 }) {
   const reference = target.mode === "reference";
   const suffix = crypto.randomUUID().slice(0, 8);
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL media-${label}`);
-    }
-  };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (
     path: string,
@@ -45,11 +51,6 @@ export async function runMediaContract(target: {
       /* Not JSON. */
     }
     return { status: response.status, headers: response.headers, body: parsed, text };
-  };
-  const form = (name: string, content: BlobPart, type: string, field = "file") => {
-    const data = new FormData();
-    data.append(field, new File([content], name, { type }));
-    return data;
   };
   const upload = (
     name: string,

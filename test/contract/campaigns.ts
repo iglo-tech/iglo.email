@@ -47,6 +47,13 @@ const fields = [
   "archive_meta",
 ].join(",");
 
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL campaigns-${label}`);
+  }
+};
+const message = (response: { body: any }) => response.body?.message as string | undefined;
+
 export async function runCampaignsContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -62,11 +69,6 @@ export async function runCampaignsContract(target: {
   const marker = `m08${randomBytes(10).toString("hex")}`;
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL campaigns-${label}`);
-    }
-  };
   const call = async (
     path: string,
     method = "GET",
@@ -93,7 +95,6 @@ export async function runCampaignsContract(target: {
     }
     return { status: response.status, headers: response.headers, body: parsed };
   };
-  const message = (response: { body: any }) => response.body?.message as string | undefined;
   const form = (path: string, values: Record<string, string>, auth = authorization) =>
     call(
       path,

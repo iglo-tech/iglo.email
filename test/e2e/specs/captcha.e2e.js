@@ -5,6 +5,8 @@ import { createServer } from "node:http";
 import { expect } from "@playwright/test";
 import { ORIGIN, api, test, unique, signIn } from "../helpers.js";
 
+const script = (response) => new URL(response.url()).pathname === "/public/static/altcha.umd.js";
+
 const SUB_FORM = "/subscription/form";
 let before;
 
@@ -174,8 +176,6 @@ test("a snippet pasted on a trusted site loads the widget, solves and subscribes
     const context = await browser.newContext();
     const visitor = await context.newPage();
     try {
-      const script = (response) =>
-        new URL(response.url()).pathname === "/public/static/altcha.umd.js";
       const loaded = visitor.waitForResponse(script);
       await visitor.goto(`${trusted}/`);
       expect((await loaded).headers()["access-control-allow-origin"]).toBe(trusted);

@@ -25,6 +25,8 @@ import { bootstrapAdmin } from "@/users/bootstrap";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 
+const history = () => [];
+
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
 export async function queryFixture(
@@ -81,7 +83,6 @@ export async function queryFixture(
   // The activity and export owners stand in for the mail and tracking modules: these fixtures
   // check the routes' own answers (permissions, the missing-subscriber refusal), not the sections.
   // The per-subscriber history pages (B123): empty here, served by their routes' own checks.
-  const history = () => [];
   registerSubscriberRoutes(
     router,
     subscribers,

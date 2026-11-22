@@ -5,6 +5,17 @@
 import { expect, test } from "bun:test";
 import { createMarkdownBudget, markdownOutputBound, renderMarkdown } from "@/templates/markdown";
 
+const seeded = (seed: number) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d_2b_79_f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+  };
+};
+
 const markdown = Bun.markdown as { html: typeof Bun.markdown.html };
 const LIMIT = 1024 * 1024;
 const bytes = (value: string) => Buffer.byteLength(value, "utf-8");
@@ -111,16 +122,6 @@ test("generated URL, title and alt variants built from the escaped characters st
 
 test("a property test: generated URL, title and alt variants built from the escaped characters stay under the bound", () => {
   // Deterministic: the same documents every run (mulberry32).
-  const seeded = (seed: number) => {
-    let a = seed >>> 0;
-    return () => {
-      a = (a + 0x6d_2b_79_f5) >>> 0;
-      let t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
-    };
-  };
   const SPECIALS = ["'", '"', "&", "<", ">"];
   const ESCAPED = [...SPECIALS, "a", "&amp;", "&nGt;", "&#x27;", "\u0000", "ü", "😀"];
   const LINE_ENDINGS = ["\n", "  \n", "\\\n", "  \r\n", "  \r", "\r\n", "\r"];

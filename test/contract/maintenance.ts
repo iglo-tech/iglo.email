@@ -9,9 +9,20 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { startReceiver } from "@/test/webhooks/receiver";
 
+const invalid = (response: { status: number; body: any }, label: string) => {
+  check(response.status === 400, `${label}-status-${response.status}`);
+  check(response.body?.message === "Invalid data", `${label}-message`);
+};
+
 const past = "1970-01-01T00:00:00Z";
 const future = "2099-01-01T00:00:00Z";
 const stamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+const check = (condition: unknown, label: string) => {
+  if (!condition) {
+    throw new Error(`FAIL maintenance-${label}`);
+  }
+};
 
 export async function runMaintenanceContract(target: {
   mode: Mode;
@@ -24,11 +35,6 @@ export async function runMaintenanceContract(target: {
   await assertOwnedMailpit(sink);
   const marker = `m08${randomBytes(10).toString("hex")}`;
   const mailpit = new Mailpit(sink, marker);
-  const check = (condition: unknown, label: string) => {
-    if (!condition) {
-      throw new Error(`FAIL maintenance-${label}`);
-    }
-  };
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (path: string, method = "GET", body?: unknown, auth = authorization) => {
     const response = await fetch(`${target.baseUrl}${path}`, {
@@ -120,10 +126,6 @@ export async function runMaintenanceContract(target: {
   };
   const del = (path: string, auth?: string) => call(path, "DELETE", undefined, auth);
   const when = encodeURIComponent;
-  const invalid = (response: { status: number; body: any }, label: string) => {
-    check(response.status === 400, `${label}-status-${response.status}`);
-    check(response.body?.message === "Invalid data", `${label}-message`);
-  };
 
   /** The native owners a maintenance delete goes through, and what only this store holds. */
   const production = async (list: number) => {

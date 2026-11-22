@@ -75,6 +75,8 @@ import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
 import type { Captcha } from "@/captcha/captcha";
 
+const open: Middleware = (_context, next) => next();
+
 export const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 
 /** A fixture without a subscriber mail: a privacy action on its routes is a bug in the test. */
@@ -400,7 +402,6 @@ export async function txFixture(
       logger: app.logger,
       settings: getPublicSettings,
     });
-    const open: Middleware = (_context, next) => next();
     registerPublicRoutes(router, {
       db,
       lists,

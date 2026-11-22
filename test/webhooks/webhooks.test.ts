@@ -12,6 +12,16 @@ import { signatureTime, signatureValid, startReceiver } from "@/test/webhooks/re
 import type { JsonObject } from "@/test/json-object";
 import type { Receiver } from "@/test/webhooks/receiver";
 
+const noop = () => {};
+const refused = async (result: Promise<{ status: number; body: any }>) => {
+  const response = await result;
+  expect(response.status).toBe(400);
+  expect(response.body.message).toContain("Narrow the selection");
+  expect(response.body.message).toContain("50,000");
+};
+const line = (id: number, host: string) =>
+  `Webhook ${id} target ${host} is refused by webhooks.block_private_addresses (D122)`;
+
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
   for (const close of cleanups.splice(0).reverse()) {
@@ -501,7 +511,7 @@ test("redirects are not followed and count as failures", async () => {
 
 test("a hung receiver times out on the injected clock and starves no other receiver", async () => {
   const f = await open();
-  let release = () => {};
+  let release = noop;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -590,7 +600,7 @@ test("a disabled webhook holds its deliveries, resumes when enabled, and fails a
 
 test("deleting a webhook removes its deliveries and an in-flight attempt settles harmlessly", async () => {
   const f = await open();
-  let release = () => {};
+  let release = noop;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -611,7 +621,7 @@ test("deleting a webhook removes its deliveries and an in-flight attempt settles
 
 test("a restart resumes queued and in-flight deliveries from durable state", async () => {
   const f = await open();
-  let release = () => {};
+  let release = noop;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -914,7 +924,7 @@ test("a public wipe's own deleted event carries the external ID and lists (B124,
 });
 
 test("a delivery held at DNS goes out cleared when its subscriber is deleted meanwhile", async () => {
-  let release = () => {};
+  let release = noop;
   let held = true;
   const f = await open({
     webhooks: {
@@ -960,7 +970,7 @@ test("a delivery held at DNS goes out cleared when its subscriber is deleted mea
 });
 
 test("a delivery held at DNS sends nothing when its row is gone", async () => {
-  let release = () => {};
+  let release = noop;
   const f = await open({
     webhooks: {
       lookup: async () => {
@@ -1152,12 +1162,6 @@ test("a bulk action over the delivery budget is refused before any write", async
   const ids = (
     f.db.query("SELECT id FROM subscribers ORDER BY id").all() as Array<{ id: bigint }>
   ).map(({ id }) => Number(id));
-  const refused = async (result: Promise<{ status: number; body: any }>) => {
-    const response = await result;
-    expect(response.status).toBe(400);
-    expect(response.body.message).toContain("Narrow the selection");
-    expect(response.body.message).toContain("50,000");
-  };
   const unsubscribe = { action: "unsubscribe", target_list_ids: [list] };
   const half = Math.ceil(MAX_BULK_DELIVERIES / 38);
   const blocklistBudget = { query: `subscribers.id <= ${ids[half - 1]}` };
@@ -1328,8 +1332,6 @@ test("every start names each enabled webhook the block refuses, one line each, a
   await created("http://public.test/hook");
   const notices = () =>
     f.errors.map((error) => (error as Error).message).filter((line) => line.startsWith("Webhook "));
-  const line = (id: number, host: string) =>
-    `Webhook ${id} target ${host} is refused by webhooks.block_private_addresses (D122)`;
   // The check's promise is returned inside an object: an async function would adopt it, and wait.
   const restart = async () => {
     await f.crashWebhooks();

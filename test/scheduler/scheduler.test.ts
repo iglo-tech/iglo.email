@@ -7,6 +7,14 @@ import { day, hour, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 
+const definition = (steps: Array<object>) => ({
+  name: "Onboarding",
+  status: "active",
+  trigger: { event: "order_paid" },
+  reentry: "always",
+  steps,
+});
+
 const fixtures: Array<SchedulerFixture> = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
@@ -220,13 +228,6 @@ test("an archived sequence or a blocklisted subscriber found at run time exits t
 test("a deleted step advances to the next active step without waiting again", async () => {
   const f = await open();
   const template = await f.template();
-  const definition = (steps: Array<object>) => ({
-    name: "Onboarding",
-    status: "active",
-    trigger: { event: "order_paid" },
-    reentry: "always",
-    steps,
-  });
   const seq = await f.sequence({
     steps: [tx(template), tx(template, { wait: "P1D" }), tx(template, { wait: "P5D" })],
   });

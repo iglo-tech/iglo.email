@@ -2,6 +2,31 @@ import { describe, expect, test } from "bun:test";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 
+const good = () => ({
+  data: {
+    id: 101,
+    owner_id: 101,
+    other_id: 202,
+    created_at: "2026-01-01T00:00:00.000Z",
+    created_copy: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:01.000Z",
+    label: "synthetic 101",
+    fixed: { id: 77 },
+  },
+});
+async function run(first: unknown, referenceId = 101) {
+  const target = server((request) =>
+    new URL(request.url).pathname.endsWith("/reference")
+      ? json({ data: { id: referenceId } })
+      : json(first),
+  );
+  try {
+    return await cli(options(target.origin, "probe"));
+  } finally {
+    await target.close();
+  }
+}
+
 const repository = resolve(import.meta.dir, "../..");
 const fixtureUser = "contract-fixture-user";
 const fixtureToken = "contract-fixture-token";
@@ -270,30 +295,6 @@ describe("contract runner public boundary", () => {
 });
 
 describe("normalization at the HTTP boundary", () => {
-  const good = () => ({
-    data: {
-      id: 101,
-      owner_id: 101,
-      other_id: 202,
-      created_at: "2026-01-01T00:00:00.000Z",
-      created_copy: "2026-01-01T00:00:00.000Z",
-      updated_at: "2026-01-01T00:00:01.000Z",
-      label: "synthetic 101",
-      fixed: { id: 77 },
-    },
-  });
-  async function run(first: unknown, referenceId = 101) {
-    const target = server((request) =>
-      new URL(request.url).pathname.endsWith("/reference")
-        ? json({ data: { id: referenceId } })
-        : json(first),
-    );
-    try {
-      return await cli(options(target.origin, "probe"));
-    } finally {
-      await target.close();
-    }
-  }
   test("preserves independently generated identities and ordered timestamps", async () => {
     for (const id of [101, 9001]) {
       const entity = good();

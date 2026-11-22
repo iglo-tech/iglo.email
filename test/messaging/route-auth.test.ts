@@ -5,6 +5,11 @@ import type { Socket } from "node:net";
 import { startUserFixture } from "@/test/users/fixture";
 import { defaultAuthPolicy } from "@/users/auth";
 
+const greeted = (socket: Socket) =>
+  new Promise((resolve) => {
+    socket.once("data", resolve);
+  });
+
 type Fixture = Awaited<ReturnType<typeof startUserFixture>>;
 const fixtures: Array<Fixture> = [];
 afterEach(async () => {
@@ -166,10 +171,6 @@ test("a loopback probe is not counted as an SMTP client", async () => {
       silent.once("connect", resolve);
     });
     silent.destroy();
-    const greeted = (socket: Socket) =>
-      new Promise((resolve) => {
-        socket.once("data", resolve);
-      });
     const delayed = createConnection({ host: "127.0.0.1", port: smtp.port });
     await greeted(delayed);
     delayed.write("GET / HTTP/1.1\r\n\r\n");

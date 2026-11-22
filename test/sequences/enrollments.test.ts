@@ -8,6 +8,9 @@ import { sequencesFixture } from "@/test/sequences/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SequencesFixture } from "@/test/sequences/fixture";
 
+const ids = (list: Array<{ sequence_id: number }>) =>
+  list.map((e) => e.sequence_id).sort(ascending);
+
 const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
@@ -340,8 +343,6 @@ test("reentry never, after_exit and always", async () => {
   const always = await sequence(f, { reentry: "always" });
   const send = async (name = "order_paid") =>
     (await f.event({ subscriber: { email: "r@example.test" }, name })).body.data.enrollments;
-  const ids = (list: Array<{ sequence_id: number }>) =>
-    list.map((e) => e.sequence_id).sort(ascending);
   const first = await send();
   expect(ids(first.started)).toEqual([never.id, afterExit.id, always.id].sort(ascending));
   // While running: never and after_exit do nothing; always replaces the running one.

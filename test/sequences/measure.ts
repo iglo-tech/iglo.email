@@ -9,6 +9,8 @@ import { mkdirSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 
+const round = (n: number) => +n.toFixed(2);
+
 const repository = resolve(import.meta.dir, "../..");
 const WINDOW_MS = Number(process.env.SEQUENCES_MEASURE_WINDOW_MS ?? 60_000);
 const EVENT_MS = 10;
@@ -32,7 +34,6 @@ function stats(values: Array<number>) {
   }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
-  const round = (n: number) => +n.toFixed(2);
   return {
     n: values.length,
     p50: round(at(0.5)),

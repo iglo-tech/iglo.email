@@ -10,6 +10,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+const stopped = (current) =>
+  new Promise((resolve) => {
+    if (current.exitCode !== null || current.signalCode !== null) {
+      resolve(current.exitCode);
+      return;
+    }
+    const force = setTimeout(() => current.kill("SIGKILL"), 15_000);
+    current.once("exit", (code) => {
+      clearTimeout(force);
+      resolve(code);
+    });
+    current.kill("SIGTERM");
+  });
+
 const execute = promisify(execFile);
 const sleep = (ms) =>
   new Promise((resolve) => {
@@ -142,20 +156,6 @@ export async function startInstance(executable, dataDir, directory) {
       }
     }
   };
-
-  const stopped = (current) =>
-    new Promise((resolve) => {
-      if (current.exitCode !== null || current.signalCode !== null) {
-        resolve(current.exitCode);
-        return;
-      }
-      const force = setTimeout(() => current.kill("SIGKILL"), 15_000);
-      current.once("exit", (code) => {
-        clearTimeout(force);
-        resolve(code);
-      });
-      current.kill("SIGTERM");
-    });
 
   const stop = async () => {
     const current = child;

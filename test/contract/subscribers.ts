@@ -8,6 +8,16 @@ import { runSubscriberScope } from "@/test/contract/subscriber-scope";
 import { runSubscriberQuery } from "@/test/contract/subscriber-query";
 import type { Credentials, Mode } from "@/test/contract/types";
 
+const bytes = (prefix: string, byte: number, tail: string) =>
+  new Uint8Array([...new TextEncoder().encode(prefix), byte, ...new TextEncoder().encode(tail)])
+    .buffer;
+
+function check(condition: unknown, label: string): asserts condition {
+  if (!condition) {
+    throw new Error(`FAIL ${label}`);
+  }
+}
+
 export async function runSubscribersContract(target: {
   mode: Mode;
   baseUrl: string;
@@ -27,11 +37,6 @@ export async function runSubscribersContract(target: {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  function check(condition: unknown, label: string): asserts condition {
-    if (!condition) {
-      throw new Error(`FAIL ${label}`);
-    }
-  }
   async function createList(name: string) {
     const response = await request("/api/lists", "POST", { name, optin: "single" });
     const data = (await response.json()).data;
@@ -262,9 +267,6 @@ export async function runSubscribersContract(target: {
       form.response.status === 200 && form.value.data.name === "Form Name",
       "subscriber-form-fields",
     );
-    const bytes = (prefix: string, byte: number, tail: string) =>
-      new Uint8Array([...new TextEncoder().encode(prefix), byte, ...new TextEncoder().encode(tail)])
-        .buffer;
     const replacement = await raw(
       bytes(`{"email":"bytes-${suffix}@example.test","name":"`, 255, '"}'),
       "application/json",

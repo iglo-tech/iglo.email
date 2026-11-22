@@ -6,6 +6,8 @@ import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 import { createSends } from "@/messaging/sends";
 import { createMarketingPolicy } from "@/unsubscribe/policy";
 
+const smtpMs = (i: number) => ((i * 7) % 10) * 30;
+
 let f: RunnerFixture;
 afterEach(async () => {
   await f?.close();
@@ -145,7 +147,6 @@ test("D59 pacing never exceeds the per-worker rate in any one-second window", as
   await f.status(c.id, "running");
   f.start();
   // SMTP time varies from 0 to 270 ms, standing in for a busy shared thread.
-  const smtpMs = (i: number) => ((i * 7) % 10) * 30;
   await f.drive(async () => {
     f.pushes.forEach((push, i) => {
       if (f.clock.now().getTime() - push.at >= smtpMs(i)) {

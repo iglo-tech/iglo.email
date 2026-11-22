@@ -3,6 +3,11 @@
 import { createRealClock } from "@/clock";
 import { txFixture } from "@/test/tx/fixture";
 
+const link = (data: string) =>
+  /http:\/\/fixture\.test(\/m\/[0-9a-f-]+\/link\/[0-9a-f-]+)/.exec(
+    data.replaceAll("=\r\n", "").replaceAll("=3D", "="),
+  )![1]!;
+
 const N = Number(process.env.UNSUB_MEASURE_N ?? "200");
 const part = process.env.MEASURE_PART ?? "all";
 const stats = (values: Array<number>) => {
@@ -96,10 +101,6 @@ if (part === "all") {
   }
   results.marketingCapSkipMs = stats(capped);
   const mails = f.sink.messages.slice(-N);
-  const link = (data: string) =>
-    /http:\/\/fixture\.test(\/m\/[0-9a-f-]+\/link\/[0-9a-f-]+)/.exec(
-      data.replaceAll("=\r\n", "").replaceAll("=3D", "="),
-    )![1]!;
   const timed = async (fn: (i: number) => Promise<Response>, expected: number) => {
     const values: Array<number> = [];
     for (let i = 0; i < N; i++) {

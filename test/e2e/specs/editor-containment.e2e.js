@@ -6,6 +6,79 @@ import { expect } from "@playwright/test";
 import { corpus, audit } from "../hostile-html.js";
 import { api, ORIGIN, test, unique, signIn } from "../helpers.js";
 
+const afterDrag = async (page, stored) => {
+  await signIn(page);
+  const c = await campaign(page, `<p>text ${stored} more</p>`);
+  await open(page, c.id);
+  await page.locator(`${EDITOR} img`).click();
+  const dragged = await dragCorner(page);
+  await page.locator(EDITOR).click({ position: { x: 5, y: 5 } });
+  await page.locator(EDITOR).pressSequentially("x");
+  const save = page.waitForResponse((r) => r.request().method() === "PUT");
+  await page.keyboard.press("Control+s");
+  expect((await save).status()).toBe(200);
+  const body = (await ok(page, `/api/campaigns/${c.id}`, "GET")).body;
+  return { dragged, tag: /<img[^>]*>/.exec(body)[0] };
+};
+
+const settle = () =>
+  new Promise((resolve) => {
+    const probe = new Image();
+    probe.onload = probe.onerror = () => setTimeout(resolve, 30);
+    probe.src = `/admin/static/favicon.png?${Math.random()}`;
+  });
+const saved = async (page, id) => {
+  const save = page.waitForResponse((r) => r.request().method() === "PUT");
+  await page.keyboard.press("Control+s");
+  expect((await save).status()).toBe(200);
+  return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
+};
+const orderCells = (r) => [
+  `background: url('${r}/hero.gif') center/cover no-repeat; background-color: #1a1a1a`,
+  `background: url('${r}/size.gif'); background-size: cover`,
+  `background-image: url('${r}/a.gif'); background-image: linear-gradient(red, blue)`,
+];
+const styleOf = (html, index) => {
+  const cells = new DOMParser().parseFromString(html, "text/html").querySelectorAll("td");
+  return cells[index].getAttribute("style");
+};
+const storedStyle = (stored) => /<p[^>]*style="([^"]*)"/.exec(stored)[1].replaceAll(/\s+/g, " ");
+const attribute = (tag, name) => new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
+const alt = (dialog) => dialog.locator('[name="alt"]').fill("edited");
+const imageAfter = async (page, stored, change) => {
+  await signIn(page);
+  const c = await campaign(page, `<p>${stored}</p>`);
+  await open(page, c.id);
+  await page.locator(`${EDITOR} img`).dblclick();
+  const dialog = page.locator('richtext-editor dialog[data-rte-dialog="image"]');
+  await expect(dialog).toHaveAttribute("open");
+  await change(dialog);
+  await dialog.locator('[data-rte-act="submit"]').click();
+  await expect(dialog).not.toHaveAttribute("open");
+  const save = page.waitForResponse((r) => r.request().method() === "PUT");
+  await page.keyboard.press("Control+s");
+  expect((await save).status()).toBe(200);
+  return /<img[^>]*>/.exec((await ok(page, `/api/campaigns/${c.id}`, "GET")).body)[0];
+};
+const dragCorner = async (page) => {
+  const handle = page.locator(".squire-resize-handle-se");
+  if (!(await handle.count())) {
+    return false;
+  }
+  const box = await handle.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 120, box.y + 80, { steps: 8 });
+  await page.mouse.up();
+  return true;
+};
+const saveBody = async (page, id) => {
+  const save = page.waitForResponse((r) => r.request().method() === "PUT");
+  await page.keyboard.press("Control+s");
+  expect((await save).status()).toBe(200);
+  return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
+};
+
 const EDITOR = 'richtext-editor [contenteditable="true"]';
 
 async function ok(page, path, method, body) {
@@ -45,12 +118,6 @@ const exercise = (page, html) =>
 async function mountAndAudit(html, check) {
   const host = document.querySelector("richtext-editor");
   const content = host.querySelector("[data-rte-content]");
-  const settle = () =>
-    new Promise((resolve) => {
-      const probe = new Image();
-      probe.onload = probe.onerror = () => setTimeout(resolve, 30);
-      probe.src = `/admin/static/favicon.png?${Math.random()}`;
-    });
   const bad = [];
   host.value = html;
   await settle();
@@ -299,13 +366,6 @@ test.describe("remote images load on request", () => {
     expect(requests.filter((path) => /style\.gif/.test(path))).toEqual([]);
   });
 
-  const saved = async (page, id) => {
-    const save = page.waitForResponse((r) => r.request().method() === "PUT");
-    await page.keyboard.press("Control+s");
-    expect((await save).status()).toBe(200);
-    return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
-  };
-
   test("aligning a block with a held background keeps the alignment and the background (B10)", async ({
     page,
   }) => {
@@ -350,15 +410,6 @@ test.describe("remote images load on request", () => {
 
   // CSS order matters: a shorthand resets the longhands before it, so a held declaration stays
   // where it was and saving without a style edit stores the same declarations in the same order.
-  const orderCells = (r) => [
-    `background: url('${r}/hero.gif') center/cover no-repeat; background-color: #1a1a1a`,
-    `background: url('${r}/size.gif'); background-size: cover`,
-    `background-image: url('${r}/a.gif'); background-image: linear-gradient(red, blue)`,
-  ];
-  const styleOf = (html, index) => {
-    const cells = new DOMParser().parseFromString(html, "text/html").querySelectorAll("td");
-    return cells[index].getAttribute("style");
-  };
 
   test("saving held background cells unedited keeps declaration order and values (B10)", async ({
     page,
@@ -418,8 +469,6 @@ test.describe("remote images load on request", () => {
     expect(style).toContain(`url('${remote}/hero.gif')`);
     expect(stored).not.toContain("data-rte-");
   });
-
-  const storedStyle = (stored) => /<p[^>]*style="([^"]*)"/.exec(stored)[1].replaceAll(/\s+/g, " ");
 
   test("repeated identical declarations in a held block keep their order (B12)", async ({
     page,
@@ -645,24 +694,6 @@ test.describe("remote images load on request", () => {
   });
 
   test.describe("the image dialog on a held image", () => {
-    const imageAfter = async (page, stored, change) => {
-      await signIn(page);
-      const c = await campaign(page, `<p>${stored}</p>`);
-      await open(page, c.id);
-      await page.locator(`${EDITOR} img`).dblclick();
-      const dialog = page.locator('richtext-editor dialog[data-rte-dialog="image"]');
-      await expect(dialog).toHaveAttribute("open");
-      await change(dialog);
-      await dialog.locator('[data-rte-act="submit"]').click();
-      await expect(dialog).not.toHaveAttribute("open");
-      const save = page.waitForResponse((r) => r.request().method() === "PUT");
-      await page.keyboard.press("Control+s");
-      expect((await save).status()).toBe(200);
-      return /<img[^>]*>/.exec((await ok(page, `/api/campaigns/${c.id}`, "GET")).body)[0];
-    };
-    const attribute = (tag, name) => new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
-    const alt = (dialog) => dialog.locator('[name="alt"]').fill("edited");
-
     test("a stored image with no size keeps none", async ({ page }) => {
       const tag = await imageAfter(page, `<img src="${remote}/none.gif" alt="a">`, alt);
       expect(attribute(tag, "alt")).toBe("edited");
@@ -706,32 +737,6 @@ test.describe("remote images load on request", () => {
 
   test.describe("the resize handles", () => {
     // One click selects an image for Squire's resizer; a drag on the corner handle resizes it.
-    const dragCorner = async (page) => {
-      const handle = page.locator(".squire-resize-handle-se");
-      if (!(await handle.count())) {
-        return false;
-      }
-      const box = await handle.boundingBox();
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x + 120, box.y + 80, { steps: 8 });
-      await page.mouse.up();
-      return true;
-    };
-    const afterDrag = async (page, stored) => {
-      await signIn(page);
-      const c = await campaign(page, `<p>text ${stored} more</p>`);
-      await open(page, c.id);
-      await page.locator(`${EDITOR} img`).click();
-      const dragged = await dragCorner(page);
-      await page.locator(EDITOR).click({ position: { x: 5, y: 5 } });
-      await page.locator(EDITOR).pressSequentially("x");
-      const save = page.waitForResponse((r) => r.request().method() === "PUT");
-      await page.keyboard.press("Control+s");
-      expect((await save).status()).toBe(200);
-      const body = (await ok(page, `/api/campaigns/${c.id}`, "GET")).body;
-      return { dragged, tag: /<img[^>]*>/.exec(body)[0] };
-    };
 
     for (const [label, stored] of [
       ["with a stored size", `<img src="REMOTE/sized.gif" alt="b" width="600" height="400">`],
@@ -797,13 +802,6 @@ test.describe("remote images load on request", () => {
       const before = await typedAfter("ArrowLeft");
       expect(before).toMatch(/X<img[^>]*alt="held"[^>]*>X/);
     });
-
-    const saveBody = async (page, id) => {
-      const save = page.waitForResponse((r) => r.request().method() === "PUT");
-      await page.keyboard.press("Control+s");
-      expect((await save).status()).toBe(200);
-      return (await ok(page, `/api/campaigns/${id}`, "GET")).body;
-    };
 
     for (const [label, before] of [
       ["alone in it", ""],

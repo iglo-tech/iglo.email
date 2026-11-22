@@ -233,7 +233,6 @@ export default defineConfig({
         "quality/no-known-value-widening": "off", // B134g: test/ still has the rule's findings.
         "quality/no-conditional-empty-object-spread": "off", // B134g: test/ still has the rule's findings.
         "quality/no-unsafe-dictionary-type": "off", // B134g: test/ still has the rule's findings.
-        "unicorn/consistent-function-scoping": "off", // B134c: test/ still has the rule's findings.
         "typescript/no-unsafe-call": "off", // B134g: test/ still calls values typed any.
         "typescript/no-unsafe-return": "off", // B134g: test/ still returns values typed any.
         "typescript/no-unsafe-type-assertion": "off", // B134g: test/ still asserts from any and unknown.

@@ -4,6 +4,17 @@
 import type { Credentials, Mode } from "@/test/contract/types";
 import type { JsonObject } from "@/test/json-object";
 
+const denied = async (response: Response, message: string, label: string) => {
+  check(response.status === 403, `${label}-status`);
+  check((await response.json()).message === message, `${label}-message`);
+};
+
+function check(value: unknown, label: string): asserts value {
+  if (!value) {
+    throw new Error(`FAIL ${label}`);
+  }
+}
+
 export async function runSubscriberActivity(target: {
   mode: Mode;
   baseUrl: string;
@@ -14,11 +25,6 @@ export async function runSubscriberActivity(target: {
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const resources: Array<{ path: string; id: number }> = [];
   let cleanupFailures = 0;
-  function check(value: unknown, label: string): asserts value {
-    if (!value) {
-      throw new Error(`FAIL ${label}`);
-    }
-  }
   const request = (path: string, method = "GET", body?: unknown, authorization = basic) =>
     fetch(`${target.baseUrl}${path}`, {
       method,
@@ -54,10 +60,6 @@ export async function runSubscriberActivity(target: {
     check(response.status === 200 && value?.id, `subscriber-activity-setup-${path}`);
     resources.push({ path, id: value.id });
     return value;
-  };
-  const denied = async (response: Response, message: string, label: string) => {
-    check(response.status === 403, `${label}-status`);
-    check((await response.json()).message === message, `${label}-message`);
   };
   /** An API user, by the permissions and per-list grants of a role made for it. */
   const caller = async (name: string, permissions: Array<string>, lists: Array<unknown> = []) => {

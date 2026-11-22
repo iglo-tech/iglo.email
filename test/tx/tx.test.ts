@@ -8,6 +8,8 @@ import { txFixture } from "@/test/tx/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { TxFixture } from "@/test/tx/fixture";
 
+const noop = () => {};
+
 const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
@@ -377,7 +379,7 @@ test("a burst of sends with an embedded image all go out", async () => {
 });
 
 test("synchronous sends with an embedded image hold a bounded number of bytes", async () => {
-  let release = () => {};
+  let release = noop;
   const stalled = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -708,7 +710,7 @@ const attachmentForm = (template: number, email: string, async = false) => {
 };
 
 test("synchronous multipart sends with attachments wait for room, then get a 429", async () => {
-  let release = () => {};
+  let release = noop;
   const stalled = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -754,7 +756,7 @@ test("synchronous multipart sends with attachments wait for room, then get a 429
 }, 30_000);
 
 test("a send to several recipients is charged for each recipient's copy (D87)", async () => {
-  let release = () => {};
+  let release = noop;
   const stalled = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -810,7 +812,7 @@ test("the largest sends the request cap allows fit the shipped budget on an idle
 }, 60_000);
 
 test("a multipart request that waits is served when room frees", async () => {
-  let release = () => {};
+  let release = noop;
   const stalled = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -853,7 +855,7 @@ test("a multipart body with no declared size is charged at the body cap", async 
 });
 
 test("a JSON send with an embedded image is not refused because an upload waits (B10)", async () => {
-  let release = () => {};
+  let release = noop;
   const stalled = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -890,7 +892,7 @@ test("a JSON send with an embedded image is not refused because an upload waits 
 }, 30_000);
 
 test("a steady stream of small embedded-image sends cannot keep a waiting upload out (B12)", async () => {
-  let release = () => {};
+  let release = noop;
   const stalled = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -949,7 +951,7 @@ test("a steady stream of small embedded-image sends cannot keep a waiting upload
 }, 30_000);
 
 test("a multipart body over the cap is a 413 even while the budget is full (B10)", async () => {
-  let release = () => {};
+  let release = noop;
   const stalled = new Promise<void>((resolve) => {
     release = resolve;
   });

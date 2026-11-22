@@ -13,6 +13,8 @@ import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import type { JsonObject } from "@/test/json-object";
 
+const round = (n: number) => +n.toFixed(2);
+
 const repository = resolve(import.meta.dir, "../../..");
 const executable = join(repository, "dist/iglo.email");
 const base = resolve(process.env.IGLO_EMAIL_PERF_DIR ?? join(repository, "upstream/measurements"));
@@ -45,7 +47,6 @@ function stats(values: Array<number>) {
   }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
-  const round = (n: number) => +n.toFixed(2);
   return {
     n: values.length,
     p50: round(at(0.5)),

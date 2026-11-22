@@ -5,6 +5,8 @@ import { sequencesFixture } from "@/test/sequences/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { SequencesFixture } from "@/test/sequences/fixture";
 
+const one = (spec: JsonObject) => ({ n: { event: "e", ...spec } });
+
 const fixtures: Array<SequencesFixture> = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
@@ -440,7 +442,6 @@ test("aggregates are validated on save like conditions, and a rejection writes n
     ...definition,
     steps: [{ ...step, aggregates }],
   });
-  const one = (spec: JsonObject) => ({ n: { event: "e", ...spec } });
   // Each refused shape names the field that is wrong, the way conditions do.
   const cases: Array<[string, unknown, string]> = [
     ["not an object", "sum", "steps.0.aggregates"],

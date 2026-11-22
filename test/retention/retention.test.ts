@@ -11,6 +11,9 @@ import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 import type { JsonObject } from "@/test/json-object";
 
+const noop = () => {};
+const cookie = (id: string) => ({ cookie: `session=${id}` });
+
 const day = 86_400_000;
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -50,7 +53,7 @@ function paced(f: TxFixture, left: () => number, holdAfter = Infinity) {
   const yields: Array<number> = [];
   const pauses = new Set<number>();
   let idle = Promise.withResolvers<void>();
-  let resume = () => {};
+  let resume = noop;
   const clock: Clock = {
     now: () => f.clock.now(),
     sleep(milliseconds, signal) {
@@ -144,7 +147,6 @@ test("expired sessions go and valid ones stay", async () => {
     csrf: "c".repeat(43),
     expires_at: f.clock.now().getTime() + 1,
   });
-  const cookie = (id: string) => ({ cookie: `session=${id}` });
   expect((await f.json("/api/profile", "GET", undefined, cookie(old.id))).status).not.toBe(200);
   expect((await f.json("/api/profile", "GET", undefined, cookie(fresh.id))).status).toBe(200);
 

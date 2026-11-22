@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+const round = (n: number) => +n.toFixed(3);
+
 export const repository = resolve(import.meta.dir, "../../..");
 // M6.1 records stay in M6.1-results.jsonl; M6.1b appends to its own file.
 export const resultsFile = process.env.M61_RESULTS_FILE
@@ -77,7 +79,6 @@ export function stats(values: Array<number>) {
   }
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
-  const round = (n: number) => +n.toFixed(3);
   return {
     n: values.length,
     p50: round(at(0.5)),

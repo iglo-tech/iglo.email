@@ -10,6 +10,11 @@ import type { PublicFixture } from "@/test/public/fixture";
 import { TestClock } from "@/test/server/fixture";
 import type { JsonObject } from "@/test/json-object";
 
+const cors = (response: Response) =>
+  Object.fromEntries(
+    [...response.headers].filter(([name]) => /^(vary|access-control-)/.test(name)),
+  );
+
 const fixtures: Array<PublicFixture> = [];
 afterEach(async () => {
   for (const f of fixtures.splice(0)) {
@@ -150,10 +155,6 @@ test("trusted origins can read and post to the public API, as upstream", async (
     "access-control-request-method": "POST",
     "access-control-request-headers": "content-type",
   };
-  const cors = (response: Response) =>
-    Object.fromEntries(
-      [...response.headers].filter(([name]) => /^(vary|access-control-)/.test(name)),
-    );
   // Nothing without a trusted URL.
   expect(
     (await f.peer("/api/public/lists", "192.0.2.1", { headers: origin })).headers.get("vary"),
