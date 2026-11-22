@@ -63,7 +63,7 @@ async function input(context: RequestContext, kind: "user" | "list") {
   }
   if (kind === "user") {
     for (const p of granted) {
-      if (!validPermissions.has(p)) {
+      if (typeof p !== "string" || !validPermissions.has(p)) {
         invalid("permission");
       }
     }

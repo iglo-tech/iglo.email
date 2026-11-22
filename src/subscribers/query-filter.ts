@@ -1,7 +1,7 @@
 // Adapted from listmonk queries/subscribers.sql (query-subscribers, query-subscribers-count,
 // query-subscribers-for-export, query-subscribers-template), models/queries.go ApplyOrphanFilter,
 // internal/core/subscribers.go validateQueryTables and cmd/subscribers.go formatSQLExp at 6fcd95f.
-import type { Database, Statement } from "bun:sqlite";
+import type { Database, SQLQueryBindings, Statement } from "bun:sqlite";
 import { simpleLower } from "@/subscribers/unicode-lower";
 
 /** A SQL argument; integers are int64 identities. */
@@ -321,7 +321,7 @@ export function prepareChecked(db: Database, sql: string, args: Array<Arg>): Sta
     p5: number | bigint;
   }>;
   try {
-    stmt = db.prepare(sql);
+    stmt = db.prepare<unknown, Array<SQLQueryBindings>>(sql);
   } catch (error) {
     throw new QueryError(error instanceof Error ? error.message : "invalid query");
   }
@@ -422,7 +422,9 @@ export function prepareCondition(
   }
   let stmt: Statement;
   try {
-    stmt = db.prepare(parts.map((part, i) => (i ? fragments[i - 1]! : "") + part).join(""));
+    stmt = db.prepare<unknown, Array<SQLQueryBindings>>(
+      parts.map((part, i) => (i ? fragments[i - 1]! : "") + part).join(""),
+    );
   } catch (error) {
     throw new QueryError(error instanceof Error ? error.message : "invalid query");
   }

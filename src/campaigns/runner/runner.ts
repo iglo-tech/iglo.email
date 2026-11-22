@@ -778,20 +778,20 @@ export function createCampaignRunner(deps: RunnerDeps) {
         }
       }
     };
-    let failure: unknown;
+    let failure: PromiseRejectedResult | undefined;
     try {
       // Every worker settles before the pipe can end: none leaves a push outstanding.
       const settled = await Promise.allSettled(
         Array.from({ length: Math.min(concurrency, recipients.length) }, (_, w) => worker(w)),
       );
-      failure = settled.find((r) => r.status === "rejected");
+      failure = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
     } finally {
       heartbeat.abort();
       await beating;
       pipe.links.clear();
     }
     if (failure) {
-      throw (failure as PromiseRejectedResult).reason;
+      throw failure.reason;
     }
     // Progress for the batch: sent count, outcomes, and the unsent rest returned to the cursor.
     const now = iso(clock.now().getTime());

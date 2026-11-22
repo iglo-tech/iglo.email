@@ -3,7 +3,7 @@
 // 04-sending.md#unsubscribe); no upstream source. The sequences module owns `enrollments`.
 // Every write here runs inside the caller's write transaction, so an enrollment change commits
 // or rolls back with the event, consent change or request that caused it.
-import type { Database, Statement } from "bun:sqlite";
+import type { Database, SQLQueryBindings, Statement } from "bun:sqlite";
 import type { Clock } from "@/clock";
 import { compile } from "@/conditions/compile";
 import { parseDuration } from "@/conditions/duration";
@@ -176,7 +176,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         compareSQL("e.data", key.slice("data.".length), "eq", where[key] as Scalar),
       );
       return {
-        statement: db.prepare(
+        statement: db.prepare<unknown, Array<SQLQueryBindings>>(
           `WITH e(data) AS (SELECT ?) SELECT ${parts.map((p) => p.sql).join(" AND ")} FROM e`,
         ),
         params: [(e) => e.data, ...parts.flatMap((p) => p.args)],
@@ -187,7 +187,7 @@ export function createEnrollments(db: Database, clock: Clock) {
       throw new Error("Trigger filters cannot contain sql");
     }
     return {
-      statement: db.prepare(compiled.sql),
+      statement: db.prepare<unknown, Array<SQLQueryBindings>>(compiled.sql),
       params: compiled.params.map((param) =>
         typeof param !== "object"
           ? param
@@ -401,10 +401,12 @@ export function createEnrollments(db: Database, clock: Clock) {
     let statements = listStatements.get(where);
     if (!statements) {
       statements = {
-        rows: db.prepare(
+        rows: db.prepare<unknown, Array<SQLQueryBindings>>(
           `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at, test, (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         ),
-        total: db.prepare(`SELECT count(*) AS n FROM enrollments${where}`),
+        total: db.prepare<unknown, Array<SQLQueryBindings>>(
+          `SELECT count(*) AS n FROM enrollments${where}`,
+        ),
       };
       listStatements.set(where, statements);
     }

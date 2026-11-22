@@ -319,7 +319,9 @@ export function createImporter(deps: {
           deps.touchLists(options.listIds);
         }
       } catch (error) {
-        log.add(`error updating lists date: ${(error as Error).message}`);
+        log.add(
+          `error updating lists date: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       log.add("imported finished");
       status.status = "finished";
@@ -340,7 +342,7 @@ export function createImporter(deps: {
       } else if (error instanceof HttpError) {
         failed(error.message);
       } else {
-        failed(`error importing: ${(error as Error).message}`);
+        failed(`error importing: ${error instanceof Error ? error.message : String(error)}`);
       }
       try {
         deps.notify?.importStatus({

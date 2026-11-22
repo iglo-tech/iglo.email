@@ -116,7 +116,7 @@ function build(operation: Operation) {
 export function buildDocument(): string {
   const paths: Record<string, Record<string, ReturnType<typeof build>>> = {};
   for (const operation of operations) {
-    const [method, path] = operation.route.split(" ") as [string, string];
+    const [method = "", path = ""] = operation.route.split(" ");
     (paths[path] ??= {})[method.toLowerCase()] = build(operation);
   }
   return JSON.stringify({

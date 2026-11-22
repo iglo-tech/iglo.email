@@ -94,8 +94,10 @@ const text = (value: unknown) =>
   typeof value === "string" && value.length <= TEXT_LIMIT ? value.toWellFormed() : bad();
 const integer = (value: unknown) =>
   typeof value === "number" && Number.isSafeInteger(value) ? BigInt(value) : bad();
+// Array.isArray narrows an unknown value to any[]; the predicate keeps its elements unknown.
+const isArray = (value: unknown): value is Array<unknown> => Array.isArray(value);
 const array = (value: unknown, max: number) =>
-  Array.isArray(value) && value.length <= max ? value : bad();
+  isArray(value) && value.length <= max ? value : bad();
 const object = (value: unknown) =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

@@ -52,7 +52,7 @@ export function uploadPathCheck(dataDir: string, store: Pick<MediaStore, "any">)
     try {
       root = uploadRoot(dataDir, next[UPLOAD_PATH]);
     } catch (error) {
-      throw new HttpError(400, (error as Error).message);
+      throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
     const same = (() => {
       try {

@@ -532,7 +532,12 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     }
   }
   for (const budget of Object.values(next["security.public_rate_limit"] ?? {})) {
-    if (!Number.isSafeInteger(budget) || (budget as number) < 1 || (budget as number) > 1_000_000) {
+    if (
+      typeof budget !== "number" ||
+      !Number.isSafeInteger(budget) ||
+      budget < 1 ||
+      budget > 1_000_000
+    ) {
       return fail("Invalid security.public_rate_limit: use whole requests per minute.");
     }
   }

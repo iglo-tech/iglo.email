@@ -213,7 +213,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
     };
     for (const name of ["==", "!=", ">", "<", ">=", "<=", "contains"] as const) {
       const original = operators[name] as (left: unknown, right: unknown, ctx: Context) => unknown;
-      operators[name] = function* (left: unknown, right: unknown, ctx: Context) {
+      // The driver resolves each yielded operator result to a boolean, so the yield expression is one.
+      operators[name] = function* (
+        left: unknown,
+        right: unknown,
+        ctx: Context,
+      ): Generator<unknown, boolean, boolean> {
         const b = budget(ctx);
         chargeComparison(left, b);
         const rightCost = chargeComparison(right, b);
@@ -387,7 +392,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       b.charge(byteLength(out));
       return out;
     });
-    liquid.registerFilter("number", function (value) {
+    liquid.registerFilter("number", function (value: unknown) {
       const b = budget(this.context);
       b.step();
       // Only finite numbers are formatted. Anything else returns unchanged, so it renders as it would
@@ -604,7 +609,8 @@ export function createRenderer(clock: Clock, translation: Translation) {
         if (object instanceof Drop && (typeof key !== "string" || !loopProperties.has(key))) {
           throw new Error("Invalid loop property");
         }
-        return read(object, key);
+        const value: unknown = read(object, key);
+        return value;
       };
       // Only the range evaluator uses the built-in memory limiter in our supported subset.
       const use = ctx.memoryLimit.use.bind(ctx.memoryLimit);

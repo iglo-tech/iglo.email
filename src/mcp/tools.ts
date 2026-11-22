@@ -566,8 +566,11 @@ export const TOOLS: Array<ToolDefinition> = [
   ...GENERATED.map((entry) => entry.tool),
 ];
 
+// Array.isArray narrows an unknown value to any[]; the predicate keeps its elements unknown.
+const isArray = (value: unknown): value is Array<unknown> => Array.isArray(value);
+
 function extractPositiveIds(items: unknown): Array<number> {
-  if (!Array.isArray(items)) {
+  if (!isArray(items)) {
     return [];
   }
   return items

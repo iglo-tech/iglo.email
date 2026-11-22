@@ -19,6 +19,14 @@ export interface FilesystemSettings {
   uploadUri: string;
 }
 
+// The fs error code of a caught value: its `code` when that is a string, otherwise undefined.
+function errorCode(error: unknown): string | undefined {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    return typeof error.code === "string" ? error.code : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Temporary files, inside the directory for an atomic rename. No stored name can start with a
  * dot, and this name says whose it is: an operator's `.tmp` is not ours to touch.
@@ -115,7 +123,7 @@ function canonical(path: string): string {
   try {
     return realpathSync(path);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+    if (errorCode(error) !== "ENOENT") {
       throw error;
     }
   }
@@ -246,7 +254,7 @@ export function createFilesystem(dataDir: string, settings: () => FilesystemSett
             closeSync(openSync(join(dir, candidate), "wx", 0o644));
             stored = candidate;
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+            if (errorCode(error) !== "EEXIST") {
               throw error;
             }
           }

@@ -148,11 +148,11 @@ function bindJSON(text: string, out: TxMessage) {
   try {
     parsed = JSON.parse(
       text,
-      function (this: JsonHolder, key, value, context?: { source?: string }) {
+      function (this: JsonHolder, key, value: unknown, context?: { source?: string }) {
         if (typeof value === "number" && context?.source !== undefined) {
           let entries = sources.get(this);
           if (!entries) {
-            sources.set(this, (entries = new Map()));
+            sources.set(this, (entries = new Map<string, string>()));
           }
           entries.set(key, context.source);
         }

@@ -117,7 +117,7 @@ function storedOutcome(text: string | null): StoredOutcome {
     return { enrollments: { started: [], ended: [], skipped: [] }, grants: [] };
   }
   // Integers beyond 2^53 in enrollments stay exact.
-  const stored = JSON.parse(text, (_key, value, context?: { source?: string }) =>
+  const stored = JSON.parse(text, (_key: string, value: unknown, context?: { source?: string }) =>
     typeof value === "number" && !Number.isSafeInteger(value) && context?.source
       ? rawJSON(context.source)
       : value,

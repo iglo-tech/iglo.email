@@ -290,7 +290,7 @@ const missing = (name: string): OperationRequest => ({
  * `content_base64` (the file) and the operation's other form fields.
  */
 export function operationRequest(op: Operation, args: Record<string, unknown>): OperationRequest {
-  const [method, route] = op.route.split(" ") as [string, string];
+  const [method = "", route = ""] = op.route.split(" ");
   let path = route;
   for (const param of pathNames(route)) {
     const value = args[param];

@@ -11,6 +11,8 @@ const block = (value: string, label: Child) => (
     {label}
   </button>
 );
+const headingTags = { 1: "h1", 2: "h2", 3: "h3", 4: "h4", 5: "h5", 6: "h6" } as const;
+
 function Toolbar({ t }: { t: Translation }) {
   /** A toolbar button named by its title. */
   const command = (
@@ -25,9 +27,9 @@ function Toolbar({ t }: { t: Translation }) {
   );
   const tool = (cmd: string, key: string, name: string, extra: Record<string, string> = {}) =>
     command(cmd, t.T(`editor.${key}`), name, extra);
-  const heading = (level: number) => {
+  const heading = (level: keyof typeof headingTags) => {
     const label = `${t.T("editor.heading")} ${level}`;
-    const Tag = `h${level}` as "h1";
+    const Tag = headingTags[level];
     return block(`H${level}`, <Tag>{label}</Tag>);
   };
   const colors = (name: string, key: string, glyph: string, value: string) => (
@@ -80,7 +82,7 @@ function Toolbar({ t }: { t: Translation }) {
           </button>
           <menu popover="" id="rte-blockformat" class="rte-menu">
             {block("P", t.T("editor.paragraph"))}
-            {[1, 2, 3, 4, 5, 6].map(heading)}
+            {([1, 2, 3, 4, 5, 6] as const).map(heading)}
             {block("BLOCKQUOTE", t.T("editor.blockquote"))}
             {block("PRE", t.T("globals.terms.code"))}
           </menu>

@@ -91,7 +91,8 @@ export function holdDataDirectory(
       try {
         truncateSync(path);
       } catch (error_) {
-        throw new Error(`Cannot lock ${path}: ${(error_ as Error).message}`, { cause: error_ });
+        const reason = error_ instanceof Error ? error_.message : String(error_);
+        throw new Error(`Cannot lock ${path}: ${reason}`, { cause: error_ });
       }
     }
   }

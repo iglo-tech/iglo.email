@@ -39,10 +39,12 @@ function bytes6(address: string): Array<number> {
   let text = address.split("%", 1)[0]!;
   const dotted = /(\d+\.\d+\.\d+\.\d+)$/.exec(text)?.[1];
   if (dotted) {
-    const [a, b, c, d] = octets(dotted) as [number, number, number, number];
+    // The pattern captures exactly four octets, so the defaults never apply.
+    const [a = 0, b = 0, c = 0, d = 0] = octets(dotted);
     text = `${text.slice(0, -dotted.length)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
   }
-  const [head, tail] = text.split("::") as [string, string | undefined];
+  // split always returns at least one part, so the empty default never applies.
+  const [head = "", tail] = text.split("::");
   const before = groups(head),
     after = groups(tail);
   const words =

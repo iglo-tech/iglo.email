@@ -36,7 +36,8 @@ function mappedIPv4(value: string): boolean {
   const [left, right] = value.split("::");
   const a = parse(left ?? ""),
     b = parse(right ?? "");
-  const words = right === undefined ? a : [...a, ...Array(8 - a.length - b.length).fill(0), ...b];
+  const words =
+    right === undefined ? a : [...a, ...Array<number>(8 - a.length - b.length).fill(0), ...b];
   return words.length === 8 && words.slice(0, 5).every((x) => x === 0) && words[5] === 0xff_ff;
 }
 
