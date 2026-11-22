@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAnalyticsReader } from "@/analytics/reader";
 
+// Each child logs when it starts and, once released, when it ends; the order of the log says
+// whether the second read ran beside the first or waited for it. No elapsed time is measured.
 const run = async (advance: boolean) => {
   const directory = mkdtempSync(join(tmpdir(), "iglo-gap-"));
   const log = join(directory, "log");
@@ -97,8 +99,6 @@ test("many unread near-cap responses stop at the budget", async () => {
 });
 
 test("continuous overlap forces a gap after the window, by the injected clock", async () => {
-  // Each child logs when it starts and, once released, when it ends; the order of the log says
-  // whether the second read ran beside the first or waited for it. No elapsed time is measured.
   expect(await run(false)).toEqual(["start", "start", "end", "end"]);
   expect(await run(true)).toEqual(["start", "end", "start", "end"]);
 });
