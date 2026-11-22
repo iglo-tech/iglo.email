@@ -1242,6 +1242,13 @@ The first two are what a reader can do on a public page; the last is an operator
 | The subscriber's status | Unchanged (`enabled`) | Unchanged (`enabled`) | `blocklisted` |
 | Webhook | `subscriber.unsubscribed`, with `data.list_ids`; no `suppressed` field | `subscriber.unsubscribed`, with `data.list_ids` and `data.suppressed: true` | `subscriber.blocklisted` |
 
+- **A bounce's `unsubscribe` action** is not in the table's columns. It takes every list the address is still subscribed to,
+  keeping the status, and each of those lists ends its enrollments as the single-list column does. So a transactional-only sequence
+  tied to one of those lists keeps sending to the address that bounced, and its marketing steps end. A bounce's
+  `blocklist` and `delete` actions stop everything, as the last column does. ([D128](design/09-decisions.md#d128-public-pages-offer-only-what-a-subscriber-can-act-on-and-all-lists-unsubscribing-is-not-a-blocklist-lead-2026-11-20) items 9 and 11.)
+- **"Next step"** is the step the enrollment runs next: its current step, or, when that step was deleted, the first active
+  step after it. A deleted marketing step whose next active step is transactional keeps its enrollment running.
+
 - **Unsubscribe from all mailing lists** is the page's option for a person who wants no marketing at all. It is not a
   blocklist: a person who ticks it still receives receipts, payment reminders and password resets. It writes the same
   suppression a self-wipe writes (keyed hashes, no address), so a later event, create or import does not put the person
