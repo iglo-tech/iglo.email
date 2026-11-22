@@ -11,6 +11,7 @@ import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
+import { asBody, readJson } from "@/test/read-body";
 import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -97,15 +98,14 @@ async function api(port: number, method: string, path: string, body?: unknown) {
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  return { status: response.status, data: ((await response.json()) as { data: any }).data };
+  return { status: response.status, data: (await readJson<{ data: any }>(response)).data };
 }
 
 /** Every template by name, with its stored body. */
 async function templates(port: number) {
-  const rows = (await api(port, "GET", "/api/templates")).data as Array<{
-    id: number;
-    name: string;
-  }>;
+  const rows = asBody<Array<{ id: number; name: string }>>(
+    (await api(port, "GET", "/api/templates")).data,
+  );
   const byName = new Map<string, { id: number; body: string; is_default: boolean }>();
   for (const row of rows) {
     const full = (await api(port, "GET", `/api/templates/${row.id}`)).data;
@@ -120,7 +120,8 @@ const earlier = (file: string) => Bun.file(join(import.meta.dir, "earlier-templa
 function userVersion(dataDir: string): number {
   const db = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
   try {
-    return Number((db.query("PRAGMA user_version").get() as { user_version: number }).user_version);
+    const row = asBody<{ user_version: number }>(db.query("PRAGMA user_version").get());
+    return Number(row.user_version);
   } finally {
     db.close(true);
   }

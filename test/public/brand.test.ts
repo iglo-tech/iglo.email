@@ -8,6 +8,7 @@ import { afterEach, expect, test } from "bun:test";
 import { initialTemplates } from "@/templates/builtins";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
+import { asBody } from "@/test/read-body";
 
 const brandUrl = "https://brand.example.test/";
 const logo = "https://brand.example.test/logo.png";
@@ -47,7 +48,7 @@ function decoded(data: string) {
 async function sendTo(f: PublicFixture, email = "ada@example.test") {
   const list = await f.list("News", "public");
   const id = await f.subscriber(email, "Ada", { lists: [list.id] });
-  const uuid = (await f.json(`/api/subscribers/${id}`)).body.data.uuid as string;
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
   const template = await f.template(`<a href="{{ unsubscribe_url }}">unsub</a>`, "News");
   const sent = await f.tx({
     subscriber_id: id,
@@ -56,7 +57,7 @@ async function sendTo(f: PublicFixture, email = "ada@example.test") {
     list_id: list.id,
     data: {},
   });
-  return { id, uuid, send: sent.body.data.sends[0].uuid as string, email };
+  return { id, uuid, send: asBody<string>(sent.body.data.sends[0].uuid), email };
 }
 
 test("the default brand keeps today's look: the built-in blue, the system stack and the name", async () => {

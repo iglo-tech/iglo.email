@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { admin, api, get, login, userWith } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
+import { readJson } from "@/test/read-body";
 import { startUserFixture } from "@/test/users/fixture";
 
 let f: Fixture;
@@ -18,7 +19,7 @@ afterAll(() => f.close());
 async function setting(key: string): Promise<unknown> {
   const res = await get(f, "/api/settings", cookie);
   expect(res.status).toBe(200);
-  return ((await res.json()) as { data: Record<string, unknown> }).data[key];
+  return (await readJson<{ data: Record<string, unknown> }>(res)).data[key];
 }
 
 async function put(key: string, value: string) {
