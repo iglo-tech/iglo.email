@@ -4,6 +4,19 @@ Event ingest writes inside `writeTransaction`, which holds SQLite's single write
 conflict decision that B131 adds (D129) is storage work under AGENTS. This records the events
 harness on the merge base and on the head.
 
+## Result (round-2 verification, interleaved, authoritative)
+
+Five interleaved pairs (base, head, base, head, …) of `bun test/events/measure.ts events` in one `oven/bun:1.4.5` container. Base `b5d5dfa` (the real merge base after the PR merged main), head `54780a2`. Every run answered 6000 of 6000 with nothing shed.
+
+| median of 5 (range), ms | base | head |
+| --- | --- | --- |
+| accept p50 | 6.45 (5.60–7.12) | 6.24 (5.65–6.78) |
+| accept p99 | 50.2 (24.8–343.6) | 48.9 (36.7–106.5) |
+
+Head was below base at p99 in 4 of the 5 pairs; p99 swings up to 14× between consecutive runs of the same build, so it measures host contention. `EXPLAIN QUERY PLAN` shows both added queries are index lookups; the e-mail lookup costs about 13 µs on 200,000 subscribers, and the memberships read runs only on the claim path, which the harness never reaches. **The event path did not regress.**
+
+The first measurement below is kept for the record but is superseded: its base (`7021988`) predates the merge of main into the PR, so the two builds differed by more than this PR, and three back-to-back runs on a loaded host could not separate the lookup from load.
+
 ## Setup
 
 - Harness: `bun test/events/measure.ts events` (open-loop events at 100 per second for a 60 s
@@ -14,8 +27,7 @@ harness on the merge base and on the head.
   `bun run build`. Runs back to back: base 1 to 3, then head 1 to 3, one minute each.
 - Base: `7021988`, the merge base of PR #185. Executable SHA-256 `61ed463d…4904a4`.
 - Head: `6729a17`, the code of this PR before its measurement doc. Executable SHA-256
-  `bcc176c1…fc21a`. Both executables are built from the same tree layout; the only difference is
-  this PR's change.
+  `bcc176c1…fc21a`. (This base predates the merge of main into the PR, so the builds differ by more than this PR; see the result above.)
 - The host is shared with other agents' containers, so the load is not constant. `uptime` is the
   kernel's uptime in seconds and the 1, 5 and 15 minute load averages, read from `/proc` in the
   container.
