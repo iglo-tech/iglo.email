@@ -177,13 +177,12 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     check(invalid.status === 400, "role-invalid-permission");
     const reference = target.mode === "reference";
     check(
-      (await invalid.text()) ===
+      JSON.stringify(listmonkEnvelope(JSON.parse(await invalid.text()))) ===
         JSON.stringify({
           message: reference
             ? "Invalid fields: permission: unknown:permission"
             : "Invalid fields: permission",
-        }) +
-          "\n",
+        }),
       "D31-invalid-user-permission-message",
     );
     // User-role replacement requires an explicit array; list children retain
@@ -271,13 +270,12 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       invalidList.status === 400 &&
-        (await invalidList.text()) ===
+        JSON.stringify(listmonkEnvelope(JSON.parse(await invalidList.text()))) ===
           JSON.stringify({
             message: reference
               ? "Invalid fields: list permission: unknown:permission"
               : "Invalid fields: list permission",
-          }) +
-            "\n",
+          }),
       "D31-invalid-list-permission-message",
     );
     const duplicate = await request("/api/roles/users", "POST", {
@@ -301,13 +299,12 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       badChildCreate.status === 500 &&
-        (await badChildCreate.text()) ===
+        JSON.stringify(listmonkEnvelope(JSON.parse(await badChildCreate.text()))) ===
           JSON.stringify({
             message: reference
               ? `Error creating Role: code=500, message=Error creating Role: ${childDetail}`
               : "Error creating Role",
-          }) +
-            "\n",
+          }),
       "D31-invalid-child-create-message",
     );
     const after = await request(`/api/roles/lists?query=bad-child-${suffix}`);
@@ -392,13 +389,12 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       missing.status === 500 &&
-        (await missing.text()) ===
+        JSON.stringify(listmonkEnvelope(JSON.parse(await missing.text()))) ===
           JSON.stringify({
             message: reference
               ? "Error updating User role: sql: no rows in result set"
               : "Error updating User role",
-          }) +
-            "\n",
+          }),
       "D31-missing-role",
     );
     const primordial = await request("/api/roles/users/1", "PUT", {
@@ -412,13 +408,12 @@ export async function runRolesContract(target: AuthTarget): Promise<void> {
     });
     check(
       invalidChild.status === 500 &&
-        (await invalidChild.text()) ===
+        JSON.stringify(listmonkEnvelope(JSON.parse(await invalidChild.text()))) ===
           JSON.stringify({
             message: reference
               ? `Error creating List role: code=500, message=Error creating Role: ${childDetail}`
               : "Error creating List role",
-          }) +
-            "\n",
+          }),
       "D31-invalid-child-update-message",
     );
     const currentLists = await request("/api/roles/lists");
