@@ -236,3 +236,68 @@ test("an enrollment a step condition exited keeps the condition's text, on its t
   expect(cancelledRow).toMatchObject({ status: "canceled", exit_reason: "manual" });
   expect(cancelledRow.exit_condition).toBeNull();
 }, 60_000);
+
+// B127 r2: an enrollment an event exited (exit_on) names that event on its timeline and in the
+// subscriber's Enrollments list, and the event's row names the sequence it exited.
+test("an enrollment an event exited (exit_on) names the event, and the event names the sequence", async () => {
+  const f = await open();
+  const template = await f.template("<p>Hi</p>", "Waiting");
+  await f.sequence({
+    name: "Exit path",
+    trigger: { event: "exit_start" },
+    exit_on: ["exit_stop"],
+    reentry: "always",
+    steps: [tx(template, { wait: "P1D" })],
+  });
+  const began = await f.event("exit@example.test", "exit_start", {
+    subscriber: { email: "exit@example.test", name: "Ana" },
+  });
+  const id = began.enrollments.started[0]!.id;
+  const subscriber = began.subscriber_id;
+  const stop = await f.json("/api/subscriber-events", "POST", {
+    subscriber: { email: "exit@example.test", name: "Ana" },
+    name: "exit_stop",
+  });
+  const ended = asBody<{ enrollments: { ended: Array<unknown> } }>(stop.body.data);
+  expect(ended.enrollments.ended).toEqual([
+    { id, sequence_id: expect.anything(), exit_reason: "event:exit_stop" },
+  ]);
+
+  const row = await f.enrollment(id);
+  expect(row).toMatchObject({ status: "exited", exit_reason: "event:exit_stop" });
+  expect(row.exit_condition).toBeNull();
+
+  const entries = asBody<
+    Array<{
+      type: string;
+      reason?: string | null;
+      at?: string | null;
+      condition?: string | null;
+    }>
+  >((await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries);
+  expect(entries.find((entry) => entry.type === "ended")).toMatchObject({
+    reason: "event:exit_stop",
+    at: row.finished_at,
+    condition: null,
+  });
+
+  const listed = asBody<Array<{ id: number; exit_reason: string | null }>>(
+    (await f.json(`/api/subscribers/${subscriber}/enrollments`)).body.data.results,
+  ).find((r) => r.id === id);
+  expect(listed?.exit_reason).toBe("event:exit_stop");
+
+  const rows = asBody<
+    Array<{
+      name: string;
+      started: Array<{ sequence_name: string }>;
+      exited: Array<{ sequence_name: string; enrollment_id: number }>;
+    }>
+  >((await f.json(`/api/subscribers/${subscriber}/subscriber-events`)).body.data.results);
+  const stopped = rows.find((r) => r.name === "exit_stop")!;
+  expect(stopped.exited).toEqual([
+    expect.objectContaining({ enrollment_id: id, sequence_name: "Exit path" }),
+  ]);
+  expect(rows.find((r) => r.name === "exit_start")!.started).toEqual([
+    expect.objectContaining({ sequence_name: "Exit path" }),
+  ]);
+}, 60_000);
