@@ -420,7 +420,6 @@ export default defineConfig({
         "src/templates/routes.ts", // request body JSON
         "src/templates/sample.ts", // sample data JSON
         "src/users/handlers.ts", // request fields checked above (type and status), and the request body
-        "src/webhooks/routes.ts", // request body JSON
       ],
       rules: { "typescript/no-unsafe-type-assertion": "off" },
     },
