@@ -222,15 +222,16 @@ export default defineConfig({
       ],
       rules: { "quality/no-conditional-empty-object-spread": "off" },
     },
-    // B134c: test/ still prints from its measure, runner and reference scripts, and still has the findings of the
-    // rules that src/ has already fixed (B134b): test/ follows in B134c. Covers test/ JavaScript specs too.
+    // Test code (test/, JavaScript specs included): the rules still off here are B134c's unfinished work (the
+    // B134c markers) or B134g's type rules; no-console is permanent for test/ (see the comment below).
     {
       files: ["test/**"],
       rules: {
         // Permanent: test runners, measure and reference scripts print their own command output, which AGENTS.md allows.
         "no-console": "off",
-        "no-promise-executor-return": "off",
+        // B134c: test/ still has 74 object-typed parameters and 143 returns in promise executors; not yet fixed.
         "quality/no-object-parameters": "off",
+        "no-promise-executor-return": "off",
         "quality/no-unknown-returns": "off", // B134g: test/ still has the rule's findings.
         "quality/no-known-value-widening": "off", // B134g: test/ still has the rule's findings.
         "quality/no-conditional-empty-object-spread": "off", // B134g: test/ still has the rule's findings.
@@ -509,7 +510,5 @@ export default defineConfig({
     "react/checked-requires-onchange-or-readonly": "off", // HTML `checked` on a static form control
     "react/rules-of-hooks": "off", // no hooks in the in-house runtime
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
-
-    // B134c: findings remain only in test/.
   },
 });
