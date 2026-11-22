@@ -215,6 +215,55 @@ test("a wiped sequence send keeps its sequence and step, and its template's name
   await expect(wiped).not.toContainText(email);
 });
 
+// B127 r2: a step condition that ends an enrollment names its text, on the timeline and the tab.
+test("an enrollment a step condition ended names the condition, on its timeline and the subscriber's tab", async ({
+  page,
+}) => {
+  await signIn(page);
+  const list = await audience(page);
+  const tx = await template(page);
+  const event = unique("op-gate");
+  const made = await api(page, "/api/sequences", "POST", {
+    name: unique("Gate"),
+    status: "active",
+    trigger: { event },
+    reentry: "always",
+    list_id: list.id,
+    steps: [
+      {
+        wait: "PT0S",
+        kind: "transactional",
+        template_id: tx.id,
+        condition: { attr: "plan", op: "eq", value: "subscription" },
+      },
+    ],
+  });
+  expect(made.status).toBe(200);
+  const began = await api(page, "/api/subscriber-events", "POST", {
+    subscriber: {
+      email: `${unique("op")}@example.com`,
+      name: "Gate",
+      grant_lists: [list.id],
+      attribs: { plan: "free" },
+    },
+    name: event,
+  });
+  expect(began.status).toBe(200);
+  const { subscriber_id: subscriber } = began.body.data;
+  const enrollment = began.body.data.enrollments.started[0].id;
+  await expect
+    .poll(async () => (await api(page, `/api/enrollments/${enrollment}`)).body.data.status)
+    .toBe("exited");
+
+  await page.goto(`/admin/sequences/enrollments/${enrollment}`);
+  await expect(page.getByTestId("timeline")).toContainText("Step condition not met: ");
+  await expect(page.getByTestId("timeline")).toContainText('"value":"subscription"');
+  await page.goto(`/admin/subscribers/${subscriber}/enrollments`);
+  await expect(page.getByTestId("enrollment-row").first()).toContainText(
+    'Step condition not met: {"attr":"plan","op":"eq","value":"subscription"}',
+  );
+});
+
 test("a send with no subject says why: a refused one was never prepared, a wiped one lost its address", async ({
   page,
 }) => {
