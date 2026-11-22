@@ -167,7 +167,7 @@ export async function healthWhenReady(
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       const stderr =
-        child.stderr instanceof ReadableStream ? await new Response(child.stderr).text() : "";
+        typeof child.stderr === "object" ? await new Response(child.stderr).text() : "";
       throw new Error(`Server exited before it became ready: ${stderr}`);
     }
     try {

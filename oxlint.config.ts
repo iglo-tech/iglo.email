@@ -239,7 +239,6 @@ export default defineConfig({
         "no-empty": "off",
         "no-promise-executor-return": "off",
         "quality/no-object-parameters": "off",
-        "@nkzw/no-instanceof": "off",
         "unicorn/text-encoding-identifier-case": "off", // B134c: test/ still spells "utf8" in its helpers and specs.
         "quality/no-unknown-returns": "off", // B134g: test/ still has the rule's findings.
         "quality/no-known-value-widening": "off", // B134g: test/ still has the rule's findings.
@@ -275,6 +274,22 @@ export default defineConfig({
     {
       files: ["test/perf/m61/tail-probe.ts"],
       rules: { "quality/no-chained-type-assertions": "off" },
+    },
+    // Exceptions, for the lead to decide at review (no-instanceof). Each check is for a platform or own class where
+    // the exact class is the point: a FormData body is sent as it is and anything else as JSON, so a duck check on
+    // `append` would also take look-alikes; the own Listed error is the stop signal of the route listing; the browser
+    // audits detect DOM clobbering, which replaces globals such as `location` with elements that a duck check accepts.
+    {
+      files: [
+        "test/contract/import.ts",
+        "test/contract/media.ts",
+        "test/e2e/specs/csp.e2e.js",
+        "test/e2e/specs/editor-containment.e2e.js",
+        "test/import/import.test.ts",
+        "test/media/embed-contract.ts",
+        "test/openapi/routes-entry.ts",
+      ],
+      rules: { "@nkzw/no-instanceof": "off" },
     },
     // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
     // (its values are typed per key, and a per-key schema is a separate design, D132), and the journal payload is
