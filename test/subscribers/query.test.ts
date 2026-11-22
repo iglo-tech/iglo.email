@@ -248,6 +248,7 @@ describe("GET /api/subscribers", () => {
     const big = await f.json(`/api/subscribers?query=${q("length(randomblob(1000000000)) > 0")}`);
     expect(big.body).toEqual({
       message: "Error fetching Subscribers: query exceeded the memory limit",
+      code: "internal_error",
     });
     expect(children().length).toBe(before);
   });
