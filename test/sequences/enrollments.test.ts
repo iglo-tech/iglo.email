@@ -559,7 +559,8 @@ test("unsubscribing exits enrollments of sequences tied to those lists only", as
     [onPromo.id]: "active:null",
     [plain.id]: "active:null",
   });
-  // Unsubscribing with blocklist ends every active enrollment as blocklisted.
+  // The public "all lists" option (B130, D128): an enrollment whose next step is marketing ends as an
+  // unsubscribe does. The plain sequence's step is transactional, so it keeps running; no blocklist.
   const four = await start("u4@example.test");
   const uuid4 = (await f.json(`/api/subscribers/${four}`)).body.data.uuid;
   const sent4 = await f.json("/api/tx", "POST", {
@@ -574,11 +575,12 @@ test("unsubscribing exits enrollments of sequences tied to those lists only", as
     body: "blocklist=true",
   });
   expect(block.status).toBe(200);
-  expect(Object.values(await states(four))).toEqual([
-    "exited:blocklisted",
-    "exited:blocklisted",
-    "exited:blocklisted",
-  ]);
+  expect(await states(four)).toEqual({
+    [onNews.id]: "exited:unsubscribed",
+    [onPromo.id]: "exited:unsubscribed",
+    [plain.id]: "active:null",
+  });
+  expect((await f.json(`/api/subscribers/${four}`)).body.data.status).toBe("enabled");
 });
 
 test("a repeated public unsubscribe exits enrollments started after the first one", async () => {

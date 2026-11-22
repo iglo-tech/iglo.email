@@ -451,7 +451,7 @@
     "public.subName": "Nume (opțional)",
     "public.subOptinPending": "Ti-a fost trimis un email pentru a confirma abonamentul/abonamentele.",
     "public.subPrivateList": "Lista privată",
-    "public.unsubFull": "Blochează și toate e-mailurile viitoare de la acest serviciu.",
+    "public.unsubAllLists": "Dezabonează-te de la toate listele de e-mail.",
     "public.unsubHelp": "Dorești să te dezabonezi de la această listă de email?",
     "public.unsubbedInfo": "V-ați dezabonat cu succes.",
     "public.unsubscribeTitle": "Dezabonare de la lista de corespondență",

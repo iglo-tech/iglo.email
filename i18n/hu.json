@@ -451,7 +451,7 @@
     "public.subName": "Név (nem kötelező)",
     "public.subOptinPending": "A tagság megerősítésének érdekében e-mailt küldtünk Önnek.",
     "public.subPrivateList": "Privát",
-    "public.unsubFull": "Egyúttal blokkolja a szolgáltatás összes jövőbeli e-mailjét is.",
+    "public.unsubAllLists": "Leiratkozás minden levelezési listáról.",
     "public.unsubHelp": "Le szeretne iratkozni erről a listáról?",
     "public.unsubbedInfo": "Sikeresen leiratkozott.",
     "public.unsubscribeTitle": "Leiratkozás listáról",

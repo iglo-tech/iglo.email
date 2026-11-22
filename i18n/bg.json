@@ -451,7 +451,7 @@
     "public.subName": "Име (по избор)",
     "public.subOptinPending": "Изпратен е имейл, за да потвърдите абонамента(ите) си.",
     "public.subPrivateList": "Частен списък",
-    "public.unsubFull": "Блокиране и на всички бъдещи имейли от тази услуга.",
+    "public.unsubAllLists": "Отписване от всички имейл списъци.",
     "public.unsubHelp": "Искате ли да се отпишете от този пощенски списък?",
     "public.unsubbedInfo": "Успешно сте отписани.",
     "public.unsubscribeTitle": "Отписване от пощенски списък",

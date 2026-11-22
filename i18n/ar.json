@@ -451,7 +451,7 @@
     "public.subName": "الاسم (اختياري)",
     "public.subOptinPending": "تم إرسال رسالة تأكيد إلى بريدك الإلكتروني.",
     "public.subPrivateList": "قائمة خاصة",
-    "public.unsubFull": "حظر جميع رسائل البريد الإلكتروني المستقبلية من هذه الخدمة أيضًا.",
+    "public.unsubAllLists": "إلغاء الاشتراك من جميع القوائم البريدية.",
     "public.unsubHelp": "هل تريد إلغاء اشتراكك من هذه القائمة البريدية؟",
     "public.unsubbedInfo": "تم إلغاء اشتراكك بنجاح.",
     "public.unsubscribeTitle": "إلغاء الاشتراك من القائمة البريدية",

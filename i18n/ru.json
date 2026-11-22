@@ -451,7 +451,7 @@
     "public.subName": "Имя (необязательно)",
     "public.subOptinPending": "Вам отправлено письмо для подтверждения подписки(ок).",
     "public.subPrivateList": "Приватный список",
-    "public.unsubFull": "Также заблокировать все будущие письма от этого сервиса.",
+    "public.unsubAllLists": "Отписаться от всех рассылок.",
     "public.unsubHelp": "Хотите отписаться от этой рассылки?",
     "public.unsubbedInfo": "Вы успешно отписались.",
     "public.unsubscribeTitle": "Отписаться от рассылки",

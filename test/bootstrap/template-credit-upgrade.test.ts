@@ -1,10 +1,10 @@
-// B129 (D127, review blocker 1): an install from before this release keeps the built-in templates
-// with the product credit, since the store seeds only an empty database. Through the compiled
-// executable: a first start seeds the bodies a fresh install gets; then the data directory is put
-// back to an earlier release's state (schema 26, its three seeded bodies, and one archive copy edited
-// by one byte). The next start runs migration 27. The seeded copies then hold this release's bodies,
-// the edited copy keeps its body, and an archived campaign on the migrated template renders with no
-// credit and with the site's brand.
+// B129 (D127, review blocker 1) and B130 (D128): an install from before this release keeps the built-in
+// templates with the product credit, since the store seeds only an empty database. Through the compiled
+// executable: a first start seeds the bodies a fresh install gets; then the data directory is put back
+// to an earlier release's state (schema 26, its three seeded bodies, and one archive copy edited by one
+// byte). The next start runs migrations 27 and 28. The seeded copies then hold this release's bodies
+// (the sample transactional template takes the brand, B130), the edited copy keeps its body, and an
+// archived campaign on the migrated template renders with no credit and with the site's brand.
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
@@ -165,11 +165,11 @@ test("a seeded install from before this release takes the migrated bodies, and a
     db.close(true);
   }
 
-  // The next start runs migration 27.
+  // The next start runs migrations 27 and 28.
   const second = await up(dataDir);
   try {
     const after = await templates(second.port);
-    expect(userVersion(dataDir)).toBe(27);
+    expect(userVersion(dataDir)).toBe(28);
     expect(after.get(names.campaign)?.body).toBe(seeded.get(names.campaign)?.body);
     expect(after.get(names.archive)?.body).toBe(seeded.get(names.archive)?.body);
     expect(after.get(names.sample)?.body).toBe(seeded.get(names.sample)?.body);

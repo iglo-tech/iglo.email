@@ -451,7 +451,7 @@
     "public.subName": "名前 (任意)",
     "public.subOptinPending": "サブスクリプションを確認するためのメールが送信されました。",
     "public.subPrivateList": "プライベートリスト",
-    "public.unsubFull": "あわせて、このサービスから今後送信されるすべてのメールをブロックする。",
+    "public.unsubAllLists": "すべてのメーリングリストの配信を停止する。",
     "public.unsubHelp": "このメーリングリストの登録も解除しますか？",
     "public.unsubbedInfo": "登録の解除に成功しました。",
     "public.unsubscribeTitle": "メーリングリストの登録を解除する",

@@ -451,7 +451,7 @@
     "public.subName": "नाम (वैकल्पिक)",
     "public.subOptinPending": "आपकी सदस्यता की पुष्टि के लिए आपको एक ई-मेल भेजा गया है।",
     "public.subPrivateList": "निजी लिस्ट",
-    "public.unsubFull": "साथ ही, इस सेवा से भविष्य में आने वाले सभी ईमेल ब्लॉक करें।",
+    "public.unsubAllLists": "सभी मेलिंग सूचियों की सदस्यता समाप्त करें।",
     "public.unsubHelp": "क्या आप इस मेलिंग लिस्ट की सदस्यता रद्द करना चाहते हैं?",
     "public.unsubbedInfo": "आपने सफलतापूर्वक सदस्यता रद्द कर दी है।",
     "public.unsubscribeTitle": "मेलिंग लिस्ट की सदस्यता रद्द करें",

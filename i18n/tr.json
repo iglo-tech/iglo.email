@@ -451,7 +451,7 @@
     "public.subName": "İsim (opsiyonel)",
     "public.subOptinPending": "Üyelik doğrulaması için bir e-posta gönderilmiştir.",
     "public.subPrivateList": "Kişisel liste",
-    "public.unsubFull": "Ayrıca bu hizmetten gelecekte gelecek tüm e-postaları engelle.",
+    "public.unsubAllLists": "Tüm posta listelerinden abonelikten çık.",
     "public.unsubHelp": "Bu e-posta listesinden ayrılmayı istermisiniz?",
     "public.unsubbedInfo": "Başarı ile üyeliğinizi bitirdiniz.",
     "public.unsubscribeTitle": "e-posta listesi üyeliğini bitir",

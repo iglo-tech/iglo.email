@@ -451,7 +451,7 @@
     "public.subName": "Meno (voliteľné)",
     "public.subOptinPending": "Odoslali sme vám e-mail na potvrdenie vašich odberov.",
     "public.subPrivateList": "Súkromný zoznam",
-    "public.unsubFull": "Zároveň blokovať všetky budúce e-maily z tejto služby.",
+    "public.unsubAllLists": "Odhlásiť sa zo všetkých e-mailových zoznamov.",
     "public.unsubHelp": "Chcete zrušiť odber z tohoto zoznamu adresátov?",
     "public.unsubbedInfo": "Odber ste úspešne zrušili.",
     "public.unsubscribeTitle": "Zrušiť odber zo zoznamu adresátov",

@@ -451,7 +451,7 @@
     "public.subName": "Navn (valgfrit)",
     "public.subOptinPending": "Der er sendt en e-mail til dig for at bekræfte dit/dine abonnement(er).",
     "public.subPrivateList": "Privat liste",
-    "public.unsubFull": "Bloker også alle fremtidige e-mails fra denne tjeneste.",
+    "public.unsubAllLists": "Afmeld alle mailinglister.",
     "public.unsubHelp": "Ønsker du at afmelde dig denne mailingliste?",
     "public.unsubbedInfo": "Du har afmeldt dig.",
     "public.unsubscribeTitle": "Afmeld mailingliste",

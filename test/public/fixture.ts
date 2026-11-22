@@ -36,6 +36,13 @@ export async function publicFixture() {
         throw new Error("effect failed");
       }
     },
+    // The public "all lists" option (B130) is recorded as a call that names no list.
+    unsubscribedAll() {
+      calls.push({ inTransaction: f.db.inTransaction, listIds: [] });
+      if (failEffect) {
+        throw new Error("effect failed");
+      }
+    },
   };
   const overrides: Partial<PublicSettings> = {};
   let settings = unsetSettings;

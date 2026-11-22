@@ -451,7 +451,7 @@
     "public.subName": "Nazwa (opcjonalnie)",
     "public.subOptinPending": "Została wysłana wiadomość w celu potwierdzenia subskrypcji.",
     "public.subPrivateList": "Lista prywatna",
-    "public.unsubFull": "Zablokuj również wszystkie przyszłe e-maile z tej usługi.",
+    "public.unsubAllLists": "Wypisz się ze wszystkich list mailingowych.",
     "public.unsubHelp": "Czy chcesz się wypisać z tej listy mailowej?",
     "public.unsubbedInfo": "Pomyślnie odsubskrybowano",
     "public.unsubscribeTitle": "Wypisz się z listy mailingowej",

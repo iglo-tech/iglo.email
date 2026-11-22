@@ -8,6 +8,7 @@ import { dummyUUID } from "@/campaigns/render";
 import { must } from "@/invariant";
 import type { PreparedLinks } from "@/unsubscribe/message";
 import type { Sample } from "@/templates/sample";
+import type { BrandSite } from "@/public/brand";
 import type { StepData } from "@/sequences/step-data";
 
 /** A request field that names no valid value. `field` is what the API reports. */
@@ -21,6 +22,8 @@ export class FieldError extends Error {
 export class StepRefusal extends Error {}
 
 export interface StepPreviewInput {
+  /** The site's brand, as a send renders it (B130, D128). */
+  brand: BrandSite;
   sequence: { id: bigint; name: string; event: string };
   step: {
     id: bigint;
@@ -177,6 +180,7 @@ export function stepPreview(
       // D126 (r2): unsubscribe_url is marketing mail's; every step carries its manage link.
       unsubscribe_url: kind === "marketing" ? (links.unsubscribeUrl ?? "") : "",
       manage_url: links.unsubscribeUrl ? `${links.unsubscribeUrl}?manage=true` : "",
+      brand: input.brand,
     },
     links,
   };

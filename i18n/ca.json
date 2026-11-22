@@ -451,7 +451,7 @@
     "public.subName": "Nom (opcional)",
     "public.subOptinPending": "S'ha enviat un correu electrònic per confirmar les teves subscripcions.",
     "public.subPrivateList": "Llista privada",
-    "public.unsubFull": "Bloqueja també tots els correus electrònics futurs d'aquest servei.",
+    "public.unsubAllLists": "Dona't de baixa de totes les llistes de correu.",
     "public.unsubHelp": "Vols donar-te de baixa d'aquesta llista de correu?",
     "public.unsubbedInfo": "Has cancel·lat la subscripció correctament.",
     "public.unsubscribeTitle": "Cancel·lació de la subscripció a la llista de correu",

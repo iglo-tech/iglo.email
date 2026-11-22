@@ -159,7 +159,7 @@ Deleting a subscriber anonymizes their sends in the same transaction (D25), whic
 
 `suppression_keys`: one row (`id` 1), `secret`, 32 random bytes made when migration 23 runs. Only the subscribers module reads it; no route returns it.
 
-`suppressions`: `id`, `email_hash`, `external_hash` (NULL when the subscriber had no external ID), `lists` (JSON array of list IDs the person had), `wiped_at`. The hashes are HMAC-SHA-256 with `secret`, over the normalised address and over the external ID under separate prefixes, so no address or ID is stored in plain. A row is written by a self-wipe and removed by the person's own double opt-in confirmation or by `DELETE /api/suppressions`. It is not purged by retention.
+`suppressions`: `id`, `email_hash`, `external_hash` (NULL when the subscriber had no external ID), `lists` (JSON array of list IDs the person had), `wiped_at`. The hashes are HMAC-SHA-256 with `secret`, over the normalised address and over the external ID under separate prefixes, so no address or ID is stored in plain. A row is written by a self-wipe, or by the public "Unsubscribe from all mailing lists" option (B130, D128), and removed by the person's own double opt-in confirmation or by `DELETE /api/suppressions`. `wiped_at` holds the time the row was written, whichever wrote it. It is not purged by retention.
 
 ### `webhooks`, `webhook_deliveries`
 

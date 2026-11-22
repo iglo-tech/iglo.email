@@ -477,7 +477,7 @@
     "public.testSendTitle": "Test send",
     "public.tooManyRequests": "Too many requests. Please try again in a minute.",
     "public.txConfirmedInfo": "This message was sent about your account with {site}. To stop other emails, use the unsubscribe link in one of them.",
-    "public.unsubFull": "Also block all future emails from this service.",
+    "public.unsubAllLists": "Unsubscribe from all mailing lists.",
     "public.unsubHelp": "Do you want to unsubscribe from this mailing list?",
     "public.unsubbedInfo": "You have unsubscribed successfully.",
     "public.unsubscribeTitle": "Unsubscribe from mailing list",

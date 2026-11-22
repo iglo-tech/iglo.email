@@ -109,10 +109,12 @@ test("a campaign pairs only the subscribers the runner delivered it to", async (
   expect((await subscriberOf(f, bob)).status).toBe("enabled");
   expect(f.calls).toEqual([]);
 
-  // The control: Ada's own link from her delivery blocklists her, and the effect runs once.
+  // The control: Ada's own link from her delivery unsubscribes her from every list (B130, D128). The
+  // status stays enabled, so this is not a blocklist, and the all-lists effect runs once.
   const real = await act(f, `/subscription/${weekly.uuid}/${adaUuid}`, "blocklist=true");
   expect(real.status).toBe(200);
-  expect((await subscriberOf(f, ada)).status).toBe("blocklisted");
+  expect((await subscriberOf(f, ada)).status).toBe("enabled");
+  expect(await f.status(ada, news.id)).toBe("unsubscribed");
   expect(f.calls).toHaveLength(1);
 });
 

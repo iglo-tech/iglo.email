@@ -1227,6 +1227,30 @@ The wipe removes their subscriber row and leaves a suppression ([D125](design/09
 - **Backups.** A wipe does not reach backups taken before it, and a backup holds the suppression key
   with the hashes, as it holds everything else in the database (see [Backups](#backups)).
 
+### What each way of stopping mail stops
+
+Four things stop a person's mail, and they do not do the same things ([D128](design/09-decisions.md#d128-public-pages-offer-only-what-a-subscriber-can-act-on-and-all-lists-unsubscribing-is-not-a-blocklist-lead-2026-11-20)).
+The first two are what a reader can do on a public page; the last two are an operator's or a self-wipe's.
+
+| What happens | One list unsubscribe (a mail's link, the page's form, the API) | "Unsubscribe from all mailing lists" (the public page) | Blocklist (admin, API, bounces) |
+|---|---|---|---|
+| Marketing mail to the list | Stops for that list | Stops, on every list | Stops |
+| Marketing mail on another list | Continues | Stops | Stops |
+| A marketing sequence already running | Ends (`unsubscribed`) if it is tied to that list | Ends now if its next step is marketing (`unsubscribed`); one whose next step is transactional continues | Ends (`blocklisted`) |
+| A marketing sequence starting from a new event | Unchanged | Does not start (`suppressed`) | Does not start (`subscriber_blocklisted`) |
+| Transactional mail and transactional sequence steps | Continue | Continue | Stop |
+| The subscriber's status | Unchanged (`enabled`) | Unchanged (`enabled`) | `blocklisted` |
+| Webhook | `subscriber.unsubscribed`, with the list IDs | `subscriber.unsubscribed`, with the list IDs | `subscriber.blocklisted` |
+
+- **Unsubscribe from all mailing lists** is the page's option for a person who wants no marketing at all. It is not a
+  blocklist: a person who ticks it still receives receipts, payment reminders and password resets. It writes the same
+  suppression a self-wipe writes (keyed hashes, no address), so a later event, create or import does not put the person
+  back on a marketing list, until they confirm through a double opt-in mail or an operator removes it with
+  `DELETE /api/suppressions`. It is offered only while `privacy.allow_blocklist` is on. The admin blocklist, which an
+  operator sets on the subscriber, still stops every mail, transactional included.
+- **Your privacy notice** can say the all-lists option is an unsubscribe for marketing, and that transactional mail
+  continues, because a receipt or a password reset is not marketing.
+
 ## Attachment sends
 
 `POST /api/tx` with caller attachments, or with a template that embeds images, holds memory until

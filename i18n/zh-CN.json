@@ -451,7 +451,7 @@
     "public.subName": "姓名（可选）",
     "public.subOptinPending": "已向您发送一封电子邮件以确认您的订阅。",
     "public.subPrivateList": "私人列表",
-    "public.unsubFull": "同时屏蔽此服务今后发送的所有电子邮件。",
+    "public.unsubAllLists": "从所有邮件列表中退订。",
     "public.unsubHelp": "您想退订此邮件列表吗？",
     "public.unsubbedInfo": "您已成功退订。",
     "public.unsubscribeTitle": "退订邮件列表",

@@ -451,7 +451,7 @@
     "public.subName": "Nombre (opcional)",
     "public.subOptinPending": "Se le ha enviado un correo electrónico para confirmar su(s) suscripcion(es)",
     "public.subPrivateList": "Lista privada",
-    "public.unsubFull": "Bloquear también todos los correos electrónicos futuros de este servicio.",
+    "public.unsubAllLists": "Darse de baja de todas las listas de correo.",
     "public.unsubHelp": "¿Desea darse de baja de esta lista de correo?",
     "public.unsubbedInfo": "Ud. se ha dado de baja de correctamente",
     "public.unsubscribeTitle": "Darse de baja de una lista de correo",

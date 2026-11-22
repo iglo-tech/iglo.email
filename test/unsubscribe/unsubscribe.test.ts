@@ -415,7 +415,9 @@ test("a delayed marketing send recovered as unknown counts from its attempt", as
 
 test("one-click POST and the page form unsubscribe the send's list without login", async () => {
   const events: Array<unknown> = [];
-  const f = await open({ effects: { unsubscribed: (event) => events.push(event) } });
+  const f = await open({
+    effects: { unsubscribed: (event) => events.push(event), unsubscribedAll: () => {} },
+  });
   const { template, list } = await setup(f);
   const news = await list("news");
   const other = await list("other");
@@ -456,7 +458,6 @@ test("one-click POST and the page form unsubscribe the send's list without login
       subscriberId: BigInt(ada),
       listId: BigInt(news),
       listIds: [BigInt(news)],
-      blocklisted: false,
     },
   ]);
   // Repeating is harmless and reports no newly changed list, but still names the requested one.
@@ -465,7 +466,6 @@ test("one-click POST and the page form unsubscribe the send's list without login
     subscriberId: BigInt(ada),
     listId: BigInt(news),
     listIds: [],
-    blocklisted: false,
   });
   // The next marketing send to that list is skipped.
   f.clock.advance(8 * day);
@@ -505,7 +505,8 @@ test("blocklist option follows privacy.allow_blocklist", async () => {
   expect(await membership(f, bob, other)).toBe("unconfirmed");
   expect(await membership(f, bob, news)).toBe("unsubscribed");
 
-  // Allowed: blocklist and leave every list (multipart, as browsers may send).
+  // Allowed: every list ends and a marketing suppression is written. The status stays, so this is not the
+  // admin blocklist (B130, D128; the rest is in all-lists.test.ts). Multipart, as browsers may send.
   f.marketing.allowBlocklist = true;
   const adaPath = await pathFor(ada);
   const multipart = new FormData();
@@ -513,15 +514,13 @@ test("blocklist option follows privacy.allow_blocklist", async () => {
   f.clock.advance(60_000);
   expect((await form(adaPath, multipart)).status).toBe(200);
   const after = (await f.json(`/api/subscribers/${ada}`)).body.data;
-  expect(after.status).toBe("blocklisted");
-  // D81: blocklisting stamps the subscriber like every other path into it.
-  expect(after.updated_at).toBe(f.clock.now().toISOString());
+  expect(after.status).toBe("enabled");
   expect(
     asBody<Array<{ subscription_status: string }>>(after.lists).map((l) => l.subscription_status),
   ).toEqual(["unsubscribed", "unsubscribed"]);
   const page = await f.request(adaPath);
   expect(page.status).toBe(200);
-  expect(await page.text()).toContain("Permanently unsubscribed.");
+  expect(await page.text()).toContain("You are already unsubscribed from these emails: news.");
   // Invalid form values are rejected without changes; preferences are not available.
   expect((await form(bobPath, "blocklist=maybe")).status).toBe(400);
   expect((await form(bobPath, "manage=true")).status).toBe(400);

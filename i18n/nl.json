@@ -451,7 +451,7 @@
     "public.subName": "Naam (optioneel)",
     "public.subOptinPending": "Een e-mail is verzonden om uw inschrijving te bevestigen.",
     "public.subPrivateList": "Privélijst",
-    "public.unsubFull": "Blokkeer ook alle toekomstige e-mails van deze dienst.",
+    "public.unsubAllLists": "Afmelden voor alle mailinglijsten.",
     "public.unsubHelp": "Wilt u uitschrijven van deze mailinglijst?",
     "public.unsubbedInfo": "U bent met succes uitgeschreven.",
     "public.unsubscribeTitle": "Uitschrijven van mailinglijst",

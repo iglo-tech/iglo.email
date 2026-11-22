@@ -162,6 +162,14 @@ export async function schedulerFixture(
   const marketing: MarketingSettings = {
     rootUrl: "http://fixture.test",
     siteName: "Fixture list",
+    brand: {
+      logoUrl: "",
+      siteName: "Fixture list",
+      siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
+    },
     minInterval: "",
     unsubscribeHeader: true,
     allowBlocklist: true,

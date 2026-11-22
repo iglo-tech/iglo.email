@@ -451,7 +451,7 @@
     "public.subName": "Namn (ej obligatorisk)",
     "public.subOptinPending": "Ett e-postmeddelande har skickats till dig för att bekräfta din/dina prenumerationer.",
     "public.subPrivateList": "Privat lista",
-    "public.unsubFull": "Blockera även alla framtida e-postmeddelanden från den här tjänsten.",
+    "public.unsubAllLists": "Avsluta prenumerationen på alla e-postlistor.",
     "public.unsubHelp": "Vill du avprenumerera från denna e-postlista?",
     "public.unsubbedInfo": "Du har nu avprenumererats.",
     "public.unsubscribeTitle": "Avprenumerera från e-postlista",

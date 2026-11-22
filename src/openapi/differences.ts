@@ -856,6 +856,18 @@ export const differences: Array<Difference> = [
     applies: [],
   },
   {
+    area: "Public manage link and all-lists option (B130, D128)",
+    summary:
+      "The unsubscribe page offers 'Manage preferences' and the manage view a preference form only when the subscriber has a public list to manage; with none, the manage view keeps the privacy actions only. privacy.allow_preferences stays the explicit switch. The public option 'Unsubscribe from all mailing lists' unsubscribes from every list and records a marketing suppression (the one a self-wipe leaves, D125), so no marketing mail and no marketing enrollment follows, while transactional mail and transactional sequence steps keep flowing. It is not a blocklist: the status stays enabled, the webhook is subscriber.unsubscribed, and the admin blocklist still stops every mail. Upstream's box blocklists the subscriber, and upstream always shows the manage link and an empty form.",
+    applies: [],
+  },
+  {
+    area: "Transactional template data carries the brand (B130, D128)",
+    summary:
+      "A transactional template's data, for POST /api/tx, a sequence step and their previews, carries the eight brand values a campaign's data carries (logo_url, site_name, site_url, brand_accent, brand_link, brand_on_accent, brand_font, brand_header), at the top level beside subscriber and data. They are additive: no existing key moves. Upstream's transactional data has none of them.",
+    applies: ["POST /api/tx"],
+  },
+  {
     area: "Site URL setting (B126, D123)",
     summary:
       "app.site_url is a native setting for the operator's own site, empty by default, validated like the D107 root URL, except that a query string is allowed. The logo and back links point to it. The root URL is iglo.email's own address and cannot serve. Upstream has no such setting.",

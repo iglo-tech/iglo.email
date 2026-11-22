@@ -371,15 +371,14 @@ export function createEnrollments(db: Database, clock: Clock) {
     },
   };
   const unsubscribeEffects: UnsubscribeEffects = {
-    unsubscribed({ subscriberId, listId, listIds, blocklisted }) {
-      if (blocklisted) {
-        subscriberEffects.blocklisted([subscriberId]);
-      }
-      // The requested list exits even when its membership was already unsubscribed, so a
-      // repeated request ends an enrollment started after the first one.
-      else {
-        subscriberEffects.unsubscribed([subscriberId], [...new Set([listId, ...listIds])]);
-      }
+    // The requested list exits even when its membership was already unsubscribed, so a repeated
+    // request ends an enrollment started after the first one.
+    unsubscribed({ subscriberId, listId, listIds }) {
+      subscriberEffects.unsubscribed([subscriberId], [...new Set([listId, ...listIds])]);
+    },
+    // B130 (D128): the public "all lists" option ends the enrollments whose next step is marketing.
+    unsubscribedAll({ subscriberId }) {
+      q.get("exit-marketing-by-subscriber").run(at(), at(), subscriberId);
     },
   };
 

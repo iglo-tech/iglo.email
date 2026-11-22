@@ -44,6 +44,12 @@ UPDATE enrollments SET status = 'exited', exit_reason = 'unsubscribed', step_id 
 -- name: exit-by-subscribers
 UPDATE enrollments SET status = 'exited', exit_reason = 'blocklisted', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE status = 'active' AND subscriber_id IN (SELECT value FROM json_each(?));
+-- name: exit-marketing-by-subscriber
+-- B130 (D128): the public "all lists" option. An enrollment whose next step is marketing ends now, as an
+-- unsubscribe does; one whose next step is transactional keeps running.
+UPDATE enrollments SET status = 'exited', exit_reason = 'unsubscribed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
+  WHERE status = 'active' AND subscriber_id = ?
+    AND step_id IN (SELECT id FROM sequence_steps WHERE kind = 'marketing');
 -- name: exit-by-sequence
 UPDATE enrollments SET status = 'exited', exit_reason = 'sequence_archived', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE sequence_id = ? AND status = 'active';

@@ -451,7 +451,7 @@
     "public.subName": "שם (לא חובה)",
     "public.subOptinPending": "נשלחה לך הודעת דואר אלקטרוני על מנת לאמת את המינוי שלך/יך.",
     "public.subPrivateList": "רשימה פרטית",
-    "public.unsubFull": "לחסום גם את כל הודעות הדואר האלקטרוני העתידיות משירות זה.",
+    "public.unsubAllLists": "להסיר את המנוי מכל רשימות התפוצה.",
     "public.unsubHelp": "האם ברצונך להפסיק את הרישום לרשימת התפוצה הזו?",
     "public.unsubbedInfo": "בצעת הפסקת ההרשמה בהצלחה.",
     "public.unsubscribeTitle": "הרשמה לרשימת דיוור",

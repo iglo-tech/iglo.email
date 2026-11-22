@@ -451,7 +451,7 @@
     "public.subName": "姓名（非必填）",
     "public.subOptinPending": "已向您發送一封電子郵件以確認您的訂閱。",
     "public.subPrivateList": "不公開清單",
-    "public.unsubFull": "同時封鎖此服務今後寄送的所有電子郵件。",
+    "public.unsubAllLists": "從所有郵件清單取消訂閱。",
     "public.unsubHelp": "您想退訂此電子報清單嗎？",
     "public.unsubbedInfo": "您已成功退訂。",
     "public.unsubscribeTitle": "退訂郵件清單",

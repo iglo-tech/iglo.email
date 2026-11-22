@@ -451,7 +451,7 @@
     "public.subName": "Ime (neobvezno)",
     "public.subOptinPending": "Poslano vam je bilo e-poštno sporočilo za potrditev vaše naročnine(-e).",
     "public.subPrivateList": "Zasebni seznam",
-    "public.unsubFull": "Blokiraj tudi vsa prihodnja e-poštna sporočila te storitve.",
+    "public.unsubAllLists": "Odjavi se od vseh poštnih seznamov.",
     "public.unsubHelp": "Ali se želite odjaviti s tega poštnega seznama?",
     "public.unsubbedInfo": "Uspešno ste se odjavili.",
     "public.unsubscribeTitle": "Odjavi se od poštnega seznama",

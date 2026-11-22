@@ -797,23 +797,40 @@ export function createSubscriberStore(
       return q.get("membership-insert").run(id, list, "confirmed", now, now).changes === 1;
     },
     /**
-     * Public unsubscribe, adapted from listmonk's unsubscribe-by-campaign query: mark the
-     * list (or with `blocklist`, every list) unsubscribed and optionally blocklist the
-     * subscriber. Returns the list IDs whose status changed. The caller holds the write.
+     * Public unsubscribe, adapted from listmonk's unsubscribe-by-campaign query: mark the list
+     * unsubscribed. Returns the list IDs whose status changed. The caller holds the write.
      */
-    unsubscribe(id: bigint, list: bigint, blocklist: boolean): Array<bigint> {
-      const now = clock.now().toISOString();
-      const newlyBlocklisted = blocklist && get(id)?.status !== "blocklisted";
-      // D81: the blocklist box takes the same path as every other way in.
-      const changed = blocklist
-        ? blockOne(id, now)
-        : (
-            q.get("membership-unsubscribe-list").all(now, id, list) as Array<{
-              list_id: bigint;
-            }>
-          ).map((row) => row.list_id);
-      consentChanged(id, newlyBlocklisted, changed);
+    unsubscribe(id: bigint, list: bigint): Array<bigint> {
+      const changed = (
+        q.get("membership-unsubscribe-list").all(clock.now().toISOString(), id, list) as Array<{
+          list_id: bigint;
+        }>
+      ).map((row) => row.list_id);
+      consentChanged(id, false, changed);
       return changed;
+    },
+    /**
+     * The public "Unsubscribe from all mailing lists" (B130, D128): every membership not already
+     * unsubscribed ends, and a marketing suppression (B124, D125) is written unless one already names
+     * this subscriber. The status stays: this is not the admin blocklist, so transactional mail and
+     * transactional sequence steps keep flowing. A marketing sequence step ends at its next due time,
+     * as the scheduler's consent check ends it. Webhooks are those of an unsubscribe. The caller holds
+     * the write.
+     */
+    unsubscribeAll(id: bigint): void {
+      const row = get(id);
+      if (!row) {
+        return;
+      }
+      if (!suppressedBy(row)) {
+        suppress(row);
+      }
+      const changed = (
+        q.get("membership-unsubscribe-all").all(clock.now().toISOString(), id) as Array<{
+          list_id: bigint;
+        }>
+      ).map((membership) => membership.list_id);
+      consentChanged(id, false, changed);
     },
     /**
      * record-bounce's block1. Unlike upstream it also unsubscribes every membership (D81), so

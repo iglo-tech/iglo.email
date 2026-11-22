@@ -451,7 +451,7 @@
     "public.subName": "Nome (facoltativo)",
     "public.subOptinPending": "Una mail per confermare l'iscrizione è stata inviata alla tua casella di posta.",
     "public.subPrivateList": "Lista privata",
-    "public.unsubFull": "Blocca anche tutte le email future da questo servizio.",
+    "public.unsubAllLists": "Annulla l'iscrizione da tutte le mailing list.",
     "public.unsubHelp": "Vuoi cancellare l'iscrizione da questa newsletter?",
     "public.unsubbedInfo": "La cancellazione è avvenuta con successo.",
     "public.unsubscribeTitle": "Cancella l'iscrizione dalla newsletter",

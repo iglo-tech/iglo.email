@@ -451,7 +451,7 @@
     "public.subName": "Nimi (ei pakollinen)",
     "public.subOptinPending": "Sinulle on lähetetty sähköpostiviesti, josta sinun täytyy vahvistaa tilauksesi.",
     "public.subPrivateList": "Yksityinen lista",
-    "public.unsubFull": "Estä myös kaikki tulevat sähköpostit tästä palvelusta.",
+    "public.unsubAllLists": "Peru tilaus kaikista postituslistoista.",
     "public.unsubHelp": "Haluatko erota tältä postituslistalta?",
     "public.unsubbedInfo": "Olet poistunut postituslistalta onnistuneesti.",
     "public.unsubscribeTitle": "Eroa postituslistalta",

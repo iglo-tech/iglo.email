@@ -451,7 +451,7 @@
     "public.subName": "Name (optional)",
     "public.subOptinPending": "Dir wurde eine E-Mail zur Bestätigung geschickt.",
     "public.subPrivateList": "Private Liste",
-    "public.unsubFull": "Auch alle zukünftigen E-Mails von diesem Dienst blockieren.",
+    "public.unsubAllLists": "Von allen Mailinglisten abmelden.",
     "public.unsubHelp": "Möchtest du dich von dieser E-Mail Liste abmelden?",
     "public.unsubbedInfo": "Du wurdest erfolgreich abgemeldet",
     "public.unsubscribeTitle": "Von E-Mail Liste abmelden.",

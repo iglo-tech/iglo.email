@@ -44,6 +44,7 @@ M0.8 measured the selected library and found the precise library-limit semantics
 | — | `{{ subscriber.external_id }}` |
 | `{{ .Campaign.Name }}`, `.Subject`, `.UUID` | `{{ campaign.name }}`, `campaign.subject`, `campaign.uuid` |
 | — | `{{ campaign.attribs.key }}` |
+| — | `{{ brand_accent }}`, `brand_link`, `brand_on_accent`, `brand_font`, `brand_header`, `logo_url`, `site_name`, `site_url`: the site's brand, in campaign, transactional and system mail data (B130, D128) |
 | `{{ .Tx.Data.order_id }}` | `{{ data.order_id }}` |
 | — | `{{ trigger.data.price }}`, `{{ sequence.name }}`, `{{ step.position }}`, `{{ aggregates.name }}` (sequence sends; the last is the step's event totals, each reading at most 10,000 events of its name in its window, [D100](09-decisions.md#d100-sequence-steps-read-event-aggregates-lead-2026-11-16)) |
 | `{{ template "content" . }}` (in campaign layouts) | `{{ content \| raw }}` (already rendered HTML body) |

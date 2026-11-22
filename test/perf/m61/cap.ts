@@ -42,6 +42,14 @@ try {
       settings: () => ({
         rootUrl: "http://cap.test",
         siteName: "Cap",
+        brand: {
+          logoUrl: "",
+          siteName: "Cap",
+          siteUrl: "",
+          accent: "",
+          font: "system-sans",
+          header: "auto",
+        },
         minInterval: "P7D",
         unsubscribeHeader: true,
         allowBlocklist: false,

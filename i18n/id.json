@@ -451,7 +451,7 @@
     "public.subName": "Nama (opsional)",
     "public.subOptinPending": "E-mail telah dikirimkan ke Anda untuk mengonfirmasi langganan Anda.",
     "public.subPrivateList": "Daftar privat",
-    "public.unsubFull": "Blokir juga semua email mendatang dari layanan ini.",
+    "public.unsubAllLists": "Berhenti berlangganan dari semua daftar email.",
     "public.unsubHelp": "Apakah Anda ingin membatalkan langganan dari daftar surel ini?",
     "public.unsubbedInfo": "Anda telah berhasil membatalkan langganan.",
     "public.unsubscribeTitle": "Batal berlangganan dari daftar surel",

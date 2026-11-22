@@ -216,7 +216,7 @@ export async function campaignsFixture(
     subscribers,
     tracking,
     settings: () => settings,
-    effects: { unsubscribed: (event) => unsubscribed.push(event) },
+    effects: { unsubscribed: (event) => unsubscribed.push(event), unsubscribedAll: () => {} },
     page: () => ({
       siteName: settings.siteName,
       rootUrl: settings.rootUrl,

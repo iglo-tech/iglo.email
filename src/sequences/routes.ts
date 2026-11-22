@@ -448,6 +448,7 @@ export function registerSequenceRoutes(
     try {
       return stepPreview(
         {
+          brand: settings.marketing.brand,
           sequence: {
             id: idOf(sequence.id),
             name: sequence.name,
