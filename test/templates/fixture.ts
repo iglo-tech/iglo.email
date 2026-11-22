@@ -99,7 +99,7 @@ export async function startTemplateFixture(
         return fifth;
       },
     };
-    registerTemplateRoutes(router, templates, previewRenderer, auth);
+    registerTemplateRoutes(router, templates, previewRenderer, auth, fixturePageSite);
     router.route("POST", "/fixture/campaign", async ({ request }) => {
       const { template } = (await request.json()) as { template: string };
       db.query(

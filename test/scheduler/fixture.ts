@@ -251,7 +251,7 @@ export async function schedulerFixture(
     enrollments: (id, page, perPage) => enrollments.list({ subscriberId: id, page, perPage }),
     sends: (id, page, perPage) => sends.list({ subscriberId: id, page, perPage }),
   });
-  registerTemplateRoutes(router, templates, renderer, auth);
+  registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
   registerSendRoutes(router, sends, auth);
   registerUnsubscribeRoutes(router, {
     db,

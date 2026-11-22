@@ -297,7 +297,9 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     const router = createRouter(() => restoreHold(db));
     // B125: every personal public page, whichever route family serves it (src/public/headers.ts).
     router.use(personalPageHeaders);
-    registerTemplateRoutes(router, templates, renderer, auth);
+    registerTemplateRoutes(router, templates, renderer, auth, () =>
+      publicSettings(wired(settings, "settings").read()),
+    );
     registerUserRoutes(router, users, roles, auth, () =>
       publicSettings(wired(settings, "settings").read()),
     );

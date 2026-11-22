@@ -213,7 +213,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   registerSettingsRoutes(router, settingsStore, auth, smtpTest);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
-  registerTemplateRoutes(router, templates, renderer, auth);
+  registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
 
   registerTxRoutes(router, {
     auth,

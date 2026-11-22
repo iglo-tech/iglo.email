@@ -192,7 +192,7 @@ export async function campaignsFixture(
   registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
-  registerTemplateRoutes(router, templates, renderer, auth);
+  registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
   registerCampaignRoutes(router, {
     page: fixturePageSite,
     store,

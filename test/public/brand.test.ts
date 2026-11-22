@@ -347,3 +347,31 @@ test("the opt-in mail's button takes the accent, and the mail carries no credit"
   }
   expect(message!.data).not.toContain("listmonk");
 });
+
+// A declaration left with no value (`background: ;`) is dropped by the browser, so the layout would
+// show the browser's link blue and serif font. The template preview must fill every brand value.
+const emptyDeclaration = /(background|color|font-family):\s*(!important)?\s*;/;
+
+test("the template preview of the default layouts takes the operator's accent and no empty declaration", async () => {
+  const f = await open({ accent: "#ff0066" });
+  for (const id of [1, 2]) {
+    const response = await f.request(`/api/templates/${id}/preview`, {
+      headers: f.sessionHeaders,
+    });
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("background: #ff0066;");
+    expect(html).not.toMatch(emptyDeclaration);
+  }
+});
+
+test("the template preview with the default brand keeps the built-in blue and no empty declaration", async () => {
+  const f = await open();
+  for (const id of [1, 2]) {
+    const html = await (
+      await f.request(`/api/templates/${id}/preview`, { headers: f.sessionHeaders })
+    ).text();
+    expect(html).toContain("background: #0055d4;");
+    expect(html).not.toMatch(emptyDeclaration);
+  }
+});
