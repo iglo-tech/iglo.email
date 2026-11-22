@@ -465,6 +465,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
       if (!Number.isFinite(date.getTime())) {
         throw new ValueError("Invalid date");
       }
+      // JavaScript rolls 2026-02-30 over to 2026-03-02. A date that does not exist is invalid, as an
+      // unparseable one is: its canonical form must keep the date (and the time, for a timestamp).
+      if (text !== "now" && text !== "today") {
+        const digits = text.length === 10 ? 10 : 19;
+        if (date.toISOString().slice(0, digits) !== text.slice(0, digits)) {
+          throw new ValueError("Invalid date");
+        }
+      }
       const values = new Map([
         ["%", "%"],
         ["Y", String(date.getUTCFullYear())],

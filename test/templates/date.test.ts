@@ -59,6 +59,28 @@ test("the existing directives keep their values in UTC", async () => {
   expect(sent.message).toContain("[2026-01-02 03:04:05] [09.07.2026]");
 });
 
+test("a calendar date that does not exist is invalid, and a real one renders", async () => {
+  const f = await open();
+  const template = await f.template('<p>[{{ data.d | date: "%Y-%m-%d" }}]</p>');
+  const send = async (d: string) => {
+    const email = `i-${crypto.randomUUID().slice(0, 12)}@example.test`;
+    const response = await f.tx({
+      subscriber_emails: [email],
+      template_id: template,
+      data: { d },
+    });
+    return response.status;
+  };
+  // Rolled over, these would have printed 2026-03-02 and 2026-05-01; each is refused at send.
+  expect(await send("2026-02-30")).toBe(400);
+  expect(await send("2026-04-31")).toBe(400);
+  expect(await send("2026-02-31T10:00:00Z")).toBe(400);
+  // A leap day and an ordinary date render as written.
+  expect(await send("2028-02-29")).toBe(200);
+  const sent = await render(f, "[{{ data.d | date: '%Y-%m-%d' }}]", { d: "2026-02-28" });
+  expect(sent.message).toContain("[2026-02-28]");
+});
+
 test("a lone percent sign, or an unknown directive, is refused at save", async () => {
   const f = await open();
   for (const format of ["100% %Y", "%q", "%Y%"]) {
