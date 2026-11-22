@@ -10,6 +10,7 @@ import type { Translation } from "@/i18n/i18n";
 import { render } from "@/jsx/render";
 import { must } from "@/invariant";
 import type { PublicImages } from "@/media/embed";
+import { googleFontUrl } from "@/public/brand";
 import { PublicShell } from "@/public/layout";
 import { publicMessage, publicNotFound } from "@/public/message";
 import { noIndex, uuidPattern } from "@/public/routes";
@@ -29,6 +30,21 @@ const pageHeaders = {
   "Content-Security-Policy":
     "sandbox allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation",
 };
+/**
+ * An archived campaign's page is the template's own body, not the shell, so the brand's Google font
+ * stylesheet (B129 adopter check, D127) goes into the body's head, as the public pages load it. A
+ * system font adds nothing. A body with no head gets the link at its start.
+ */
+function withBrandFont(body: string, font: string): string {
+  const url = googleFontUrl(font);
+  if (!url) {
+    return body;
+  }
+  const link = render(<link rel="stylesheet" href={url} />);
+  return /<head(\s[^>]*)?>/i.test(body)
+    ? body.replace(/<head(\s[^>]*)?>/i, (head) => head + link)
+    : link + body;
+}
 const defaultPerPage = 20;
 const maxPerPage = 50;
 const number = (value: string | null) => {
@@ -320,7 +336,9 @@ ${items}  </channel>
       if (!latest) {
         return notFound(t);
       }
-      return new Response(latest.content, { headers: pageHeaders });
+      return new Response(withBrandFont(latest.content, deps.settings().font), {
+        headers: pageHeaders,
+      });
     } catch (error) {
       context.app.logger.error(error);
       return fetchFailed(t, error);
@@ -339,7 +357,9 @@ ${items}  </channel>
       return notFound(t);
     }
     try {
-      return new Response(archiveMessage(row).body, { headers: pageHeaders });
+      return new Response(withBrandFont(archiveMessage(row).body, deps.settings().font), {
+        headers: pageHeaders,
+      });
     } catch (error) {
       context.app.logger.error(error);
       return fetchFailed(t, error);

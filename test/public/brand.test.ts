@@ -107,7 +107,7 @@ test("each header mode shows the logo, the name, or both, and the logo links onl
     const html = await (await f.request("/subscription/form")).text();
     expect(html.includes(`src="${logo}"`)).toBe(logoShown);
     expect(html.includes('<span class="site-name">Brand Co</span>')).toBe(nameShown);
-    // Both together are one lockup row, centred in the header (the CSS is served, not read here).
+    // Both together are one lockup row, aligned to the start like the other modes (the CSS is served).
     expect(html.includes('<div class="logo logo-lockup">')).toBe(header === "logo_and_name");
   }
 });
@@ -164,7 +164,20 @@ test("link text takes a link colour that reads on white: the accent when it has 
   expect(css).toContain("color: var(--brand-link, var(--brand-accent, #0055d4));");
   // The outline button's text is brand-coloured on white, so it takes the link colour too.
   expect(css).toContain(
-    "border: 1px solid var(--brand-accent, #0055d4);\n  color: var(--brand-link",
+    "border: 1px solid var(--brand-link, var(--brand-accent, #0055d4));\n  color: var(--brand-link",
+  );
+  // The border takes the link colour too: #ffeb3b's link colour meets 3:1 against white (WCAG 1.4.11).
+  expect(contrastRatio("#857700", "#ffffff")).toBeGreaterThanOrEqual(3);
+});
+
+test("every header mode aligns to the start, checkboxes and radios take the accent", async () => {
+  const css = await (await (await open()).request("/public/static/style.css")).text();
+  expect(css).toContain(".header .logo {\n  text-align: start;\n}");
+  expect(css).toContain(
+    ".header .lockup .site-name {\n  min-width: 0;\n  overflow-wrap: anywhere;\n  text-align: start;\n}",
+  );
+  expect(css).toContain(
+    'input[type="checkbox"],\ninput[type="radio"] {\n  accent-color: var(--brand-accent, #0055d4);\n}',
   );
 });
 
@@ -256,6 +269,11 @@ test("the archive index, an archived campaign's page and the opt-in page carry n
   expect(page).toContain("#ff0066");
   // The archive's link text takes the link colour, the accent darkened to read on white (B129, D127).
   expect(page).toContain("color: #e8005d;");
+  // The archived page loads the brand's Google font stylesheet in its head, as the public pages do.
+  expect(page).toContain(
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora',
+  );
+  expect(page.indexOf("fonts.googleapis.com")).toBeLessThan(page.indexOf("<body"));
 
   const double = await f.list("Double opt-in", "public", "double");
   const id = await f.subscriber("optin@example.test", "Opt", { lists: [double.id] });
