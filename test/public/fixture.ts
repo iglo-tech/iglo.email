@@ -158,7 +158,7 @@ export async function publicFixture() {
           archive_template_id: null,
           archive_meta: {},
         },
-        lists.map((id) => BigInt(id)),
+        lists.map(BigInt),
         [],
       );
       const runner = createRunnerStore(f.db);

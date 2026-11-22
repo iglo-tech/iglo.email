@@ -475,6 +475,5 @@ export default defineConfig({
     "react/exhaustive-deps": "off", // no hooks in the in-house runtime
 
     // B134c: findings remain only in test/.
-    "unicorn/prefer-native-coercion-functions": "off", // B134c
   },
 });
