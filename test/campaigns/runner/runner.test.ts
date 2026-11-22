@@ -661,29 +661,35 @@ test("tracked links personalized per subscriber do not accumulate across batches
   // Settle everything but the last message, measuring after the first few batches.
   // The drive does not step the injected clock. Nothing this test asserts needs time, and a step
   // per iteration tied fake time to how many iterations a slow host needed (the failed v1.3.0
-  // release run's clock had moved 27 h when its 60 s wall bound ended the drive). The wall bound
-  // is real time only, for the CPU-bound renders: 20 messages per batch, each with 8 tracked links
-  // of 7 KB and one link row per distinct URL. The 300 messages take about 2.7 s on the B101
-  // profile host, 14 s in the full suite on four CPUs and 16 s on two (B103 runs). 60 s is more
-  // than 3x the slowest of those, and a 90 s test timeout is below. A stalled campaign still fails,
-  // with its state.
-  await f.drive(
-    () => {
-      if (f.pushes.length >= 60 && !first) {
-        first = heap();
+  // release run's clock had moved 27 h when its 60 s wall bound ended the drive). The renders are
+  // CPU-bound: 20 messages per batch, each with 8 tracked links of 7 KB and one link row per
+  // distinct URL. The 300 messages took 2.7 s on the B101 profile host and 14-16 s in the B103 runs,
+  // but 27-65 s in the B137 container runs at host load 5-13, so a 60 s bound on the whole drive
+  // failed about one run in six. The budget is 60 s without a new push instead: a stalled campaign
+  // still fails, with its state, and the 90 s test timeout still bounds the whole run.
+  const done = () => {
+    if (f.pushes.length >= 60 && !first) {
+      first = heap();
+    }
+    if (f.pushes.length === count) {
+      return true;
+    }
+    for (const push of f.pushes) {
+      push.settle();
+    }
+    return false;
+  };
+  for (;;) {
+    const pushed = f.pushes.length;
+    try {
+      await f.drive(done, 0, undefined, 60_000);
+      break;
+    } catch (error) {
+      if (f.pushes.length === pushed) {
+        throw error;
       }
-      if (f.pushes.length === count) {
-        return true;
-      }
-      for (const push of f.pushes) {
-        push.settle();
-      }
-      return false;
-    },
-    0,
-    undefined,
-    60_000,
-  );
+    }
+  }
   const last = heap();
   // About 13 MB of distinct tracked URLs were rendered since the first measurement.
   expect(last - first).toBeLessThan(6 * 1024 * 1024);
