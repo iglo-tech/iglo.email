@@ -80,7 +80,10 @@ async function acquire(): Promise<void> {
           });
         }
       } else if (Date.now() - start > faultLimitMs) {
-        throw new Error(`Cannot create production build lock ${lock}: ${(error as Error).message}`);
+        throw new Error(
+          `Cannot create production build lock ${lock}: ${(error as Error).message}`,
+          { cause: error },
+        );
       }
       await Bun.sleep(50);
     }

@@ -243,7 +243,6 @@ export default defineConfig({
         "unicorn/prefer-string-replace-all": "off",
         "typescript/use-unknown-in-catch-callback-variable": "off",
         "no-empty": "off",
-        "preserve-caught-error": "off",
         "no-promise-executor-return": "off",
         "quality/no-array-filter-map": "off",
         "quality/no-chained-type-assertions": "off",
