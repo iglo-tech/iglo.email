@@ -1,6 +1,7 @@
 // Public parser regressions: listmonk cmd/settings.go at 6fcd95f.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 const check = (condition: unknown, label: string) => {
@@ -65,7 +66,10 @@ export async function runSettingsCouncilParser(target: {
     const response = await request(next);
     check(response.status === 400, `${label}-status`);
     const body = await response.json();
-    check(JSON.stringify(body) === JSON.stringify({ message }), `${label}-error`);
+    check(
+      JSON.stringify(listmonkEnvelope(body, target.mode)) === JSON.stringify({ message }),
+      `${label}-error`,
+    );
     check(JSON.stringify(await read()) === JSON.stringify(before), `${label}-rollback`);
   }
   for (const [label, url] of [

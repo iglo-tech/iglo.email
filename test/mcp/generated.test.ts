@@ -195,6 +195,11 @@ describe("B78 MCP covers every operation (D98)", () => {
       openWorldHint: true,
     });
     expect(hint("update_setting_by_key")).toMatchObject({ destructiveHint: true });
+    // A rotation with overlap_hours 0 cuts off receivers still on the old secret.
+    expect(hint("rotate_webhook_secret")).toMatchObject({
+      destructiveHint: true,
+      readOnlyHint: false,
+    });
     expect(hint("delete_subscriber_activity")).toMatchObject({ destructiveHint: true });
     // Mail or an outside call.
     expect(hint("send_campaign_test")).toMatchObject({ openWorldHint: true });
@@ -226,6 +231,34 @@ describe("B78 MCP covers every operation (D98)", () => {
     const noBody = await callTool("create_subscriber", {});
     expect(noBody.isError).toBe(true);
     expect(noBody.content[0]!.text).toBe("Missing required argument: body");
+  });
+
+  test("an optional body may be left out: rotate_webhook_secret with only the id uses the default window", async () => {
+    const rotate = (await listTools()).find((tool) => tool.name === "rotate_webhook_secret");
+    expect(rotate.inputSchema.required).toEqual(["id"]);
+
+    const created = await callTool("create_webhook", {
+      body: { url: "http://127.0.0.1:9/b132", events: ["bounce.recorded"], enabled: true },
+    });
+    expect(created.isError).toBeFalsy();
+    const id = created.structuredContent.data.id;
+
+    const rotated = await callTool("rotate_webhook_secret", { id });
+    expect(rotated.isError).toBeFalsy();
+    expect(rotated.structuredContent.data.secret).toMatch(/^[0-9a-f]{64}$/);
+    const remaining = Date.parse(rotated.structuredContent.data.previous_secret_until) - Date.now();
+    expect(remaining).toBeGreaterThan(23 * 3_600_000);
+    expect(remaining).toBeLessThanOrEqual(24 * 3_600_000);
+
+    // A body that is given is still checked: a supplied secret is refused, as on the REST API.
+    const refused = await callTool("rotate_webhook_secret", {
+      id,
+      body: { secret: "x".repeat(32) },
+    });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("secret");
+
+    expect((await callTool("delete_webhook", { id })).isError).toBeFalsy();
   });
 
   test("uploads: a file over 1 MiB, or base64 that is not valid, is refused before anything is sent", async () => {

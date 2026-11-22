@@ -137,7 +137,7 @@ test("compiled production serves the public message page and asset boundaries", 
       expect(await rawRequest(origin, path, { method: "POST" })).toEqual({
         status: 405,
         contentType: "application/json",
-        body: '{"message":"Method Not Allowed"}\n',
+        body: '{"message":"Method Not Allowed","code":"method_not_allowed"}\n',
       });
     }
     for (const path of [

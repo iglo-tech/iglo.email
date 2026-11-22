@@ -861,4 +861,23 @@ export const differences: Array<Difference> = [
       "Their endpoints return 404: `/api/admin/reload`, OIDC routes, update checks, and anything listed as dropped in Scope.",
     applies: [],
   },
+  {
+    area: "Stable error `code` and Retry-After (B131, D129)",
+    summary:
+      "Every API error keeps listmonk's `message` and adds a `code` from one fixed snake_case list (`src/server/error-codes.ts`), listed per response in this document. Every 429 and 503 sends `Retry-After` in seconds, 1 s and 30 s where the route names no wait. Both are additive, so no client that reads `message` breaks. Upstream has neither.",
+    applies: ["/api/"],
+  },
+  {
+    area: "Address conflicts name the holder (B131, D129)",
+    summary:
+      "A write that names an e-mail another subscriber holds answers 409 `email_conflict` and writes nothing. The body names that subscriber's `conflict.external_id` only when the holder has one and the caller manages one of its lists, so a scoped caller learns nothing of a subscriber it cannot see. The event API also claims such an address for an event's external ID when its holder has no external ID and the caller manages the holder: the holder keeps its lists and history, and nothing is created. Upstream answers 409 with its message only.",
+    applies: [
+      "POST /api/subscribers",
+      "PUT /api/subscribers/{id}",
+      "PUT /api/subscribers/external",
+      "PUT /api/subscribers/external/{external_id}",
+      "POST /api/subscriber-events",
+      "POST /api/subscriber-events/batch",
+    ],
+  },
 ];

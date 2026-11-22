@@ -1,8 +1,8 @@
 // B129 (D127, review blocker 1): an install from before this release keeps the built-in templates
 // with the product credit, since the store seeds only an empty database. Through the compiled
 // executable: a first start seeds the bodies a fresh install gets; then the data directory is put
-// back to an earlier release's state (schema 25, its three seeded bodies, and one archive copy edited
-// by one byte). The next start runs migration 26. The seeded copies then hold this release's bodies,
+// back to an earlier release's state (schema 26, its three seeded bodies, and one archive copy edited
+// by one byte). The next start runs migration 27. The seeded copies then hold this release's bodies,
 // the edited copy keeps its body, and an archived campaign on the migrated template renders with no
 // credit and with the site's brand.
 import { Database } from "bun:sqlite";
@@ -158,16 +158,17 @@ test("a seeded install from before this release takes the migrated bodies, and a
       "INSERT INTO templates (name, type, subject, body, body_source, is_default) VALUES (?, 'campaign', '', ?, NULL, 0)",
       [edited, copy],
     );
-    db.run("PRAGMA user_version = 25");
+    // Schema 26 keeps the webhook migration (0026) applied; at 25 it would run again and fail on its column.
+    db.run("PRAGMA user_version = 26");
   } finally {
     db.close(true);
   }
 
-  // The next start runs migration 26.
+  // The next start runs migration 27.
   const second = await up(dataDir);
   try {
     const after = await templates(second.port);
-    expect(userVersion(dataDir)).toBe(26);
+    expect(userVersion(dataDir)).toBe(27);
     expect(after.get(names.campaign)?.body).toBe(seeded.get(names.campaign)?.body);
     expect(after.get(names.archive)?.body).toBe(seeded.get(names.archive)?.body);
     expect(after.get(names.sample)?.body).toBe(seeded.get(names.sample)?.body);

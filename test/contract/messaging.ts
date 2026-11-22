@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { faultRelay } from "@/test/messaging/fault-relay";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 export async function runMessagingContract(target: {
@@ -25,7 +26,9 @@ export async function runMessagingContract(target: {
   assert.equal((await request("{}", "")).status, 403);
   const missing = await request("{}");
   assert.equal(missing.status, 400);
-  assert.deepEqual(await missing.json(), { message: "Missing field(s): email" });
+  assert.deepEqual(listmonkEnvelope(await missing.json(), target.mode), {
+    message: "Missing field(s): email",
+  });
   const response = await request(
     JSON.stringify({
       email: recipient,
@@ -71,7 +74,9 @@ export async function runMessagingContract(target: {
     );
     assert.equal(invalid.status, 500);
     if (target.mode === "normal") {
-      assert.deepEqual(await invalid.json(), { message: "SMTP test failed." });
+      assert.deepEqual(listmonkEnvelope(await invalid.json(), target.mode), {
+        message: "SMTP test failed.",
+      });
     }
     const query = new URLSearchParams({ query: `to:one-${recipient}`, limit: "100" });
     assert.equal(
@@ -139,7 +144,9 @@ export async function runMessagingContract(target: {
     );
     assert.equal(insecure.status, 500);
     if (target.mode === "normal") {
-      assert.deepEqual(await insecure.json(), { message: "SMTP test failed." });
+      assert.deepEqual(listmonkEnvelope(await insecure.json(), target.mode), {
+        message: "SMTP test failed.",
+      });
     }
     assert.equal(plainRelay.authAttempts(), 0);
     const query = new URLSearchParams({ query: `to:insecure-${recipient}`, limit: "100" });
@@ -176,8 +183,9 @@ export async function runMessagingContract(target: {
       );
       assert.equal(response.status, reverse ? 200 : 500);
       if (target.mode === "normal") {
+        const body = await response.json();
         assert.deepEqual(
-          await response.json(),
+          reverse ? body : listmonkEnvelope(body, target.mode),
           reverse ? { data: [] } : { message: "SMTP test failed." },
         );
       }
@@ -208,7 +216,9 @@ export async function runMessagingContract(target: {
     );
     assert.equal(failed.status, 500);
     if (target.mode === "normal") {
-      assert.deepEqual(await failed.json(), { message: "SMTP test failed." });
+      assert.deepEqual(listmonkEnvelope(await failed.json(), target.mode), {
+        message: "SMTP test failed.",
+      });
     }
     const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
     const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
@@ -236,7 +246,9 @@ export async function runMessagingContract(target: {
       );
       assert.equal(unsupported.status, target.mode === "normal" ? 500 : 200);
       if (target.mode === "normal") {
-        assert.deepEqual(await unsupported.json(), { message: "SMTP test failed." });
+        assert.deepEqual(listmonkEnvelope(await unsupported.json(), target.mode), {
+          message: "SMTP test failed.",
+        });
       }
       const query = new URLSearchParams({ query: `to:${to}`, limit: "100" });
       const intake = (await (await fetch(`${sink.api}/api/v1/search?${query}`)).json()) as {
@@ -266,7 +278,7 @@ export async function runMessagingContract(target: {
       );
       assert.equal(partial.status, 500);
       if (target.mode === "normal") {
-        assert.deepEqual(await partial.json(), {
+        assert.deepEqual(listmonkEnvelope(await partial.json(), target.mode), {
           message: "SMTP test was accepted for some recipients only.",
         });
       }
@@ -283,10 +295,14 @@ export async function runMessagingContract(target: {
   if (target.mode === "normal") {
     const malformed = await request("{");
     assert.equal(malformed.status, 400);
-    assert.deepEqual(await malformed.json(), { message: "Invalid data." });
+    assert.deepEqual(listmonkEnvelope(await malformed.json(), target.mode), {
+      message: "Invalid data.",
+    });
     const invalid = await request(JSON.stringify({ email: recipient, host: "", port: 0 }));
     assert.equal(invalid.status, 400);
-    assert.deepEqual(await invalid.json(), { message: "Invalid SMTP configuration." });
+    assert.deepEqual(listmonkEnvelope(await invalid.json(), target.mode), {
+      message: "Invalid SMTP configuration.",
+    });
     const refusedSocket = createServer();
     await new Promise<void>((resolve, reject) => {
       refusedSocket.once("error", reject);
@@ -310,7 +326,9 @@ export async function runMessagingContract(target: {
       }),
     );
     assert.equal(refused.status, 500);
-    assert.deepEqual(await refused.json(), { message: "SMTP test failed." });
+    assert.deepEqual(listmonkEnvelope(await refused.json(), target.mode), {
+      message: "SMTP test failed.",
+    });
     for (const fault of ["all-rcpt", "before-data", "during-data", "lost-final", "auth"] as const) {
       const faulted = await faultRelay(sink, fault, {
         user: "m21-fixture-user",
@@ -329,7 +347,7 @@ export async function runMessagingContract(target: {
           }),
         );
         assert.equal(failed.status, 500);
-        assert.deepEqual(await failed.json(), {
+        assert.deepEqual(listmonkEnvelope(await failed.json(), target.mode), {
           message:
             fault === "all-rcpt" || fault === "auth"
               ? "SMTP test failed."
@@ -358,7 +376,9 @@ export async function runMessagingContract(target: {
       ]);
       const overflow = await request(body);
       assert.equal(overflow.status, 429);
-      assert.deepEqual(await overflow.json(), { message: "Too many SMTP tests in progress." });
+      assert.deepEqual(listmonkEnvelope(await overflow.json(), target.mode), {
+        message: "Too many SMTP tests in progress.",
+      });
       assert.equal(relay.connections(), 4);
       relay.release();
       assert.deepEqual(
@@ -390,7 +410,9 @@ export async function runMessagingContract(target: {
         const restarting = target.restart();
         const outcome = await pending;
         assert.equal(outcome.status, 500);
-        assert.deepEqual(await outcome.json(), { message: "SMTP test outcome is unknown." });
+        assert.deepEqual(listmonkEnvelope(await outcome.json(), target.mode), {
+          message: "SMTP test outcome is unknown.",
+        });
         await heldFinal.disconnected;
         await restarting;
         assert.equal(heldFinal.connections(), 1);

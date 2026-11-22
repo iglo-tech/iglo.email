@@ -404,6 +404,8 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
       throw new HttpError(
         400,
         context.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.user}"),
+        {},
+        "not_found",
       );
     }
     return ok(projectUser(updated, roles));

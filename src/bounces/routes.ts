@@ -226,6 +226,8 @@ export function registerBounceRoutes(
       throw new HttpError(
         400,
         c.app.i18n.Ts("globals.messages.notFound", "name", "{globals.terms.bounce}"),
+        {},
+        "not_found",
       );
     }
     return ok(found);

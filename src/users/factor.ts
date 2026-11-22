@@ -23,7 +23,7 @@ function self(context: RequestContext): Identity {
     identity.user.type !== "user" ||
     identity.user.password_login === 0n
   ) {
-    throw new HttpError(403, "invalid session");
+    throw new HttpError(403, "invalid session", {}, "invalid_credentials");
   }
   return identity;
 }
@@ -75,7 +75,7 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
         current.user.password !== identity.user.password ||
         current.user.email !== identity.user.email
       ) {
-        throw new HttpError(403, "invalid session");
+        throw new HttpError(403, "invalid session", {}, "invalid_credentials");
       }
       return ok({ secret, qr });
     });
@@ -97,7 +97,7 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
       auth.revalidate(context);
       self(context);
       if (!currentProof()) {
-        throw new HttpError(403, "invalid session");
+        throw new HttpError(403, "invalid session", {}, "invalid_credentials");
       }
       if (identity.user.twofa_type === "totp") {
         throw new HttpError(400, context.app.i18n.T("users.twoFAAlreadyEnabled"));
@@ -117,7 +117,7 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
           },
         )
       ) {
-        throw new HttpError(403, "invalid session");
+        throw new HttpError(403, "invalid session", {}, "invalid_credentials");
       }
       return ok(true);
     });
@@ -145,7 +145,7 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
       auth.revalidate(context);
       self(context);
       if (!currentProof()) {
-        throw new HttpError(403, "invalid session");
+        throw new HttpError(403, "invalid session", {}, "invalid_credentials");
       }
       if (
         !store.setFactor(
@@ -159,7 +159,7 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
           },
         )
       ) {
-        throw new HttpError(403, "invalid session");
+        throw new HttpError(403, "invalid session", {}, "invalid_credentials");
       }
       return ok(true);
     });

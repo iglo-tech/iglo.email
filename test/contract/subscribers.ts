@@ -310,7 +310,10 @@ export async function runSubscribersContract(target: {
       const collisionBody = await collision.json();
       check(
         collision.status === (target.mode === "reference" ? 500 : 409) &&
-          (target.mode === "reference" || collisionBody.message === "E-mail already exists."),
+          // The `code` is listmonk-additive (B131, D129); reference answers 500 and has none.
+          (target.mode === "reference" ||
+            (collisionBody.message === "E-mail already exists." &&
+              collisionBody.code === "email_conflict")),
         "D41-subscriber-update-duplicate-email",
       );
       const unchanged = await get(semantics.id);

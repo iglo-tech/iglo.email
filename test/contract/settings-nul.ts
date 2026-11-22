@@ -1,5 +1,6 @@
 // Public settings boundary regressions for D46; pinned listmonk 6fcd95f.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 function check(value: unknown, label: string): asserts value {
@@ -50,7 +51,11 @@ export async function runSettingsNul(target: {
     const response = await request("/api/settings", "PUT", JSON.stringify(out));
     check(response.status === (target.mode === "reference" ? 500 : 400), `full-${i}`);
     if (target.mode === "normal") {
-      check(JSON.stringify(await response.json()) === '{"message":"Invalid data."}', "safe-error");
+      check(
+        JSON.stringify(listmonkEnvelope(await response.json(), target.mode)) ===
+          '{"message":"Invalid data."}',
+        "safe-error",
+      );
     }
     check(JSON.stringify(await read()) === JSON.stringify(before), `full-${i}-no-write`);
   }

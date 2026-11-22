@@ -294,13 +294,26 @@ for (const kind of Object.keys(implied)) {
   });
 }
 
-// r4: the worst case the cap still allows. 1023 open elements, then stray end tags to 1 MiB: each
-// stray end tag searches the open elements, so the time is at most about 1023 steps per tag.
-test("the worst linear case, 1023 open spans then stray end tags to 1 MiB, is under 1 s", async () => {
-  const html = "<span>".repeat(1023) + "x</q>".repeat(Math.floor(MIB / 5));
-  const started = performance.now();
-  await text(html);
-  expect(performance.now() - started).toBeLessThan(1000);
+// r4: the worst case the cap still allows: 1023 open elements, then stray end tags, each of which
+// searches the open elements. It was one absolute sample under 1 s, which failed at 1006-1181 ms on a
+// loaded host (B137). It is now a ratio within the run, the median of three at 64 KiB and at 1 MiB.
+// Linear work gives about 16x for 16x the input (measured 14-18x on macOS and 14-15x in the Linux
+// container); quadratic work gives 256x. The bound of 32x sits between the two.
+const worstStrayEnds = (size: number) =>
+  "<span>".repeat(1023) + "x</q>".repeat(Math.floor(size / 5));
+const worstStrayEndsTime = async (size: number) => {
+  const samples: Array<number> = [];
+  for (let run = 0; run < 3; run++) {
+    const started = performance.now();
+    await text(worstStrayEnds(size));
+    samples.push(performance.now() - started);
+  }
+  return samples.sort((a, b) => a - b)[1]!;
+};
+test("the worst linear case, 1023 open spans then stray end tags, costs at most 32x for 16x the input", async () => {
+  const small = await worstStrayEndsTime(64 * 1024);
+  const large = await worstStrayEndsTime(1024 * 1024);
+  expect(large / Math.max(small, 5)).toBeLessThanOrEqual(32);
 });
 
 test("a message past the implied-end cap gives no text part, and its HTML is still converted by the caller", async () => {

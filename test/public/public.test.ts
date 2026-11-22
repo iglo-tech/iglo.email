@@ -57,7 +57,7 @@ test("each limit is per peer, answers 429 and reopens on the clock", async () =>
   });
   expect(json.status).toBe(429);
   expect(json.headers.get("retry-after")).toBe("60");
-  expect(await json.json()).toEqual({ message: "Too many requests" });
+  expect(await json.json()).toEqual({ message: "Too many requests", code: "rate_limited" });
   // Another peer and the unsubscribe budget are unaffected.
   expect((await f.post("/subscription/form", bad, "192.0.2.8")).status).toBe(400);
   f.clock.advance(minute);

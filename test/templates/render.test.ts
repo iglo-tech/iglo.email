@@ -36,7 +36,11 @@ function caller() {
       },
     });
     try {
-      return await fetch(server.url);
+      // The body is read while the server still runs: stopping it first resets a body still in
+      // flight (ECONNRESET on macOS for a 1 MiB reply; B137). The answer keeps its status and headers.
+      const response = await fetch(server.url);
+      const bytes = await response.arrayBuffer();
+      return new Response(bytes, { status: response.status, headers: response.headers });
     } finally {
       await server.stop(true);
     }

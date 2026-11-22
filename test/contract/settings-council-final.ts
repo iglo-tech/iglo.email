@@ -1,5 +1,6 @@
 // Public round-3 regressions for pinned listmonk/Go/cron; D48 is explicitly paired.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 
@@ -55,7 +56,7 @@ export async function runSettingsCouncilFinal(target: {
   const aliasResponse = await request(JSON.stringify(badAlias));
   check(aliasResponse.status === 400, "no-fold-expansion-status");
   check(
-    JSON.stringify(await aliasResponse.json()) ===
+    JSON.stringify(listmonkEnvelope(await aliasResponse.json(), target.mode)) ===
       JSON.stringify({ message: `invalid from email address: ${address}` }),
     "no-fold-expansion-error",
   );
@@ -81,7 +82,7 @@ export async function runSettingsCouncilFinal(target: {
     const response = await request(JSON.stringify(out));
     check(response.status === 400, `${label}-status`);
     check(
-      JSON.stringify(await response.json()) ===
+      JSON.stringify(listmonkEnvelope(await response.json(), target.mode)) ===
         JSON.stringify({ message: `Invalid data: slow query cron: ${error}` }),
       `${label}-error`,
     );
@@ -142,7 +143,7 @@ export async function runSettingsCouncilFinal(target: {
     const after = await read();
     if (!allowed) {
       check(
-        JSON.stringify(await response.json()) ===
+        JSON.stringify(listmonkEnvelope(await response.json(), target.mode)) ===
           JSON.stringify({
             message:
               "At least one enabled SMTP server must be included in the default 'email' messenger.",

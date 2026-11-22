@@ -8,8 +8,10 @@ import { writeTransaction } from "@/db/transaction";
 import { createEventAggregates } from "@/events/aggregate";
 import type { EventInput } from "@/events/input";
 import type { Translation } from "@/i18n/i18n";
+import type { ErrorCode } from "@/server/error-codes";
 import { HttpError } from "@/server/response";
-import type { SubscriberStore } from "@/subscribers/store";
+import type { ErrorDetails } from "@/server/response";
+import type { Scope, SubscriberStore } from "@/subscribers/store";
 import sql from "@/events/store.sql" with { type: "text" };
 
 /** Events that occurred longer than this before they were received never start sequences. */
@@ -56,9 +58,13 @@ export interface ExistingSubscriber {
 /**
  * The authorization of one event: called once the subscriber it names is known, inside the
  * event's write transaction, before anything is written. A refusal (HttpError) fails the event
- * alone and writes nothing.
+ * alone and writes nothing. It returns the caller's list manage scope, which decides whether an event
+ * may claim a subscriber on lists the caller does not manage, and whether a conflict may name the
+ * holder's external ID (D129).
  */
-export type Authorize = (existing: ExistingSubscriber | null) => void;
+export type Authorize = (existing: ExistingSubscriber | null) => Scope;
+/** An item without an authorization has no list scope: a conflict names no holder. */
+const NO_SCOPE: Scope = { all: false, ids: [] };
 /**
  * What a grant did to one list (D99): `added` is a new confirmed membership. `suppressed` (B124,
  * D125) is a person whose self-wipe still stands: nothing is granted, and only their own
@@ -98,7 +104,7 @@ export type EventResult =
       enrollments: Enrollments;
       grants: Array<Grant>;
     }
-  | { status: number; message: string };
+  | ({ status: number; message: string; code: ErrorCode } & ErrorDetails);
 
 const rawJSON = (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON;
 const numberID = (id: bigint) =>
@@ -191,7 +197,12 @@ export function createEventStore(
       ? { lists: subscribers.memberships(found.id).map((m) => m.list_id) }
       : null;
   /** Steps 1-3 of the design's processing order. The caller holds the write transaction. */
-  function record(input: EventInput, receivedAt: string, found: Subscriber | null): EventResult {
+  function record(
+    input: EventInput,
+    receivedAt: string,
+    found: Subscriber | null,
+    scope: Scope,
+  ): EventResult {
     if (found && input.idempotencyKey !== undefined) {
       const previous = q.get("event-by-key").get(found.id, input.idempotencyKey) as
         | (Pick<EventRow, "id" | "subscriber_id"> & {
@@ -211,6 +222,11 @@ export function createEventStore(
           options.i18n.Ts("globals.messages.invalidFields", "name", "subscriber.grant_lists"),
         );
       }
+    }
+    // D129: an address another subscriber holds is claimed or refused before anything is written.
+    const conflict = subscribers.eventConflict(input.subscriber, found, scope);
+    if (conflict) {
+      throw conflict;
     }
     const subscriber = subscribers.upsertForEvent(found, input.subscriber, options.emailAllowed);
     // B124 (D125): read once, after the upsert, so the address and ID the event leaves are the ones checked.
@@ -254,8 +270,8 @@ export function createEventStore(
     db.run("SAVEPOINT event_item");
     try {
       const found = subscribers.resolveForEvent(input.subscriber);
-      authorize?.(existing(found, input));
-      const recorded = record(input, at, found);
+      const scope = authorize?.(existing(found, input)) ?? NO_SCOPE;
+      const recorded = record(input, at, found, scope);
       db.run("RELEASE event_item");
       return recorded;
     } catch (error) {
@@ -268,7 +284,7 @@ export function createEventStore(
         throw new TransactionLost(error_);
       }
       if (error instanceof HttpError) {
-        return { status: error.status, message: error.message };
+        return { status: error.status, message: error.message, code: error.code, ...error.details };
       }
       throw error;
     }
@@ -360,14 +376,14 @@ export function createEventStore(
       items: ReadonlyArray<EventInput | HttpError>,
       receivedAt: Date,
       authorize: () => void,
-      authorizeItem: (input: EventInput, existing: ExistingSubscriber | null) => void,
+      authorizeItem: (input: EventInput, existing: ExistingSubscriber | null) => Scope,
     ): Array<EventResult> {
       const at = receivedAt.toISOString();
       return writeTransaction(db, () => {
         authorize();
-        return items.map((value) =>
+        return items.map((value): EventResult =>
           value instanceof HttpError
-            ? { status: value.status, message: value.message }
+            ? { status: value.status, message: value.message, code: value.code, ...value.details }
             : item(value, at, (existing) => authorizeItem(value, existing)),
         );
       });

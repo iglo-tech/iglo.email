@@ -48,6 +48,8 @@ const DESTRUCTIVE_IDS = new Set([
   "blocklistSubscriberById",
   "blocklistSubscribers",
   "blocklistBouncedSubscribers",
+  // With overlap_hours 0 the old secret stops signing at once, so receivers still on it are cut off.
+  "rotateWebhookSecret",
 ]);
 
 const snake = (id: string): string => id.replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
@@ -232,7 +234,9 @@ export function toolFor(name: string, op: Operation): ToolDefinition {
     );
   } else if (op.body) {
     properties.body = inline(op.body);
-    required.push("body");
+    if (!op.bodyOptional) {
+      required.push("body");
+    }
   }
 
   const note =
@@ -327,6 +331,10 @@ export function operationRequest(op: Operation, args: Record<string, unknown>): 
   }
 
   if (!op.body) {
+    return { method, path: url };
+  }
+  // An optional body that is not given is no body at all, so the route applies its defaults.
+  if (op.bodyOptional && args.body === undefined) {
     return { method, path: url };
   }
 

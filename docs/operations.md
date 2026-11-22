@@ -372,6 +372,34 @@ each job.
   The `get` permissions are the reads the same job makes; leave one out and the job's first read
   is refused with `403`. The sample role under [MCP](#mcp-model-context-protocol) includes all of them.
 
+## Retrying API errors
+
+Every API error answers `{"message": …, "code": …}`. Branch on `code`, not on `message`; the codes
+are listed in [07-api-and-ui.md](design/07-api-and-ui.md#error-codes) and in the OpenAPI document.
+Which statuses are worth a retry:
+
+- **Permanent**, so a retry fails the same way until the request changes: `400`, `401`, `403`,
+  `404`, `409`, `413` and `422`. Fix the request, the credential or the data first. A `409` is
+  permanent except three codes that name a race, not the request: `subscriber_changed` (a send's
+  subscriber changed as it was prepared), `test_running` (a sequence test for this subscriber is
+  still running) and `upload_changed` (the upload path changed during the upload). Retry those
+  with backoff, as a transient error.
+- **Transient**, worth retrying with backoff: `429`, `503`, the other `5xx` and network errors
+  (a connection that fails or resets before an answer). Every `429` and `503` sends `Retry-After`
+  in seconds; wait at least that long, and back off from there.
+
+A `503` with `code` `held` is not transient: sending is held after a restore until an operator
+reconciles the gap and releases it ([Restore](#restore)). Retrying it does nothing until then.
+A `403` with `code` `invalid_credentials` means the API token or session is wrong or unknown; it
+is permanent until the credential is replaced, and `permission_denied` is a valid credential
+without the permission.
+
+A write that carries an `idempotency_key` is safe to retry, and a retry returns the first answer
+without changing anything: `POST /api/subscriber-events` and its batch
+([05-sequences.md](design/05-sequences.md#events-api)), and `POST /api/tx`. A write without a key
+is not: a retry after an unknown outcome may write twice. The server never retries a marketing send
+itself, since those are at-most-once ([D12](design/09-decisions.md#d12-marketing-delivery-is-at-most-once)).
+
 ## Sending with Amazon SES
 
 This is the one path to good deliverability (D89). Easy DKIM signs each message, a custom MAIL FROM
@@ -914,6 +942,139 @@ Operators can receive notifications for campaign and import events by configurin
 - A subscriber CSV import **finishes** or **fails**.
 
 If `app.notify_emails` is empty or unset, no notifications are generated. An entry that is not a valid email address is skipped and logged as an error on every notification; the valid entries still receive the mail. If `app.from_email[0]` is not a valid address, no admin notification is sent and the bad value is logged once per distinct value per process, because the sender would be refused by SES. Nothing falls back to another sender. A notification that cannot be queued is logged and never changes the campaign or import it reports on. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
+
+## Outbound webhooks
+
+iglo.email posts a signed JSON `POST` to each URL you configure, for the events listed in
+[04-sending.md](design/04-sending.md#outbound-webhooks): an unsubscribe, a blocklisting, a deletion,
+a stored bounce and a failed send. Create a webhook with `POST /api/webhooks` (`webhooks:manage`).
+Its `secret` is in that one answer, and a rotation answers with the new secret the same way. `PUT` changes the URL, events or `enabled`, and
+`DELETE` removes it with its deliveries. `GET /api/webhooks/{id}/deliveries` shows each delivery's
+status and last error, never its payload.
+
+### Signature
+
+Each request carries `X-Iglo-Email-Signature: t=<unix>,v1=<hex>`. The `v1` value is HMAC-SHA256,
+keyed with the secret, over the text `<unix>.<body>`, where `<body>` is the exact bytes of the request
+body. During a secret rotation the header has one `v1` per secret, the new one first, and a receiver
+accepts the delivery when any of them verifies.
+
+### Rotating the secret
+
+`POST /api/webhooks/{id}/rotate-secret` (`webhooks:manage`) makes a new secret and returns the
+webhook with it in `secret`, once. An optional JSON body `{"overlap_hours": 24}` sets how long the
+old secret keeps signing: an integer from 0 to 168, 24 by default. `0` drops the old secret at once.
+The answer's `previous_secret_until` is the moment it stops, or `null` when none is in its window.
+
+To rotate without losing deliveries: rotate, then give your receiver the new secret at any point
+before `previous_secret_until`. Until then every delivery carries both signatures, so a receiver that
+holds either secret accepts it. After the window only the new secret signs. Each attempt is signed
+when it is sent, so a retry after the window carries the new signature alone. A second rotation during
+an overlap ends the earlier old secret at once: only the newest and the one before it sign. The stored
+old secret is removed by the retention pass within about an hour of its window's end; signing stops at
+the window's end whatever the time of that pass.
+
+### Verifying a delivery
+
+The receiver's rules:
+
+- **Verify the exact body.** Compute the HMAC over the raw bytes of the request body, before any
+  JSON parsing or re-encoding, and compare with a constant-time function. Pass `await request.text()`
+  to the helper, never a re-serialised object: `JSON.stringify` of a parsed body changes the bytes.
+- **Accept any `v1` value** that matches one of your secrets: the current one, and a rotated one
+  while its window is open.
+- **Timestamp tolerance.** Reject a `t` more than 5 minutes from your clock (300 seconds either way).
+  Each attempt carries a fresh `t`, so a retry passes.
+- **Replay window.** Keep each delivery `id` (the body's `id`) for at least 25 hours. iglo.email
+  retries a delivery for up to 24 hours, with the same `id`, and a copy that arrives again is a
+  duplicate, not a new event.
+- **Body size cap.** Read at most 64 KiB and answer `413` above it. A delivery holds IDs and short
+  fields, so this is well above any delivery iglo.email sends.
+- **2xx only after the durable write.** Record the `id` and apply the change in one transaction,
+  commit it, and then answer. Any non-2xx answer is retried for up to 24 hours, and a `2xx` sent before
+  the commit would be lost if the process died. A duplicate of an applied `id` answers `2xx` too: the
+  first answer may have been lost on the way back.
+
+The helper below implements the signature, the timestamp and the replay check. It needs no package
+beyond Node's standard library and runs under Bun or Node. `applied(id)` must read the same table that
+the delivery's transaction writes, inside that transaction (`BEGIN IMMEDIATE` in SQLite), so two copies
+of one delivery cannot both pass the check. It throws `bad_timestamp`, `bad_signature` or `replay`:
+answer `2xx` to `replay` and `4xx` to the others.
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+/** Seconds either side of the signed time that a delivery may carry. */
+const TOLERANCE_SECONDS = 300;
+
+export interface Delivery {
+  id: string;
+  event: string;
+  occurred_at: string;
+  data: unknown;
+}
+
+/**
+ * Verify one delivery and return it. `raw` is the exact request body, `header` is the
+ * X-Iglo-Email-Signature value, `secrets` are the current secret and any rotated one still in its
+ * overlap, and `applied(id)` tells whether this delivery id was already applied. Throws on failure.
+ */
+export function verifyDelivery(
+  raw: string,
+  header: string,
+  secrets: ReadonlyArray<string>,
+  applied: (id: string) => boolean,
+  now = Date.now() / 1000,
+): Delivery {
+  const time = Number(/(?:^|,)t=(\d+)/.exec(header)?.[1]);
+  if (!Number.isSafeInteger(time) || Math.abs(now - time) > TOLERANCE_SECONDS) {
+    throw new Error("bad_timestamp");
+  }
+  const given = [...header.matchAll(/v1=([0-9a-f]{64})/g)].map(([, hex]) =>
+    Buffer.from(hex ?? "", "hex"),
+  );
+  const valid = secrets.some((secret) => {
+    const expected = createHmac("sha256", secret).update(`${time}.${raw}`).digest();
+    return given.some((signature) => timingSafeEqual(signature, expected));
+  });
+  if (!valid) {
+    throw new Error("bad_signature");
+  }
+  const delivery: Delivery = JSON.parse(raw);
+  if (applied(delivery.id)) {
+    throw new Error("replay");
+  }
+  return delivery;
+}
+```
+
+To read the body within the 64 KiB cap, use this in place of `request.text()`. It counts the bytes as
+they arrive, so a chunked request without `Content-Length` is capped too. Answer `413` on `null`:
+
+```ts
+/** The body as text, or `null` above `limit` bytes. */
+export async function readBody(request: Request, limit = 64 * 1024): Promise<string | null> {
+  const reader = request.body?.getReader();
+  const chunks: Array<Uint8Array> = [];
+  let size = 0;
+  while (reader) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+```
+
+The helper is tested with the server's own deliveries, a rotation and a tampered body, in
+`test/webhooks/verify.test.ts`, which also fails if this block and that file differ.
 
 ## Monitoring
 

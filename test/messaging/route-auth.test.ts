@@ -323,7 +323,10 @@ test("SMTP capacity releases after absolute timeout, malformed input and shutdow
     f.persisted.clock.advance(10_000);
     for (const response of await Promise.all(pending)) {
       expect(response.status).toBe(500);
-      expect(await response.json()).toEqual({ message: "SMTP test outcome is unknown." });
+      expect(await response.json()).toEqual({
+        message: "SMTP test outcome is unknown.",
+        code: "internal_error",
+      });
     }
     expect((await send(healthy.port, "wrong")).status).toBe(403);
     const invalid = await fetch(`${f.origin}/api/settings/smtp/test`, {

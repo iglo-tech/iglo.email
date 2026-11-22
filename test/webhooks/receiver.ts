@@ -73,14 +73,22 @@ export function startReceiver(
 }
 export type Receiver = ReturnType<typeof startReceiver>;
 
-/** The documented receiver check: HMAC-SHA256 of `t.body` over the exact bytes received. */
+/**
+ * The documented receiver check: HMAC-SHA256 of `t.body` over the exact bytes received. A rotation
+ * sends one `v1` per secret, so any of them matching is enough (D130).
+ */
 export function signatureValid(received: Received, secret: string) {
-  const match = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(received.signature);
+  const match = /^t=(\d+),/.exec(received.signature);
   if (!match) {
     return false;
   }
   const expected = createHmac("sha256", secret).update(`${match[1]}.${received.text}`).digest();
-  return timingSafeEqual(expected, Buffer.from(match[2]!, "hex"));
+  return [...received.signature.matchAll(/v1=([0-9a-f]{64})/g)].some(([, hex]) =>
+    timingSafeEqual(expected, Buffer.from(hex ?? "", "hex")),
+  );
 }
+/** The `v1` values of a delivery, in the order sent. */
+export const signatureCount = (received: Received) =>
+  [...received.signature.matchAll(/v1=([0-9a-f]{64})/g)].length;
 export const signatureTime = (received: Received) =>
   Number(/^t=(\d+),/.exec(received.signature)?.[1]);

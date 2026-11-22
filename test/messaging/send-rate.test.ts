@@ -24,6 +24,7 @@ import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
 import { createEmailer } from "@/messaging/email";
 import { createSendRateLimiter } from "@/messaging/rate";
+import type { SendRateLimiter } from "@/messaging/rate";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { createTemplateStore } from "@/templates/store";
@@ -54,6 +55,7 @@ import { startScheduler } from "@/scheduler/scheduler";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
 import { waitWall } from "@/test/wait";
+import type { WaitOptions } from "@/test/wait";
 
 const admin = { user: "rate-admin", password: "rate-admin-password" };
 const root = "http://fixture.test";
@@ -138,12 +140,31 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     return s;
   });
 
+  // The sink stamps each receipt with the injected clock, and a send's SMTP hand-off takes real time.
+  // So the clock moves only once every granted send has reached the sink. Otherwise a receipt is
+  // stamped later than its grant by however far the wait moved the clock meanwhile, and a send that
+  // the test expects to wait behind a slot starts early. `grants` counts the grants of every limiter
+  // this harness makes; `cleared` counts the receipts `resetSink` has taken off the sink.
+  let grants = 0;
+  let cleared = 0;
+  const countGrants = (inner: SendRateLimiter): SendRateLimiter => ({
+    acquire: (priority, signal) =>
+      inner.acquire(priority, signal).then(() => {
+        grants++;
+      }),
+    stop: () => inner.stop(),
+    wake: () => inner.wake(),
+  });
+  const inFlight = () => grants - cleared - sink.messages.length;
+
   // Wiring matching src/main.ts: one settings listener for the process, which wakes whichever
   // limiter is current (restart() replaces the limiter, not the listener).
-  let limiter = createSendRateLimiter({
-    clock,
-    rate: () => settingsStore.read()["messaging.max_send_rate"],
-  });
+  let limiter = countGrants(
+    createSendRateLimiter({
+      clock,
+      rate: () => settingsStore.read()["messaging.max_send_rate"],
+    }),
+  );
   settingsStore.onUpdate((next, current) => {
     if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
       limiter.wake();
@@ -417,19 +438,55 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   // count ends a wait that needs real I/O early (test/wait.ts, docs/perf/B49-drive-bound.md).
   // A timeout names the progress made: messages at the sink, the clock, and sends by status. A wait
   // that timed out under host load shows progress here; a stall shows the same counts unchanged.
+  const sendRows = () => {
+    const rows = db
+      .query("SELECT status, COUNT(*) AS n FROM sends GROUP BY status ORDER BY status")
+      .all() as Array<{ status: string; n: number }>;
+    return rows.map((row) => `${row.status} ${row.n}`).join(", ") || "none";
+  };
+  const describeState = () =>
+    `in flight ${inFlight()}; sink messages ${sink.messages.length}; clock ${clock.now().toISOString()}; sends ${sendRows()}`;
+  // A step of the clock waits for the sink to catch up (see `countGrants`); an unmet check
+  // otherwise only lets real I/O run.
+  const moveClock = (ms: number) => {
+    if (inFlight() === 0) {
+      clock.advance(ms);
+    }
+  };
+  // The real-time budget of a wait (WAIT_WALL_MS) is spent without progress, not over the whole
+  // wait. The 70 requests of test 1b share this process's event loop with the sink, so one wait
+  // iteration can take seconds of real time while the sends still move. A stall (a wait budget with
+  // no grant, receipt or send-status change) still fails it, with the same message.
+  const progressMark = () => `${grants}|${cleared + sink.messages.length}|${sendRows()}`;
+  const untilProgress = async (done: () => boolean | Promise<boolean>, options: WaitOptions) => {
+    for (;;) {
+      const before = progressMark();
+      try {
+        await waitWall(done, options);
+        return;
+      } catch (error) {
+        if (progressMark() === before) {
+          throw error;
+        }
+      }
+    }
+  };
   const drive = (done: () => boolean | Promise<boolean>, step = 50) =>
-    waitWall(done, {
+    untilProgress(done, {
       label: "drive",
-      advance: (ms) => clock.advance(ms),
+      advance: moveClock,
       step,
-      describe: () => {
-        const rows = db
-          .query("SELECT status, COUNT(*) AS n FROM sends GROUP BY status ORDER BY status")
-          .all() as Array<{ status: string; n: number }>;
-        const sends = rows.map((row) => `${row.status} ${row.n}`).join(", ") || "none";
-        return `sink messages ${sink.messages.length}; clock ${clock.now().toISOString()}; sends ${sends}`;
-      },
+      describe: describeState,
     });
+  // For a test that steps the clock itself: the step waits for the sink to catch up first.
+  const advance = async (ms: number) => {
+    await untilProgress(() => inFlight() === 0, { label: "advance", describe: describeState });
+    clock.advance(ms);
+  };
+  const resetSink = () => {
+    cleared += sink.messages.length;
+    sink.messages.length = 0;
+  };
 
   return {
     app,
@@ -458,12 +515,16 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     sends,
     json,
     drive,
+    advance,
+    resetSink,
     template,
     restart() {
-      limiter = createSendRateLimiter({
-        clock,
-        rate: () => settingsStore.read()["messaging.max_send_rate"],
-      });
+      limiter = countGrants(
+        createSendRateLimiter({
+          clock,
+          rate: () => settingsStore.read()["messaging.max_send_rate"],
+        }),
+      );
       emailer = createEmailer({
         clock,
         limiter,
@@ -560,8 +621,8 @@ describe("B37: send rate cap", () => {
         messenger: "email",
       });
       await h.drive(() => h.sink.messages.length === 1, 10);
-      h.sink.messages.length = 0;
-      h.clock.advance(1000);
+      h.resetSink();
+      await h.advance(1000);
 
       // Start campaign
       await h.json(`/api/campaigns/${campId}/status`, "PUT", { status: "running" });
@@ -898,14 +959,14 @@ describe("B37: send rate cap", () => {
 
       // Advance by 1 second: at 2/s, only 2 more messages should arrive
       const countBefore = h.sink.messages.length;
-      h.clock.advance(1000);
+      await h.advance(1000);
       await h.drive(() => h.sink.messages.length >= countBefore + 2, 50);
       expect(h.sink.messages.length).toBe(countBefore + 2);
 
       // Now raise rate back to 10/s: delivery speeds back up
       await h.json("/api/settings/messaging.max_send_rate", "PUT", 10);
       const countBeforeRaise = h.sink.messages.length;
-      h.clock.advance(1000);
+      await h.advance(1000);
       await h.drive(() => h.sink.messages.length >= countBeforeRaise + 10, 50);
       expect(h.sink.messages.length).toBe(countBeforeRaise + 10);
     } finally {
@@ -943,7 +1004,7 @@ describe("B37: send rate cap", () => {
       });
 
       // Advance by 100ms (t=100)
-      h.clock.advance(100);
+      await h.advance(100);
       for (let j = 0; j < 3; j++) {
         await Bun.sleep(0);
       }
@@ -1034,7 +1095,7 @@ describe("B37: send rate cap", () => {
       // scans would take it, and the runner stops only at the end.
       await h.emailer.close();
       for (let i = 0; i < 12; i++) {
-        h.clock.advance(1000);
+        await h.advance(1000);
         for (let j = 0; j < 5; j++) {
           await Bun.sleep(0);
         }

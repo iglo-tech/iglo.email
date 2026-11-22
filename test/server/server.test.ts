@@ -24,6 +24,8 @@ async function request(origin: string, path: string, init: RequestInit = {}) {
   };
 }
 
+// Every API error is listmonk's `message` plus a stable `code` (B131, D129): the one deliberate,
+// additive difference in these envelopes. The `message` text is still the reference's.
 describe("shared HTTP contracts", () => {
   test("health and API fallback match the reference, including methods and HEAD", async () => {
     const { origin } = fixture();
@@ -36,7 +38,7 @@ describe("shared HTTP contracts", () => {
       expect(await request(origin, path)).toMatchObject({
         status: 404,
         contentType: "application/json",
-        body: '{"message":"404 unknown endpoint"}\n',
+        body: '{"message":"404 unknown endpoint","code":"not_found"}\n',
       });
     }
     expect(await request(origin, "/api/not-present", { method: "HEAD" })).toMatchObject({
@@ -47,7 +49,7 @@ describe("shared HTTP contracts", () => {
     expect(await request(origin, "/api/not-present", { method: "POST" })).toMatchObject({
       status: 404,
       contentType: "application/json",
-      body: '{"message":"404 unknown endpoint"}\n',
+      body: '{"message":"404 unknown endpoint","code":"not_found"}\n',
     });
     expect(await request(origin, "/health", { method: "HEAD" })).toMatchObject({
       status: 404,
@@ -130,7 +132,7 @@ describe("shared HTTP contracts", () => {
       expect(await request(origin, path!)).toMatchObject({
         status: 400,
         contentType: "application/json",
-        body: `{"message":"${message}"}\n`,
+        body: `{"message":"${message}","code":"invalid_fields"}\n`,
       });
     }
     expect(errors).toHaveLength(0);
@@ -143,7 +145,7 @@ describe("shared HTTP contracts", () => {
       expect(result).toMatchObject({
         status: 500,
         contentType: "application/json",
-        body: '{"message":"Internal Server Error"}\n',
+        body: '{"message":"Internal Server Error","code":"internal_error"}\n',
       });
       expect(result.body).not.toContain("private");
       expect(result.body).not.toContain("secret");
@@ -157,7 +159,7 @@ describe("shared HTTP contracts", () => {
       expect(await request(origin, `/fixture/id/${id}`)).toMatchObject({
         status: 400,
         contentType: "application/json",
-        body: '{"message":"invalid ID"}\n',
+        body: '{"message":"invalid ID","code":"invalid_fields"}\n',
       });
     }
     expect((await request(origin, "/fixture/id/+12")).body).toBe('{"data":12}\n');
@@ -167,7 +169,7 @@ describe("shared HTTP contracts", () => {
     expect(await request(origin, "/fixture/field/type")).toMatchObject({
       status: 400,
       contentType: "application/json",
-      body: '{"message":"Invalid fields: type"}\n',
+      body: '{"message":"Invalid fields: type","code":"invalid_fields"}\n',
     });
     expect((await request(origin, "/fixture/escape")).body).toBe(
       '{"data":"\\u003c\\u003e\\u0026\\u2028\\u2029"}\n',
@@ -180,9 +182,12 @@ describe("shared HTTP contracts", () => {
       });
     expect(await post('{"value":""}')).toMatchObject({
       status: 400,
-      body: '{"message":"Invalid name."}\n',
+      body: '{"message":"Invalid name.","code":"invalid_fields"}\n',
     });
-    expect(await post("{")).toMatchObject({ status: 400, body: '{"message":"Bad Request"}\n' });
+    expect(await post("{")).toMatchObject({
+      status: 400,
+      body: '{"message":"Bad Request","code":"invalid_fields"}\n',
+    });
     expect((await post('{"value":"hello"}')).body).toBe('{"data":"hello"}\n');
     expect((await post(JSON.stringify({ value: "é".repeat(1001) }))).status).toBe(400);
   });
@@ -196,7 +201,7 @@ describe("shared HTTP contracts", () => {
       expect(await request(origin, "/fixture/input", init)).toMatchObject({
         status: 400,
         contentType: "application/json",
-        body: '{"message":"Invalid name."}\n',
+        body: '{"message":"Invalid name.","code":"invalid_fields"}\n',
       });
     }
     expect(
@@ -208,7 +213,7 @@ describe("shared HTTP contracts", () => {
     ).toMatchObject({
       status: 415,
       contentType: "application/json",
-      body: '{"message":"Unsupported Media Type"}\n',
+      body: '{"message":"Unsupported Media Type","code":"unsupported_media_type"}\n',
     });
   });
 
@@ -217,7 +222,7 @@ describe("shared HTTP contracts", () => {
     expect(await request(origin, "/fixture/id/9223372036854775808")).toMatchObject({
       status: 400,
       contentType: "application/json",
-      body: '{"message":"invalid ID"}\n',
+      body: '{"message":"invalid ID","code":"invalid_fields"}\n',
     });
   });
 
@@ -227,7 +232,7 @@ describe("shared HTTP contracts", () => {
       expect(await request(origin, `/fixture/id/${id}`)).toMatchObject({
         status: 400,
         contentType: "application/json",
-        body: '{"message":"invalid ID"}\n',
+        body: '{"message":"invalid ID","code":"invalid_fields"}\n',
       });
     }
   });
@@ -238,7 +243,7 @@ describe("shared HTTP contracts", () => {
       expect(await rawGet(origin, `/api/lists/${id}`)).toMatchObject({
         status: 404,
         contentType: "application/json",
-        body: '{"message":"404 unknown endpoint"}\n',
+        body: '{"message":"404 unknown endpoint","code":"not_found"}\n',
       });
     }
   });
@@ -288,7 +293,10 @@ describe("shared HTTP contracts", () => {
         `/fixture/field/literal?value=${encodeURIComponent(value)}`,
       );
       expect(result.status).toBe(400);
-      expect(JSON.parse(result.body)).toEqual({ message: `Invalid fields: ${value}` });
+      expect(JSON.parse(result.body)).toEqual({
+        message: `Invalid fields: ${value}`,
+        code: "invalid_fields",
+      });
     }
   });
 

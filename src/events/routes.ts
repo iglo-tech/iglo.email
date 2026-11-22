@@ -15,6 +15,7 @@ import {
 import type { EventInput } from "@/events/input";
 import type { EventStore, EventResult, ExistingSubscriber } from "@/events/store";
 import type { Roles } from "@/roles/roles";
+import type { Scope } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
 
 const PERMISSION = "subscriber_events:create";
@@ -36,10 +37,11 @@ const item = (c: RequestContext, value: unknown): EventInput | HttpError => {
   }
 };
 const respond = (r: EventResult) => {
-  if (r.status !== 200) {
-    throw new HttpError(r.status, "message" in r ? r.message : "");
+  if ("message" in r) {
+    const { status, message, code, ...details } = r;
+    throw new HttpError(status, message, {}, code, details);
   }
-  const { status: _status, ...data } = r as Extract<EventResult, { status: 200 }>;
+  const { status: _status, ...data } = r;
   return ok(data);
 };
 export function registerEventRoutes(
@@ -82,6 +84,17 @@ export function registerEventRoutes(
       );
     }
   };
+  /**
+   * The caller's list manage scope (D99), which decides whether an event may claim or name a
+   * subscriber that holds its address (D129). Read after the event's permission is revalidated.
+   */
+  const manageScope = (c: RequestContext): Scope => {
+    if (!c.identity) {
+      throw new Error("Identity required");
+    }
+    const { role, user } = c.identity;
+    return roles.listScope(role, user.list_role_id, "list:manage");
+  };
   let singles = 0;
   router.route(
     "POST",
@@ -103,6 +116,7 @@ export function registerEventRoutes(
           await store.submit(input, receivedAt, (existing) => {
             auth.revalidate(c, PERMISSION);
             grantAccess(c, input.grantLists, existing);
+            return manageScope(c);
           }),
         );
       } finally {
@@ -141,7 +155,10 @@ export function registerEventRoutes(
         items,
         receivedAt,
         () => auth.revalidate(c, PERMISSION),
-        (input, existing) => grantAccess(c, input.grantLists, existing),
+        (input, existing) => {
+          grantAccess(c, input.grantLists, existing);
+          return manageScope(c);
+        },
       );
       return ok({ results });
     },

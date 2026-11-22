@@ -1,5 +1,6 @@
 // Public regressions for listmonk cmd/settings.go and models.HasTplExpr at 6fcd95f.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { settingsFetch } from "@/test/contract/settings-reference-fetch";
 
@@ -40,7 +41,7 @@ export async function runSettingsCouncilSmall(target: {
   const rejected = await request("/api/settings", "PUT", reversed);
   check(rejected.status === 400, "reversed-template-status");
   check(
-    JSON.stringify(await rejected.json()) ===
+    JSON.stringify(listmonkEnvelope(await rejected.json(), target.mode)) ===
       JSON.stringify({ message: "invalid from email address: }}not an address{{" }),
     "reversed-template-error",
   );

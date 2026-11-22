@@ -17,7 +17,7 @@ async function open() {
   fixtures.push(f);
   return f;
 }
-const absent = { status: 404, body: { message: "Subscriber not found" } };
+const absent = { status: 404, body: { message: "Subscriber not found", code: "not_found" } };
 
 async function sequence(f: SequencesFixture, extra: JsonObject = {}) {
   const tx = await f.template();

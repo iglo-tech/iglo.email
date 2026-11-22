@@ -204,6 +204,9 @@ export async function eventsFixture(
     get events() {
       return current.events;
     },
+    get app() {
+      return current.app;
+    },
     request,
     json,
     apiUser,

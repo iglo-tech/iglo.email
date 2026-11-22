@@ -2,6 +2,7 @@
 // internal/core/subscribers.go and queries/subscribers.sql at 6fcd95f.
 // Cases labelled query-diff-* record declared M1.7 differences: each asserts the pinned
 // reference result in reference mode and the iglo.email result in normal mode.
+import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 
 function check(value: unknown, label: string): asserts value {
@@ -143,7 +144,7 @@ export async function runSubscriberQuery(target: {
     check(same(names(r.body), ["carol"]), "subscriber-query-status");
     r = await json(`/api/subscribers?list_id=${listA}&list_id=abc`);
     check(
-      r.status === 400 && same(r.body, { message: "Invalid ID(s)" }),
+      r.status === 400 && same(listmonkEnvelope(r.body, target.mode), { message: "Invalid ID(s)" }),
       "subscriber-query-invalid-list",
     );
     r = await json(`/api/subscribers?search=${tag}&status=bogus`);
@@ -172,7 +173,9 @@ export async function runSubscriberQuery(target: {
     r = await json(`/api/subscribers?query=${q("subscribers.id IN (SELECT id FROM users)")}`);
     check(
       r.status === 400 &&
-        same(r.body, { message: "Error preparing subscriber query: table 'users' is not allowed" }),
+        same(listmonkEnvelope(r.body, target.mode), {
+          message: "Error preparing subscriber query: table 'users' is not allowed",
+        }),
       "subscriber-query-sql-table",
     );
     for (const [fragment, label] of [
@@ -211,7 +214,10 @@ export async function runSubscriberQuery(target: {
     check(r.status === 200 && r.body.data.total === 3, "subscriber-query-get-all");
     r = await json(`/api/subscribers?query=${q("1=1")}`, "GET", undefined, readerAuth);
     check(
-      r.status === 403 && same(r.body, { message: "Permission denied: subscribers:sql_query" }),
+      r.status === 403 &&
+        same(listmonkEnvelope(r.body, target.mode), {
+          message: "Permission denied: subscribers:sql_query",
+        }),
       "subscriber-query-sql-permission",
     );
     const scopedRole = await create("/api/roles/users", "roles", {
@@ -300,7 +306,7 @@ export async function runSubscriberQuery(target: {
     check((await byQuery.text()).split("\n").length === 3, "subscriber-export-query");
     r = await json(`/api/subscribers/export?id=1&id=x`);
     check(
-      r.status === 400 && same(r.body, { message: "Invalid ID(s)" }),
+      r.status === 400 && same(listmonkEnvelope(r.body, target.mode), { message: "Invalid ID(s)" }),
       "subscriber-export-invalid",
     );
     r = await json(`/api/subscribers/export?query=${q("1=1")}`, "GET", undefined, readerAuth);
