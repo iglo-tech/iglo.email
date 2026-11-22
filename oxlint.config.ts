@@ -234,7 +234,6 @@ export default defineConfig({
         "unicorn/numeric-separators-style": "off",
         "no-useless-assignment": "off",
         "typescript/require-array-sort-compare": "off",
-        "unicorn/prefer-top-level-await": "off",
         "typescript/await-thenable": "off",
         "unicorn/prefer-string-replace-all": "off",
         "typescript/use-unknown-in-catch-callback-variable": "off",
@@ -259,6 +258,20 @@ export default defineConfig({
     // a property with Reflect.get and the proxy as receiver, so a getter on the owner sees the proxy as `this`;
     // a property read would bind it to the target instead.
     { files: ["test/scheduler/crash-entry.ts"], rules: { "quality/no-reflect-get": "off" } },
+    // Exceptions, for the lead to decide at review (prefer-top-level-await). Each of these runs a promise beside its
+    // main loop or its child, so awaiting it at the top level would stop that loop: the probe's stdin watcher, the
+    // backup measure's child-exit watcher, and ui:verify's fixture close. The m14 browser scripts are page scripts
+    // whose async IIFE returns the page's result to the browser, so they are not modules.
+    {
+      files: [
+        "test/maintenance/measure-probe.ts",
+        "test/backup/measure.ts",
+        "test/ui/verify.ts",
+        "test/users/m14-browser-setup.js",
+        "test/users/m14-browser-submit.js",
+      ],
+      rules: { "unicorn/prefer-top-level-await": "off" },
+    },
     // Exceptions, for the lead to decide at review (no-unsafe-call). The settings record is `Record<string, any>`
     // (its values are typed per key, and a per-key schema is a separate design, D132), and the journal payload is
     // parsed JSON that check() validates field by field before the message is returned.
