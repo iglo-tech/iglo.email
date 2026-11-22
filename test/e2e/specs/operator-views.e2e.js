@@ -193,7 +193,7 @@ test("a send with no subject says why: a refused one was never prepared, a wiped
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("the subscriber's tabs scroll inside their own row, and the page does not scroll sideways", async ({
+  test("the subscriber's tabs wrap onto a second row, and the page does not scroll sideways", async ({
     page,
   }) => {
     await signIn(page);
@@ -205,5 +205,9 @@ test.describe("on a phone", () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBe(0);
+    // Every tab a viewer can open is on screen, the last ones included.
+    for (const name of ["Enrollments", "Sends"]) {
+      await expect(page.getByRole("tab", { name })).toBeInViewport();
+    }
   });
 });

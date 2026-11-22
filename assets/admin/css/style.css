@@ -2100,7 +2100,8 @@ section.sequences {
             flex-wrap: wrap;
             align-items: baseline;
             column-gap: var(--space-4);
-            text-align: end;
+            /* A value that wraps reads left to right under its label, not right-aligned (B127). */
+            text-align: start;
 
             &::before {
                 content: attr(data-label);
@@ -2247,11 +2248,10 @@ section.sequences {
         }
     }
 
-    /* The subscriber's tabs are wider than a phone: they scroll inside their own row (B127), so the
-       page itself never scrolls sideways. */
+    /* The subscriber's tabs are wider than a phone, so they wrap onto a second row (B127): every tab
+       stays visible, and the page never scrolls sideways. */
     section.subscribers [role="tablist"] {
+        flex-wrap: wrap;
         max-width: 100%;
-        overflow-x: auto;
-        flex-wrap: nowrap;
     }
 }
