@@ -73,7 +73,7 @@ interface Options {
   raw?: BodyInit;
   headers?: Record<string, string>;
   auth?: string | null;
-  expect?: number;
+  expect?: number | Array<number>;
 }
 
 /** A real password login; the cookies and CSRF header a browser would send. */
@@ -230,8 +230,8 @@ export async function runOpenApiContract(target: {
       accepted(key, options.body);
     }
     const reply = await send(method, path, options);
-    const expected = options.expect ?? 200;
-    if (reply.status !== expected) {
+    const expected = [options.expect ?? 200].flat();
+    if (!expected.includes(reply.status)) {
       throw new Error(`FAIL openapi-${key}: status ${reply.status}: ${reply.text.slice(0, 300)}`);
     }
     conforms(key, reply);
@@ -1700,24 +1700,24 @@ export async function runOpenApiContract(target: {
         await op(key, { ...placeholders(key, "999999"), expect: 404 });
       }
     }
-    // A well-formed ID nothing has, where listmonk answers 400 (a list, bounce, user, template,
-    // campaign or transactional reference, D138): the code is `not_found`, and the per-status check
-    // reads it against the 400 response, which lists that code. A PUT by ID is probed below, with
-    // a body the server reads before it looks the ID up.
+    // A well-formed ID nothing has (D138). listmonk answers 400 for some absent records (a list,
+    // bounce, user, template, campaign or transactional reference) and 404 for others, and either
+    // way the code is `not_found`. The per-status check reads each answer against the operation's
+    // own response for its status, so a status the document does not list fails here. Every
+    // failure is collected, so one run names them all. A PUT by ID is probed below, with a body.
+    const absentFailures: Array<string> = [];
     for (const { key, operation } of operations) {
-      if (
-        operation.responses["400"] &&
-        !operation.responses["404"] &&
-        key.includes("{id}") &&
-        !operation.requestBody &&
-        !key.includes("twofa")
-      ) {
-        const reply = await op(key, {
-          ...placeholders(key, "999999"),
-          query: needed(operation),
-          expect: 400,
-        });
-        check(reply.body?.code === "not_found", `not-found-400-${key}`);
+      if (key.includes("{id}") && !operation.requestBody && !key.includes("twofa")) {
+        try {
+          const reply = await op(key, {
+            ...placeholders(key, "999999"),
+            query: needed(operation),
+            expect: [400, 404],
+          });
+          check(reply.body?.code === "not_found", `not-found-${key}`);
+        } catch (error) {
+          absentFailures.push(error instanceof Error ? error.message : String(error));
+        }
       }
     }
     const absent = await op("PUT /api/subscribers/{id}", {
@@ -1726,6 +1726,9 @@ export async function runOpenApiContract(target: {
       expect: 400,
     });
     check(absent.body?.code === "not_found", "not-found-400-put-subscriber");
+    if (absentFailures.length) {
+      throw new Error(`FAIL openapi-absent:\n${absentFailures.join("\n")}`);
+    }
 
     // A campaign's skipped list is empty here: a consent skip races the runner's push, which a
     // production run cannot hold still. The item's schema is checked against the shape the runner
