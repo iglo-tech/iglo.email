@@ -27,10 +27,15 @@ async function open(overrides: Partial<Record<string, unknown>> = {}) {
 
 const receipt = (f: PublicFixture) => f.template("<p>Your receipt</p>", "Receipt");
 
-/** A transactional send to one subscriber; its page and the subscriber's UUID. */
-async function txPage(f: PublicFixture, template: number, id: number) {
+/** A transactional send to one subscriber, with optional headers (a Bcc copy); its page and the subscriber's UUID. */
+async function txPage(
+  f: PublicFixture,
+  template: number,
+  id: number,
+  headers: Array<Record<string, string>> = [],
+) {
   const uuid = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
-  const sent = await f.tx({ subscriber_id: id, template_id: template });
+  const sent = await f.tx({ subscriber_id: id, template_id: template, headers });
   expect(sent.status).toBe(200);
   const send = asBody<string>(sent.body.data.sends[0].uuid);
   return { send, uuid, page: `/m/${send}/unsubscribe/${uuid}` };
@@ -151,7 +156,8 @@ test("with no open membership, the page says already unsubscribed, on private an
     expect(html).not.toContain('id="btn-unsub"');
     expect(html).not.toContain("Do you want to unsubscribe");
     expect(html).toContain('id="data-form"');
-    expect(html).toContain('href="?manage=true"');
+    // B130 (D128): nothing is left to manage on a public list, so there is no manage link.
+    expect(html).not.toContain('href="?manage=true"');
     expect(html).not.toContain("Back to Brand Co");
   }
 
@@ -160,10 +166,10 @@ test("with no open membership, the page says already unsubscribed, on private an
   expect(await (await f.request(adaLink.page)).text()).toContain(
     `<a href="${brandUrl}">Back to Brand Co</a>`,
   );
-  // With ?manage=true the manage view is shown, as preferences allow.
-  expect(await (await f.request(`${adaLink.page}?manage=true`)).text()).toContain(
-    'class="manage-form"',
-  );
+  // With ?manage=true the manage view shows the privacy actions only: no public list is left to manage (B130).
+  const manage = await (await f.request(`${adaLink.page}?manage=true`)).text();
+  expect(manage).not.toContain('class="manage-form"');
+  expect(manage).toContain('id="data-form"');
 });
 
 test("an active subscriber with preferences off gets the email settings page, reached by an API create and by a confirmed list", async () => {
@@ -195,9 +201,10 @@ test("an active subscriber with preferences off gets the email settings page, re
   }
 });
 
-test("with preferences on, an active subscriber's transactional manage view is titled and headed Your email settings", async () => {
-  // B117b (D137 item 2): the manage view of a transactional link is the email settings page, not the
-  // marketing unsubscribe page. Its title and heading are the same text as the preferences-off page.
+test("with preferences on, an active subscriber's transactional manage view is titled and headed Your email settings, with no name field", async () => {
+  // B117b (D137 items 1 and 2): the manage view of a transactional link is the email settings page, not the
+  // marketing unsubscribe page. Its title and heading are the same text as the preferences-off page, and it
+  // offers the lists only: no name field.
   const f = await open({ siteName: "Brand Co" });
   const template = await receipt(f);
   const weekly = await f.list("Weekly News", "public", "single");
@@ -210,7 +217,46 @@ test("with preferences on, an active subscriber's transactional manage view is t
     expect(html).toContain("<h2>Your email settings</h2>");
     expect(html).not.toContain("Unsubscribe from mailing list");
     expect(html).toContain('class="manage-form"');
-    expect(html).toContain('id="manage-name"');
+    expect(html).toContain(`value="${weekly.uuid}"`);
+    expect(html).not.toContain('id="manage-name"');
+    expect(html).not.toContain('name="name"');
+  }
+});
+
+test("a transactional manage save never renames, with a Bcc copy of the send or without one, and still ends a list it unchecks", async () => {
+  // B117b (D137 item 1): a copy holder (a Bcc) and the subscriber alike cannot rename through the manage view.
+  // A POST carrying a name changes nothing; a save without one (what the page now sends) works the same.
+  // Lists still change: an unchecked confirmed list is ended.
+  const f = await open({ siteName: "Brand Co" });
+  const template = await receipt(f);
+  const news = await f.list("News", "public");
+  const other = await f.list("Other", "public");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id, other.id] });
+  const bob = await f.subscriber("bob@example.test", "Bob", { lists: [news.id, other.id] });
+  for (const id of [ada, bob]) {
+    expect((await change(f, id, "add", [news.id, other.id], "confirmed")).status).toBe(200);
+  }
+  const plain = await txPage(f, template, ada);
+  const copied = await txPage(f, template, bob, [{ Bcc: "hidden@third.example.test" }]);
+
+  for (const [link, id, name] of [
+    [plain, ada, "Ada"],
+    [copied, bob, "Bob"],
+  ] as const) {
+    const page = await (await f.request(link.page)).text();
+    expect(page).toContain('class="manage-form"');
+    expect(page).not.toContain('name="name"');
+    expect(page).toContain(`value="${news.uuid}"`);
+
+    // The save keeps News and unchecks Other: Other ends, News stays, and the name does not change.
+    const withoutName = `manage=true&l=${news.uuid}`;
+    expect((await f.fresh(link.page, withoutName)).status).toBe(200);
+    const renamed = `manage=true&name=Mallory&l=${news.uuid}`;
+    expect((await f.fresh(link.page, renamed)).status).toBe(200);
+    const subscriber = await f.json(`/api/subscribers/${id}`);
+    expect(subscriber.body.data.name).toBe(name);
+    expect(await f.status(id, news.id)).toBe("confirmed");
+    expect(await f.status(id, other.id)).toBe("unsubscribed");
   }
 });
 
@@ -384,7 +430,7 @@ test("an unconfirmed membership on a single opt-in list is active: no cancel for
   expect(f.mailTo("ada@example.test")).toHaveLength(before + 1);
 });
 
-test("a confirmed subscriber with only private lists sees the account sentence above the manage view", async () => {
+test("a confirmed subscriber with only private lists sees the account sentence and the privacy actions, with no preference form", async () => {
   const f = await open({ siteName: "Brand Co" });
   const template = await receipt(f);
   const members = await f.list("Members", "private");
@@ -392,9 +438,11 @@ test("a confirmed subscriber with only private lists sees the account sentence a
   expect((await change(f, ada, "add", [members.id], "confirmed")).status).toBe(200);
   const link = await txPage(f, template, ada);
 
+  // B130 (D128): no public list to manage, so no preference form (name or lists) and no manage link.
   const html = await (await f.request(link.page)).text();
-  expect(html).toContain('class="manage-form"');
-  expect(html).toContain('name="name"');
+  expect(html).not.toContain('class="manage-form"');
+  expect(html).not.toContain('name="name"');
+  expect(html).toContain('id="data-form"');
   expect(html).not.toContain("Members");
   expect(html).toContain(
     "This message was sent about your account with Brand Co. To stop other emails, use the unsubscribe link in one of them.",

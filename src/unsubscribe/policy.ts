@@ -1,6 +1,7 @@
 // Marketing consent follows listmonk queries/campaigns.sql (next-campaign-subscribers) at
 // 6fcd95f: double opt-in lists need `confirmed`, single opt-in lists any status but
 // `unsubscribed`. The frequency cap is native (docs/design/04-sending.md).
+import type { BrandSite } from "@/public/brand";
 import type { ListReferences } from "@/lists/references";
 import type { MarketingPolicy } from "@/messaging/sends";
 import { must } from "@/invariant";
@@ -11,6 +12,8 @@ import type { SubscriberStore } from "@/subscribers/store";
 export interface MarketingSettings {
   rootUrl: string;
   siteName: string;
+  /** The site's brand, which a transactional template reads as a campaign's does (B130, D128). */
+  brand: BrandSite;
   /** ISO 8601 `marketing.min_interval`; "" disables the cap. */
   minInterval: string;
   unsubscribeHeader: boolean;
@@ -23,6 +26,14 @@ export function marketingSettings(current: Settings): MarketingSettings {
   return {
     rootUrl: current["app.root_url"],
     siteName: current["app.site_name"],
+    brand: {
+      logoUrl: current["app.logo_url"],
+      siteName: current["app.site_name"],
+      siteUrl: current["app.site_url"],
+      accent: current["appearance.brand.accent"],
+      font: current["appearance.brand.font"],
+      header: current["appearance.brand.header"],
+    },
     minInterval: current["marketing.min_interval"],
     unsubscribeHeader: current["privacy.unsubscribe_header"],
     allowBlocklist: current["privacy.allow_blocklist"],

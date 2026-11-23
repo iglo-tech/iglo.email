@@ -184,6 +184,14 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   const marketing = () => ({
     rootUrl: root,
     siteName: "Fixture",
+    brand: {
+      logoUrl: "",
+      siteName: "Fixture",
+      siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
+    } satisfies BrandSite,
     minInterval: "P7D",
     unsubscribeHeader: true,
     allowBlocklist: true,

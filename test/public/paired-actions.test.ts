@@ -109,11 +109,36 @@ test("a campaign pairs only the subscribers the runner delivered it to", async (
   expect((await subscriberOf(f, bob)).status).toBe("enabled");
   expect(f.calls).toEqual([]);
 
-  // The control: Ada's own link from her delivery blocklists her, and the effect runs once.
+  // The control: Ada's own link from her delivery unsubscribes her from every list (B130, D128). The
+  // status stays enabled, so this is not a blocklist, and the all-lists effect runs once.
   const real = await act(f, `/subscription/${weekly.uuid}/${adaUuid}`, "blocklist=true");
   expect(real.status).toBe(200);
-  expect((await subscriberOf(f, ada)).status).toBe("blocklisted");
+  expect((await subscriberOf(f, ada)).status).toBe("enabled");
+  expect(await f.status(ada, news.id)).toBe("unsubscribed");
   expect(f.calls).toHaveLength(1);
+});
+
+test("the all-lists option on a delivered campaign's link ends every list, keeps the status, and says so when revisited", async () => {
+  const f = await open();
+  const news = await f.list("News");
+  const other = await f.list("Other");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id, other.id] });
+  const adaUuid = await uuidOf(f, ada);
+  const weekly = delivered(f, news.id, [ada]);
+
+  const chosen = await act(f, `/subscription/${weekly.uuid}/${adaUuid}`, "blocklist=true");
+  expect(chosen.status).toBe(200);
+  expect(await chosen.text()).toContain("You have unsubscribed successfully.");
+  // Every list ends, not only the campaign's; the status stays, so this is not a blocklist (B130, D128).
+  expect(await f.status(ada, news.id)).toBe("unsubscribed");
+  expect(await f.status(ada, other.id)).toBe("unsubscribed");
+  expect((await subscriberOf(f, ada)).status).toBe("enabled");
+  expect(f.calls).toHaveLength(1);
+  expect(f.calls[0]!.listIds).toEqual([]);
+
+  // The same link revisited: every list is already ended, so the page says so.
+  const revisit = await (await visit(f, `/subscription/${weekly.uuid}/${adaUuid}`)).text();
+  expect(revisit).toContain("already unsubscribed");
 });
 
 test("a delivered campaign's manage page exports and wipes its subscriber through that campaign", async () => {
@@ -338,7 +363,8 @@ test("a transactional preference link manages confirmed lists through its own se
   const html = await page.text();
   expect(html).toContain(`value="${news.uuid}"`);
   expect(html).toContain(`value="${other.uuid}"`);
-  expect(html).toContain('name="name"');
+  // B117b (D137 item 1): the transactional manage view has no name field.
+  expect(html).not.toContain('name="name"');
   expect(html).not.toContain('name="blocklist"');
   // B126 (D123 item 8): the page's export acts through its own send; its wipe is not offered.
   expect(html).toContain(`/export/${adaUuid}`);
@@ -354,7 +380,8 @@ test("a transactional preference link manages confirmed lists through its own se
     ]),
   );
   expect(saved.status).toBe(200);
-  expect((await subscriberOf(f, ada)).name).toBe("Ada Two");
+  // A name sent to the transactional manage view changes nothing (D137 item 1); the list change applies.
+  expect((await subscriberOf(f, ada)).name).toBe("Ada");
   expect(await f.status(ada, news.id)).toBe("confirmed");
   expect(await f.status(ada, other.id)).toBe("unsubscribed");
   // A transactional send cannot blocklist: that is refused and writes nothing.
@@ -389,6 +416,38 @@ test("an old transactional link (the placeholder) can only end pending opt-ins",
     (await act(f, `/subscription/${placeholder}/${adaUuid}`, "List-Unsubscribe=One-Click")).status,
   ).toBe(200);
   expect(await f.status(ada, news.id)).toBe("confirmed");
+});
+
+test("the placeholder's one-click and manage save end a pending double opt-in, and keep an active single opt-in", async () => {
+  // B117b (D137 item 3): the opt-in mail's one-click POST ended every unconfirmed row, so an active single
+  // opt-in membership (created by the API without preconfirm_subscriptions, or by import) went with them.
+  const f = await open();
+  const weekly = await f.list("Weekly", "public", "single");
+  const double = await f.list("Double", "public", "double");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [weekly.id, double.id] });
+  const bob = await f.subscriber("bob@example.test", "Bob", { lists: [weekly.id, double.id] });
+  expect(await f.status(ada, weekly.id)).toBe("unconfirmed");
+  expect(await f.status(ada, double.id)).toBe("unconfirmed");
+
+  const adaUuid = await uuidOf(f, ada);
+  const oneClick = await act(
+    f,
+    `/subscription/${placeholder}/${adaUuid}`,
+    "List-Unsubscribe=One-Click",
+  );
+  expect(oneClick.status).toBe(200);
+  expect(await f.status(ada, double.id)).toBe("unsubscribed");
+  expect(await f.status(ada, weekly.id)).toBe("unconfirmed");
+
+  const bobUuid = await uuidOf(f, bob);
+  const saved = await act(
+    f,
+    `/subscription/${placeholder}/${bobUuid}?manage=true`,
+    form([["manage", "true"]]),
+  );
+  expect(saved.status).toBe(200);
+  expect(await f.status(bob, double.id)).toBe("unsubscribed");
+  expect(await f.status(bob, weekly.id)).toBe("unconfirmed");
 });
 
 test("the placeholder's manage view lists and ends pending double opt-ins only, never an active single opt-in", async () => {

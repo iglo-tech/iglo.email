@@ -6,6 +6,7 @@
 // the public fixture; the brand values are set as the page settings the fixture reads.
 import { afterEach, expect, test } from "bun:test";
 import { initialTemplates } from "@/templates/builtins";
+import type { BrandHeader } from "@/public/brand";
 import { publicFixture } from "@/test/public/fixture";
 import type { PublicFixture } from "@/test/public/fixture";
 import { asBody } from "@/test/read-body";
@@ -22,10 +23,26 @@ afterEach(async () => {
     await f.close();
   }
 });
+/** A test override's string, or the fallback when the override is absent or not a string. */
+const textOr = (value: unknown, fallback: string) => (typeof value === "string" ? value : fallback);
+/** A test override's header mode, or the default when it names none. */
+const headerOr = (value: unknown): BrandHeader =>
+  value === "logo" || value === "name" || value === "logo_and_name" ? value : "auto";
+
 async function open(overrides: Partial<Record<string, unknown>> = {}) {
   const f = await publicFixture();
   fixtures.push(f);
   Object.assign(f.overrides, { siteName: "Brand Co", subscriptionPage: true, ...overrides });
+  // The transactional route and the sequence steps read the marketing settings, not the page's (B130),
+  // so the same brand is set there.
+  f.marketing.brand = {
+    logoUrl: textOr(overrides.logoUrl, ""),
+    siteName: textOr(overrides.siteName, "Brand Co"),
+    siteUrl: textOr(overrides.siteUrl, ""),
+    accent: textOr(overrides.accent, ""),
+    font: textOr(overrides.font, "system-sans"),
+    header: headerOr(overrides.header),
+  };
   return f;
 }
 
@@ -371,26 +388,65 @@ test("the opt-in mail's button takes the accent, and the mail carries no credit"
 // show the browser's link blue and serif font. The template preview must fill every brand value.
 const emptyDeclaration = /(background|color|font-family):\s*(!important)?\s*;/;
 
-test("the template preview of the default layouts takes the operator's accent and no empty declaration", async () => {
-  const f = await open({ accent: "#ff0066" });
-  for (const id of [1, 2]) {
+// B130 (D128): the sample transactional template (id 3) is previewed with the built-in layouts. Every
+// preview takes the accent on the button, the link colour on its links, the font and the header.
+test("the template previews take the operator's accent, link colour, font and header, and no empty declaration", async () => {
+  const f = await open({ logoUrl: logo, accent: "#ff0066", font: "Lora", header: "logo_and_name" });
+  for (const id of [1, 2, 3]) {
     const response = await f.request(`/api/templates/${id}/preview`, {
       headers: f.sessionHeaders,
     });
     expect(response.status).toBe(200);
     const html = await response.text();
+    // #ff0066 is the button fill, with black text (4.9:1), and its link colour is #e8005d (4.5:1 on white).
     expect(html).toContain("background: #ff0066;");
+    expect(html).toContain("color: #111 !important;");
+    expect(html).toContain("color: #e8005d;");
+    expect(html).toContain("Lora");
     expect(html).not.toMatch(emptyDeclaration);
   }
+  // The archive layout (id 2) shows the logo and the name the header asks for.
+  const archive = await (
+    await f.request(`/api/templates/2/preview`, { headers: f.sessionHeaders })
+  ).text();
+  expect(archive).toContain(logo);
+  expect(archive).toContain("Brand Co");
 });
 
 test("the template preview with the default brand keeps the built-in blue and no empty declaration", async () => {
   const f = await open();
-  for (const id of [1, 2]) {
+  for (const id of [1, 2, 3]) {
     const html = await (
       await f.request(`/api/templates/${id}/preview`, { headers: f.sessionHeaders })
     ).text();
     expect(html).toContain("background: #0055d4;");
     expect(html).not.toMatch(emptyDeclaration);
   }
+});
+
+// B130 (D128): a transactional send of the sample template reads the brand the way a campaign does,
+// so the sample is not blue whatever the accent (the B129 review's finding).
+test("a transactional send of the sample template takes the accent, link colour and font", async () => {
+  const f = await open({ accent: "#ff0066", font: "Lora" });
+  const id = await f.subscriber("sam@example.test", "Sam");
+  const templates = asBody<Array<{ id: number; name: string }>>(
+    (await f.json("/api/templates")).body.data,
+  );
+  const sample = templates.find((row) => row.name === "Sample transactional template");
+  expect(sample).toBeDefined();
+  const sent = await f.tx({
+    subscriber_id: id,
+    template_id: sample!.id,
+    kind: "transactional",
+    data: { order_id: "A-1", shipping_date: "Monday" },
+  });
+  expect(sent.status).toBe(200);
+  await f.drain();
+  const [message] = f.mailTo("sam@example.test");
+  expect(message).toBeDefined();
+  const mail = decoded(message!.data);
+  expect(mail.body).toContain("background: #ff0066;");
+  expect(mail.body).toContain("color: #e8005d;");
+  expect(mail.body).toContain("Lora");
+  expect(mail.body).not.toMatch(emptyDeclaration);
 });

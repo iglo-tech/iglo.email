@@ -57,6 +57,17 @@ export function mailBrand(site: BrandSite) {
   };
 }
 
+/**
+ * The brand values as JSON object members (`"brand_accent":"#0055d4",…`), for a transactional template's
+ * data (B130, D128). A transactional render reads them as a campaign or system mail does, so the sample
+ * transactional template takes the accent, link colour and font.
+ */
+export function brandMembers(site: BrandSite): string {
+  return Object.entries(mailBrand(site))
+    .map(([key, value]) => `${JSON.stringify(key)}:${JSON.stringify(value)}`)
+    .join(",");
+}
+
 /** The fixed font choices, with the stack each one uses. Any other font is a Google Fonts family. */
 const systemFonts = new Map<string, string>([
   ["system-sans", publicStack],

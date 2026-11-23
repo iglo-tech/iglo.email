@@ -183,11 +183,11 @@ async function deleteReader(page, person) {
   await ok(page, `/api/subscribers/${person.id}`, "DELETE");
 }
 
-test("a reader's unsubscribe and a blocklist through the mail each reach the receiver with that person", async ({
+test("a reader's unsubscribe and the all-lists option through the mail each reach the receiver with that person", async ({
   page,
 }) => {
   const target = await listener();
-  await hook(page, `${target.url}/hook`, ["subscriber.unsubscribed", "subscriber.blocklisted"]);
+  await hook(page, `${target.url}/hook`, ["subscriber.unsubscribed"]);
   const pub = await publicList(page);
   const leaving = await reader(page, [pub]);
   const blocked = await reader(page, [pub]);
@@ -209,9 +209,10 @@ test("a reader's unsubscribe and a blocklist through the mail each reach the rec
   expect(unsubscribed.data.list_ids).toEqual([pub.id]);
   expect(unsubscribed.id).toMatch(new RegExp(`^${UUID}$`, "i"));
 
-  const blocklisted = await eventFor(target, "subscriber.blocklisted", blocked.email);
-  expect(blocklisted.data.subscriber.id).toBe(blocked.id);
-  expect(blocklisted.data.list_ids).toEqual([pub.id]);
+  // The all-lists option is an unsubscribe for the webhook, not a blocklisting (B130, D128).
+  const allLists = await eventFor(target, "subscriber.unsubscribed", blocked.email);
+  expect(allLists.data.subscriber.id).toBe(blocked.id);
+  expect(allLists.data.list_ids).toEqual([pub.id]);
 });
 
 test("each delivery is signed with its webhook's secret over the timestamp and the exact body", async ({

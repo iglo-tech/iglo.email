@@ -770,14 +770,16 @@ export async function runPublicContract(target: {
     const unsubPage = await visit(prefs);
     // B123 (D126, deliberate difference): the placeholder campaign's page offers no privacy form in
     // production, since its links pair no send or campaign; upstream's page offers them.
+    // B130 (D128, deliberate difference): this page's manage view changes pending opt-ins only, and Kim has
+    // none, so production shows no manage link; upstream always shows it.
     check(
       unsubPage.status === 200 &&
         unsubPage.headers.get("x-robots-tag") === "noindex" &&
         unsubPage.text.includes('class="unsub-form"') &&
-        unsubPage.text.includes('href="?manage=true"') &&
+        unsubPage.text.includes('href="?manage=true"') === reference &&
         privacyForms(unsubPage.text) === reference &&
         !unsubPage.text.includes("manage-form"),
-      "prefs-unsub-page",
+      reference ? "prefs-unsub-page" : "prefs-unsub-page-no-manage-d128",
     );
     const managePage = await visit(`${managed}?manage=true`);
     check(
@@ -858,17 +860,26 @@ export async function runPublicContract(target: {
       `/subscription/${leeCampaign}/${lee.uuid}`,
       new URLSearchParams({ manage: "true", blocklist: "true", name: "Lee" }),
     );
+    // B130 (D128, deliberate difference): upstream's box blocklists the person. Here "Unsubscribe from all
+    // mailing lists" unsubscribes from every list and records a marketing suppression, and the status stays
+    // enabled, so transactional mail keeps flowing. The reference run keeps upstream's answer.
     check(
       blocked.status === 200 &&
         blocked.text.includes("You have unsubscribed successfully.") &&
-        (await call(`/api/subscribers/${lee.id}`)).body.data.status === "blocklisted" &&
+        (await call(`/api/subscribers/${lee.id}`)).body.data.status ===
+          (reference ? "blocklisted" : "enabled") &&
         (await status(lee.id, hidden.id)) === "unsubscribed",
-      "prefs-blocklist",
+      reference ? "prefs-blocklist" : "prefs-all-lists-d128",
     );
-    const leePage = await visit(`/subscription/${leeCampaign}/${lee.uuid}?manage=true`);
+    const leePage = await visit(`/subscription/${leeCampaign}/${lee.uuid}`);
     check(
-      leePage.status === 200 && leePage.text.includes("Permanently unsubscribed."),
-      "prefs-blocklisted-page",
+      leePage.status === 200 &&
+        leePage.text.includes(
+          reference
+            ? "Permanently unsubscribed."
+            : "You are already unsubscribed from these emails",
+        ),
+      reference ? "prefs-blocklisted-page" : "prefs-all-lists-page",
     );
     // The dummy campaign (the opt-in mail's unsubscribe link) ends unconfirmed memberships.
     const mia = await createSubscriber("mia", [single.id, double.id]);

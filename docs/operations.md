@@ -885,15 +885,16 @@ per-key update), until the settings page is saved once.
 
 From the release that pairs privacy actions (D126), the preference links of mail sent before the
 upgrade change in three ways. A transactional mail sent before the upgrade has a manage link to a
-placeholder path: opening it shows a page that lists only the subscriber's pending opt-ins, with
+placeholder path: opening it shows a page that lists only the subscriber's pending double opt-ins, with
 no name field, so changing confirmed lists or the name from that mail is not possible. Recipients
 who want to change their lists should use a newer mail, or contact the operator. A campaign's
 manage and privacy forms work only for mail the campaign delivered, and a subscriber's UUID alone no
 longer exports, wipes or blocklists anyone: `POST /subscription/export/{uuid}` and
 `POST /subscription/wipe/{uuid}` answer 404. An application that used those sub-only paths for
 data export or erasure must use a campaign's or marketing send's own paths, or the admin API
-(`GET /api/subscribers/{id}/export`, `DELETE /api/subscribers/{id}`). Opt-in mail still ends and
-confirms pending subscriptions as before, and a test send still shows its test page.
+(`GET /api/subscribers/{id}/export`, `DELETE /api/subscribers/{id}`). Opt-in mail still confirms
+pending subscriptions, and its links end pending double opt-ins only (D137): an active single opt-in
+membership is kept. A test send still shows its test page.
 
 From the release that suppresses after a wipe (D125), a person who wiped their data is not put back
 on a list by the next event, create or import that names their address. Before upgrading, decide
@@ -1224,8 +1225,49 @@ The wipe removes their subscriber row and leaves a suppression ([D125](design/09
   the list IDs, with an empty address, so your system can honour the erasure. iglo.email drops
   both from its stored copy when that delivery ends. Keep them in your system only as long as your
   own privacy policy says.
+- **Copies of a transactional mail.** A Cc or Bcc copy holder who opens the mail's manage link sees the
+  subscriber's confirmed lists, with no name field, and can end them. A copy cannot rename the subscriber
+  or wipe their data, and export still mails the address on record ([D137](design/09-decisions.md#d137-a-transactional-manage-view-never-renames-is-titled-as-the-email-settings-page-and-the-placeholders-links-end-pending-double-opt-ins-only-lead-2026-11-23)).
 - **Backups.** A wipe does not reach backups taken before it, and a backup holds the suppression key
   with the hashes, as it holds everything else in the database (see [Backups](#backups)).
+
+### What each way of stopping mail stops
+
+Three ways stop a person's mail, and they do not do the same things ([D128](design/09-decisions.md#d128-public-pages-offer-only-what-a-subscriber-can-act-on-and-all-lists-unsubscribing-is-not-a-blocklist-lead-2026-11-20)).
+The first two are what a reader can do on a public page; the last is an operator's. A self-wipe writes the same suppression as the all-lists option, described below.
+
+| What happens | One list unsubscribe (a mail's link, the page's form, the API) | "Unsubscribe from all mailing lists" (the public page) | Blocklist (admin, API, bounces) |
+|---|---|---|---|
+| Marketing mail to the list | Stops for that list | Stops, on every list | Stops |
+| Marketing mail on another list | Continues | Stops | Stops |
+| A marketing sequence already running | Ends (`unsubscribed`) if it is tied to that list and its next step is marketing. A next step that is transactional continues, even in a sequence tied to the list | Ends now if its next step is marketing (`unsubscribed`). One whose next step is transactional continues, even in a sequence tied to a list | Ends (`blocklisted`) |
+| A marketing sequence starting from a new event | Unchanged | Does not start (`suppressed`), and neither does a sequence with any marketing step | Does not start (`subscriber_blocklisted`) |
+| Transactional mail and transactional sequence steps | Continue | Continue. A sequence with a marketing step does not start for a later event, so its transactional steps do not send either | Stop |
+| The subscriber's status | Unchanged (`enabled`) | Unchanged (`enabled`) | `blocklisted` |
+| Webhook | `subscriber.unsubscribed`, with `data.list_ids`; no `suppressed` field | `subscriber.unsubscribed`, with `data.list_ids` and `data.suppressed: true` | `subscriber.blocklisted` |
+
+- **A bounce's `unsubscribe` action** is not in the table's columns. It takes every list the address is still subscribed to,
+  keeping the status, and each of those lists ends its enrollments as the single-list column does. So a transactional-only sequence
+  tied to one of those lists keeps sending to the address that bounced, and its marketing steps end. A bounce's
+  `blocklist` and `delete` actions stop everything, as the last column does. ([D128](design/09-decisions.md#d128-public-pages-offer-only-what-a-subscriber-can-act-on-and-all-lists-unsubscribing-is-not-a-blocklist-lead-2026-11-20) items 9 and 11.)
+- **"Next step"** is the step the enrollment runs next: its current step, or, when that step was deleted, the first active
+  step after it. A deleted marketing step whose next active step is transactional keeps its enrollment running.
+
+- **Unsubscribe from all mailing lists** is the page's option for a person who wants no marketing at all. It is not a
+  blocklist: a person who ticks it still receives receipts, payment reminders and password resets. It writes the same
+  suppression a self-wipe writes (keyed hashes, no address), so a later event, create or import does not put the person
+  back on a marketing list, until they confirm through a double opt-in mail or an operator removes it with
+  `DELETE /api/suppressions`. It is offered only while `privacy.allow_blocklist` is on. That key keeps listmonk's name, but it
+  now only switches this option on or off: the admin's label reads "Offer unsubscribe from all lists", and nothing it does
+  blocklists anyone. The admin blocklist, which an
+  operator sets on the subscriber, still stops every mail, transactional included.
+- **For integrators.** The all-lists option writes the marketing suppression, and that suppression stays until the
+  person confirms through a double opt-in mail or an operator runs `DELETE /api/suppressions`. While it stands:
+  a public signup to a single opt-in list joins nothing (a public signup joins double opt-in lists only), and an
+  app's list grant (`grant_lists` on an event) answers `suppressed`. An app that lets the person opt back in must
+  handle `suppressed`, and send them through a double opt-in confirmation or ask an operator to clear the suppression.
+- **Your privacy notice** can say the all-lists option is an unsubscribe for marketing, and that transactional mail
+  continues, because a receipt or a password reset is not marketing.
 
 ## Attachment sends
 
