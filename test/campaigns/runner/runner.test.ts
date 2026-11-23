@@ -680,6 +680,8 @@ test("a runner whose heartbeat stalled keeps its campaign from a second pipe in 
 });
 
 test("tracked links personalized per subscriber do not accumulate across batches", async () => {
+  // The test's own start, setup included: the give-up below counts from here.
+  const started = Date.now();
   // This test's own fixture. The module's `f` is replaced by the next test, and a wait that outlives
   // this test must keep driving this test's campaign, not the next one's.
   const fx = await runnerFixture({ hold: true });
@@ -731,15 +733,20 @@ test("tracked links personalized per subscriber do not accumulate across batches
     return false;
   };
   // A wait ends when every message is pushed. The 60 s budget is per stretch without a new push: a
-  // campaign that is slow on a loaded host keeps pushing and is not cut off, while a stalled one
-  // fails with its state. The test's own timeout still bounds the whole run.
+  // campaign that is slow on a loaded host keeps pushing and is not cut off, while a stalled one fails
+  // with its state. The whole wait also ends at giveUp, 80 s after the test started, under its 90 s
+  // timeout. bun does not stop a timed-out body, so a drive that outlived the timeout would keep
+  // driving this fixture after the test had failed. Here the drive's own wall ends at giveUp, and the
+  // test fails there, with the state, before anything can run on.
+  const giveUp = started + 80_000;
   for (;;) {
     const pushed = fx.pushes.length;
+    const remaining = giveUp - Date.now();
     try {
-      await fx.drive(done, 0, undefined, 60_000);
+      await fx.drive(done, 0, undefined, Math.max(1, Math.min(60_000, remaining)));
       break;
     } catch (error) {
-      if (fx.pushes.length === pushed) {
+      if (fx.pushes.length === pushed || Date.now() >= giveUp) {
         throw error;
       }
     }
