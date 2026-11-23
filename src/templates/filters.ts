@@ -638,15 +638,15 @@ export function isEmptyValue(value: unknown): boolean {
  * blank input or argument is empty (B135 review N6, B117e: a data value of `""` or `" "` used as the argument
  * renders empty too, as nil does). An input that is not a number is a value failure, and so is an argument that
  * is not one, or a division by zero: a literal one of these is refused at save. An integer divided by an integer
- * rounds down, as LiquidJS does, unless the divisor is written with a decimal point (`floatDivisor`), which
- * divides as a float (B135 review). A result that is not finite is empty.
+ * rounds down, unless `decimal` is set: a decimal point in the dividend's text or in the divisor's (B135 review,
+ * B117e), which divides as a float. A result that is not finite is empty.
  */
 export function arithmetic(
   operator: "plus" | "minus" | "times" | "divided_by",
   value: unknown,
   argument: unknown,
   b: FilterBudget,
-  floatDivisor = false,
+  decimal = false,
 ): number | "" {
   b.step();
   // Both operands are read before either empty one renders empty, so a text that is not a number fails whatever
@@ -676,27 +676,36 @@ export function arithmetic(
   if (right === 0) {
     throw new ValueError("divided_by cannot divide by zero");
   }
-  const whole = Number.isInteger(left) && Number.isInteger(right) && !floatDivisor;
+  const whole = Number.isInteger(left) && Number.isInteger(right) && !decimal;
   return finite(whole ? Math.floor(left / right) : left / right);
 }
 
 /**
  * `round`: a number to `digits` places (none when not given, and at most 15), with halves rounded away
- * from zero. A nil, empty or blank input is empty (B135 review N6, B117e); any other value that is not a number is a
- * value failure.
+ * from zero. A nil, empty or blank input is empty (B135 review N6, B117e), and so is a digits argument that is
+ * written but nil, empty or blank from data (B117e, the argument rule of D134). `written` says whether the
+ * template wrote a digits argument at all: `{{ x | round }}` rounds to a whole number. Any other value that is
+ * not a number is a value failure, whatever the digits are; so is digits that are not whole numbers.
  */
-export function round(value: unknown, digits: unknown, b: FilterBudget): number | "" {
+export function round(
+  value: unknown,
+  digits: unknown,
+  b: FilterBudget,
+  written: boolean,
+): number | "" {
   b.step();
-  const places = digits === undefined ? 0 : integer(digits);
+  const blankDigits = written && isEmptyValue(digits);
+  const places = digits === undefined || blankDigits ? 0 : integer(digits);
   if (places < 0 || places > 15) {
     throw new ValueError("round needs whole digits from 0 to 15");
   }
-  if (isEmptyValue(value)) {
-    return "";
-  }
-  const n = numberOf(value);
+  const blankInput = isEmptyValue(value);
+  const n = blankInput ? 0 : numberOf(value);
   if (n === undefined) {
     throw new ValueError(`round needs a number, got ${kindOf(value)}`);
+  }
+  if (blankInput || blankDigits) {
+    return "";
   }
   const scale = 10 ** places;
   return finite(Math.sign(n) * (Math.round(Math.abs(n) * scale) / scale));

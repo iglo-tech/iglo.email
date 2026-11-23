@@ -138,3 +138,100 @@ test("a divisor written as quoted text with a decimal point divides as a float, 
   expect(sent.http).toBe(200);
   expect(sent.html).toContain("[2.5][2.5][2][2.5][2]");
 });
+
+test("a dividend written as decimal text divides as a float, as a decimal divisor does (B117e)", async () => {
+  const f = await open();
+  // The dividend is text from data or a quoted literal: its decimal point makes the division a float. A JSON
+  // number 10.0 is parsed to 10, and a number literal 10.0 is its value too, so both divide as integers.
+  const sent = await send(
+    f,
+    "[{{ data.t | divided_by: 4 }}][{{ '10.0' | divided_by: 4 }}][{{ data.i | divided_by: 4 }}][{{ 10 | divided_by: 4 }}]",
+    { t: "10.0", i: "10" },
+  );
+  expect(sent.http).toBe(200);
+  expect(sent.html).toContain("[2.5][2.5][2][2]");
+});
+
+test("round renders empty for a blank or missing digits argument from data, and still fails a text that is not a number (B117e)", async () => {
+  const f = await open();
+  const blank = await send(
+    f,
+    "[{{ data.a | round: data.spaces }}][{{ data.a | round: data.empty }}][{{ data.a | round: data.gone }}]" +
+      "[{{ data.a | round }}][{{ data.a | round: data.two }}]",
+    { a: 7.6789, spaces: " ", empty: "", two: "2" },
+  );
+  expect(blank.http).toBe(200);
+  expect(blank.html).toContain("[][][][8][7.68]");
+  const word = await send(f, "[{{ data.word | round: data.spaces }}]", {
+    word: "abc",
+    spaces: " ",
+  });
+  expect(word.http).toBe(400);
+  expect(word.message).toContain("round needs a number, got text");
+});
+
+test("the loop reads the round-1 review reproduced are refused at save, where the send would fail (B117e)", async () => {
+  const f = await open();
+  // Each runs over data with items, so the send fails for every message that has one (before B117e: 200 at save).
+  const cases: Array<[string, string]> = [
+    [
+      '{% for i in data.items %}{% for j in i %}{{ forloop.index | prepend: "." | prepend: forloop.parentloop.index }}{% endfor %}{% endfor %}',
+      "forloop.parentloop: a loop property is not available",
+    ],
+    [
+      "{% for i in data.items %}{{ forloop.index | plus: forloop.parentloop.index }}{% endfor %}",
+      "forloop.parentloop: a loop property is not available",
+    ],
+    [
+      "{% for i in data.items %}{{ 'x' | append: forloop }}{% endfor %}",
+      "a loop object (forloop or tablerowloop) cannot be printed",
+    ],
+    [
+      "{% for i in data.items %}{% for j in forloop.parentloop %}x{% endfor %}{% endfor %}",
+      "forloop.parentloop: a loop property is not available",
+    ],
+    [
+      "{% for i in data.items %}[{{ data.m[forloop.parentloop] }}]{% endfor %}",
+      "forloop.parentloop: a loop property is not available",
+    ],
+    [
+      "{% for i in data.items %}{% for j in data.items offset: forloop.parentloop.index %}x{% endfor %}{% endfor %}",
+      "forloop.parentloop: a loop property is not available",
+    ],
+    [
+      "{% for i in data.items %}[{{ data.m[forloop.index0] | default: forloop.parentloop }}]{% endfor %}",
+      "forloop.parentloop: a loop property is not available",
+    ],
+    [
+      "{% for i in data.items %}{% for j in forloop %}x{% endfor %}{% endfor %}",
+      "cannot be a for tag's list or a range bound",
+    ],
+    [
+      "{% for i in data.items %}{% for j in (1..forloop) %}x{% endfor %}{% endfor %}",
+      "cannot be a for tag's list or a range bound",
+    ],
+  ];
+  for (const [body, cause] of cases) {
+    const refused = await saveTx(f, body);
+    expect(refused.status, body).toBe(400);
+    expect(refused.body.message, body).toContain("it fails to render: ");
+    expect(refused.body.message, body).toContain(cause);
+  }
+  // A nested loop that reads only the loop properties the renderer exposes saves and sends.
+  const exposed = await send(
+    f,
+    "{% for i in data.items %}{% for j in i %}[{{ forloop.index | prepend: '.' }}{{ forloop.index }}]{% endfor %}{% endfor %}",
+    { items: [["a", "b"]] },
+  );
+  expect(exposed.http).toBe(200);
+  expect(exposed.html).toContain("[.11][.22]");
+});
+
+test("a loop object read by a filter outside any loop is refused at save as well (06, B117e)", async () => {
+  const f = await open();
+  const refused = await saveTx(f, "{{ forloop | default: 'x' }}");
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain(
+    "a loop object (forloop or tablerowloop) cannot be printed",
+  );
+});

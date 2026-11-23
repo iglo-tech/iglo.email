@@ -3,6 +3,7 @@
 import {
   Context,
   Drop,
+  Expression,
   Liquid,
   Output,
   TypeGuards,
@@ -10,7 +11,14 @@ import {
   defaultOperators,
   toValueSync,
 } from "liquidjs";
-import type { Emitter, Filter, FilterImplOptions, LiquidOptions, Template } from "liquidjs";
+import type {
+  Emitter,
+  Filter,
+  FilterImplOptions,
+  LiquidOptions,
+  PropertyAccessToken,
+  Template,
+} from "liquidjs";
 import { must } from "@/invariant";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
@@ -575,39 +583,117 @@ function filterFault(filter: Filter): string | undefined {
 /** An output that prints a loop object on its own (`{{ forloop }}`): a template fault whatever the data is (B135 review B1). */
 const bareLoop = /^\{\{-?\s*(?:forloop|tablerowloop)\s*-?\}\}$/;
 
-/**
- * The loop-object fault in one value (B117e), whatever data a message carries. A bare `forloop` that an
- * output prints, or that a filter reads (`{{ forloop | json }}`), is the template's own text: every filter
- * and output refuses a loop object (`plainValue`), so the send fails wherever the loop runs. A property the
- * renderer does not expose (`forloop.parentloop`) fails the same way. The loop properties it does expose are
- * data, and are not judged here. A loop object stored with `assign` is not refused: `{% assign f = forloop %}`
- * then `{{ f.index }}` works, and only printing `f` itself fails, at send.
- */
-function loopFaultOf(value: Value, printed: boolean): string | undefined {
-  for (const token of value.initial.postfix) {
-    if (!TypeGuards.isPropertyAccessToken(token) || token.variable !== undefined) {
-      continue;
-    }
-    const [root, property] = token.props;
-    if (!TypeGuards.isWordToken(root) || root.content !== LOOP_OBJECT) {
-      continue;
-    }
+/** How a token's value is used where it stands (B117e): printed or read by a filter, a `for` tag's list or a range bound, or neither. */
+type LoopUse = "print" | "list" | "none";
+
+/** A bare loop object that a `for` tag loops over, or a range ends at (B117e): the send fails there wherever the loop runs. */
+const LOOP_LIST =
+  "a loop object (forloop) cannot be a for tag's list or a range bound; loop over a list from data";
+
+/** The fault of a loop property the renderer does not expose (B117e), or undefined for one it does or a computed key. */
+function loopPropertyFault(property: unknown): string | undefined {
+  const name =
+    TypeGuards.isWordToken(property) || TypeGuards.isQuotedToken(property)
+      ? property.content
+      : undefined;
+  if (name === undefined || loopProperties.has(name)) {
+    return undefined;
+  }
+  const shown = name.length > SHOWN ? `${name.slice(0, SHOWN)}...` : name;
+  return `${LOOP_OBJECT}.${shown}: a loop property is not available; the loop properties are index, index0, rindex, rindex0, first, last and length`;
+}
+
+/** The loop-object fault in a property access (B117e): the root `forloop` by itself, read as `use`, and its parts. */
+function propertyLoopFault(token: PropertyAccessToken, use: LoopUse): string | undefined {
+  const [root, property] = token.props;
+  if (
+    token.variable === undefined &&
+    TypeGuards.isWordToken(root) &&
+    root.content === LOOP_OBJECT
+  ) {
     if (property === undefined) {
-      if (printed || value.filters.length > 0) {
+      if (use === "print") {
         return LOOP_PRINT;
       }
-      continue;
+      if (use === "list") {
+        return LOOP_LIST;
+      }
+    } else {
+      const fault = loopPropertyFault(property);
+      if (fault !== undefined) {
+        return fault;
+      }
     }
-    const name =
-      TypeGuards.isWordToken(property) || TypeGuards.isQuotedToken(property)
-        ? property.content
-        : undefined;
-    if (name !== undefined && !loopProperties.has(name)) {
-      const shown = name.length > SHOWN ? `${name.slice(0, SHOWN)}...` : name;
-      return `${LOOP_OBJECT}.${shown}: a loop property is not available; the loop properties are index, index0, rindex, rindex0, first, last and length`;
+  }
+  // A bracket key is a value of its own, read by the renderer: `data.m[forloop.parentloop]` fails the same way.
+  for (const part of [token.variable, ...token.props]) {
+    const fault = loopFaultIn(part, "none");
+    if (fault !== undefined) {
+      return fault;
     }
   }
   return undefined;
+}
+
+/** The loop-object fault in filter arguments (B117e): a filter reads each argument, so a bare loop object is refused. A keyword argument is `[name, value]`. */
+function argumentsLoopFault(
+  filters: ReadonlyArray<{ readonly args: ReadonlyArray<unknown> }>,
+): string | undefined {
+  for (const filter of filters) {
+    for (const argument of filter.args) {
+      const token: unknown = Array.isArray(argument) ? argument[1] : argument;
+      const fault = loopFaultIn(token, "print");
+      if (fault !== undefined) {
+        return fault;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The loop-object fault in one expression token, at the position it is used (B117e). The walk covers every
+ * position a value can stand in: the output and the filter arguments, a `for` tag's list, a `limit` or `offset`,
+ * a bracket key, a range bound and a grouped expression.
+ */
+function loopFaultIn(token: unknown, use: LoopUse): string | undefined {
+  if (TypeGuards.isPropertyAccessToken(token)) {
+    return propertyLoopFault(token, use);
+  }
+  if (TypeGuards.isRangeToken(token)) {
+    return loopFaultIn(token.lhs, "list") ?? loopFaultIn(token.rhs, "list");
+  }
+  if (TypeGuards.isFilteredValueToken(token)) {
+    return (
+      loopFaultIn(token.initial, token.filters.length > 0 ? "print" : use) ??
+      argumentsLoopFault(token.filters)
+    );
+  }
+  if (token instanceof Expression) {
+    for (const operand of token.postfix) {
+      const fault = loopFaultIn(operand, use);
+      if (fault !== undefined) {
+        return fault;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The loop-object fault in one value (B117e), whatever data a message carries. A bare `forloop` that an output
+ * prints, or that a filter reads (`{{ forloop | json }}`, `{{ 'x' | append: forloop }}`), is the template's own
+ * text: every filter and output refuses a loop object (`plainValue`), so the send fails wherever the loop runs.
+ * A bare `forloop` that a `for` tag loops over fails the same way (`LOOP_LIST`). A property the renderer does not
+ * expose (`forloop.parentloop`) fails wherever it stands. The loop properties it does expose are data, and are not
+ * judged here. A loop object stored with `assign` is not refused: `{% assign f = forloop %}` then `{{ f.index }}`
+ * works, and only printing `f` itself fails, at send.
+ */
+function loopFaultOf(value: Value, printed: boolean): string | undefined {
+  return (
+    loopFaultIn(value.initial, printed || value.filters.length > 0 ? "print" : "none") ??
+    argumentsLoopFault(value.filters)
+  );
 }
 
 function literalFault(templates: ReadonlyArray<Template>): string | undefined {
@@ -617,7 +703,11 @@ function literalFault(templates: ReadonlyArray<Template>): string | undefined {
     if (bareLoop.test(printed)) {
       return LOOP_PRINT;
     }
+    // A `for` tag's first argument is its list, which the renderer loops over; its other arguments are not (B117e).
+    let index = 0;
     for (const argument of next.arguments?.() ?? []) {
+      const list = "name" in next && next.name === "for" && index === 0;
+      index += 1;
       if (argument instanceof Value) {
         const loopFault = loopFaultOf(argument, next instanceof Output);
         if (loopFault !== undefined) {
@@ -628,6 +718,11 @@ function literalFault(templates: ReadonlyArray<Template>): string | undefined {
           if (fault !== undefined) {
             return fault;
           }
+        }
+      } else {
+        const fault = loopFaultIn(argument, list ? "list" : "none");
+        if (fault !== undefined) {
+          return fault;
         }
       }
     }
@@ -1005,17 +1100,19 @@ export function createRenderer(clock: Clock, translation: Translation) {
       return arithmetic("times", value, argument, budget(this.context));
     });
     liquid.registerFilter("divided_by", function (value: unknown, argument: unknown) {
-      // A divisor written with a decimal point divides as a float, as Liquid's Ruby reference does (B135): the
-      // number literal `4.0`, and text that holds one, quoted or from data (B117e). A JSON number has no
-      // decimal point once parsed, so `4.0` in data divides as 4.
+      // A decimal point in the dividend's text or in the divisor's makes the division a float (B135, B117e): the
+      // number literal `4.0` and text that holds one, quoted or from data. A JSON number has lost its decimal point
+      // once parsed, so data `4.0` divides as 4, and a number literal dividend is its value: `10.0 | divided_by: 4`
+      // is 2, while `'10.0' | divided_by: 4` is 2.5.
       const written: unknown = this.token.args[0];
-      const floatDivisor =
+      const decimal =
+        (typeof value === "string" && value.includes(".")) ||
         (TypeGuards.isNumberToken(written) && written.getText().includes(".")) ||
         (typeof argument === "string" && argument.includes("."));
-      return arithmetic("divided_by", value, argument, budget(this.context), floatDivisor);
+      return arithmetic("divided_by", value, argument, budget(this.context), decimal);
     });
     liquid.registerFilter("round", function (value: unknown, digits: unknown) {
-      return round(value, digits, budget(this.context));
+      return round(value, digits, budget(this.context), this.token.args.length > 0);
     });
     liquid.registerFilter("first", function (value: unknown) {
       return first(value, budget(this.context));
