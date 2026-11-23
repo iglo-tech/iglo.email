@@ -882,7 +882,7 @@ export const differences: Array<Difference> = [
   {
     area: "Stable error `code` and Retry-After (B131, D129)",
     summary:
-      "Every API error keeps listmonk's `message` and adds a `code` from one fixed snake_case list (`src/server/error-codes.ts`), listed per response in this document. Every 429 and 503 sends `Retry-After` in seconds, 1 s and 30 s where the route names no wait. Both are additive, so no client that reads `message` breaks. Upstream has neither.",
+      "Every API error keeps listmonk's `message` and adds a `code` from one fixed snake_case list (`src/server/error-codes.ts`), listed per response in this document. Every 429 and 503 sends `Retry-After` in seconds, 1 s and 30 s where the route names no wait. Both are additive, so no client that reads `message` breaks. The one error without a code is the plain-text `400` for an API path that does not decode, which keeps listmonk's bytes (D138). Upstream has neither.",
     applies: ["/api/"],
   },
   {
@@ -897,5 +897,29 @@ export const differences: Array<Difference> = [
       "POST /api/subscriber-events",
       "POST /api/subscriber-events/batch",
     ],
+  },
+  {
+    area: "Notification addresses (B117a, D136)",
+    summary:
+      "`app.notify_emails` is checked on save, every address with the rule `app.from_email` uses. A blank entry is kept. An address already stored is not checked again, and a send still skips a stored invalid one with a log line. Upstream stores any value.",
+    applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
+  },
+  {
+    area: "Settings checked on save (B117a, D136)",
+    summary:
+      "A value the server reads is checked when its feature is on and the value changed: the sliding window duration (longer than one second), the vacuum cron, `upload.s3.expiry` (a positive duration), the SMTP `idle_timeout` (1 s to 5 min) and `msg_retry_delay` (a duration). An empty S3 expiry, idle timeout or retry delay is accepted; an empty vacuum cron (while vacuum is on) and an empty sliding window duration are refused. Upstream stores these as sent.",
+    applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
+  },
+  {
+    area: "From address encoded words (B117a, D136)",
+    summary:
+      "`app.from_email` refuses an encoded word with no charset or an encoding other than B or Q, where upstream keeps it as literal text, wherever the word stands. An unsupported charset keeps upstream's rule. An entry already stored is not checked again.",
+    applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
+  },
+  {
+    area: "Trusted URL port and userinfo (B117a, D136)",
+    summary:
+      "`security.trusted_urls` refuses a port outside 1 to 65535 and a user name or password in the URL. An entry already stored is not checked again. Upstream accepts both.",
+    applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
   },
 ];

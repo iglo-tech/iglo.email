@@ -294,6 +294,8 @@ export async function runImportContract(target: {
       ["blank", "\n\n"],
       ["bare-quote", `email,name\n${address("q1")},a"b\n`],
       ["open-quote", `email,name\n${address("q2")},"never closed\n`],
+      // B117a (D136): a header is trimmed, then matched exactly: upstream's mapCSVHeaders does not fold case.
+      ["cased-header", ` Email , NAME \n${address("cased")},x\n`],
     ] as const) {
       const failed = await run(subscribe([a]), content);
       check(failed.status === "failed", `bad-file-${label}-${failed.status}`);

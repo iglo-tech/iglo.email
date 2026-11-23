@@ -155,7 +155,8 @@ export async function runSubscriberQuery(target: {
     check(same(names(r.body), ["carol"]), "subscriber-query-status");
     r = await json(`/api/subscribers?list_id=${listA}&list_id=abc`);
     check(
-      r.status === 400 && same(listmonkEnvelope(r.body, target.mode), { message: "Invalid ID(s)" }),
+      r.status === 400 &&
+        same(listmonkEnvelope(r.body, target.mode, r.status), { message: "Invalid ID(s)" }),
       "subscriber-query-invalid-list",
     );
     r = await json(`/api/subscribers?search=${tag}&status=bogus`);
@@ -185,7 +186,7 @@ export async function runSubscriberQuery(target: {
     r = await json(`/api/subscribers?query=${q("subscribers.id IN (SELECT id FROM users)")}`);
     check(
       r.status === 400 &&
-        same(listmonkEnvelope(r.body, target.mode), {
+        same(listmonkEnvelope(r.body, target.mode, r.status), {
           message: "Error preparing subscriber query: table 'users' is not allowed",
         }),
       "subscriber-query-sql-table",
@@ -228,7 +229,7 @@ export async function runSubscriberQuery(target: {
     r = await json(`/api/subscribers?query=${q("1=1")}`, "GET", undefined, readerAuth);
     check(
       r.status === 403 &&
-        same(listmonkEnvelope(r.body, target.mode), {
+        same(listmonkEnvelope(r.body, target.mode, r.status), {
           message: "Permission denied: subscribers:sql_query",
         }),
       "subscriber-query-sql-permission",
@@ -319,7 +320,8 @@ export async function runSubscriberQuery(target: {
     check((await byQuery.text()).split("\n").length === 3, "subscriber-export-query");
     r = await json(`/api/subscribers/export?id=1&id=x`);
     check(
-      r.status === 400 && same(listmonkEnvelope(r.body, target.mode), { message: "Invalid ID(s)" }),
+      r.status === 400 &&
+        same(listmonkEnvelope(r.body, target.mode, r.status), { message: "Invalid ID(s)" }),
       "subscriber-export-invalid",
     );
     r = await json(`/api/subscribers/export?query=${q("1=1")}`, "GET", undefined, readerAuth);

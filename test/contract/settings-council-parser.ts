@@ -68,7 +68,8 @@ export async function runSettingsCouncilParser(target: {
     check(response.status === 400, `${label}-status`);
     const body = await response.json();
     check(
-      JSON.stringify(listmonkEnvelope(body, target.mode)) === JSON.stringify({ message }),
+      JSON.stringify(listmonkEnvelope(body, target.mode, response.status)) ===
+        JSON.stringify({ message }),
       `${label}-error`,
     );
     check(JSON.stringify(await read()) === JSON.stringify(before), `${label}-rollback`);
@@ -91,7 +92,6 @@ export async function runSettingsCouncilParser(target: {
   }
   for (const [label, url] of [
     ["url-normal", "https://example.invalid:443/a%20b?q=%zz"],
-    ["url-user", "http://user:pass@example.invalid/path#fragment"],
     ["url-empty-port", "http://example.invalid:"],
     ["url-port-only", "http://:80"],
     ["url-uppercase-scheme", "HTTP://example.invalid"],

@@ -42,7 +42,7 @@ export async function runSettingsCouncilSmall(target: {
   const rejected = await request("/api/settings", "PUT", reversed);
   check(rejected.status === 400, "reversed-template-status");
   check(
-    JSON.stringify(listmonkEnvelope(await rejected.json(), target.mode)) ===
+    JSON.stringify(listmonkEnvelope(await rejected.json(), target.mode, rejected.status)) ===
       JSON.stringify({ message: "invalid from email address: }}not an address{{" }),
     "reversed-template-error",
   );
