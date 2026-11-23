@@ -341,8 +341,14 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
               clock.now(),
             ),
           ),
+        // The subscriber's sends tab: the subscriber's own read checks the caller's list scope first (B117d).
         sends: (id, page, perPage) =>
-          wired(sends, "sends").list({ subscriberId: id, page, perPage }),
+          wired(sends, "sends").list({
+            subscriberId: id,
+            page,
+            perPage,
+            scope: { all: true, ids: [] },
+          }),
       },
       {
         activity: (id) => wired(subscriberTracking, "subscriberTracking").activity(id),
@@ -474,7 +480,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     });
     tracking = createTracking(db, clock);
     subscriberTracking = createSubscriberTracking(db);
-    registerSendRoutes(router, sends, auth);
+    registerSendRoutes(router, sends, auth, roles);
     registerWebhookRoutes(router, { webhooks, auth });
     outbox = createOutbox({ db, clock, logger: app.logger, sends, emailer });
     const attachments = createAttachments(media, files);

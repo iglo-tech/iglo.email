@@ -4,7 +4,7 @@
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect } from "@playwright/test";
-import { api, signIn, test, unique } from "../helpers.js";
+import { api, createUser, logout, makeList, PASSWORD, signIn, test, unique } from "../helpers.js";
 
 async function template(page) {
   const made = await api(page, "/api/templates", "POST", {
@@ -74,6 +74,40 @@ test("the send log lists each send by its subject and sequence step, and filters
   await page.getByTestId("btn-filter").click();
   await expect(page).toHaveURL(/status=failed/);
   await expect(page.getByTestId("send-row").filter({ hasText: email })).toHaveCount(0);
+});
+
+test("a list-scoped reader's send log lists the sends to its lists and no others", async ({
+  page,
+}) => {
+  await signIn(page);
+  const mine = await makeList(page);
+  const theirs = await makeList(page);
+  const inMine = `${unique("scoped")}@example.com`;
+  const inTheirs = `${unique("scoped")}@example.com`;
+  const sentToMine = await started(page, mine, inMine);
+  const sentToTheirs = await started(page, theirs, inTheirs);
+  for (const sent of [sentToMine, sentToTheirs]) {
+    await expect
+      .poll(
+        async () =>
+          (await api(page, `/api/sends?subscriber_id=${sent.subscriber}&status=sent`)).body.data
+            .total,
+      )
+      .toBe(1);
+  }
+  const listRole = await api(page, "/api/roles/lists", "POST", {
+    name: unique("Mine only"),
+    lists: [{ id: mine.id, permissions: ["list:get"] }],
+  });
+  expect(listRole.status).toBe(200);
+  const reader = await createUser(page, ["sends:get"], listRole.body.data.id);
+  await logout(page);
+
+  await signIn(page, reader.username, PASSWORD);
+  await page.goto("/admin/sends");
+  const rows = page.getByTestId("send-row");
+  await expect(rows.filter({ hasText: inMine })).toHaveCount(1);
+  await expect(rows.filter({ hasText: inTheirs })).toHaveCount(0);
 });
 
 test("a subscriber's counts name what they count, and the sends tab names each message", async ({

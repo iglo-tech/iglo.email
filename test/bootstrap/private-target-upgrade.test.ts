@@ -137,6 +137,9 @@ async function earlierRelease(): Promise<string> {
     db.run("ALTER TABLE webhooks DROP COLUMN previous_secret");
     // Schema 23 has no enrollment exit condition either (migration 29, B127 r2).
     db.run("ALTER TABLE enrollments DROP COLUMN exit_condition");
+    // Migration 31 (B117d) names each send, and schema 23 has no such columns.
+    db.run("ALTER TABLE sends DROP COLUMN template_name");
+    db.run("ALTER TABLE sends DROP COLUMN sequence_name");
     db.run("UPDATE settings SET value = 'false' WHERE key = ?", [key]);
     db.run("INSERT INTO webhooks (id, url, secret, events) VALUES (1, ?, 'secret', '[]')", [
       "http://127.0.0.1:9/hook",
@@ -172,7 +175,7 @@ test("an upgrade turns the stored false on, and every restart names the refused 
   ).toBe(true);
   // The public webhook, id 2, is never named.
   expect(await stopped(upgraded.child)).toEqual([refusedLine]);
-  expect(userVersion(dataDir)).toBe(30);
+  expect(userVersion(dataDir)).toBe(31);
 
   // A restart, with the target still refused: named again.
   const restarted = await up(dataDir);
