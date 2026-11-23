@@ -383,9 +383,11 @@ try {
   // Hold a Docker operation briefly to deliver a signal while startup is in
   // progress, after the container and volume have been created.
   const startupMarker = join(temp, "startup-pid");
+  // The marker is renamed into place, so the reader never sees it empty or half written (a plain
+  // redirect creates the file before its PID is written, and an empty read is not a PID).
   await writeFile(
     shim,
-    '#!/bin/sh\nif [ "$1" = "start" ]; then printf "%s" "$PPID" > "$REFERENCE_START_MARKER"; sleep 4; fi\nexec "$REFERENCE_REAL_DOCKER" "$@"\n',
+    '#!/bin/sh\nif [ "$1" = "start" ]; then printf "%s" "$PPID" > "$REFERENCE_START_MARKER.tmp" && mv "$REFERENCE_START_MARKER.tmp" "$REFERENCE_START_MARKER"; sleep 4; fi\nexec "$REFERENCE_REAL_DOCKER" "$@"\n',
   );
   const startup = startRunner([process.execPath, "-e", "process.exit(0)"], {
     PATH: `${shimDir}:${process.env.PATH ?? ""}`,
@@ -395,7 +397,9 @@ try {
   active.push(startup);
   const startupPid = await waitFor(async () => {
     try {
-      return Number(await readFile(startupMarker, "utf-8"));
+      const text = await readFile(startupMarker, "utf-8");
+      // Not a PID yet (an empty or partial read) is not an answer: keep waiting for the whole value.
+      return /^[0-9]+$/.test(text) ? Number(text) : undefined;
     } catch (error) {
       if (asBody<NodeJS.ErrnoException>(error).code !== "ENOENT") {
         throw error;

@@ -39,7 +39,8 @@ describe("raw-query time limit and admission", () => {
     const first = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     const second = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     expect([first.status, second.status]).toEqual([200, 200]);
-    expect(childPids().length).toBe(before + 2);
+    // Not a count of the children: the 1 s deadline may already have reaped them under a slow host
+    // (B118a). The outcome is asserted below: both responses end as failed, and the children are gone.
     // A third raw query does not queue indefinitely behind them.
     const started = performance.now();
     const third = await within(f.json(`/api/subscribers?query=${q("1=1")}`), 3000);

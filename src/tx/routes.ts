@@ -64,6 +64,11 @@ type Slot = { reservation: Reservation | null };
 const MAX_KEY_BYTES = 255;
 const MAX_HEADERS = 64;
 const headerName = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+/** One turn of the event loop: resolves after the callbacks already queued have run. */
+const loopTurn = () =>
+  new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 
 export interface TxPolicy {
   fromEmail: string;
@@ -449,6 +454,9 @@ export function registerTxRoutes(
           },
           subscriberUuid: recipient.row?.uuid ?? null,
         });
+        // Each recipient's render and text part run on the loop; a turn between them lets other
+        // requests and timers run (B118a). The journal checks each send's subscriber when it claims it.
+        await loopTurn();
       }
 
       // The journal encodes every recipient's payload, and each synchronous send decodes its own

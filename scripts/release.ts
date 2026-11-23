@@ -47,6 +47,50 @@ async function availablePort(): Promise<number> {
   return address.port;
 }
 
+/** Starts a bind attempt on a fresh port this many times before giving up (B118a). */
+const startAttempts = 5;
+
+/**
+ * Starts the executable on a loopback port and returns once its /health answers. The port is chosen
+ * by binding and releasing it, so another process (a parallel test, say) can take it before the
+ * executable binds it. A start that fails because its port is in use is started again on a fresh
+ * port, up to five attempts, as test/serve-port.ts does. The per-run admin login in `verify` still
+ * checks that the server answering is this one. Any other failure stops the child and is thrown.
+ */
+async function startExecutable(
+  executable: string,
+  directory: string,
+  env: Record<string, string>,
+): Promise<{
+  child: Bun.Subprocess<"ignore", "ignore", "pipe">;
+  origin: string;
+  health: Response;
+}> {
+  for (let attempt = 1; ; attempt++) {
+    const port = await availablePort();
+    const origin = `http://127.0.0.1:${port}`;
+    const child = Bun.spawn([executable, "serve", "--port", String(port)], {
+      cwd: directory,
+      env,
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+    try {
+      return { child, origin, health: await healthWhenReady(child, origin) };
+    } catch (error) {
+      if (child.exitCode === null) {
+        child.kill("SIGKILL");
+      }
+      await child.exited;
+      const stderr = await new Response(child.stderr).text();
+      if (attempt >= startAttempts || !/port \d+ in use/i.test(stderr)) {
+        throw error;
+      }
+    }
+  }
+}
+
 async function healthWhenReady(child: Bun.Subprocess, origin: string): Promise<Response> {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -116,19 +160,15 @@ async function verify(source: string): Promise<void> {
     expectEqual("--version exit code", code, 0);
     expectEqual("Reported version", stdout, `${expectedVersion()}\n`);
 
-    const port = await availablePort();
-    const origin = `http://127.0.0.1:${port}`;
     const username = "release-smoke-admin";
     const password = crypto.randomUUID();
-    child = Bun.spawn([executable, "serve", "--port", String(port)], {
-      cwd: directory,
-      env: { PATH: "", IGLO_EMAIL_ADMIN_USER: username, IGLO_EMAIL_ADMIN_PASSWORD: password },
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "pipe",
+    const started = await startExecutable(executable, directory, {
+      PATH: "",
+      IGLO_EMAIL_ADMIN_USER: username,
+      IGLO_EMAIL_ADMIN_PASSWORD: password,
     });
-
-    const health = await healthWhenReady(child, origin);
+    child = started.child;
+    const { origin, health } = started;
     expectEqual("/health status", health.status, 200);
     expectEqual("/health body", await health.text(), '{"data":true}\n');
     expectEqual("Anonymous /api/health", (await fetch(`${origin}/api/health`)).status, 403);

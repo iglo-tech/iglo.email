@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
 import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -47,13 +55,29 @@ function start(args: Array<string>, env: Record<string, string> = {}) {
   });
 }
 
+// Bun does not stop a timed-out test body, so a loop of CLI runs goes on after the test's budget.
+// Each run checks the budget first and fails by name, instead of running into a child that
+// the budget already stopped (B118a: an empty stderr from a killed child looked like a CLI fault).
+const budgetMs = 12_000;
+let budgetEnds = Number.POSITIVE_INFINITY;
+beforeEach(() => {
+  budgetEnds = performance.now() + budgetMs;
+});
+
 async function runCli(args: Array<string>, env: Record<string, string> = {}) {
+  const remaining = budgetEnds - performance.now();
+  if (remaining <= 0) {
+    throw new Error(`The test's ${budgetMs} ms budget ended before: ${args.join(" ")}`);
+  }
   const child = start(args, env);
   let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill("SIGKILL");
-  }, 3000);
+  const timer = setTimeout(
+    () => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    },
+    Math.min(3000, remaining),
+  );
   try {
     const [code, stdout, stderr] = await Promise.all([
       child.exited,

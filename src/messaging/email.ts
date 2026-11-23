@@ -678,6 +678,7 @@ export function createEmailer(options: {
             .catch((error: unknown) => {
               const e = error as {
                 command?: string;
+                timeoutType?: string;
                 ownerConnectRefused?: boolean;
                 ownerAuthNotAccepted?: boolean;
                 response?: string;
@@ -744,6 +745,18 @@ export function createEmailer(options: {
                   )
                     ? { retry: "transient" as const }
                     : {}),
+                });
+              } else if (e.timeoutType === "GREETING_TIMEOUT") {
+                // No greeting arrived, and a client writes nothing before the greeting, so nothing
+                // reached the server and nothing was accepted (B118a). Like a refused connection, it
+                // is proven not sent: a transactional send retries it, and no send is resent here.
+                complete({
+                  messageId,
+                  status: "proven-not-accepted",
+                  stage: "setup",
+                  accepted: [],
+                  rejected: [],
+                  retry: "transient",
                 });
               } else {
                 complete({
