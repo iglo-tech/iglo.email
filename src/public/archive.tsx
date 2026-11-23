@@ -33,7 +33,8 @@ const pageHeaders = {
 /**
  * An archived campaign's page is the template's own body, not the shell, so the brand's Google font
  * stylesheet (B129 adopter check, D127) goes into the body's head, as the public pages load it. A
- * system font adds nothing. A body with no head gets the link at its start.
+ * system font adds nothing. A body with no head gets the link right after its doctype (B130): before
+ * the doctype the page would be parsed in quirks mode. A body with neither starts with the link.
  */
 function withBrandFont(body: string, font: string): string {
   const url = googleFontUrl(font);
@@ -41,9 +42,11 @@ function withBrandFont(body: string, font: string): string {
     return body;
   }
   const link = render(<link rel="stylesheet" href={url} />);
-  return /<head(\s[^>]*)?>/i.test(body)
-    ? body.replace(/<head(\s[^>]*)?>/i, (head) => head + link)
-    : link + body;
+  if (/<head(\s[^>]*)?>/i.test(body)) {
+    return body.replace(/<head(\s[^>]*)?>/i, (head) => head + link);
+  }
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(body);
+  return doctype ? doctype[0] + link + body.slice(doctype[0].length) : link + body;
 }
 const defaultPerPage = 20;
 const maxPerPage = 50;
@@ -292,14 +295,9 @@ ${items}  </channel>
           {found.results.length ? null : t.T("public.archiveEmpty")}
           {settings.subscriptionPage ? (
             <div class="right">
-              <a href={`${settings.rootUrl}/archive.xml`}>
-                <img
-                  src={`${settings.rootUrl}/public/static/rss.svg`}
-                  alt="RSS"
-                  class="feed"
-                  width="16"
-                  height="16"
-                />
+              {/* B130: a text link. The icon this named (public/static/rss.svg) was never shipped. */}
+              <a href={`${settings.rootUrl}/archive.xml`} class="feed">
+                RSS
               </a>{" "}
               <a href={`${settings.rootUrl}/subscription/form`}>
                 {t.T("globals.buttons.subscribe")}

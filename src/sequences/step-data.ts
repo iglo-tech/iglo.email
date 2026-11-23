@@ -1,6 +1,8 @@
 // The template data and render of one sequence step, shared by the scheduler's real sends and the
 // preview and test-send routes, so a preview renders exactly what a send renders
 // (docs/design/05-sequences.md#template-data, #preview-and-test-send, D105). No upstream source.
+import type { BrandSite } from "@/public/brand";
+import { brandMembers } from "@/public/brand";
 import { numberID } from "@/sequences/enrollments";
 import type { MessageBudget, RenderTracking, TemplateRenderer } from "@/templates/renderer";
 
@@ -26,11 +28,16 @@ export interface StepData {
   unsubscribe_url: string;
   /** The subscriber's manage link, for marketing and transactional steps alike (D126). */
   manage_url: string;
+  /** The site's brand, the eight values a campaign or transactional template reads (B130, D128). */
+  brand: BrandSite;
 }
 
 const id = (value: bigint) => JSON.stringify(numberID(value));
 const text = (value: string) => JSON.stringify(value);
-/** The JSON the template is rendered with, byte for byte what the scheduler has always sent. */
+/**
+ * The JSON the template is rendered with: what the scheduler has sent, with the brand values added
+ * at the end (B130, D128). The brand is additive, so no existing key moves.
+ */
 export function stepDataText(data: StepData): string {
   const {
     subscriber,
@@ -39,6 +46,7 @@ export function stepDataText(data: StepData): string {
     step,
     unsubscribe_url: unsubscribe,
     manage_url: manage,
+    brand,
   } = data;
   return (
     `{"subscriber":{"id":${id(subscriber.id)},"uuid":${text(subscriber.uuid)},` +
@@ -53,7 +61,7 @@ export function stepDataText(data: StepData): string {
     `"step":{"id":${id(step.id)},"uuid":${text(step.uuid)},"position":${step.position},"kind":${text(step.kind)}},` +
     `"aggregates":${JSON.stringify(data.aggregates)},` +
     `"unsubscribe_url":${text(unsubscribe)},` +
-    `"manage_url":${text(manage)}}`
+    `"manage_url":${text(manage)},${brandMembers(brand)}}`
   );
 }
 

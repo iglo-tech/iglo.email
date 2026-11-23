@@ -30,6 +30,7 @@ import type { TxMessage } from "@/tx/input";
 import { messageLinks } from "@/unsubscribe/message";
 import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
+import { brandMembers } from "@/public/brand";
 
 const MAX_RECIPIENTS = 100;
 /** Aggregate prepared bytes for one request; each payload is also bounded by messaging. */
@@ -369,6 +370,8 @@ export function registerTxRoutes(
       const contentType = m.contentType === "plain" ? "plain" : "html";
       const requested: Array<RequestedSend> = [];
       const marketingSettings = deps.marketing.settings();
+      // The brand a transactional template reads (B130, D128), the same for every recipient of the request.
+      const brand = brandMembers(marketingSettings.brand);
       const links = messageLinks(marketingSettings, deps.marketing.tracking);
       const attachments = [
         ...m.attachments.map((a) => ({
@@ -396,7 +399,7 @@ export function registerTxRoutes(
           : "";
         const preferences = prepared.unsubscribeUrl ?? "";
         const manage = `,"manage_url":${JSON.stringify(preferences && `${preferences}?manage=true`)}`;
-        const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}${manage}}`;
+        const data = `{"subscriber":${JSON.stringify(subscriberContext(recipient.row, recipient.email))},"data":${m.data ?? "{}"}${unsubscribe}${manage},${brand}}`;
         let rendered: { body: string; subject: string };
         let altBody = m.altBody;
         // One budget for the message's parts, so the generated text counts against the same limit.

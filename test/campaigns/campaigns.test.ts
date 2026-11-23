@@ -270,13 +270,14 @@ test("campaign unsubscribe changes only the campaign's lists, or blocklists", as
     body: "blocklist=true",
   });
   expect(block.status).toBe(200);
+  // B130 (D128): "Unsubscribe from all mailing lists" unsubscribes from every list; the status stays enabled.
   const after = (await f.json(`/api/subscribers/${ada.id}`)).body.data;
-  expect(after.status).toBe("blocklisted");
+  expect(after.status).toBe("enabled");
   expect(
     asBody<Array<{ subscription_status: string }>>(after.lists).map((l) => l.subscription_status),
   ).toEqual(["unsubscribed", "unsubscribed"]);
   const page = await f.request(path);
-  expect(await page.text()).toContain("No subscriptions");
+  expect(await page.text()).toContain("You are already unsubscribed from these emails: news.");
 });
 
 test("content conversion keeps Liquid expressions intact", async () => {

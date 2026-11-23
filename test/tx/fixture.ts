@@ -225,6 +225,14 @@ export async function txFixture(
   const marketing: MarketingSettings = {
     rootUrl: "http://fixture.test",
     siteName: "Fixture list",
+    brand: {
+      logoUrl: "",
+      siteName: "Fixture list",
+      siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
+    },
     minInterval: "P7D",
     unsubscribeHeader: true,
     allowBlocklist: true,

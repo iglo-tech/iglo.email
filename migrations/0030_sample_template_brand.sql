@@ -1,0 +1,219 @@
+-- B130 (D128): the sample transactional template takes the brand, as the built-in layouts do: its accent
+-- on the button, its link colour and its font. Migration 0027 wrote the B129 body, with the button and
+-- the links fixed to blue, into every install that held the seeded copy. Each UPDATE matches the template
+-- type and the whole stored body byte for byte, so only a copy that still holds that body changes. An
+-- edited or renamed copy keeps its body, and names, subjects, ids and default flags are not touched. The
+-- old body is the file as it was on main at B129, the new one is the file as it is now, and single quotes
+-- are doubled in the literals.
+
+UPDATE templates
+SET body = '{% comment %}Adapted from listmonk static/email-templates/sample-tx.tpl at 6fcd95f.{% endcomment %}
+<!doctype html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+        <base target="_blank">
+
+        <style>
+            body {
+                background-color: #F0F1F3;
+                font-family: ''Helvetica Neue'', ''Segoe UI'', Helvetica, sans-serif;
+                font-size: 15px;
+                line-height: 26px;
+                margin: 0;
+                color: #444;
+            }
+
+            pre {
+                background: #f4f4f4f4;
+                padding: 2px;
+            }
+
+            table {
+                width: 100%;
+                border: 1px solid #ddd;
+            }
+            table td {
+                border-color: #ddd;
+                padding: 5px;
+            }
+
+            .wrap {
+                background-color: #fff;
+                padding: 30px;
+                max-width: 525px;
+                margin: 0 auto;
+                border-radius: 5px;
+            }
+
+            .button {
+                background: {{ brand_accent }};
+                border-radius: 3px;
+                text-decoration: none !important;
+                color: {{ brand_on_accent }} !important;
+                font-weight: bold;
+                padding: 10px 30px;
+                display: inline-block;
+            }
+            .button:hover {
+                background: #111;
+            }
+
+            .footer {
+                text-align: center;
+                font-size: 12px;
+                color: #888;
+            }
+                .footer a {
+                    color: #888;
+                    margin-right: 5px;
+                }
+
+            .gutter {
+                padding: 30px;
+            }
+
+            img {
+                max-width: 100%;
+                height: auto;
+            }
+
+            a {
+                color: {{ brand_link }};
+            }
+                a:hover {
+                    color: #111;
+                }
+            @media screen and (max-width: 600px) {
+                .wrap {
+                    max-width: auto;
+                }
+                .gutter {
+                    padding: 10px;
+                }
+            }
+        </style>
+    </head>
+<body style="background-color: #F0F1F3;font-family: {% if brand_font != "" %}{{ brand_font }}{% else %}''Helvetica Neue'', ''Segoe UI'', Helvetica, sans-serif{% endif %};font-size: 15px;line-height: 26px;margin: 0;color: #444;">
+    <div class="gutter" style="padding: 30px;">&nbsp;</div>
+    <div class="wrap" style="background-color: #fff;padding: 30px;max-width: 525px;margin: 0 auto;border-radius: 5px;">
+        <p>Hello {{ subscriber.name }}</p>
+        <p>
+            <strong>Order number: </strong> {{ data.order_id }}<br />
+            <strong>Shipping date: </strong> {{ data.shipping_date }}<br />
+        </p>
+        <br />
+        <p>
+            Transactional templates supports arbitrary parameters.
+            Render them using <code>data.your_param_name</code>.
+        </p>
+    </div>
+</body>
+</html>
+', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE type = 'tx' AND body = '{% comment %}Adapted from listmonk static/email-templates/sample-tx.tpl at 6fcd95f.{% endcomment %}
+<!doctype html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+        <base target="_blank">
+
+        <style>
+            body {
+                background-color: #F0F1F3;
+                font-family: ''Helvetica Neue'', ''Segoe UI'', Helvetica, sans-serif;
+                font-size: 15px;
+                line-height: 26px;
+                margin: 0;
+                color: #444;
+            }
+
+            pre {
+                background: #f4f4f4f4;
+                padding: 2px;
+            }
+
+            table {
+                width: 100%;
+                border: 1px solid #ddd;
+            }
+            table td {
+                border-color: #ddd;
+                padding: 5px;
+            }
+
+            .wrap {
+                background-color: #fff;
+                padding: 30px;
+                max-width: 525px;
+                margin: 0 auto;
+                border-radius: 5px;
+            }
+
+            .button {
+                background: #0055d4;
+                border-radius: 3px;
+                text-decoration: none !important;
+                color: #fff !important;
+                font-weight: bold;
+                padding: 10px 30px;
+                display: inline-block;
+            }
+            .button:hover {
+                background: #111;
+            }
+
+            .footer {
+                text-align: center;
+                font-size: 12px;
+                color: #888;
+            }
+                .footer a {
+                    color: #888;
+                    margin-right: 5px;
+                }
+
+            .gutter {
+                padding: 30px;
+            }
+
+            img {
+                max-width: 100%;
+                height: auto;
+            }
+
+            a {
+                color: #0055d4;
+            }
+                a:hover {
+                    color: #111;
+                }
+            @media screen and (max-width: 600px) {
+                .wrap {
+                    max-width: auto;
+                }
+                .gutter {
+                    padding: 10px;
+                }
+            }
+        </style>
+    </head>
+<body style="background-color: #F0F1F3;font-family: ''Helvetica Neue'', ''Segoe UI'', Helvetica, sans-serif;font-size: 15px;line-height: 26px;margin: 0;color: #444;">
+    <div class="gutter" style="padding: 30px;">&nbsp;</div>
+    <div class="wrap" style="background-color: #fff;padding: 30px;max-width: 525px;margin: 0 auto;border-radius: 5px;">
+        <p>Hello {{ subscriber.name }}</p>
+        <p>
+            <strong>Order number: </strong> {{ data.order_id }}<br />
+            <strong>Shipping date: </strong> {{ data.shipping_date }}<br />
+        </p>
+        <br />
+        <p>
+            Transactional templates supports arbitrary parameters.
+            Render them using <code>data.your_param_name</code>.
+        </p>
+    </div>
+</body>
+</html>
+';

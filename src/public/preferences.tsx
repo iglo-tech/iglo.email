@@ -137,21 +137,29 @@ export function subscriptionPage(
           ? t.T("globals.terms.unsubscribed")
           : t.T("public.unsubscribeTitle");
   const pending = mode.kind === "pending";
-  const subscriptions = showManage
-    ? subscribers
-        .visibleSubscriptions(subscriber.id)
-        .filter((list) =>
-          pending
-            ? list.subscriptionStatus === "unconfirmed"
-            : list.subscriptionStatus !== "unsubscribed",
-        )
-    : [];
+  // The public lists a manage view changes: those not unsubscribed (unconfirmed, for a pending link).
+  const manageable = subscribers
+    .visibleSubscriptions(subscriber.id)
+    .filter((list) =>
+      pending
+        ? list.subscriptionStatus === "unconfirmed"
+        : list.subscriptionStatus !== "unsubscribed",
+    );
+  // B130 (D128): with no public list to manage, the page has no manage link and no preference form, and
+  // the manage view keeps only the privacy actions. `privacy.allow_preferences` stays the explicit switch.
+  const managePrefs = options.allowPreferences && manageable.length > 0;
+  const subscriptions = showManage ? manageable : [];
+  // A manage view with nothing to show (no public list, not a transactional link) has no preference section.
+  const emptyManage = showManage && subscriptions.length === 0 && !transactional;
   const blocklist = mode.kind === "paired" && mode.blocklist && options.allowBlocklist;
   // B126 (D123 item 8): a transactional link offers export only. A wipe is a marketing or campaign link's.
   const privacyPaired = mode.kind === "paired" ? mode.privacy : transactional;
   const offersExport = privacyPaired && options.allowExport;
   const offersWipe = mode.kind === "paired" && mode.privacy && options.allowWipe;
   const privacy = offersExport || offersWipe;
+  // B130 (D128, review r1): a manage view with neither a preference section nor a privacy action says so,
+  // rather than rendering a page with only its header.
+  const nothingToManage = emptyManage && !privacy;
   const base = mode.kind === "pending" ? "" : mode.base;
   const body = render(
     <PublicShell
@@ -160,135 +168,147 @@ export function subscriptionPage(
       archiveTitle={t.T("public.archiveTitle")}
       site={options}
     >
-      <section class="section">
-        {alreadyNames ? (
-          <>
-            <h2>{t.T("globals.terms.unsubscribed")}</h2>
-            <div>
-              <p>
-                {alreadyNames.length
-                  ? t
-                      .T("public.alreadyUnsubscribedLists")
-                      .replaceAll("{lists}", () => alreadyNames.join(", "))
-                  : t.T("public.alreadyUnsubscribed")}
-              </p>
-              {options.allowPreferences ? (
-                <p>
-                  <a href="?manage=true">{t.T("public.managePrefs")}</a>
-                </p>
-              ) : null}
-            </div>
-          </>
-        ) : transactionalView === "confirmed" ? (
-          <>
-            <h2>{t.T("public.emailSettings")}</h2>
-            <p>{siteText(t.T("public.txConfirmedInfo"), options.siteName)}</p>
-          </>
-        ) : !showManage ? (
-          <>
-            <h2>
-              {transactional ? t.T("public.cancelPending") : t.T("globals.buttons.unsubscribe")}
-            </h2>
-            <form method="post" class="unsub-form">
+      {emptyManage ? null : (
+        <section class="section">
+          {alreadyNames ? (
+            <>
+              <h2>{t.T("globals.terms.unsubscribed")}</h2>
               <div>
-                {transactional ? (
+                <p>
+                  {alreadyNames.length
+                    ? t
+                        .T("public.alreadyUnsubscribedLists")
+                        .replaceAll("{lists}", () => alreadyNames.join(", "))
+                    : t.T("public.alreadyUnsubscribed")}
+                </p>
+                {managePrefs ? (
                   <p>
-                    {must(memberships, "transactional memberships").pendingNames.length
-                      ? t
-                          .T("public.pendingNamed")
-                          .replaceAll("{lists}", () =>
-                            must(memberships, "transactional memberships").pendingNames.join(", "),
-                          )
-                      : t.T("public.pendingGeneric")}
+                    <a href="?manage=true">{t.T("public.managePrefs")}</a>
                   </p>
-                ) : (
-                  <p>{t.T("public.unsubHelp")}</p>
-                )}
-                {blocklist ? (
-                  <>
-                    <hr />
-                    <p class="small">
-                      <input id="privacy-blocklist" type="checkbox" name="blocklist" value="true" />{" "}
-                      <label for="privacy-blocklist">{t.T("public.unsubFull")}</label>
+                ) : null}
+              </div>
+            </>
+          ) : transactionalView === "confirmed" ? (
+            <>
+              <h2>{t.T("public.emailSettings")}</h2>
+              <p>{siteText(t.T("public.txConfirmedInfo"), options.siteName)}</p>
+            </>
+          ) : !showManage ? (
+            <>
+              <h2>
+                {transactional ? t.T("public.cancelPending") : t.T("globals.buttons.unsubscribe")}
+              </h2>
+              <form method="post" class="unsub-form">
+                <div>
+                  {transactional ? (
+                    <p>
+                      {must(memberships, "transactional memberships").pendingNames.length
+                        ? t
+                            .T("public.pendingNamed")
+                            .replaceAll("{lists}", () =>
+                              must(memberships, "transactional memberships").pendingNames.join(
+                                ", ",
+                              ),
+                            )
+                        : t.T("public.pendingGeneric")}
                     </p>
+                  ) : (
+                    <p>{t.T("public.unsubHelp")}</p>
+                  )}
+                  {blocklist ? (
+                    <>
+                      <hr />
+                      <p class="small">
+                        <input
+                          id="privacy-blocklist"
+                          type="checkbox"
+                          name="blocklist"
+                          value="true"
+                        />{" "}
+                        <label for="privacy-blocklist">{t.T("public.unsubAllLists")}</label>
+                      </p>
+                    </>
+                  ) : null}
+                  <p>
+                    <button type="submit" class="button" id="btn-unsub">
+                      {transactional
+                        ? t.T("public.cancelPending")
+                        : t.T("globals.buttons.unsubscribe")}
+                    </button>
+                  </p>
+                  {managePrefs ? <a href="?manage=true">{t.T("public.managePrefs")}</a> : null}
+                </div>
+              </form>
+            </>
+          ) : subscriptions.length ? (
+            <form method="post" class="manage-form">
+              <div>
+                <input type="hidden" name="manage" value="true" />
+                <h2>{t.T("public.managePrefs")}</h2>
+                {pending ? null : (
+                  <>
+                    <label for="manage-name">{t.T("globals.fields.name")}</label>
+                    <input
+                      id="manage-name"
+                      type="text"
+                      name="name"
+                      value={subscriber.name}
+                      maxlength="256"
+                      required
+                    />
                   </>
+                )}
+                {subscriptions.length ? (
+                  <>
+                    <br />
+                    <br />
+                    <h3>{t.T("public.managePrefsUnsub")}</h3>
+                    <ul class="lists">
+                      {subscriptions.map((list) => (
+                        <li>
+                          <input
+                            id={`l-${list.uuid}`}
+                            type="checkbox"
+                            name="l"
+                            value={list.uuid}
+                            checked
+                          />{" "}
+                          <label for={`l-${list.uuid}`}>{list.name}</label>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+                {blocklist ? (
+                  <p class="small">
+                    <input
+                      id="privacy-blocklist"
+                      type="checkbox"
+                      name="blocklist"
+                      value="true"
+                      onchange="unsubAll(event)"
+                    />{" "}
+                    <label for="privacy-blocklist">{t.T("public.unsubAllLists")}</label>
+                  </p>
                 ) : null}
                 <p>
                   <button type="submit" class="button" id="btn-unsub">
-                    {transactional
-                      ? t.T("public.cancelPending")
-                      : t.T("globals.buttons.unsubscribe")}
+                    {t.T("globals.buttons.save")}
                   </button>
                 </p>
-                {options.allowPreferences ? (
-                  <a href="?manage=true">{t.T("public.managePrefs")}</a>
-                ) : null}
               </div>
             </form>
-          </>
-        ) : (
-          <form method="post" class="manage-form">
-            <div>
-              <input type="hidden" name="manage" value="true" />
-              <h2>{t.T("public.managePrefs")}</h2>
-              {transactional && !subscriptions.length ? (
-                <p>{siteText(t.T("public.txConfirmedInfo"), options.siteName)}</p>
-              ) : null}
-              {pending ? null : (
-                <>
-                  <label for="manage-name">{t.T("globals.fields.name")}</label>
-                  <input
-                    id="manage-name"
-                    type="text"
-                    name="name"
-                    value={subscriber.name}
-                    maxlength="256"
-                    required
-                  />
-                </>
-              )}
-              {subscriptions.length ? (
-                <>
-                  <br />
-                  <br />
-                  <h3>{t.T("public.managePrefsUnsub")}</h3>
-                  <ul class="lists">
-                    {subscriptions.map((list) => (
-                      <li>
-                        <input
-                          id={`l-${list.uuid}`}
-                          type="checkbox"
-                          name="l"
-                          value={list.uuid}
-                          checked
-                        />{" "}
-                        <label for={`l-${list.uuid}`}>{list.name}</label>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              ) : null}
-              {blocklist ? (
-                <p class="small">
-                  <input
-                    id="privacy-blocklist"
-                    type="checkbox"
-                    name="blocklist"
-                    value="true"
-                    onchange="unsubAll(event)"
-                  />{" "}
-                  <label for="privacy-blocklist">{t.T("public.unsubFull")}</label>
-                </p>
-              ) : null}
-              <p>
-                <button type="submit" class="button" id="btn-unsub">
-                  {t.T("globals.buttons.save")}
-                </button>
-              </p>
-            </div>
-          </form>
-        )}
-      </section>
+          ) : transactional ? (
+            <p>{siteText(t.T("public.txConfirmedInfo"), options.siteName)}</p>
+          ) : null}
+        </section>
+      )}
+      {nothingToManage ? (
+        <section class="section">
+          <h2>{t.T("public.managePrefs")}</h2>
+          <p>{t.T("public.nothingToManage")}</p>
+        </section>
+      ) : null}
       {privacy ? (
         <>
           <form
@@ -337,7 +357,9 @@ export function subscriptionPage(
           </form>
         </>
       ) : null}
-      {alreadyNames || transactionalView === "confirmed" ? backLink(t, options) : null}
+      {alreadyNames || transactionalView === "confirmed" || nothingToManage
+        ? backLink(t, options)
+        : null}
       {raw(`<script>
 ${
   privacy
@@ -408,12 +430,11 @@ export function savePreferences(
       if (kept.has(list.uuid) || list.subscriptionStatus === "unsubscribed") {
         continue;
       }
-      const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId, false);
+      const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId);
       deps.effects.unsubscribed({
         subscriberId: subscriber.id,
         listId: list.listId,
         listIds,
-        blocklisted: false,
       });
     }
     return true;
@@ -498,12 +519,11 @@ export function savePendingLists(
       if (list.subscriptionStatus !== "unconfirmed" || kept.has(list.uuid)) {
         continue;
       }
-      const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId, false);
+      const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId);
       deps.effects.unsubscribed({
         subscriberId: subscriber.id,
         listId: list.listId,
         listIds,
-        blocklisted: false,
       });
     }
     return true;
