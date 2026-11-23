@@ -7,14 +7,26 @@ import { must } from "@/invariant";
 interface DecodedWord {
   encoded: boolean;
   content: string;
+  /** An unsupported charset, which Go refuses as its own error (kept as it is). */
   error: boolean;
+  /** A malformed encoded word that a strict parse refuses wherever it stands (B117a, D136). */
+  refused?: boolean;
 }
 const visible = (c: string) =>
   !!c && ((c >= "!" && c <= "~") || must(c.codePointAt(0), "code point") >= 128);
 const atext = (c: string) => visible(c) && !String.raw`()<>[]:;@\,"`.includes(c);
 // Decode syntax before charset conversion, as mime.WordDecoder does. Invalid
 // encoded words remain literal; only an unsupported charset is fatal.
-const decodeWord = (word: string): DecodedWord => {
+const decodeWord = (word: string, strict = false): DecodedWord => {
+  // B117a (D136): a word shaped like an encoded word must name a charset and an encoding (B or Q), or
+  // a strict parse refuses the address wherever the word stands. Go keeps such a word as literal text.
+  if (strict && word.length >= 4 && word.startsWith("=?") && word.endsWith("?=")) {
+    const parts = word.slice(2, -2).split("?");
+    const [charset = "", encoding = ""] = parts;
+    if (parts.length !== 3 || !charset || !/^[bBqQ]$/.test(encoding)) {
+      return { encoded: false, content: word, error: false, refused: true };
+    }
+  }
   const match = /^=\?([^?]+)\?([bBqQ])\?([^?]*)\?=$/.exec(word);
   if (!match) {
     return { encoded: false, content: word, error: false };
@@ -61,7 +73,7 @@ const decodeWord = (word: string): DecodedWord => {
     error: !["utf-8", "iso-8859-1", "us-ascii"].includes(charset),
   };
 };
-export function parseAddress(input: string): string | undefined {
+export function parseAddress(input: string, strict = false): string | undefined {
   let pos = 0;
   let mailbox: string | undefined;
   const space = () => {
@@ -124,7 +136,12 @@ export function parseAddress(input: string): string | undefined {
       }
     }
     return (
-      depth === 0 && (!display || content.split(/[ \t]+/).every((word) => !decodeWord(word).error))
+      depth === 0 &&
+      (!display ||
+        content.split(/[ \t]+/).every((word) => {
+          const decoded = decodeWord(word, strict);
+          return !decoded.error && !decoded.refused;
+        }))
     );
   };
   const cfws = () => {
@@ -202,7 +219,10 @@ export function parseAddress(input: string): string | undefined {
         }
         const decoded = isQuoted
           ? { encoded: false, content: "", error: false }
-          : decodeWord(input.slice(before, pos));
+          : decodeWord(input.slice(before, pos), strict);
+        if (decoded.refused) {
+          return -1;
+        }
         if (decoded.error) {
           if (!words && !encodedContent) {
             return -1;
@@ -257,5 +277,5 @@ export function parseAddress(input: string): string | undefined {
 }
 
 export function validFromAddress(input: string): boolean {
-  return parseAddress(input) !== undefined;
+  return parseAddress(input, true) !== undefined;
 }

@@ -43,14 +43,14 @@ export async function runSettingsBinding(target: {
     (
       await put(
         "/api/settings",
-        xml("<AppNotifyEmails/><AppNotifyEmails>x</AppNotifyEmails>"),
+        xml("<AppNotifyEmails/><AppNotifyEmails>ops@example.test</AppNotifyEmails>"),
         "application/xml",
       )
     ).status === 200,
     "repeated-slice",
   );
   check(
-    JSON.stringify((await get())["app.notify_emails"]) === '["","x"]',
+    JSON.stringify((await get())["app.notify_emails"]) === '["","ops@example.test"]',
     "repeated-slice-projection",
   );
   check(
@@ -166,9 +166,9 @@ export async function runSettingsBinding(target: {
     ],
     [
       "slice-reset",
-      '"app.notify_emails":["a"],"APP.NOTIFY_EMAILS":null,"app.notify_emails":["b",null]',
+      '"app.notify_emails":["a@example.test"],"APP.NOTIFY_EMAILS":null,"app.notify_emails":["b@example.test",null]',
       "app.notify_emails",
-      ["b", ""],
+      ["b@example.test", ""],
     ],
     [
       "map-duplicate",

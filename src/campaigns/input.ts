@@ -92,6 +92,41 @@ const bad = (): never => {
 };
 const text = (value: unknown) =>
   typeof value === "string" && value.length <= TEXT_LIMIT ? value.toWellFormed() : bad();
+const sendAtPattern =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/i;
+/**
+ * The instant an RFC 3339 `send_at` names, or undefined when it names no such moment (B117a). Date.parse
+ * rolls an impossible day (2030-02-29) or hour (T24:00) over to the next valid one, so each field is
+ * checked against its own range first, as Go's time parse does.
+ */
+function sendAtInstant(raw: string): number | undefined {
+  const match = sendAtPattern.exec(raw);
+  if (!match) {
+    return undefined;
+  }
+  const field = (index: number) => Number(match[index] ?? 0);
+  const year = field(1);
+  const month = field(2);
+  const day = field(3);
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  if (month < 1 || month > 12) {
+    return undefined;
+  }
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (
+    day < 1 ||
+    day > (days ?? 0) ||
+    field(4) > 23 ||
+    field(5) > 59 ||
+    field(6) > 59 ||
+    field(7) > 23 ||
+    field(8) > 59
+  ) {
+    return undefined;
+  }
+  const instant = Date.parse(raw);
+  return Number.isFinite(instant) ? instant : undefined;
+}
 const integer = (value: unknown) =>
   typeof value === "number" && Number.isSafeInteger(value) ? BigInt(value) : bad();
 // Array.isArray narrows an unknown value to any[]; the predicate keeps its elements unknown.
@@ -124,14 +159,7 @@ export function bindCampaign(input: Record<string, unknown>): CampaignRequest {
     if (value === null) {
       out.send_at = null;
     } else {
-      const raw = text(value);
-      if (
-        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw) ||
-        !Number.isFinite(Date.parse(raw))
-      ) {
-        bad();
-      }
-      out.send_at = new Date(Date.parse(raw)).toISOString();
+      out.send_at = new Date(sendAtInstant(text(value)) ?? bad()).toISOString();
     }
   }
   if (input.headers !== undefined && input.headers !== null) {

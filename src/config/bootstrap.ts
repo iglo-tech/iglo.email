@@ -229,6 +229,10 @@ function missingSchemeReason(value: string): string {
   if (port !== undefined && !portInRange(port)) {
     return "the port must be from 1 to 65535";
   }
+  // B117a (D136): `host:00080` names a port with a leading zero, which gets no suggestion (D107).
+  if (port !== undefined && port.length > 1 && port.startsWith("0")) {
+    return `${expectedUrl} with a host name; the port has a leading zero, so write ${Number(port)} instead of ${port}, and the scheme is not guessed`;
+  }
   return `${expectedUrl} with a host name; the scheme is not guessed`;
 }
 
@@ -239,6 +243,10 @@ function missingSchemeReason(value: string): string {
  */
 export type AbsoluteUrlKind = "root-url" | "site-url";
 
+// JSON.stringify escapes the C0 controls only, so DEL and the C1 controls are escaped too (B117a, D136).
+const escapeC1 = (text: string) =>
+  text.replaceAll(/[\u007f-\u009f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+
 /** The D107 rules for an absolute http(s) URL of the given kind. The message names that kind. */
 export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void {
   const site = kind === "site-url";
@@ -246,7 +254,7 @@ export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void 
   const noun = site ? "site URL" : "root URL";
   // A value with credentials, a query or a fragment may hold a secret, so the message leaves it out.
   const withheld = /[@?#]/.test(value);
-  const shown = withheld ? "(value not shown)" : JSON.stringify(value);
+  const shown = withheld ? "(value not shown)" : escapeC1(JSON.stringify(value));
   const fail = (reason: string): never => {
     throw new Error(`Invalid ${name} ${shown}: ${reason}`);
   };
@@ -255,7 +263,7 @@ export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void 
     fail("the value contains whitespace or a backslash; remove it");
   }
   // oxlint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f]/.test(value)) {
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(value)) {
     fail("the value contains a control character; remove it");
   }
   // A suggestion is only for a value with no scheme at all. Any other value names its wrong part,
@@ -268,7 +276,13 @@ export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void 
     fail(missingSchemeReason(value));
   }
   if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) {
-    fail("the scheme must be followed by //");
+    // B117a (D136): `a.b:/c` reads as a scheme `a.b` with one slash, and names that scheme.
+    const scheme = value.slice(0, value.indexOf(":"));
+    fail(
+      schemeNames.test(value)
+        ? "the scheme must be followed by //"
+        : `the scheme must be followed by //, and "${scheme}" is not http or https`,
+    );
   }
 
   let url: URL | undefined;

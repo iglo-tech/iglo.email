@@ -60,6 +60,46 @@ test("send_at must be after the injected clock, and timestamps use it", async ()
   expect(updated.body.data.updated_at).toBe(f.clock.now().toISOString());
 });
 
+// B117a: a send_at names a moment the calendar has. Date.parse would roll 2030-02-29 to March and
+// T24:00 to the next day, so both are refused, and an offset is applied to the stored instant.
+test("send_at refuses a date or time the calendar does not have, and keeps the instant it names", async () => {
+  const f = await open();
+  const news = await f.list("news");
+  for (const sendAt of [
+    "2041-02-29T10:00:00Z",
+    "2100-02-29T10:00:00Z",
+    "2040-04-31T10:00:00Z",
+    "2040-13-01T10:00:00Z",
+    "2040-00-10T10:00:00Z",
+    "2040-06-15T24:00:00Z",
+    "2040-06-15T23:60:00Z",
+    "2040-06-15T23:59:60Z",
+    "2040-06-15T10:00:00+24:00",
+  ]) {
+    const refused = await f.json("/api/campaigns", "POST", {
+      name: `bad ${sendAt}`,
+      subject: "s",
+      lists: [news],
+      send_at: sendAt,
+    });
+    expect({ sendAt, status: refused.status }).toEqual({ sendAt, status: 400 });
+  }
+  const leap = await f.campaign({
+    name: "leap",
+    subject: "s",
+    lists: [news],
+    send_at: "2040-02-29T12:00:00+05:30",
+  });
+  expect(leap.send_at).toBe("2040-02-29T06:30:00.000Z");
+  const endOfDay = await f.campaign({
+    name: "end",
+    subject: "s",
+    lists: [news],
+    send_at: "2040-02-28T23:59:59Z",
+  });
+  expect(endOfDay.send_at).toBe("2040-02-28T23:59:59.000Z");
+});
+
 test("invalid updates and duplicate slugs write nothing", async () => {
   const f = await open();
   const news = await f.list("news");

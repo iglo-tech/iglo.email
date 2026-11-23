@@ -2,6 +2,7 @@
 // exactly one plain line, with no stack and no source excerpt, and GET /api/logs shows its fixed
 // text. Through HTTP, the SNS certificate tunnel, the SES fixture's signed notices and a loopback
 // SMTP sink, so no real mail server or AWS endpoint is reached.
+import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -77,7 +78,7 @@ async function startServer(extra: Record<string, string> = {}) {
       await child.exited;
       throw error;
     }
-    return { child, port };
+    return { child, port, dataDir };
   });
 }
 
@@ -151,11 +152,21 @@ async function finishEmptyCampaign(port: number) {
 }
 
 test("an invalid admin notification address is one plain stderr line and a fixed buffer line", async () => {
-  const { child, port } = await startServer();
+  const { child, port, dataDir } = await startServer();
   try {
-    expect((await changeSettings(port, { "app.notify_emails": ["not-an-address"] })).status).toBe(
-      200,
-    );
+    // B117a (D136): the API refuses an invalid administrator address on save, so one an older build
+    // stored is written to the database while the server runs. The settings store reads its rows on
+    // each call, so the send sees it at once.
+    const db = new Database(join(dataDir, "iglo-email.db"));
+    try {
+      db.run("PRAGMA busy_timeout = 5000");
+      db.run("UPDATE settings SET value = ? WHERE key = ?", [
+        JSON.stringify(["not-an-address"]),
+        "app.notify_emails",
+      ]);
+    } finally {
+      db.close();
+    }
     await finishEmptyCampaign(port);
     await until(async () => {
       const lines = await logLines(port, "Admin notification address is not valid");

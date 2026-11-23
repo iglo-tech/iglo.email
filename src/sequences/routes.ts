@@ -137,9 +137,18 @@ const paging = (c: RequestContext) => {
     perPage: Number(positive("per_page", 100n) ?? 20n),
   };
 };
-/** The body of a preview or test: optional IDs and a sample, and `emails` for a test. */
-const previewBody = async (c: RequestContext, extra: ReadonlyArray<string> = []) => {
+/**
+ * The body of a preview or test: optional IDs and a sample, and `emails` for a test. The caller's
+ * permissions are checked once the body is read and before it is parsed, so a refused caller gets 403
+ * whatever the body holds (B117a, D136).
+ */
+const previewBody = async (
+  c: RequestContext,
+  extra: ReadonlyArray<string>,
+  authorize: () => void,
+) => {
   const bytes = await readBounded(c.request, PREVIEW_BODY_BYTES);
+  authorize();
   const value = bytes.length === 0 ? {} : parseJson(c.request, bytes);
   if (!isObject(value)) {
     throw invalid(c, "body");
@@ -511,10 +520,9 @@ export function registerSequenceRoutes(
     "POST",
     "/api/sequences/:id/steps/:step/preview",
     async (c) => {
-      const value = await previewBody(c);
       // The body was read after the caller was authorized: its permissions are checked again
-      // before its subscriber is resolved, so a revocation during the upload counts (D103).
-      auth.revalidate(c, GET);
+      // before it is parsed and its subscriber is resolved, so a revocation during the upload counts (D103).
+      const value = await previewBody(c, [], () => auth.revalidate(c, GET));
       const { sequence, step } = stepOf(c);
       const template = stepTemplate(step);
       const prepared = previewFor(c, value, step, sequence);
@@ -540,11 +548,12 @@ export function registerSequenceRoutes(
     "/api/sequences/:id/steps/:step/test",
     async (c) => {
       refuseWhileHeld(c.app.db);
-      const value = await previewBody(c, ["emails"]);
-      // As for the preview: the permissions are checked again once the body is read, before the
-      // subscriber is resolved and before anything renders (and again right before sending).
-      auth.revalidate(c, "tx:send");
-      auth.revalidate(c, MANAGE);
+      // As for the preview: the permissions are checked again once the body is read, before it is parsed,
+      // its subscriber is resolved and anything renders (and again right before sending). B117a (D136).
+      const value = await previewBody(c, ["emails"], () => {
+        auth.revalidate(c, "tx:send");
+        auth.revalidate(c, MANAGE);
+      });
       const addresses = testAddresses(c, value.emails);
       const { sequence, step } = stepOf(c);
       const template = stepTemplate(step);

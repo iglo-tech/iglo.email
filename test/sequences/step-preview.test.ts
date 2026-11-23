@@ -743,3 +743,37 @@ test("a step test names no real subscriber UUID in its message, its headers or i
   // The placeholder stands where the subscriber's UUID would be: in the links and the body.
   expect(decoded).toContain("00000000-0000-0000-0000-000000000000");
 });
+
+// B117a (D136): the permission is checked before the body is validated, so a refused caller gets 403
+// whatever the body holds, and a permitted one still gets 400 for a bad body.
+test("a preview whose sequences:get is revoked while an invalid body is held is 403, not 400", async () => {
+  const f = await open();
+  const r = await readableBy(f, "held-invalid", ["sequences:get", "subscribers:get"]);
+  const path = `/api/sequences/${r.sequence}/steps/${r.step}/preview`;
+  const revoked = await heldPost(
+    f,
+    path,
+    { subscriber_id: r.ada, bogus: true },
+    r.headers,
+    async () => {
+      const changed = await f.json(`/api/roles/users/${r.userRoleId}`, "PUT", {
+        name: "held-invalid",
+        permissions: ["subscribers:get"],
+      });
+      expect(changed.status).toBe(200);
+    },
+  );
+  expect(revoked.status).toBe(403);
+});
+
+test("a test without tx:send is 403 for any body, and a permitted caller's bad body is 400", async () => {
+  const f = await open();
+  const { sequence, step } = await setup(f);
+  const path = `/api/sequences/${sequence}/steps/${step}/test`;
+  const refused = await caller(f, "test-no-tx", ["sequences:get", "sequences:manage"]);
+  const bogus = JSON.stringify({ emails: ["owner@example.test"], bogus: true });
+  expect((await rawPost(refused, f, path, bogus)).status).toBe(403);
+  expect((await rawPost(refused, f, path, "{")).status).toBe(403);
+  const permitted = await caller(f, "test-tx", ["sequences:get", "sequences:manage", "tx:send"]);
+  expect((await rawPost(permitted, f, path, bogus)).status).toBe(400);
+});

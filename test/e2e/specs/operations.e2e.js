@@ -234,7 +234,7 @@ async function startImport(page, { lists, delim, text }) {
 
 const importStatus = async (page) => (await ok(page, "/api/import/subscribers")).status;
 
-test("the admin notification list saves what the form holds, a bad entry included, and reloads", async ({
+test("the admin notification list refuses a bad entry on save, and saves a list of valid ones", async ({
   page,
 }) => {
   const valid = address("ops");
@@ -245,15 +245,17 @@ test("the admin notification list saves what the form holds, a bad entry include
   await page.getByRole("tab", { name: "General", exact: true }).click();
   const field = page.locator('input[name="app.notify_emails"]');
 
-  // The form checks no address, and nor does the server. The operations guide says an entry that
-  // is not an address is skipped at each notification and the valid entries still get mail, so a
-  // list with one bad entry saves as typed, and its valid entries are what reloads.
+  // The server checks every address on save (B117a, D136): a list with one bad entry is refused,
+  // names that entry, and writes nothing.
   await field.fill(`not-an-address, ${valid}`);
-  await saveGeneral(page);
-  expect((await ok(page, "/api/settings"))["app.notify_emails"]).toEqual(["not-an-address", valid]);
-  await page.reload();
-  await page.getByRole("tab", { name: "General", exact: true }).click();
-  await expect(field).toHaveValue(new RegExp(valid));
+  const refused = page.waitForResponse(
+    (r) => new URL(r.url()).pathname === "/api/settings" && r.request().method() === "PUT",
+  );
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const response = await refused;
+  expect(response.status()).toBe(400);
+  expect(await response.text()).toContain("invalid notification email address: not-an-address");
+  expect((await ok(page, "/api/settings"))["app.notify_emails"]).not.toContain(valid);
 
   await field.fill(`${valid}, ${second}`);
   await saveGeneral(page);
