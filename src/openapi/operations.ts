@@ -844,6 +844,8 @@ const sending: Array<Operation> = [
     id: "resendById",
     tag: "Sends",
     summary: "Send a failed or unknown send again, once.",
+    description:
+      "A send to a subscriber outside the caller's list scope answers 403, as a subscriber read does, and nothing is written (D139). The same caller sees a missing send as 404.",
     native: true,
     permissions: ["sends:manage"],
     data: ref("Send"),

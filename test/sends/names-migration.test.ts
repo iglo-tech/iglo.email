@@ -1,6 +1,6 @@
-// B117d (D139): the upgrade that writes the names onto the sends it already holds. The sends are written
-// by an older schema with no names; after the upgrade, the send log names them from their template and
-// step as they stand then, and a template deleted later keeps the name its sends carry.
+// B117d (D139): the upgrade adds the name columns and rewrites no send. A send an older schema holds shows
+// its live template and sequence names until they are deleted, as before; a send queued after the upgrade
+// keeps its names once they are deleted (tx and sequence tests cover that path).
 import { expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,10 +11,10 @@ import { txFixture } from "@/test/tx/fixture";
 import { asBody } from "@/test/read-body";
 import { TestClock } from "@/test/server/fixture";
 
-/** The migration that writes the names onto the sends (B117d). Sends before it carry none. */
+/** The migration that adds the name columns to the sends (B117d). Sends before it carry no stored name. */
 const NAMES_VERSION = 31;
 
-test("an upgrade names the sends it already holds, and a template deleted later keeps its name", async () => {
+test("an upgrade keeps the sends it holds: their live names show until deleted, and nothing is rewritten", async () => {
   const directory = mkdtempSync(join(tmpdir(), "iglo-send-names-"));
   const clock = new TestClock();
   const db = openDatabase(directory);
@@ -63,6 +63,7 @@ test("an upgrade names the sends it already holds, and a template deleted later 
       sequence_name: null,
     });
 
+    // The template is deleted: its old send has no template left to name it, as before the upgrade.
     const template = byAddress("tx@example.test").template_id;
     expect((await f.json(`/api/templates/${template}`, "DELETE")).status).toBe(200);
     const after = asBody<{ results: Array<Record<string, unknown>> }>(
@@ -70,7 +71,7 @@ test("an upgrade names the sends it already holds, and a template deleted later 
     ).results;
     expect(after.find((row) => row.to_email === "tx@example.test")).toMatchObject({
       template_id: null,
-      template_name: "Old template",
+      template_name: null,
     });
   } finally {
     await f.close();

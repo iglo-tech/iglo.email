@@ -4,6 +4,7 @@ import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import type { Message, Outcome } from "@/messaging/email";
 import { decodePayload, encodePayload } from "@/messaging/payload";
+import { inListScopeSQL } from "@/subscribers/condition-sql";
 import type { Scope, SubscriberStore } from "@/subscribers/store";
 import { sanitizeEmail } from "@/subscribers/email";
 import { simpleLower } from "@/subscribers/unicode-lower";
@@ -156,7 +157,7 @@ function expectRow<T>(row: T | null, what: string): T {
   }
   return row;
 }
-function project(row: PublicRow, label?: StepLabel) {
+function project(row: PublicRow, label?: StepLabel, liveTemplateName?: string) {
   return {
     id: jsonID(row.id),
     uuid: row.uuid,
@@ -165,18 +166,18 @@ function project(row: PublicRow, label?: StepLabel) {
     subscriber_id: jsonID(row.subscriber_id),
     to_email: row.to_email,
     template_id: jsonID(row.template_id),
-    // The names the send was queued with (B117d, D139): a transactional send names what it sent (B127),
-    // and a deleted template or sequence keeps its name.
-    template_name: row.template_name,
+    // The name the send was queued with (B117d, D139): a transactional send names what it sent (B127), and a
+    // deleted template keeps its name. A send queued before the names were stored shows the live name.
+    template_name: row.template_name ?? liveTemplateName ?? null,
     enrollment_id: jsonID(row.enrollment_id),
     step_id: jsonID(row.step_id),
     list_id: jsonID(row.list_id),
     subject: row.subject,
     subject_missing: subjectMissing(row),
-    // A sequence send's sequence and the step's position are read now (null for a removed step); the
-    // sequence's name is the one it had when the send was queued.
+    // A sequence send's sequence and the step's position are read now (null for a removed step). The
+    // sequence's name is the one the send was queued with, else the live one (B117d, D139).
     sequence_id: label ? jsonID(label.sequence_id) : null,
-    sequence_name: row.sequence_name,
+    sequence_name: row.sequence_name ?? label?.sequence_name ?? null,
     step_position: label ? Number(label.position) : null,
     status: row.status,
     skip_reason: row.skip_reason,
@@ -233,10 +234,29 @@ export function createSends(options: {
       ? options.stepLabels(ids)
       : new Map<bigint, StepLabel>();
   };
+  // The live template name of each row that stores none (a send queued before B117d, D139): one lookup per page,
+  // in the templates module, and none for a row that stores its name.
+  const liveTemplateRows = (rows: Array<PublicRow>): Map<bigint, string> => {
+    const ids = [
+      ...new Set(
+        rows.flatMap((row) =>
+          row.template_name === null && row.template_id !== null ? [row.template_id] : [],
+        ),
+      ),
+    ];
+    return ids.length && options.templateNames
+      ? options.templateNames(ids)
+      : new Map<bigint, string>();
+  };
   const projectAll = (rows: Array<PublicRow>) => {
     const labels = labelRows(rows);
+    const templates = liveTemplateRows(rows);
     return rows.map((row) =>
-      project(row, row.step_id === null ? undefined : labels.get(row.step_id)),
+      project(
+        row,
+        row.step_id === null ? undefined : labels.get(row.step_id),
+        row.template_id === null ? undefined : templates.get(row.template_id),
+      ),
     );
   };
   const projectOne = (row: PublicRow) => expectRow(projectAll([row])[0] ?? null, "send");
@@ -1160,10 +1180,10 @@ export function createSends(options: {
       if (!filter.scope.all) {
         // A list-scoped reader sees the sends to subscribers with a membership on one of its lists, the
         // rule a subscriber read applies (B117d, D139). An external recipient has none, so it is left out.
-        clauses.push(
-          "subscriber_id IN (SELECT m.subscriber_id FROM subscriber_lists m WHERE m.list_id IN (SELECT value FROM json_each(?)))",
-        );
-        values.push(`[${filter.scope.ids.join(",")}]`);
+        // The membership SQL belongs to the subscribers module.
+        const scoped = inListScopeSQL("subscriber_id", filter.scope);
+        clauses.push(scoped.sql);
+        values.push(...(scoped.args as Array<string>));
       }
       const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
       const total = expectRow(
