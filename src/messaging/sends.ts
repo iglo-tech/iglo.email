@@ -4,7 +4,8 @@ import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import type { Message, Outcome } from "@/messaging/email";
 import { decodePayload, encodePayload } from "@/messaging/payload";
-import type { SubscriberStore } from "@/subscribers/store";
+import { inListScopeSQL } from "@/subscribers/condition-sql";
+import type { Scope, SubscriberStore } from "@/subscribers/store";
 import { sanitizeEmail } from "@/subscribers/email";
 import { simpleLower } from "@/subscribers/unicode-lower";
 import { trimSpace } from "@/lists/store";
@@ -66,6 +67,9 @@ interface PublicRow {
   sent_at: string | null;
   /** From the prepared message; null once the payload is dropped (retention, or anonymization). */
   subject: string | null;
+  /** The template's and the sequence's names as the send was queued (B117d, D139); null when it has none. */
+  template_name: string | null;
+  sequence_name: string | null;
 }
 /** Why a send has no subject (B127 r1): a skipped send never had a payload, a wiped one has no address. */
 export type SubjectMissing = "skipped" | "wiped" | "retention";
@@ -110,10 +114,11 @@ export interface Claimed {
   row: Row;
   message: Message | null;
 }
-// The subject is read from the payload's JSON, one value per row returned, never stored apart.
+// The subject is read from the payload's JSON, one value per row returned, never stored apart. The names
+// are columns, written when the send is queued (B117d), so a deleted template or sequence keeps them.
 const publicColumns = `id, uuid, source, kind, subscriber_id, to_email, template_id,
   enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, error,
-  attempts, retry_of, next_attempt_at, created_at, sent_at,
+  attempts, retry_of, next_attempt_at, created_at, sent_at, template_name, sequence_name,
   json_extract(payload, '$.message.subject') AS subject`;
 /** More than the steps of a sequence, which a reorder can revisit. */
 const ENROLLMENT_SENDS = 200;
@@ -129,6 +134,11 @@ export interface EnrollmentSend {
 export interface SendFilter {
   page: number;
   perPage: number;
+  /**
+   * The sends the reader may see: every one when `all`, else those whose subscriber is on one of `ids`
+   * (B117d, D139). An external recipient is on no list, so a list-scoped reader never sees it.
+   */
+  scope: Scope;
   status?: string;
   kind?: string;
   source?: string;
@@ -147,7 +157,7 @@ function expectRow<T>(row: T | null, what: string): T {
   }
   return row;
 }
-function project(row: PublicRow, label?: StepLabel, templateName?: string) {
+function project(row: PublicRow, label?: StepLabel, liveTemplateName?: string) {
   return {
     id: jsonID(row.id),
     uuid: row.uuid,
@@ -156,16 +166,18 @@ function project(row: PublicRow, label?: StepLabel, templateName?: string) {
     subscriber_id: jsonID(row.subscriber_id),
     to_email: row.to_email,
     template_id: jsonID(row.template_id),
-    // The template's name, so a transactional send names what it sent (B127); null once it is deleted.
-    template_name: templateName ?? null,
+    // The name the send was queued with (B117d, D139): a transactional send names what it sent (B127), and a
+    // deleted template keeps its name. A send queued before the names were stored shows the live name.
+    template_name: row.template_name ?? liveTemplateName ?? null,
     enrollment_id: jsonID(row.enrollment_id),
     step_id: jsonID(row.step_id),
     list_id: jsonID(row.list_id),
     subject: row.subject,
     subject_missing: subjectMissing(row),
-    // A sequence send names its sequence and the step's position now (null for a removed step).
+    // A sequence send's sequence and the step's position are read now (null for a removed step). The
+    // sequence's name is the one the send was queued with, else the live one (B117d, D139).
     sequence_id: label ? jsonID(label.sequence_id) : null,
-    sequence_name: label?.sequence_name ?? null,
+    sequence_name: row.sequence_name ?? label?.sequence_name ?? null,
     step_position: label ? Number(label.position) : null,
     status: row.status,
     skip_reason: row.skip_reason,
@@ -222,10 +234,15 @@ export function createSends(options: {
       ? options.stepLabels(ids)
       : new Map<bigint, StepLabel>();
   };
-  // Every projection of a send carries its template's name too (B127), read in one call per list.
-  const templateRows = (rows: Array<PublicRow>): Map<bigint, string> => {
+  // The live template name of each row that stores none (a send queued before B117d, D139): one lookup per page,
+  // in the templates module, and none for a row that stores its name.
+  const liveTemplateRows = (rows: Array<PublicRow>): Map<bigint, string> => {
     const ids = [
-      ...new Set(rows.flatMap((row) => (row.template_id === null ? [] : [row.template_id]))),
+      ...new Set(
+        rows.flatMap((row) =>
+          row.template_name === null && row.template_id !== null ? [row.template_id] : [],
+        ),
+      ),
     ];
     return ids.length && options.templateNames
       ? options.templateNames(ids)
@@ -233,16 +250,47 @@ export function createSends(options: {
   };
   const projectAll = (rows: Array<PublicRow>) => {
     const labels = labelRows(rows);
-    const names = templateRows(rows);
+    const templates = liveTemplateRows(rows);
     return rows.map((row) =>
       project(
         row,
         row.step_id === null ? undefined : labels.get(row.step_id),
-        row.template_id === null ? undefined : names.get(row.template_id),
+        row.template_id === null ? undefined : templates.get(row.template_id),
       ),
     );
   };
   const projectOne = (row: PublicRow) => expectRow(projectAll([row])[0] ?? null, "send");
+  /**
+   * The names a send is queued with (B117d, D139), read by the modules that own the template and the
+   * step, inside the queueing transaction. A deleted template or sequence therefore keeps its name.
+   */
+  type QueueNames = { templates: Map<bigint, string>; steps: Map<bigint, StepLabel> };
+  const queueNames = (
+    templateIds: Array<bigint | null | undefined>,
+    stepIds: Array<bigint | null | undefined>,
+  ): QueueNames => {
+    const templates = templateIds.filter((id): id is bigint => id !== null && id !== undefined);
+    const steps = stepIds.filter((id): id is bigint => id !== null && id !== undefined);
+    return {
+      templates:
+        templates.length && options.templateNames
+          ? options.templateNames(templates)
+          : new Map<bigint, string>(),
+      steps:
+        steps.length && options.stepLabels
+          ? options.stepLabels(steps)
+          : new Map<bigint, StepLabel>(),
+    };
+  };
+  const templateNameOf = (names: QueueNames, id: bigint | null | undefined) =>
+    id === null || id === undefined ? null : (names.templates.get(id) ?? null);
+  const sequenceNameOf = (names: QueueNames, id: bigint | null | undefined) =>
+    id === null || id === undefined ? null : (names.steps.get(id)?.sequence_name ?? null);
+  /** Whether a reader of `scope` may read this send: every send for an unrestricted reader (B117d). */
+  const covers = (row: { subscriber_id: bigint | null }, scope: Scope) =>
+    scope.all ||
+    (row.subscriber_id !== null &&
+      subscribers.readable([row.subscriber_id], scope).has(row.subscriber_id));
   const ended = (row: Row, status: string, error: string, changes: number) => {
     if (!changes) {
       return;
@@ -547,9 +595,10 @@ export function createSends(options: {
     const payload = encodePayload(input.message, subscriber?.uuid ?? null);
     const uuid = crypto.randomUUID();
     const id = writeTransaction(db, () => {
+      const names = queueNames([input.templateId], [input.stepId]);
       const row = db
         .query<{ id: bigint }, Array<SQLQueryBindings>>(
-          `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?) RETURNING id`,
+          `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, smtp_message_id, payload, created_at, template_name, sequence_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?) RETURNING id`,
         )
         .get(
           uuid,
@@ -565,18 +614,24 @@ export function createSends(options: {
           messageId(uuid),
           payload,
           now(),
+          templateNameOf(names, input.templateId),
+          sequenceNameOf(names, input.stepId),
         );
       return expectRow(row, "inserted send").id;
     });
     wake();
     return projectOne(expectRow(getPublic(id), "queued send"));
   }
-  function resend(id: bigint, authorize: () => void) {
+  /** A resend of a send the reader's scope does not cover answers `"forbidden"`, and writes nothing (B117d). */
+  function resend(id: bigint, authorize: () => void, scope: Scope) {
     const result = writeTransaction(db, () => {
       authorize();
       const original = get(id);
       if (!original) {
         throw new HttpError(404);
+      }
+      if (!covers(original, scope)) {
+        return "forbidden" as const;
       }
       const child = byChild(id);
       if (child) {
@@ -597,7 +652,7 @@ export function createSends(options: {
       const uuid = crypto.randomUUID();
       const inserted = db
         .query<{ id: bigint }, Array<SQLQueryBindings>>(
-          `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, list_id, status, smtp_message_id, payload, retry_of, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?) RETURNING id`,
+          `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, list_id, status, smtp_message_id, payload, retry_of, created_at, template_name) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?) RETURNING id`,
         )
         .get(
           uuid,
@@ -611,6 +666,8 @@ export function createSends(options: {
           original.payload,
           original.id,
           now(),
+          // The child keeps the name its original was queued with; it is a resend, not a step.
+          original.template_name,
         );
       const resent = expectRow(inserted, "resent send");
       return projectOne(expectRow(getPublic(resent.id), "resent send"));
@@ -714,6 +771,10 @@ export function createSends(options: {
           };
         }
       }
+      const names = queueNames(
+        prepared.map(({ send }) => send.templateId),
+        prepared.map(({ send }) => send.stepId),
+      );
       const rows: Array<PublicRow> = [];
       const queued: Array<bigint> = [];
       prepared.forEach(({ send, subscriberUuid, payload }, index) => {
@@ -747,7 +808,7 @@ export function createSends(options: {
         const uuid = send.uuid ?? crypto.randomUUID();
         const inserted = db
           .query<{ id: bigint }, Array<SQLQueryBindings>>(
-            `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+            `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, idempotency_key, status, skip_reason, smtp_message_id, payload, created_at, template_name, sequence_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
           )
           .get(
             uuid,
@@ -765,6 +826,8 @@ export function createSends(options: {
             messageId(uuid),
             skip ? null : payload,
             now(),
+            templateNameOf(names, send.templateId),
+            sequenceNameOf(names, send.stepId),
           );
         const row = expectRow(inserted, "queued send");
         if (!skip) {
@@ -917,9 +980,10 @@ export function createSends(options: {
     if (row.enrollmentId === null || row.stepId === null) {
       throw new Error("Invalid prepared send");
     }
+    const names = queueNames([row.templateId], [row.stepId]);
     const inserted = db
       .query<{ id: bigint }, Array<SQLQueryBindings>>(
-        `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, payload, created_at) VALUES (?, 'sequence', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO sends(uuid, source, kind, subscriber_id, to_email, template_id, enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, payload, created_at, template_name, sequence_name) VALUES (?, 'sequence', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
       .get(
         row.uuid,
@@ -935,6 +999,8 @@ export function createSends(options: {
         messageId(row.uuid),
         row.payload,
         now(),
+        templateNameOf(names, row.templateId),
+        sequenceNameOf(names, row.stepId),
       );
     return expectRow(inserted, "sequence send").id;
   }
@@ -1088,9 +1154,13 @@ export function createSends(options: {
         )
         .all(enrollmentId, ENROLLMENT_SENDS);
     },
-    get(id: bigint) {
+    /** The send with this ID, `"forbidden"` when it exists and `scope` does not cover it, or null (B117d). */
+    get(id: bigint, scope: Scope) {
       const row = getPublic(id);
-      return row ? projectOne(row) : null;
+      if (!row) {
+        return null;
+      }
+      return covers(row, scope) ? projectOne(row) : ("forbidden" as const);
     },
     list(filter: SendFilter) {
       const clauses: Array<string> = [],
@@ -1106,6 +1176,14 @@ export function createSends(options: {
           clauses.push(`${key} = ?`);
           values.push(value);
         }
+      }
+      if (!filter.scope.all) {
+        // A list-scoped reader sees the sends to subscribers with a membership on one of its lists, the
+        // rule a subscriber read applies (B117d, D139). An external recipient has none, so it is left out.
+        // The membership SQL belongs to the subscribers module.
+        const scoped = inListScopeSQL("subscriber_id", filter.scope);
+        clauses.push(scoped.sql);
+        values.push(...scoped.args);
       }
       const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
       const total = expectRow(

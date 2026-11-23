@@ -1,6 +1,7 @@
 // Release steps for .github/workflows/release.yml, run against a built executable.
 import { createHash } from "node:crypto";
 import { must } from "@/invariant";
+import { listensOn } from "@/test/serve-port";
 import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -54,8 +55,9 @@ const startAttempts = 5;
  * Starts the executable on a loopback port and returns once its /health answers. The port is chosen
  * by binding and releasing it, so another process (a parallel test, say) can take it before the
  * executable binds it. A start that fails because its port is in use is started again on a fresh
- * port, up to five attempts, as test/serve-port.ts does. The per-run admin login in `verify` still
- * checks that the server answering is this one. Any other failure stops the child and is thrown.
+ * port, up to five attempts, as test/serve-port.ts does. Any other failure stops the child and is
+ * thrown. `RELEASE_VERIFY_FIRST_PORT` pins the first attempt's port: a test holds that port to show
+ * the retry.
  */
 async function startExecutable(
   executable: string,
@@ -66,8 +68,9 @@ async function startExecutable(
   origin: string;
   health: Response;
 }> {
+  const pinned = process.env.RELEASE_VERIFY_FIRST_PORT;
   for (let attempt = 1; ; attempt++) {
-    const port = await availablePort();
+    const port = attempt === 1 && pinned ? Number(pinned) : await availablePort();
     const origin = `http://127.0.0.1:${port}`;
     const child = Bun.spawn([executable, "serve", "--port", String(port)], {
       cwd: directory,
@@ -77,7 +80,7 @@ async function startExecutable(
       stderr: "pipe",
     });
     try {
-      return { child, origin, health: await healthWhenReady(child, origin) };
+      return { child, origin, health: await healthWhenReady(child, port) };
     } catch (error) {
       if (child.exitCode === null) {
         child.kill("SIGKILL");
@@ -91,18 +94,29 @@ async function startExecutable(
   }
 }
 
-async function healthWhenReady(child: Bun.Subprocess, origin: string): Promise<Response> {
+/**
+ * Resolves with the first /health answer on `port` that comes from this child: the child must also
+ * listen on the port. Another server can hold the port and answer first (a parallel test's server,
+ * say); that answer is not this start's, and the child's own bind failure is what the retry needs.
+ */
+async function healthWhenReady(child: Bun.Subprocess, port: number): Promise<Response> {
+  const origin = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(`Server exited with ${child.exitCode}`);
     }
     try {
-      return await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) });
+      const response = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) });
+      if (listensOn(child.pid, port)) {
+        return response;
+      }
+      await response.body?.cancel();
     } catch {
-      // This delay is only for bounded process readiness.
-      await Bun.sleep(25);
+      // A refused or unfinished request: the child is still starting.
     }
+    // This delay is only for bounded process readiness.
+    await Bun.sleep(25);
   }
   throw new Error("Server did not answer /health within ten seconds");
 }

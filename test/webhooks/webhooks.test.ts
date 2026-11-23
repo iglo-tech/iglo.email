@@ -1433,7 +1433,7 @@ test("shutdown ends the start-up target check while its lookup is still pending 
   await Bun.sleep(20);
   expect(ended).toBe(false);
   // Shutdown, with the lookup still pending and the injected clock never moved: the check ends now.
+  // Shutdown returns only after the check has ended, so the flag is read as soon as it returns.
   await f.stopWebhooks();
-  await Bun.sleep(20);
   expect(ended).toBe(true);
 });

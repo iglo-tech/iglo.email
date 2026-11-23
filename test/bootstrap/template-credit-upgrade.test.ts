@@ -165,6 +165,9 @@ test("a seeded install from before this release takes the migrated bodies, and a
     db.run("CREATE INDEX idx_sends_outbox ON sends(status, created_at)");
     // Schema 26 has no enrollment exit condition either (migration 29, B127 r2), so it is dropped here.
     db.run("ALTER TABLE enrollments DROP COLUMN exit_condition");
+    // Migration 31 (B117d) names each send; schema 26 has no such columns.
+    db.run("ALTER TABLE sends DROP COLUMN template_name");
+    db.run("ALTER TABLE sends DROP COLUMN sequence_name");
     db.run("PRAGMA user_version = 26");
   } finally {
     db.close(true);
@@ -174,7 +177,7 @@ test("a seeded install from before this release takes the migrated bodies, and a
   const second = await up(dataDir);
   try {
     const after = await templates(second.port);
-    expect(userVersion(dataDir)).toBe(30);
+    expect(userVersion(dataDir)).toBe(31);
     expect(after.get(names.campaign)?.body).toBe(seeded.get(names.campaign)?.body);
     expect(after.get(names.archive)?.body).toBe(seeded.get(names.archive)?.body);
     expect(after.get(names.sample)?.body).toBe(seeded.get(names.sample)?.body);

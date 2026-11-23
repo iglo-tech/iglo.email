@@ -5,6 +5,7 @@ import { compareSQL, existsSQL, inSQL } from "@/conditions/json";
 import type { CompareOp, SQLPart } from "@/conditions/json";
 import type { Scalar } from "@/conditions/types";
 import { fragmentConditionSQL } from "@/subscribers/query-filter";
+import type { Scope } from "@/subscribers/store";
 
 const attribs = "subscribers.attribs";
 
@@ -40,6 +41,19 @@ export function membershipSQL(list: number, statuses: Array<string>): SQLPart {
   return {
     sql: `EXISTS (SELECT 1 FROM subscriber_lists WHERE subscriber_lists.subscriber_id = subscribers.id AND subscriber_lists.list_id = ? AND subscriber_lists.status IN (${statuses.map(() => "?").join(", ")}))`,
     args: [list, ...statuses],
+  };
+}
+
+/**
+ * The subscriber in `column` has a membership on one of the lists of `scope`, in any status: the rule a
+ * subscriber read applies, for the send log's list-scoped reads (B117d, D139). The subquery reads the
+ * list's members from the subscriber_lists list index; callers check `scope.all` first, since a reader of
+ * every list needs no filter.
+ */
+export function inListScopeSQL(column: string, scope: Scope): SQLPart {
+  return {
+    sql: `${column} IN (SELECT m.subscriber_id FROM subscriber_lists m WHERE m.list_id IN (SELECT value FROM json_each(?)))`,
+    args: [`[${scope.ids.join(",")}]`],
   };
 }
 

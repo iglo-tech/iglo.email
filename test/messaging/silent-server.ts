@@ -7,7 +7,9 @@ import type { SMTPServer } from "@/messaging/email";
 export async function silentServer(waitTimeout = "1s") {
   const sockets = new Set<Socket>();
   let received = 0;
+  let accepted = 0;
   const listener = createServer((socket) => {
+    accepted++;
     sockets.add(socket);
     socket.on("data", (chunk) => {
       received += chunk.length;
@@ -43,6 +45,8 @@ export async function silentServer(waitTimeout = "1s") {
     server,
     port: address.port,
     bytesReceived: () => received,
+    /** Connections accepted so far: a send that is retried connects again. */
+    connections: () => accepted,
     async close() {
       for (const socket of sockets) {
         socket.destroy();

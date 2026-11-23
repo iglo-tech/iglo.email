@@ -79,7 +79,11 @@ try {
         ids.push(row.smtp_message_id.replaceAll(/[<>]/g, ""));
       }
       const queueMs = performance.now() - beginQueue;
-      assert.equal(sends.list({ page: 1, perPage: 100, status: "queued" }).total, 32);
+      assert.equal(
+        sends.list({ page: 1, perPage: 100, status: "queued", scope: { all: true, ids: [] } })
+          .total,
+        32,
+      );
       const queuedBytes = (await bytes(dbPath)) + (await bytes(`${dbPath}-wal`));
       // Commit one claim, then reopen as a real restart recovery would.
       let start = performance.now();
@@ -98,7 +102,11 @@ try {
       sends = createSends({ db, clock, subscribers, rootUrl: () => "http://fixture.test" });
       sends.recover();
       const recoveryMs = performance.now() - start;
-      assert.equal(sends.get(interrupted.id)!.status, "unknown");
+      const interruptedRow = sends.get(interrupted.id, { all: true, ids: [] });
+      assert.equal(
+        interruptedRow !== null && interruptedRow !== "forbidden" ? interruptedRow.status : null,
+        "unknown",
+      );
       for (let i = 1; i < 32; i++) {
         start = performance.now();
         const row = writeTransaction(db, () =>
@@ -119,7 +127,10 @@ try {
         received.map((m) => m.MessageID.replaceAll(/[<>]/g, "")).sort(),
         ids.slice(1).sort(),
       );
-      assert.equal(sends.list({ page: 1, perPage: 100, status: "sent" }).total, 31);
+      assert.equal(
+        sends.list({ page: 1, perPage: 100, status: "sent", scope: { all: true, ids: [] } }).total,
+        31,
+      );
       process.stdout.write(
         `${JSON.stringify({ repetition, backlog: 32, enqueueMeanMs: mean(enqueue), queueMs, claimMeanMs: mean(claim), terminalMeanMs: mean(commit), recoveryMs, initialBytes: initial, queuedBytes, growthBytes: queuedBytes - initial, sent: 31, unknown: 1, matchingIds: received.length })}\n`,
       );

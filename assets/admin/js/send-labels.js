@@ -50,12 +50,16 @@ export function subjectText(send) {
     : i18n.t(key);
 }
 
-// A sequence send's sequence and step, or nothing for a transactional send or a removed step. The
-// API's step_position counts from zero, as the timeline's position does, and the page counts from one.
+// A sequence send's sequence and step, or nothing for a transactional send. The API's step_position counts
+// from zero, as the timeline's position does, and the page counts from one. A step that no longer exists
+// has no position (B117d): its send names the sequence alone.
 export function sequenceStepText(send) {
-  return send.sequence_name
-    ? i18n.ts('sends.sequenceStep', { name: send.sequence_name, position: send.step_position + 1 })
-    : '';
+  if (!send.sequence_name) {
+    return '';
+  }
+  return send.step_position === null || send.step_position === undefined
+    ? send.sequence_name
+    : i18n.ts('sends.sequenceStep', { name: send.sequence_name, position: send.step_position + 1 });
 }
 
 // An enrollment's exit reason, named (B127): the event that exited it, with the time the exit was

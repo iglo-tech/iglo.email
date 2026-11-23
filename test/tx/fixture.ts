@@ -42,6 +42,8 @@ import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { createTemplateStore } from "@/templates/store";
+import { createEnrollments } from "@/sequences/enrollments";
+import { createSequenceStore } from "@/sequences/store";
 import type { PageOptions } from "@/public/preferences";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
@@ -88,6 +90,8 @@ function unwiredMail(): never {
 export async function txFixture(
   options: {
     reject?: () => boolean;
+    /** The SMTP server the emailer uses, in place of the sink (for a server that never greets). */
+    smtpPort?: number;
     policy?: Partial<TxPolicy>;
     clock?: Clock;
     emailHeaders?: Array<Record<string, string>>;
@@ -194,6 +198,12 @@ export async function txFixture(
   const templateReferences = createCampaignTemplateReferences(db);
   const templates = createTemplateStore(db, clock, renderer, templateReferences);
   templates.initialize();
+  // The sequence labels a send log names (B117d), as src/main.ts wires them.
+  const sequences = createSequenceStore(db, clock, {
+    templates,
+    lists,
+    enrollments: createEnrollments(db, clock),
+  });
   const emailer = createEmailer({
     clock,
     settings: () => ({
@@ -204,7 +214,7 @@ export async function txFixture(
           enabled: true,
           exclude_from_default: false,
           host: "127.0.0.1",
-          port: sink.port,
+          port: options.smtpPort ?? sink.port,
           hello_hostname: "fixture.test",
           max_conns: 4,
           idle_timeout: "2s",
@@ -247,6 +257,7 @@ export async function txFixture(
     rootUrl: () => "http://fixture.test",
     ...(webhookEffects ? { ended: webhookEffects.sendEnded } : {}),
     marketingPolicy: createMarketingPolicy({ subscribers, lists, settings: () => marketing }),
+    stepLabels: (ids) => sequences.stepLabels(ids),
     templateNames: (ids) => templates.names(ids),
   });
   const tracking = createTracking(db, clock);
@@ -261,7 +272,7 @@ export async function txFixture(
     registerSubscriberQueryRoutes(router, subscriberQuery, subscribers, roles, auth);
   }
   registerTemplateRoutes(router, templates, renderer, auth, () => pageOptions());
-  registerSendRoutes(router, sends, auth);
+  registerSendRoutes(router, sends, auth, roles);
   if (webhooks) {
     registerWebhookRoutes(router, { webhooks, auth });
   }
