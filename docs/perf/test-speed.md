@@ -255,3 +255,25 @@ owner should confirm it.
   knob is not in `/proc/sys`); it is a runner-host setting and the probe passes without it.
 - An earlier container `bun run check` on `bdd84cb` failed 5 tests (1775 pass): a leak from the
   tracked-links loop (fixed in `1b0c154`) and the scheduler wait. It is not the acceptance run.
+
+## 2026-11-23: B118a, readiness budget and eight workers (B118a item 10)
+
+- **Readiness budget, raised from 5 s to 15 s** (`test/serve-port.ts`, `healthWhenReady`). The budget
+  bounds a start that never finishes; a start that fails is seen at once through the exit code. The
+  5 s budget was met at low load and failed at load 20 to 40 (the section above). A start on a loaded
+  host (eight workers, or amd64 emulation) can take longer without being a failure. A hung start still
+  fails by name before the 30 s per-test limit. Readiness is not event-driven: the executable prints no
+  start line (application code logs only errors and things that need attention), and polling checks
+  that the child itself listens (`listensOn`).
+- **Parallelism.** `test/messaging`, `test/tx`, `test/sends` and `test/sequences` (37 files, 291 tests)
+  in the container (eight CPUs), back to back, with the current timings file. Both runs passed 291 of 291.
+
+  | workers | wall (37 files) | result |
+  |---|---|---|
+  | 4 | 104.9 s | 291 pass |
+  | 8 | 47.4 s | 291 pass |
+
+  One pair, not a series; the host load differs between runs (other agents). Eight workers did not show
+  a readiness or timeout failure in this chunk. The full suite at eight workers was not run in one
+  invocation here: it would exceed the 600 s foreground limit, so it ran as five directory chunks at four
+  workers. Whether the check's `--parallel=4` moves to eight is the lead's call on the full suite.

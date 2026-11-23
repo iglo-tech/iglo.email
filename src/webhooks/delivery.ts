@@ -243,13 +243,16 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
 
   /** The start's check, in the background (B125 r2): see `refusedTargets`. */
   let targetCheck: Promise<void> = Promise.resolve();
+  /** Ends the start's check early: shutdown does not wait out a lookup nobody will read (B118a item 8, D140). */
+  const checkStop = new AbortController();
   /**
-   * A lookup gets the delivery's deadline. Past it the check gives no answer, so no line; the
-   * delivery itself would report a timeout.
+   * A lookup gets the delivery's deadline. Past it, or once `stop` or `halt` ends the check, it
+   * gives no answer, so no line; the delivery itself would report a timeout.
    */
   const withinDeadline = async (work: Promise<boolean>): Promise<boolean | undefined> => {
     const controller = new AbortController();
-    const expired = clock.sleep(REQUEST_TIMEOUT_MS, controller.signal).then(
+    const signal = AbortSignal.any([controller.signal, checkStop.signal]);
+    const expired = clock.sleep(REQUEST_TIMEOUT_MS, signal).then(
       () => undefined,
       () => undefined,
     );
@@ -342,16 +345,23 @@ export function createWebhookDelivery(options: WebhookDeliveryOptions) {
     async halt() {
       webhooks.onWake(() => {});
       abandon.abort();
+      checkStop.abort();
       await loop.stop();
       await Promise.allSettled(running);
+      await targetCheck.catch(() => {});
     },
-    /** Stop claiming; attempts in flight finish or time out, so their rows settle. */
+    /**
+     * Stop claiming; attempts in flight finish or time out, so their rows settle. The start's
+     * target check ends at once: it reports nothing after this, and waits for no lookup.
+     */
     async stop() {
       webhooks.onWake(() => {});
+      checkStop.abort();
       try {
         await loop.stop();
       } finally {
         await Promise.allSettled(running);
+        await targetCheck.catch(() => {});
         if (finished.length) {
           writeTransaction(options.db, settleFinished);
         }

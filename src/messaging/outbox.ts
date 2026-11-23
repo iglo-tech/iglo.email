@@ -10,6 +10,11 @@ import { must } from "@/invariant";
 
 // A marketing send has exactly one SMTP recipient, its admitted subscriber.
 const copies = (row: { kind: string }) => ({ copies: row.kind !== "marketing" });
+/** One turn of the event loop: resolves after the callbacks already queued have run (B118a). */
+const loopTurn = () =>
+  new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 /**
  * A claim's lease (D80). A push is cut off 60 s after it starts (`dispatch` in email.ts), so a
  * healthy push settles well inside this; only a row that outlives it is moved to `unknown`.
@@ -111,31 +116,36 @@ export function createOutbox(options: OutboxOptions) {
    */
   async function deliver(batch: Array<Claimed>) {
     type Settled = { row: Claimed["row"]; refused?: unknown; result?: Promise<Outcome> };
-    const pending = batch.flatMap((claimed): Array<Settled> => {
-      const { row, message } = claimed;
-      if (!message) {
-        return [];
-      }
-      // The emailer owns the message from here; the batch must not keep it alive (B28).
-      claimed.message = null;
-      try {
-        return [
-          {
-            row,
-            result: options.emailer.push(message, { ...copies(row), priority: "outbox" }).result,
-          },
-        ];
-      } catch (error) {
-        // Thrown before a pool saw the message (the restore hold refuses here): never sent.
-        return [{ row, refused: error }];
-      }
-    });
-    const ids = pending.map((p) => p.row.id);
-    for (const id of ids) {
-      live.add(id);
-    }
+    const pending: Array<Settled> = [];
+    const ids: Array<bigint> = [];
     let settled: Array<PromiseSettledResult<Outcome | undefined>>;
     try {
+      for (const claimed of batch) {
+        const { row, message } = claimed;
+        if (!message) {
+          continue;
+        }
+        // The emailer owns the message from here; the batch must not keep it alive (B28).
+        claimed.message = null;
+        ids.push(row.id);
+        live.add(row.id);
+        try {
+          const result = options.emailer.push(message, {
+            ...copies(row),
+            priority: "outbox",
+          }).result;
+          // Handled from the push on: a rejection that lands during the turn below, before the
+          // settle loop attaches, is not an unhandled one. The settle loop still sees it.
+          void Promise.resolve(result).catch(() => {});
+          pending.push({ row, result });
+        } catch (error) {
+          // Thrown before a pool saw the message (the restore hold refuses here): never sent.
+          pending.push({ row, refused: error });
+        }
+        // Each message's MIME is built on the loop as it is pushed; a turn between messages lets
+        // other requests run while a batch of them is pushed (B118a).
+        await loopTurn();
+      }
       // A refused row has no push: Promise.resolve settles it as undefined, as allSettled already did.
       settled = await Promise.allSettled(pending.map((p) => Promise.resolve(p.result)));
     } finally {
