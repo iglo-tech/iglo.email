@@ -1701,10 +1701,11 @@ export async function runOpenApiContract(target: {
       }
     }
     // A well-formed ID nothing has (D138). listmonk answers 400 for some absent records (a list,
-    // bounce, user, template, campaign or transactional reference) and 404 for others, and either
-    // way the code is `not_found`. The per-status check reads each answer against the operation's
-    // own response for its status, so a status the document does not list fails here. Every
-    // failure is collected, so one run names them all. A PUT by ID is probed below, with a body.
+    // bounce, user, template, campaign or transactional reference), 404 for others, and 200 for a
+    // delete of nothing. A failure answer's code is `not_found`, and every answer is checked
+    // against the operation's own response for its status, so a status the document does not list
+    // fails here. Every failure is collected, so one run names them all. A PUT by ID is probed
+    // below, with a body the server reads before it looks the ID up.
     const absentFailures: Array<string> = [];
     for (const { key, operation } of operations) {
       if (key.includes("{id}") && !operation.requestBody && !key.includes("twofa")) {
@@ -1712,9 +1713,9 @@ export async function runOpenApiContract(target: {
           const reply = await op(key, {
             ...placeholders(key, "999999"),
             query: needed(operation),
-            expect: [400, 404],
+            expect: [200, 400, 404],
           });
-          check(reply.body?.code === "not_found", `not-found-${key}`);
+          check(reply.status < 400 || reply.body?.code === "not_found", `not-found-${key}`);
         } catch (error) {
           absentFailures.push(error instanceof Error ? error.message : String(error));
         }
