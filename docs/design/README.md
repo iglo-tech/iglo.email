@@ -16,6 +16,7 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 | 10 | [Open questions](10-open-questions.md) | What still needs the owner |
 | 11 | [Work plan](11-work-plan.md) | Tasks, briefs, council review and merge, run by agents |
 | 12 | [Completeness audit](12-completeness-audit.md) | Audit against typical newsletter, lifecycle and transactional needs (D89) |
+| 14 | [Projects](14-projects.md) | Planned (D142): several projects in one instance, one configuration, one admin, a global send queue with SES quota planning, project-scoped API and MCP |
 
 ## Decisions at a glance
 
@@ -24,7 +25,7 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 - **Bun ≥ 1.4, TypeScript, one compiled executable.** Linux x86-64 and arm64 only, plus a multi-arch Docker image that wraps the executable (D89).
 - **SQLite only** (`bun:sqlite`, WAL), one process.
 - **Durable work is rows in SQLite** processed by in-process loops. No Postgres, Redis, BullMQ or workflow engine.
-- **listmonk's HTTP API is kept** for ported endpoints, so existing SDKs and integrations keep working, except where upstream's design is poor: those are fixed and listed as deliberate differences. New features get new endpoints.
+- **listmonk's HTTP API is the starting point, not a constraint** ([D143](09-decisions.md#d143-listmonks-api-is-a-starting-point-not-a-constraint-owner-2026-11-23)): ported endpoints begin with listmonk's design and change whenever a feature, a simpler design or a better API needs it. Each change is listed as a deliberate difference. New features get new endpoints.
 - **Admin UI:** v7's server-rendered views ported to server-side TSX; v7's Alpine.js, Oat, CodeMirror and Squire assets reused.
 - **User-authored templates use Liquid** (LiquidJS) instead of Go templates.
 - **Sequences are data:** definitions plus enrollments with a due time. Conditions are a small JSON predicate language.
