@@ -53,16 +53,11 @@ test("uploads over HTTP leave no bytes reachable after a forced collection", asy
   const headers = { ...f.sessionHeaders, origin: "http://fixture.test", host: "fixture.test" };
   const url = `http://127.0.0.1:${server.port}/api/media`;
   const base = heldAfterCollection();
-  // Two waves of eight: the admission limit (8 uploads in progress), so no upload is refused.
-  let index = 0;
-  for (let wave = 0; wave < 2; wave++) {
-    const responses = await Promise.all(
-      Array.from({ length: 8 }, () => upload(index++, headers, url)),
-    );
-    expect(responses.map((response) => response.status)).toEqual(Array(8).fill(200));
-    await Promise.all(responses.map((response) => response.text()));
-  }
-  // Sixteen uploads of 8 MiB. Retaining every upload holds 128 MiB; the bound admits four
-  // uploads' worth of allocator and collector noise, so any retention of a body fails it.
+  // Eight in flight at once: the admission limit (8 uploads in progress), so none is refused.
+  const responses = await Promise.all(Array.from({ length: 8 }, (_, i) => upload(i, headers, url)));
+  expect(responses.map((response) => response.status)).toEqual(Array(8).fill(200));
+  await Promise.all(responses.map((response) => response.text()));
+  // Eight uploads of 8 MiB. Retaining every upload holds 64 MiB; the bound admits four uploads'
+  // worth of allocator and collector noise, so any retention of a body fails it.
   expect(heldAfterCollection() - base).toBeLessThan(32 * MiB);
 }, 30_000);

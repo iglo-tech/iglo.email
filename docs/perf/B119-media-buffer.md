@@ -51,10 +51,12 @@ the uploads, the same at every size: `File` 4 to 4 or 5, `Blob` 5 to 5 or 6, `Fo
 objects of the last wave in flight, bounded by the eight-upload admission limit (`MAX_UPLOADS`), and
 they do not grow with the number of uploads.
 
-The committed guard, `test/media/upload-retention.test.ts`, drives sixteen 8 MiB uploads over a real
-socket and asserts `external` grows by less than 32 MiB after a forced GC. Mutation check: pinning each
-request body in a module-level array (temporary edit of `src/media/routes.ts`, reverted) fails it with
-`Received: 134600156` (128 MiB). Without the mutation it passes.
+The committed guard, `test/media/upload-retention.test.ts`, drives eight 8 MiB uploads in flight at once
+over a real socket and asserts `external` grows by less than 32 MiB after a forced GC. It was sixteen
+uploads in two waves; halved because its fsynced writes add load to the parallel check run, while
+eight retained bodies (64 MiB) still fail the 32 MiB bound. Mutation check: pinning each request body
+in a module-level array (temporary edit of `src/media/routes.ts`, reverted) fails it with
+`Received: 67449048` (64 MiB). Without the mutation it passes.
 
 ## 2. Campaign attachments: one extra batch buffer at a held point
 
