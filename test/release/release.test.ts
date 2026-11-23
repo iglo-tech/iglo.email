@@ -3,6 +3,7 @@ import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
+import { healthWhenReady, startOnFreePort } from "@/test/serve-port";
 import { version } from "@/../package.json";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -90,6 +91,62 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
     const result = await run(script("verify", fake));
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("Server exited");
+  });
+
+  // The first start is pinned to a port that another server holds, so the executable's bind fails
+  // with `port N in use` and the script starts again on a fresh port (D140 item 5). The plain
+  // holder answers /health exactly as iglo.email does, so only the check that the answering server
+  // is the started one can tell it apart.
+  test("moves to a fresh port when a plain HTTP server holds the first one", async () => {
+    const holder = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response('{"data":true}\n'),
+    });
+    try {
+      const result = await run(script("verify", executable), {
+        GITHUB_REF_TYPE: "branch",
+        GITHUB_REF_NAME: "main",
+        RELEASE_VERIFY_FIRST_PORT: String(holder.port),
+      });
+      expect(result.stderr).toBe("");
+      expect(result.code).toBe(0);
+    } finally {
+      await holder.stop(true);
+    }
+  });
+
+  test("moves to a fresh port when another iglo.email server holds the first one", async () => {
+    const directory = join(temporaryDirectory, "holder");
+    await Bun.write(join(directory, ".keep"), "");
+    const holder = await startOnFreePort(async (port) => {
+      const child = Bun.spawn([executable, "serve", "--port", String(port)], {
+        cwd: directory,
+        env: { PATH: "" },
+        stdout: "ignore",
+        stderr: "pipe",
+      });
+      try {
+        await healthWhenReady(child, port);
+        return { child, port };
+      } catch (error) {
+        child.kill("SIGKILL");
+        await child.exited;
+        throw error;
+      }
+    });
+    try {
+      const result = await run(script("verify", executable), {
+        GITHUB_REF_TYPE: "branch",
+        GITHUB_REF_NAME: "main",
+        RELEASE_VERIFY_FIRST_PORT: String(holder.port),
+      });
+      expect(result.stderr).toBe("");
+      expect(result.code).toBe(0);
+    } finally {
+      holder.child.kill("SIGTERM");
+      await holder.child.exited;
+    }
   });
 });
 

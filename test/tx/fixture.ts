@@ -90,6 +90,8 @@ function unwiredMail(): never {
 export async function txFixture(
   options: {
     reject?: () => boolean;
+    /** The SMTP server the emailer uses, in place of the sink (for a server that never greets). */
+    smtpPort?: number;
     policy?: Partial<TxPolicy>;
     clock?: Clock;
     emailHeaders?: Array<Record<string, string>>;
@@ -212,7 +214,7 @@ export async function txFixture(
           enabled: true,
           exclude_from_default: false,
           host: "127.0.0.1",
-          port: sink.port,
+          port: options.smtpPort ?? sink.port,
           hello_hostname: "fixture.test",
           max_conns: 4,
           idle_timeout: "2s",
@@ -580,6 +582,10 @@ export async function txFixture(
     /** Stop the loop and drop what it knew; a held attempt's row keeps only its lease. */
     async crashWebhooks() {
       await delivery?.halt();
+    },
+    /** Shutdown's stop: claims end and the start's target check ends with them (B118a item 8). */
+    async stopWebhooks() {
+      await delivery?.stop();
     },
     /** A fresh loop over the same rows, as after a process restart. */
     /** Resolves when this start's check of refused targets has ended (B125 r2). */

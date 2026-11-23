@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test as bunTest,
+} from "bun:test";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -10,7 +18,8 @@ import { startSchemaFixture } from "@/test/schema/fixture";
 import { readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
-setDefaultTimeout(15_000);
+const defaultTimeoutMs = 15_000;
+setDefaultTimeout(defaultTimeoutMs);
 let temporaryDirectory = "";
 let executable = "";
 let adminUser = "";
@@ -38,22 +47,72 @@ afterAll(async () => {
   }
 });
 
+/**
+ * A test's budget for its CLI runs and children: its timeout less 3 s, so it ends before Bun gives
+ * up on the body. Bun does not stop a timed-out body, so the body can go on after its test has
+ * failed. Its budget ends with it: its next CLI run fails by name, and each child it started is
+ * killed, so none runs under the next test (B118a). Each test has its own budget, held by the
+ * async context of its body, so no budget is shared between tests.
+ */
+interface Budget {
+  readonly name: string;
+  readonly ends: number;
+  readonly children: Set<ReturnType<typeof start>>;
+}
+const budgets = new AsyncLocalStorage<Budget>();
+const budgetMarginMs = 3000;
+
+function test(name: string, body: () => Promise<void>, timeoutMs = defaultTimeoutMs) {
+  bunTest(
+    name,
+    () => {
+      const budget: Budget = {
+        name,
+        ends: performance.now() + timeoutMs - budgetMarginMs,
+        children: new Set(),
+      };
+      const timer = setTimeout(() => {
+        for (const child of budget.children) {
+          child.kill("SIGKILL");
+        }
+      }, timeoutMs - budgetMarginMs);
+      return budgets.run(budget, body).finally(() => clearTimeout(timer));
+    },
+    timeoutMs,
+  );
+}
+
+/** Starts the executable. Under a budget, a start after it ended fails by name, and the child is kept. */
 function start(args: Array<string>, env: Record<string, string> = {}) {
-  return Bun.spawn([executable, ...args], {
+  const budget = budgets.getStore();
+  if (budget && performance.now() >= budget.ends) {
+    throw new Error(`The test "${budget.name}" budget ended before: ${args.join(" ")}`);
+  }
+  const child = Bun.spawn([executable, ...args], {
     cwd: temporaryDirectory,
     env: { PATH: "", ...env },
     stdout: "pipe",
     stderr: "pipe",
   });
+  if (budget) {
+    budget.children.add(child);
+    void child.exited.then(() => budget.children.delete(child));
+  }
+  return child;
 }
 
 async function runCli(args: Array<string>, env: Record<string, string> = {}) {
   const child = start(args, env);
+  const budget = budgets.getStore();
+  const remaining = budget ? budget.ends - performance.now() : Number.POSITIVE_INFINITY;
   let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    child.kill("SIGKILL");
-  }, 3000);
+  const timer = setTimeout(
+    () => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    },
+    Math.min(3000, remaining),
+  );
   try {
     const [code, stdout, stderr] = await Promise.all([
       child.exited,
@@ -853,4 +912,32 @@ describe("compiled executable", () => {
       }
     }
   });
+
+  test("a body that outlives its budget fails its next CLI run by name and kills its children", async () => {
+    const name =
+      "a body that outlives its budget fails its next CLI run by name and kills its children";
+    // Its budget ends 9 s after the test starts (the 12 s timeout less 3 s). The child it starts is
+    // killed then, and the wait below ends at that exit, or at 9 s when no kill comes.
+    const { child } = await startOnPort((listenPort) => ({
+      args: [
+        "--port",
+        String(listenPort),
+        "--data-dir",
+        join(temporaryDirectory, "outlives-budget"),
+      ],
+    }));
+    try {
+      await Promise.race([child.exited, Bun.sleep(9000)]);
+      const next = await runCli(["--version"]).then(() => "ran", String);
+      expect(next).toContain(`The test "${name}" budget ended`);
+      const exited = await Promise.race([
+        child.exited.then(() => true),
+        Bun.sleep(500).then(() => false),
+      ]);
+      expect(exited).toBe(true);
+    } finally {
+      child.kill("SIGKILL");
+      await child.exited;
+    }
+  }, 12_000);
 });

@@ -23,14 +23,22 @@ export interface SendRateLimiter {
   wake(): void;
 }
 
+/** The spacing of grants at `rate` per second; a rate of 0 has none. */
+function intervalOf(rate: number): number {
+  return rate > 0 ? 1000 / rate : 0;
+}
+
 export function createSendRateLimiter(options: SendRateLimiterOptions): SendRateLimiter {
   const { clock } = options;
   const outboxWaiters: Array<Waiter> = [];
   const campaignWaiters: Array<Waiter> = [];
   let stopped = false;
   let sleepController: AbortController | null = null;
-  let nextAvailableAt = 0;
-  let lastGrantAt = 0;
+  // The start stands in for the last grant: a limiter has no record of the sends before its start
+  // (a restart), so its first send waits one interval after the start, not after a grant it cannot
+  // see (B118a). A rate of 0 has no interval, so nothing waits.
+  let lastGrantAt = clock.now().getTime();
+  let nextAvailableAt = lastGrantAt + intervalOf(options.rate());
   let pumping = false;
 
   function scheduleNextWake(delay: number): void {
