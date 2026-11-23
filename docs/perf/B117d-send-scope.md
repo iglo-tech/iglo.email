@@ -73,9 +73,10 @@ removes that: the count and the sort are over the matches. The target that the p
 the unscoped page holds for the lists that hold a small share of the sends (0.1 to 0.5 ms here), not for a list
 that holds nearly all of them.
 
-Options for the lead, not taken here: accept the cost (a staff reader with a list of everyone sees a
-two-second page at a million sends); or keep a count per list, updated on each membership and send write, which
-puts a write on the send path (measure before choosing it).
+Accepted by the lead (2026-11-23): a staff reader with a list of everyone sees a page of about 1.8 s at a million
+sends (count 0.86 s, page 0.99 s). The cost is bounded to one admin read page. Rejected: a count kept per list,
+updated on each membership and send write. It would charge every membership change and every send for one read
+page; it was not built or measured.
 
 ## Decision
 
