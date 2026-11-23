@@ -46,7 +46,7 @@ If capacity for a target is unavailable, record the reset/cooldown; no provider 
 
 | Stage | Action |
 |---|---|
-| brief | Name the realistic client flows, pinned upstream sources, owned modules/tables, acceptance commands and any sending/storage measurements. Push the brief and short status. |
+| brief | Name the realistic client flows, pinned upstream sources, owned modules/tables, acceptance commands and any sending/storage measurements. Acceptance lists every `contract:*` script whose corpus (`test/contract/*.ts`) exercises a route, page or link the task changes: grep the corpus for the paths before writing the list (B123 broke `contract:subscribers`, B117b broke `contract:webhooks`, both outside their lists). Push the brief and short status. |
 | worker | One Haiku 5.5 worker does the implementation in its prepared isolated checkout. No shell-created worktree; fetch the intended base/head inside that checkout. |
 | verify | Worker/fixer runs `bun run check` (which already runs the whole suite in parallel workers; no separate `bun test`) and the brief's acceptance tests serially on this host, in the foreground. Record failures, justified reruns and exact head. CI is optional manual evidence, never a merge gate or a reason to wait. |
 | review | Round1: one fresh Opus high deep review. Later rounds: a fresh delegate verifies the fixes and touched code only. Give later reviewers the complete prior findings and lead dispositions, not another whole-PR audit request. Reviewer runs `bun run check` once (not `bun test` as well) and acceptance serially after the implementation role is finished. |
