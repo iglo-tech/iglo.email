@@ -176,24 +176,55 @@ export async function runWebhooksContract(target: {
       optin: "single",
     });
     const list = asBody<number>(listCreated.body.data.id);
-    const subscriber = async (name: string, external?: string) => {
+    const subscriber = async (
+      name: string,
+      external?: string,
+      lists: Array<number> | null = [list],
+    ) => {
       const created = await call("/api/subscribers", "POST", {
         email: `${name}@example.test`,
         name,
-        lists: [list],
+        ...(lists ? { lists } : {}),
         ...(external ? { external_id: external } : {}),
       });
       return asBody<{ id: number; uuid: string }>(created.body.data);
     };
 
-    // One-click without a login; a repeat changes nothing, so it queues nothing.
+    // One-click (D137 item 3): the placeholder link ends pending double opt-ins only, so the
+    // subscriber's membership is an unconfirmed double opt-in list. It is added by the bulk action,
+    // not on create, which would also queue an opt-in mail the sink refuses. One-click works without
+    // a login; a repeat changes nothing, so it queues nothing.
+    const doubleCreated = await call("/api/lists", "POST", {
+      name: "hooks-double",
+      type: "public",
+      optin: "double",
+    });
+    const doubleList = asBody<number>(doubleCreated.body.data.id);
     const oneClick = (uuid: string) =>
       fetch(`${target.baseUrl}/subscription/${dummy}/${uuid}`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: "List-Unsubscribe=One-Click",
       });
-    const clicked = await subscriber("clicked", "app-clicked");
+    const clicked = await subscriber("clicked", "app-clicked", null);
+    check(
+      (
+        await call("/api/subscribers/lists", "PUT", {
+          ids: [clicked.id],
+          target_list_ids: [doubleList],
+          action: "add",
+          status: "unconfirmed",
+        })
+      ).status === 200,
+      "pending-double-add",
+    );
+    const memberships = asBody<{
+      lists: Array<{ id: number; subscription_status: string }>;
+    }>((await call(`/api/subscribers/${clicked.id}`)).body.data);
+    check(
+      memberships.lists.some((l) => l.id === doubleList && l.subscription_status === "unconfirmed"),
+      "pending-double-membership",
+    );
     check((await oneClick(clicked.uuid)).status === 200, "one-click");
     await arrived("subscriber.unsubscribed", 1);
     check((await oneClick(clicked.uuid)).status === 200, "one-click-repeat");
@@ -201,7 +232,7 @@ export async function runWebhooksContract(target: {
     check(signatureValid(first, secret), "signature");
     check(
       first.body.data.subscriber.external_id === "app-clicked" &&
-        first.body.data.list_ids[0] === list,
+        first.body.data.list_ids[0] === doubleList,
       "unsubscribed-data",
     );
 
