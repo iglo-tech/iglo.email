@@ -722,9 +722,10 @@ function* walkTemplates(templates: ReadonlyArray<Template>): Generator<Template>
   const pending = [...templates].reverse();
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
     yield next;
-    // Children in source order: the first one is popped next.
+    // Children in source order: the first one is popped next. A copy is reversed, since a tag such as `capture`
+    // returns its own template list, which the renders that follow still read in order (B117f).
     const children = next.children ? toValueSync(next.children(false, true)) : [];
-    pending.push(...children.reverse());
+    pending.push(...[...children].reverse());
   }
 }
 
