@@ -126,7 +126,7 @@ test("url_encode counts its output before it builds it, so a long encoding is re
 // A space encodes to its three-byte %20, so 60,000 spaces are 180 KB of output per use. Five uses are 900 KB,
 // under the 1 MiB output limit, and six are 1.08 MB, over it: the filter refuses the sixth by name. The input
 // stays under the request's data limit, so the boundary is the output's.
-test("url_encode output is bounded at 1 MiB, three bytes per space: five uses of 60,000 spaces are sent, six are refused by name", async () => {
+test("url_encode output is bounded at 1 MiB: five uses of 60,000 spaces are sent, six are refused by name", async () => {
   const f = await open();
   const spaces = " ".repeat(60_000);
   const under = await render(f, "{{ data.s | url_encode }}".repeat(5), { s: spaces });
