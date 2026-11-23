@@ -82,15 +82,60 @@ test("a loop object printed or read by a filter, and a loop property the rendere
   expect(exposed.status).toBe(200);
 });
 
-test("a loop object stored with assign is not refused, and its properties still read in a send", async () => {
+test("a loop object stored with assign is refused at save, and a loop property stored with assign still sends (B117f)", async () => {
   const f = await open();
+  // The stored loop object is read later through a name the save cannot follow, so the store itself is refused.
+  for (const body of [
+    "{% for i in data.items %}{% assign f = forloop %}{{ f.index }}{% endfor %}",
+    "{% for i in data.items %}{% assign f = forloop %}{{ f.parentloop }}{% endfor %}",
+  ]) {
+    const refused = await saveTx(f, body);
+    expect(refused.status, body).toBe(400);
+    expect(refused.body.message, body).toContain(
+      "a loop object (forloop) cannot be stored with assign",
+    );
+  }
   const sent = await send(
     f,
-    "{% for i in data.items %}{% assign f = forloop %}[{{ f.index }}{{ f.last | json }}]{% endfor %}",
+    "{% for i in data.items %}{% assign n = forloop.index %}[{{ n }}{{ forloop.last | json }}]{% endfor %}",
     { items: ["a", "b"] },
   );
   expect(sent.http).toBe(200);
   expect(sent.html).toContain("[1false][2true]");
+});
+
+test("a bare forloop given to a for tag's limit or offset is refused at save, and a loop property is not (B117f)", async () => {
+  const f = await open();
+  for (const argument of ["limit: forloop", "offset: forloop"]) {
+    const body = `{% for i in data.items %}{% for j in data.items ${argument} %}x{% endfor %}{% endfor %}`;
+    const refused = await saveTx(f, body);
+    expect(refused.status, body).toBe(400);
+    expect(refused.body.message, body).toContain(
+      "a loop object (forloop) cannot be a for tag's limit, offset or reversed argument",
+    );
+  }
+  // The outer loop's index is a number, which the inner loop reads as its limit at send.
+  const sent = await send(
+    f,
+    "{% for i in data.items %}{% for j in data.items limit: forloop.index %}{{ j }}{% endfor %}.{% endfor %}",
+    { items: ["a", "b"] },
+  );
+  expect(sent.http).toBe(200);
+  expect(sent.html).toContain("a.ab.");
+});
+
+test("a decimal literal, or a times: 1.0, makes the division a float, as LiquidJS and Shopify do (B117f)", async () => {
+  const f = await open();
+  // The dividend is a decimal when the template writes one before the division, whatever the operation was.
+  const sent = await send(
+    f,
+    "[{{ 10.0 | divided_by: 4 }}][{{ 10 | times: 1.0 | divided_by: 4 }}][{{ data.n | times: 1.0 | divided_by: 4 }}]" +
+      "[{{ 7.0 | times: 1 | divided_by: 2 }}][{{ 10.0 | divided_by: 4.0 }}]" +
+      "[{{ 10 | divided_by: 4 }}][{{ 10 | times: 2 | divided_by: 4 }}][{{ 10.0 | times: 1 | divided_by: 4 }}]",
+    { n: 10 },
+  );
+  expect(sent.http).toBe(200);
+  expect(sent.html).toContain("[2.5][2.5][2.5][3.5][2.5][2][5][2.5]");
 });
 
 test("the date guard in 06 prints the date only when the date filter renders one", async () => {
@@ -142,7 +187,7 @@ test("a divisor written as quoted text with a decimal point divides as a float, 
 test("a dividend written as decimal text divides as a float, as a decimal divisor does (B117e)", async () => {
   const f = await open();
   // The dividend is text from data or a quoted literal: its decimal point makes the division a float. A JSON
-  // number 10.0 is parsed to 10, and a number literal 10.0 is its value too, so both divide as integers.
+  // number 10.0 is parsed to 10, so it divides as an integer; a number literal 10.0 is a decimal (B117f).
   const sent = await send(
     f,
     "[{{ data.t | divided_by: 4 }}][{{ '10.0' | divided_by: 4 }}][{{ data.i | divided_by: 4 }}][{{ 10 | divided_by: 4 }}]",

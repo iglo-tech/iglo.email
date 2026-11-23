@@ -901,6 +901,16 @@ export async function runPublicContract(target: {
         (await status(mia.id, single.id)) === "confirmed",
       "dummy-unsub-unconfirmed",
     );
+    // B117f (D137, deliberate difference, 07): the placeholder link ends pending double opt-ins only. Upstream ends
+    // every unconfirmed membership, so its unconfirmed single opt-in list is ended there and kept here.
+    const nia = await createSubscriber("nia", [single.id, double.id]);
+    await received(nia.email);
+    check((await post(`/subscription/${dummy}/${nia.uuid}`)).status === 200, "dummy-post-d137");
+    check(
+      (await status(nia.id, double.id)) === "unsubscribed" &&
+        (await status(nia.id, single.id)) === (reference ? "unsubscribed" : "unconfirmed"),
+      "dummy-keeps-single-unconfirmed-d137",
+    );
     // Forged UUIDs.
     check((await visit(`/subscription/${dummy}/${missing}`)).status === 404, "prefs-forged");
     check((await post(`/subscription/${dummy}/${missing}`)).status === 404, "prefs-forged-post");
