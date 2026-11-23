@@ -18,3 +18,6 @@ UPDATE templates SET is_default = 0 WHERE is_default = 1;
 UPDATE templates SET is_default = 1 WHERE id = ?;
 -- name: template-delete
 DELETE FROM templates WHERE id = ?;
+-- name: template-names
+-- The name of each listed template, for a send's label (B127). The one parameter is a JSON array of IDs.
+SELECT id, name FROM templates WHERE id IN (SELECT value FROM json_each(?));

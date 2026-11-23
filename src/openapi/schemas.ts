@@ -597,6 +597,32 @@ export const schemas = {
     enrollment_id: nullable(integer),
     step_id: nullable(integer),
     list_id: nullable(integer),
+    template_name: {
+      ...nullable(string),
+      description:
+        "The name of the send's template (B127), so a transactional send names what it sent. Null when it has no template, or the template was deleted.",
+    },
+    subject: {
+      ...nullable(string),
+      description:
+        "The message's subject (B127), read from the prepared message the journal keeps. Null once that payload is dropped: thirty days after the send (D70), or when its address is anonymized (D135).",
+    },
+    subject_missing: {
+      anyOf: [choice("skipped", "wiped", "retention"), { type: "null" }],
+      description:
+        "Why `subject` is null (B127, D135): `skipped` when the send was refused before any message was prepared, `wiped` when its address was anonymized, `retention` when its message was dropped after thirty days. Null when there is a subject.",
+    },
+    sequence_id: {
+      ...nullable(integer),
+      description:
+        "The sequence of a sequence send's step (B127). Null for a transactional send, or when the step was deleted.",
+    },
+    sequence_name: nullable(string),
+    step_position: {
+      ...nullable(integer),
+      description:
+        "The step's position now in its sequence, counted from zero as the timeline's position is (B127). Null as sequence_id.",
+    },
     status: sendStatus,
     skip_reason: nullable(string),
     smtp_message_id: string,
@@ -657,14 +683,27 @@ export const schemas = {
         "One entry per sequence the event would have started or replaced but cannot (B116, D131), in sequence ID order; empty when none. Nothing is enrolled for it.",
     },
   }),
-  SequenceSkip: object({
-    sequence_id: integer,
-    reason: {
-      type: "string",
-      enum: ["subscriber_blocklisted", "suppressed"],
-      description:
-        "subscriber_blocklisted: the subscriber is blocklisted, so no sequence starts. suppressed: the person wiped their data and has not confirmed again (D125), so no marketing sequence starts; a transactional one still does.",
+  SequenceSkip: object(
+    {
+      sequence_id: integer,
+      reason: {
+        type: "string",
+        enum: ["subscriber_blocklisted", "suppressed"],
+        description:
+          "subscriber_blocklisted: the subscriber is blocklisted, so no sequence starts. suppressed: the person wiped their data and has not confirmed again (D125), so no marketing sequence starts; a transactional one still does.",
+      },
+      sequence_name: {
+        ...nullable(string),
+        description:
+          "On a subscriber's event list only (B127): the sequence's name, null once the sequence is deleted.",
+      },
     },
+    ["sequence_name"],
+  ),
+  EventSequenceLink: object({
+    enrollment_id: integer,
+    sequence_id: integer,
+    sequence_name: nullable(string),
   }),
   EventGrants: {
     ...array(
@@ -712,6 +751,16 @@ export const schemas = {
       description:
         "The sequence starts this event was refused, with the reason for each (B116, D131), in sequence ID order; empty when none. An event recorded before schema 25 shows none, since its refusals were not kept.",
     },
+    started: {
+      ...array(ref("EventSequenceLink")),
+      description:
+        "The enrollments this event started, in ID order (B127); empty when none. Read from the enrollments, so an event recorded before this release shows them too.",
+    },
+    exited: {
+      ...array(ref("EventSequenceLink")),
+      description:
+        "The enrollments this event exited, by the `exit_on` it names, in ID order (B127); empty when none.",
+    },
   }),
   CampaignSkippedDelivery: object({
     subscriber_id: integer,
@@ -719,7 +768,7 @@ export const schemas = {
     reason: {
       ...nullable(string),
       description:
-        "unsubscribed: the subscriber left the campaign's list between the batch's claim and its push. subscriber_blocklisted: the subscriber was blocklisted then. subscriber_unavailable: the subscriber's UUID or address changed after the claim, or it no longer exists. Null for a delivery skipped before schema 25, when the reason was not kept.",
+        "unsubscribed: an audience membership was unsubscribed between the batch's claim and its push. subscriber_blocklisted: the subscriber was blocklisted then. subscriber_unavailable: the subscriber's UUID or address changed after the claim, or it no longer exists. membership_changed: the subscriber no longer qualifies for another reason, such as a confirmation during an opt-in campaign or a deleted membership (B127). Null for a delivery skipped before schema 25, when the reason was not kept.",
     },
     at: time,
   }),
@@ -819,6 +868,11 @@ export const schemas = {
       due_at: nullable(time),
       status: enrollmentStatus,
       exit_reason: nullable(string),
+      exit_condition: {
+        ...nullable(string),
+        description:
+          "The step condition's JSON text that a condition exit ended the enrollment with.",
+      },
       created_at: time,
       updated_at: time,
       finished_at: nullable(time),
@@ -828,8 +882,13 @@ export const schemas = {
         ...string,
         description: "Only when the caller may read that subscriber.",
       },
+      held_until: {
+        ...nullable(time),
+        description:
+          "Only in a subscriber's enrollment list (B127): when the frequency cap holds this enrollment's wait, the time it frees the step; null when nothing holds it.",
+      },
     },
-    ["subscriber_email"],
+    ["subscriber_email", "held_until"],
   ),
   StepSample: object(
     {
@@ -916,12 +975,15 @@ export const schemas = {
         step_id: nullable(integer),
         position: nullable(integer),
         kind: nullable(stepKind),
+        held: { anyOf: [choice("frequency_cap"), { type: "null" }] },
+        held_until: nullable(time),
       }),
       object({
         type: { const: "ended" },
         at: nullable(time),
         status: enrollmentStatus,
         reason: nullable(string),
+        condition: nullable(string),
       }),
     ],
   },

@@ -1,6 +1,6 @@
 -- Native sequence enrollments (docs/design/05-sequences.md, 03-data-model.md#enrollments); no upstream source.
 -- name: enrollment-by-id
-SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at, test,
+SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, exit_condition, created_at, updated_at, finished_at, test,
     (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name
   FROM enrollments WHERE id = ?;
 -- name: exit-by-event
@@ -33,7 +33,7 @@ INSERT INTO enrollments (sequence_id, subscriber_id, trigger_event_id, step_id, 
 SELECT list_id FROM sequences WHERE id = ?1
   AND EXISTS (SELECT 1 FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active' AND kind = 'marketing');
 -- name: enrollment-steps
-SELECT id, position, kind, status FROM sequence_steps WHERE sequence_id = ? ORDER BY status, position;
+SELECT id, position, kind, status, cap_policy FROM sequence_steps WHERE sequence_id = ? ORDER BY status, position;
 -- name: enrollment-end
 UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active';
@@ -84,7 +84,7 @@ UPDATE enrollments SET step_id = ?, due_at = ?, claimed_until = NULL, retry_at =
 UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-end
-UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
+UPDATE enrollments SET status = ?, exit_reason = ?, exit_condition = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-defer
 UPDATE enrollments SET due_at = ?, claimed_until = NULL, retry_at = NULL WHERE id = ? AND status = 'active' AND claimed_until = ?;
@@ -103,3 +103,15 @@ UPDATE enrollments SET due_at = ?1 WHERE id = ?2 AND status = 'active' AND step_
   AND (claimed_until IS NULL OR claimed_until < ?4);
 -- name: reschedule-step
 SELECT wait FROM sequence_steps WHERE id = ? AND sequence_id = ? AND status = 'active';
+-- name: subscriber-event-links
+-- B127: a subscriber's enrollments that a page of its events started (the trigger) or exited (the
+-- event's name and the time it was received, which the exit recorded). The subscriber's own index
+-- bounds the read; the two JSON arrays hold the page's event IDs and its {name, at} pairs.
+SELECT e.id, e.sequence_id, e.trigger_event_id, e.exit_reason, e.finished_at,
+    (SELECT name FROM sequences WHERE sequences.id = e.sequence_id) AS sequence_name
+  FROM enrollments e
+  WHERE e.subscriber_id = ?1
+    AND (e.trigger_event_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?2))
+      OR EXISTS (SELECT 1 FROM json_each(?3) j
+        WHERE e.exit_reason = 'event:' || json_extract(j.value, '$.name')
+          AND e.finished_at = json_extract(j.value, '$.at')));

@@ -32,11 +32,19 @@ export interface EnrollmentRow {
   due_at: string | null;
   status: string;
   exit_reason: string | null;
+  /** The condition's text that a `condition` exit ended the enrollment with (B127 r2, migration 0029). */
+  exit_condition: string | null;
   created_at: string;
   updated_at: string;
   finished_at: string | null;
   test: bigint | number;
   sequence_name?: string | null;
+}
+/** An enrollment an event started or exited, as an events row names it (B127). */
+export interface EventLink {
+  enrollment_id: number | object;
+  sequence_id: number | object;
+  sequence_name: string | null;
 }
 export interface EnrollmentFilter {
   sequenceId?: bigint;
@@ -63,6 +71,7 @@ export function project(row: EnrollmentRow) {
     due_at: row.due_at,
     status: row.status,
     exit_reason: row.exit_reason,
+    exit_condition: row.exit_condition,
     created_at: row.created_at,
     updated_at: row.updated_at,
     finished_at: row.finished_at,
@@ -404,7 +413,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     if (!statements) {
       statements = {
         rows: db.prepare<unknown, Array<SQLQueryBindings>>(
-          `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, created_at, updated_at, finished_at, test, (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+          `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, exit_condition, created_at, updated_at, finished_at, test, (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         ),
         total: db.prepare<unknown, Array<SQLQueryBindings>>(
           `SELECT count(*) AS n FROM enrollments${where}`,
@@ -552,6 +561,50 @@ export function createEnrollments(db: Database, clock: Clock) {
       const id = start(sequenceId, subscriberId, trigger?.id ?? null, first, now, now, true, false);
       return { enrollment: must(byId(id), "enrollment") };
     },
+    /**
+     * B127: the enrollments one page of a subscriber's events started or exited, by event ID. An event
+     * started an enrollment it triggered, and exited one whose `exit_on` it names, at the time it was
+     * received (the `at` given here, which an exit records as its finish).
+     */
+    eventLinks(
+      subscriberId: bigint,
+      events: Array<{ id: bigint; name: string; receivedAt: string }>,
+    ): Map<bigint, { started: Array<EventLink>; exited: Array<EventLink> }> {
+      const links = new Map<bigint, { started: Array<EventLink>; exited: Array<EventLink> }>();
+      for (const event of events) {
+        links.set(event.id, { started: [], exited: [] });
+      }
+      const rows = q
+        .get("subscriber-event-links")
+        .all(
+          subscriberId,
+          JSON.stringify(events.map((event) => event.id.toString())),
+          JSON.stringify(events.map((event) => ({ name: event.name, at: event.receivedAt }))),
+        ) as Array<{
+        id: bigint;
+        sequence_id: bigint;
+        trigger_event_id: bigint | null;
+        exit_reason: string | null;
+        finished_at: string | null;
+        sequence_name: string | null;
+      }>;
+      for (const row of rows) {
+        const link = {
+          enrollment_id: numberID(row.id),
+          sequence_id: numberID(row.sequence_id),
+          sequence_name: row.sequence_name,
+        };
+        if (row.trigger_event_id !== null) {
+          links.get(row.trigger_event_id)?.started.push(link);
+        }
+        for (const event of events) {
+          if (row.exit_reason === `event:${event.name}` && row.finished_at === event.receivedAt) {
+            links.get(event.id)?.exited.push(link);
+          }
+        }
+      }
+      return links;
+    },
     /** The steps of an enrollment's sequence, kept ones first in order, for its timeline. */
     steps(sequenceId: bigint) {
       return q.get("enrollment-steps").all(sequenceId) as Array<{
@@ -559,6 +612,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         position: bigint;
         kind: string;
         status: string;
+        cap_policy: "defer" | "skip";
       }>;
     },
     /** Cancel an active enrollment (canceled, manual). The caller holds the write. */
@@ -625,9 +679,16 @@ export function createEnrollments(db: Database, clock: Clock) {
       return "advanced";
     },
     /** End a claimed enrollment. The caller holds the write and has checked `owns`. */
-    endClaimed(claim: Claim, status: "canceled" | "exited", reason: string, now: Date) {
+    /** End a claimed enrollment; a `condition` exit keeps the condition's text (B127 r2). */
+    endClaimed(
+      claim: Claim,
+      status: "canceled" | "exited",
+      reason: string,
+      now: Date,
+      condition: string | null = null,
+    ) {
       const at = now.toISOString();
-      q.get("claimed-end").run(status, reason, at, at, claim.id, claim.lease);
+      q.get("claimed-end").run(status, reason, condition, at, at, claim.id, claim.lease);
     },
     /** Move a claimed enrollment's due time (frequency cap `defer`) and release it. */
     defer(claim: Claim, dueAt: Date) {

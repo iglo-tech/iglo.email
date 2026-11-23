@@ -335,8 +335,14 @@ test("an old email keeps working after its body is dropped, and only finished ro
   ).toBe(2);
   f.db.run("DELETE FROM sends WHERE uuid LIKE '%-old'");
 
-  // The public row and the producer's retry are unchanged.
-  expect(await f.json(`/api/sends/${send.id}`)).toEqual(before);
+  // The public row and the producer's retry are unchanged, but for the subject: it is read from the
+  // payload that the retention and the deletion dropped (D135), so it is null from now on.
+  const after = await f.json(`/api/sends/${send.id}`);
+  expect(after.body.data).toEqual({
+    ...before.body.data,
+    subject: null,
+    subject_missing: "retention",
+  });
   const replay = await f.tx({
     subscriber_id: ada,
     template_id: template,
@@ -387,6 +393,65 @@ test("an old email keeps working after its body is dropped, and only finished ro
   expect(f.errors).toEqual([]);
 });
 
+// B127 r1: a send with no subject says why. The API's subject_missing names the cause, and the send
+// log shows it: a skipped send was never prepared, a wiped one has no address, and a sent one past
+// thirty days lost its message and keeps its address.
+test("a send with no subject says why: skipped, wiped, or past the thirty-day retention", async () => {
+  const f = await open();
+  const template = await f.template("<p>Hello</p>", "Your order");
+  const ada = await f.subscriber("ada@example.test", "Ada");
+  const grace = await f.subscriber("grace@example.test", "Grace");
+  const sentID = (await f.tx({ subscriber_id: ada, template_id: template, data: {} })).body.data
+    .sends[0].id;
+  const sent = (await f.json(`/api/sends/${sentID}`)).body.data;
+  expect(sent).toMatchObject({ status: "sent", subject: "Your order", subject_missing: null });
+
+  expect((await f.json(`/api/subscribers/${grace}/blocklist`, "PUT", {})).status).toBe(200);
+  const refusedID = (await f.tx({ subscriber_id: grace, template_id: template, data: {} })).body
+    .data.sends[0].id;
+  const refused = (await f.json(`/api/sends/${refusedID}`)).body.data;
+  expect(refused).toMatchObject({
+    status: "skipped",
+    subject: null,
+    subject_missing: "skipped",
+    skip_reason: "subscriber_blocklisted",
+    to_email: "grace@example.test",
+  });
+
+  f.clock.advance(30 * day + 1);
+  await compactAll(f);
+  const past = (await f.json(`/api/sends/${sent.id}`)).body.data;
+  expect(past).toMatchObject({
+    status: "sent",
+    subject: null,
+    subject_missing: "retention",
+    to_email: "ada@example.test",
+    template_name: "fixture",
+  });
+  // The skipped row is read again after the pass: the pass changes only finished rows with a payload,
+  // so it is still skipped, and still says why it has no subject (B127 r2).
+  const refusedPast = (await f.json(`/api/sends/${refusedID}`)).body.data;
+  expect(refusedPast).toMatchObject({
+    status: "skipped",
+    subject: null,
+    subject_missing: "skipped",
+    skip_reason: "subscriber_blocklisted",
+    to_email: "grace@example.test",
+  });
+
+  expect((await f.json(`/api/subscribers/${ada}`, "DELETE")).status).toBe(200);
+  const wiped = (await f.json(`/api/sends/${sent.id}`)).body.data;
+  expect(wiped).toMatchObject({
+    status: "sent",
+    subject: null,
+    subject_missing: "wiped",
+    to_email: "",
+    // The template is not personal data: the wiped send still names it (B127 r2).
+    template_name: "fixture",
+  });
+  expect(f.errors).toEqual([]);
+});
+
 test("analytics totals match before and after a compaction", async () => {
   const f = await open();
   const template = await f.template(`<a href="{{ 'https://example.test/a' | track_link }}">a</a>`);
@@ -427,7 +492,19 @@ test("analytics totals match before and after a compaction", async () => {
   f.clock.advance(31 * day);
   await compactAll(f);
   expect(scalar(f, "SELECT count(*) AS n FROM sends WHERE payload IS NOT NULL")).toBe(0);
-  expect(read()).toEqual(before);
+  // The subject is read from the payload that retention dropped (D135): the rest is unchanged, and a
+  // row that had a subject now says retention had dropped it (a skipped row already says why).
+  expect(read()).toEqual({
+    ...before,
+    listed: {
+      ...before.listed,
+      results: before.listed.results.map((row) => ({
+        ...row,
+        subject: null,
+        subject_missing: row.subject_missing ?? "retention",
+      })),
+    },
+  });
   expect(f.errors).toEqual([]);
 });
 

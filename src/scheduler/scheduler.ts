@@ -170,8 +170,13 @@ export function createScheduler(options: SchedulerOptions) {
     });
   }
   const advance = (claim: Decision) => commit(claim, () => enrollments.advance(claim, clock.now()));
-  const end = (claim: Decision, status: "canceled" | "exited", reason: string) =>
-    commit(claim, () => enrollments.endClaimed(claim, status, reason, clock.now()));
+  // A condition exit keeps the condition's text, so the enrollment names what ended it (B127 r2).
+  const end = (
+    claim: Decision,
+    status: "canceled" | "exited",
+    reason: string,
+    condition: string | null = null,
+  ) => commit(claim, () => enrollments.endClaimed(claim, status, reason, clock.now(), condition));
   const retry = (claim: Decision, ms: number) =>
     commit(claim, () => enrollments.release(claim, new Date(clock.now().getTime() + ms)));
   const capped = (claim: Decision, email: string) =>
@@ -250,7 +255,9 @@ export function createScheduler(options: SchedulerOptions) {
         return retry(claim, lateBackoff(row));
       }
       if (!result.value) {
-        return row.on_false === "skip" ? advance(claim) : end(claim, "exited", "condition");
+        return row.on_false === "skip"
+          ? advance(claim)
+          : end(claim, "exited", "condition", row.condition);
       }
     }
 

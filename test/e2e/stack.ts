@@ -12,6 +12,8 @@ export interface Stack {
   dataDir: string;
   blankOrigin: string;
   mailbox: Mailbox;
+  /** The server's recent stderr, which carries what needs attention (for a diagnosis). */
+  errors: () => string;
 }
 
 export async function withStack(run: (stack: Stack) => Promise<number>): Promise<number> {
@@ -43,7 +45,13 @@ export async function withStack(run: (stack: Stack) => Promise<number>): Promise
       resolve(root, "dist/iglo.email"),
       new AbortController().signal,
       (blankOrigin) =>
-        run({ origin: production.origin, dataDir: production.dataDir, blankOrigin, mailbox }),
+        run({
+          origin: production.origin,
+          dataDir: production.dataDir,
+          blankOrigin,
+          mailbox,
+          errors: production.errors,
+        }),
       undefined,
       // The suite passed 20 minutes at about 330 specs (B6 review); 40 leaves room to grow.
       2_400_000,

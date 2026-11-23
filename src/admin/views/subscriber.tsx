@@ -16,6 +16,7 @@ import {
   ManageLists,
   Preconfirm,
 } from "@/admin/views/parts";
+import { sendKeys } from "@/admin/views/sends";
 import { subscriberKeys } from "@/admin/views/subscribers";
 import type { Translation } from "@/i18n/i18n";
 import { HttpError } from "@/server/response";
@@ -111,7 +112,15 @@ function SubscriberForm(props: { t: Translation; isNew: boolean; canSave: boolea
     </form>
   );
 }
-function Overview({ t, canSave }: { t: Translation; canSave: boolean }) {
+function Overview({
+  t,
+  canSave,
+  canSends,
+}: {
+  t: Translation;
+  canSave: boolean;
+  canSends: boolean;
+}) {
   const copy = (name: string, field: string, label: string) => (
     <button
       type="button"
@@ -124,6 +133,14 @@ function Overview({ t, canSave }: { t: Translation; canSave: boolean }) {
       <strong>{name}</strong> <span x-text={`form.${field}`}></span>
     </button>
   );
+  // Campaign counts come from campaign views and clicks only; sends are counted apart (B127).
+  const stats = [
+    ["subscribers.statCampaignsViewed", "campaignCount", "stat-campaigns"],
+    ["subscribers.statCampaignViews", "totalViews", "stat-views"],
+    ["subscribers.statCampaignClicks", "totalClicks", "stat-clicks"],
+    ...(canSends ? [["subscribers.statSends", "sendCount", "stat-sends"]] : []),
+  ];
+  const width = stats.length === 4 ? "col-3" : "col-4";
   return (
     <div class="vstack gap-6 activity">
       <div class="card">
@@ -135,16 +152,15 @@ function Overview({ t, canSave }: { t: Translation; canSave: boolean }) {
           <div class="col-6 hstack gap-2 justify-end">
             {copy(t.T("globals.fields.id"), "id", t.T("globals.fields.id"))}
             {copy(t.T("globals.fields.uuid"), "uuid", t.T("globals.fields.uuid"))}
+            <template x-if="form.external_id">
+              {copy(t.T("subscribers.externalId"), "external_id", t.T("subscribers.externalId"))}
+            </template>
           </div>
         </div>
       </div>
       <div class="row">
-        {[
-          ["globals.terms.campaigns", "campaignCount", "stat-campaigns"],
-          ["globals.terms.views", "totalViews", "stat-views"],
-          ["globals.terms.clicks", "totalClicks", "stat-clicks"],
-        ].map(([label, value, test]) => (
-          <div class="col-4">
+        {stats.map(([label, value, test]) => (
+          <div class={width}>
             <div class="card float stat-card">
               <h5 class="title">{t.T(must(label, "stat label"))}</h5>
               <div class="stat-value" data-testid={test} x-text={value}></div>
@@ -152,6 +168,11 @@ function Overview({ t, canSave }: { t: Translation; canSave: boolean }) {
           </div>
         ))}
       </div>
+      {canSends ? (
+        <small class="text-light" data-hint="">
+          {t.T("subscribers.statSendsHelp")}
+        </small>
+      ) : null}
       <div class="card float has-table" x-show="views.length" style="display: none">
         <h5 class="title">{t.T("globals.terms.views")}</h5>
         <div class="table-wrapper">
@@ -500,6 +521,39 @@ function Pages() {
     </nav>
   );
 }
+// A sequence of an event, named (B127). The name links to the sequence only for a viewer who may
+// read sequences; any other viewer reads the name as plain text.
+function SequenceName({ item }: { item: string }) {
+  return (
+    <>
+      <template x-if="canSequences">
+        <a
+          x-bind:href={`'/admin/sequences/' + ${item}.sequence_id`}
+          x-text={`sequenceLabel(${item})`}
+        ></a>
+      </template>
+      <template x-if="!canSequences">
+        <span x-text={`sequenceLabel(${item})`}></span>
+      </template>
+    </>
+  );
+}
+// The sequences an event started or exited, under a label, one per line (B127); nothing when there are
+// none. One per line keeps a name with a colon apart from the next one.
+function SequenceLinks({ list, label, testId }: { list: string; label: string; testId: string }) {
+  return (
+    <template x-if={`${list}.length`}>
+      <div class="text-light" data-testid={testId}>
+        {label}:
+        <template x-for={`s in ${list}`} x-bind:key="s.sequence_id">
+          <div>
+            <SequenceName item="s" />
+          </div>
+        </template>
+      </div>
+    </template>
+  );
+}
 function Events({ t }: { t: Translation }) {
   const data = t.T("subscribers.eventData");
   return (
@@ -511,7 +565,7 @@ function Events({ t }: { t: Translation }) {
               <th>{t.T("globals.fields.name")}</th>
               <th>{data}</th>
               <th>{t.T("subscribers.occurredAt")}</th>
-              <th>{t.T("subscribers.notStarted")}</th>
+              <th>{t.T("subscribers.sequences")}</th>
             </tr>
           </thead>
           <tbody>
@@ -525,12 +579,25 @@ function Events({ t }: { t: Translation }) {
                   data-label={t.T("subscribers.occurredAt")}
                   x-text="niceDate(row.occurred_at, true)"
                 ></td>
-                <td data-label={t.T("subscribers.notStarted")}>
-                  <span
-                    class="text-light"
-                    data-testid="event-skipped"
-                    x-text="skippedText(row.skipped)"
-                  ></span>
+                <td data-label={t.T("subscribers.sequences")}>
+                  <SequenceLinks
+                    list="row.started"
+                    label={t.T("subscribers.started")}
+                    testId="event-started"
+                  />
+                  <SequenceLinks
+                    list="row.exited"
+                    label={t.T("subscribers.exited")}
+                    testId="event-exited"
+                  />
+                  <template x-for="s in row.skipped" x-bind:key="s.sequence_id + ':' + s.reason">
+                    <div class="text-light" data-testid="event-skipped">
+                      {t.T("subscribers.notStarted")}: <SequenceName item="s" />
+                      {" ("}
+                      <span x-text="skipLabel(s.reason)"></span>
+                      {")"}
+                    </div>
+                  </template>
                 </td>
               </tr>
             </template>
@@ -574,8 +641,16 @@ function Enrollments({ t }: { t: Translation }) {
                 <td data-label={sequence} x-text="row.sequence_name"></td>
                 <td data-label={t.T("globals.fields.status")}>
                   <span class="badge enum" x-text="row.status"></span>
+                  <template x-if="row.held_until">
+                    <div class="text-light text-8" data-testid="enrollment-held">
+                      <span x-text="heldText(row)"></span>
+                    </div>
+                  </template>
                 </td>
-                <td data-label={t.T("sequences.exitReason")} x-text="row.exit_reason || ''"></td>
+                <td
+                  data-label={t.T("sequences.exitReason")}
+                  x-text="exitText(row.exit_reason, row.finished_at, row.exit_condition)"
+                ></td>
                 <td
                   data-label={t.T("globals.fields.createdAt")}
                   x-text="niceDate(row.created_at, true)"
@@ -590,42 +665,64 @@ function Enrollments({ t }: { t: Translation }) {
     </div>
   );
 }
-function Sends({ t }: { t: Translation }) {
+// The subscriber's journaled sends, transactional and sequence (B127). Campaign mail is not in it.
+function Sends({ t, id }: { t: Translation; id: string }) {
   return (
-    <div class="card page-content has-table">
-      <div class="table-wrapper">
-        <table>
-          <thead>
-            <tr>
-              <th>{t.T("globals.fields.id")}</th>
-              <th>{t.T("subscribers.sendTo")}</th>
-              <th>{t.T("globals.fields.type")}</th>
-              <th>{t.T("globals.fields.status")}</th>
-              <th>{t.T("subscribers.sentAt")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-for="row in activity" x-bind:key="row.id">
-              <tr data-testid="send-row">
-                <td x-text="row.id"></td>
-                <td data-label={t.T("subscribers.sendTo")} x-text="row.to_email"></td>
-                <td data-label={t.T("globals.fields.type")} x-text="row.kind"></td>
-                <td data-label={t.T("globals.fields.status")}>
-                  <span class="badge enum" x-text="row.status"></span>{" "}
-                  <span class="text-light" x-text="row.skip_reason || ''"></span>
-                </td>
-                <td
-                  data-label={t.T("subscribers.sentAt")}
-                  x-text="niceDate(row.sent_at || row.created_at, true)"
-                ></td>
-              </tr>
-            </template>
-            <EmptyRow when="!activity.length" colspan={5} t={t} />
-          </tbody>
-        </table>
-        <Pages />
+    <>
+      <div class="hstack justify-end">
+        <a
+          role="button"
+          class="outline"
+          data-testid="link-all-sends"
+          href={`/admin/sends?subscriber_id=${id}`}
+        >
+          {t.T("subscribers.allSends")}
+        </a>
       </div>
-    </div>
+      <div class="card page-content has-table">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>{t.T("globals.fields.id")}</th>
+                <th>{t.T("subscribers.sendTo")}</th>
+                <th>{t.T("globals.fields.type")}</th>
+                <th>{t.T("sends.subject")}</th>
+                <th>{t.T("sends.sequenceOrTemplate")}</th>
+                <th>{t.T("globals.fields.status")}</th>
+                <th>{t.T("subscribers.sentAt")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="row in activity" x-bind:key="row.id">
+                <tr data-testid="send-row">
+                  <td data-label={t.T("globals.fields.id")} x-text="row.id"></td>
+                  <td data-label={t.T("subscribers.sendTo")} x-text="row.to_email"></td>
+                  <td data-label={t.T("globals.fields.type")} x-text="row.kind"></td>
+                  <td data-label={t.T("sends.subject")} x-text="subjectText(row)"></td>
+                  <td
+                    data-label={t.T("sends.sequenceOrTemplate")}
+                    x-text="sequenceOrTemplateText(row)"
+                  ></td>
+                  <td data-label={t.T("globals.fields.status")}>
+                    <span
+                      class="badge enum"
+                      data-testid="send-status"
+                      x-bind:data-variant="statusVariant(row.status)"
+                      x-text="statusText(row.status)"
+                    ></span>{" "}
+                    <span class="text-light" x-text="skipText(row.skip_reason)"></span>
+                  </td>
+                  <td data-label={t.T("subscribers.sentAt")} x-text="sentText(row)"></td>
+                </tr>
+              </template>
+              <EmptyRow when="!activity.length" colspan={7} t={t} />
+            </tbody>
+          </table>
+          <Pages />
+        </div>
+      </div>
+    </>
   );
 }
 function Tabs({
@@ -677,7 +774,18 @@ function Tabs({
   );
 }
 const anySubscribers = ["subscribers:get", "subscribers:get_all"];
-const keys = [...subscriberKeys, "lists.optins.single", "lists.optins.double"];
+const keys = [
+  ...subscriberKeys,
+  "lists.optins.single",
+  "lists.optins.double",
+  ...sendKeys,
+  // An enrollment's exit names its event or condition, and a cap hold names its time (B127).
+  "sequences.exit.condition",
+  "sequences.exit.conditionText",
+  "sequences.exit.event",
+  "sequences.exit.eventAt",
+  "sequences.heldByCap",
+];
 
 export const newSubscriberView: AdminView = ({ context, can }) => {
   const t = context.app.i18n;
@@ -726,7 +834,12 @@ export function subscriberView(tab: SubscriberTab): AdminView {
       pageId: "subscribers.all",
       script: "subscribers",
       translationKeys: keys,
-      config: { subscriber_id: id, tab },
+      config: {
+        subscriber_id: id,
+        tab,
+        can_sends: can("sends:get"),
+        can_sequences: can("sequences:get"),
+      },
       body: (
         <section class="subscribers" x-data="subscribersView">
           <Breadcrumbs
@@ -803,10 +916,12 @@ export function subscriberView(tab: SubscriberTab): AdminView {
             {tab === "edit" ? <SubscriberForm t={t} isNew={false} canSave={canSave} /> : null}
             {tab === "lists" ? <Subscriptions t={t} canSave={canSave} /> : null}
             {tab === "bounces" ? <Bounces t={t} /> : null}
-            {tab === "activity" ? <Overview t={t} canSave={canSave} /> : null}
+            {tab === "activity" ? (
+              <Overview t={t} canSave={canSave} canSends={can("sends:get")} />
+            ) : null}
             {tab === "events" ? <Events t={t} /> : null}
             {tab === "enrollments" ? <Enrollments t={t} /> : null}
-            {tab === "sends" ? <Sends t={t} /> : null}
+            {tab === "sends" ? <Sends t={t} id={id} /> : null}
           </div>
         </section>
       ),

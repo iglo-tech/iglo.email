@@ -33,7 +33,9 @@ screens, `bun run e2e:browser:campaigns` for the templates and campaigns screens
 `bun run e2e:browser:settings` for the settings, users, roles and profile screens,
 `bun run e2e:browser:media` for the bounces, media, import and forms screens,
 `bun run e2e:browser:analytics` for the analytics, logs and maintenance screens, and
-`bun run e2e:browser:sequences` for the sequence, enrollment and subscriber tab screens.
+`bun run e2e:browser:sequences` for the sequence, enrollment and subscriber tab screens, and
+`bun run e2e:browser:operator` for the send log, the subscriber's counts, sends and events, the
+external-ID search, the timeline and the dashboard, each at 1280 and 390 px.
 `E2E_SHOTS=<directory>` keeps screenshots.
 
 Credentials are the synthetic ones in `test/worked-example/harness.ts`; each

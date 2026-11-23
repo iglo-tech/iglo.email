@@ -16,6 +16,8 @@ export interface NavigationLink {
   readonly label: string;
   readonly href: string;
   readonly current?: boolean;
+  /** A plain link's own icon (B127); a link without one shows the grid. */
+  readonly icon?: string;
 }
 /** A collapsible sidebar group; a plain link stays one row. */
 export interface NavigationGroup {
@@ -133,7 +135,7 @@ function Navigation({ items }: { items: ReadonlyArray<NavigationLink | Navigatio
             </li>
           ) : (
             <li>
-              <Link item={item} icon="grid" />
+              <Link item={item} icon={item.icon ?? "grid"} />
             </li>
           ),
         )}

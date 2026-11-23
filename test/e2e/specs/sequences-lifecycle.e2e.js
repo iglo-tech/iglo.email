@@ -506,11 +506,13 @@ test("the timeline shows a sent step, a skipped step and a failed step", async (
   await page.goto(`/admin/sequences/enrollments/${sent.body.data.id}`);
   const steps = page.locator('[data-testid="timeline-entry"][data-type="step"]');
   await expect(steps).toHaveCount(3);
-  await expect(steps.nth(0)).toContainText("sent");
-  await expect(steps.nth(1)).toContainText("skipped (frequency_cap)");
-  await expect(steps.nth(2)).toContainText("sent");
+  // B127: a step names its decision as the send log does, and a skip names its reason in words.
+  await expect(steps.nth(0)).toContainText("Sent");
+  await expect(steps.nth(1)).toContainText("Skipped (frequency cap)");
+  await expect(steps.nth(1)).toHaveAttribute("data-variant", "warning");
+  await expect(steps.nth(2)).toContainText("Sent");
   await page.goto(`/admin/sequences/enrollments/${failed.body.data.id}`);
   await expect(page.locator('[data-testid="timeline-entry"][data-type="step"]')).toContainText(
-    "failed",
+    "Failed",
   );
 });

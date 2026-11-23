@@ -7,6 +7,9 @@ import {
 import {
   api, config, i18n, urls,
 } from '@/assets/admin/js/main.js';
+import {
+  exitText, skipLabel, statusText, statusVariant,
+} from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -54,6 +57,7 @@ function enrollmentsView() {
 
     statusLabel,
     niceDate: u.niceDate,
+    exitText,
 
     async onFilter() {
       this.error = '';
@@ -147,21 +151,39 @@ function enrollmentView() {
         return i18n.t('sequences.entry.enrolled');
       }
       if (entry.type === 'ended') {
+        // The exit names its event or its condition (B127); the date beside the entry is when it ended.
         const status = statusLabel(entry.status);
         return entry.reason
-          ? i18n.ts('sequences.entry.endedReason', { status, reason: entry.reason })
+          ? i18n.ts('sequences.entry.endedReason', {
+            status,
+            reason: exitText(entry.reason, null, entry.condition),
+          })
           : i18n.ts('sequences.entry.ended', { status });
       }
       const kind = entry.kind ? i18n.t(`sequences.kind.${entry.kind}`) : '';
       if (entry.type === 'waiting') {
-        return i18n.ts('sequences.entry.waiting', { position: (entry.position ?? 0) + 1, kind });
+        const position = (entry.position ?? 0) + 1;
+        // A cap-held wait names the cap and its end (B127); the date beside it is that end.
+        return entry.held
+          ? i18n.ts('sequences.entry.waitingHeld', { position, kind })
+          : i18n.ts('sequences.entry.waiting', { position, kind });
       }
       const id = entry.step_id;
-      const decision = i18n.t(`sequences.decision.${entry.decision}`);
+      const decision = statusText(entry.decision);
       const key = entry.removed ? 'stepRemoved' : 'step';
       return entry.reason
-        ? i18n.ts(`sequences.entry.${key}Reason`, { id, kind, decision, reason: entry.reason })
+        ? i18n.ts(`sequences.entry.${key}Reason`, { id, kind, decision, reason: skipLabel(entry.reason) })
         : i18n.ts(`sequences.entry.${key}`, { id, kind, decision });
+    },
+
+    // The date an entry shows: a cap-held wait shows when the cap frees the step, not when it was due.
+    entryAt(entry) {
+      return entry.held ? entry.held_until : entry.at;
+    },
+
+    // A step's tone: a skipped step is a warning, a failed one a danger, a sent one a success.
+    entryVariant(entry) {
+      return entry.type === 'step' ? statusVariant(entry.decision) : null;
     },
 
     async onCancel(id) {

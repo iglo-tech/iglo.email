@@ -70,9 +70,10 @@ test("a blocklisted person's event names each sequence it would start, marketing
   const timeline = asBody<Array<{ name: string; skipped: Array<unknown> }>>(
     (await f.json(`/api/subscribers/${subscriber}/subscriber-events`)).body.data.results,
   );
+  // Each refusal names its sequence too (B127), read by ID.
   expect(timeline.find((e) => e.name === "order_paid")?.skipped).toEqual([
-    { sequence_id: marketing.id, reason: "subscriber_blocklisted" },
-    { sequence_id: receipt.id, reason: "subscriber_blocklisted" },
+    { sequence_id: marketing.id, sequence_name: "Marketing", reason: "subscriber_blocklisted" },
+    { sequence_id: receipt.id, sequence_name: "Receipt", reason: "subscriber_blocklisted" },
   ]);
   // An event that starts nothing says so with an empty list.
   expect(timeline.find((e) => e.name === "signup")?.skipped).toEqual([]);

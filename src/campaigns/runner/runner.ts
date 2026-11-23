@@ -121,6 +121,7 @@ const SKIP_REASON = {
   unavailable: "subscriber_unavailable",
   blocklisted: "subscriber_blocklisted",
   unsubscribed: "unsubscribed",
+  membership_changed: "membership_changed",
 } as const;
 
 /** In-process owners of live campaign pipes, and of the one batch sent at a time. */
@@ -722,7 +723,8 @@ export function createCampaignRunner(deps: RunnerDeps) {
                 "claimed; the message was not sent. Resend to them manually if needed.",
             );
           }
-          // B116 (D131): the delivery names why it was skipped; no log line, since it is not a fault.
+          // B116 (D131): the delivery names why it was skipped. Only the changed-identity case logs
+          // above; the other reasons log nothing, since a membership or block change is not a fault.
           outcomes.set(i, {
             status: "skipped",
             at: clock.now().getTime(),
