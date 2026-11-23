@@ -25,15 +25,15 @@ export interface PageOptions extends PageSite {
 
 /**
  * What a subscription page offers, by how its path pairs the subscriber (D126, r1).
- * - `paired`: a campaign, a marketing send or a transactional send paired them. `base` is the
- *   paired path the forms post to. The manage view changes the name and the confirmed lists.
- *   `blocklist` and `privacy` say whether those forms appear. `lists` are the lists the link covers:
- *   a marketing send's list, a campaign's lists, none for a transactional send (B126, D123).
+ * - `paired`: a campaign or a marketing send paired them. `base` is the paired path the forms post to.
+ *   The manage view changes the name and the confirmed lists. `blocklist` and `privacy` say whether
+ *   those forms appear. `lists` are the lists the link covers: a marketing send's list, a campaign's lists.
  * - `transactional`: a transactional send paired them through its journal row (D126, r1). Its form
  *   cancels pending opt-ins only, which are unconfirmed memberships of double opt-in lists; with no open
  *   membership it says already unsubscribed; an active subscriber gets the manage view, or with
- *   preferences off a pointer to a marketing link (B126 r2, D123 item 8). It has no blocklist and no
- *   wipe; its export form posts to `base`.
+ *   preferences off a pointer to a marketing link (B126 r2, D123 item 8). Its manage view changes the
+ *   confirmed lists and never the name (D137 item 1). It has no blocklist and no wipe; its export form
+ *   posts to `base`.
  * - `pending`: a mail the server sent with no campaign or send (opt-in). The manage view changes
  *   pending lists only: no name, no blocklist, no privacy form.
  */
@@ -49,6 +49,13 @@ export type PageMode =
   | { kind: "pending" };
 
 const script = (value: string) => JSON.stringify(value).replaceAll("<", String.raw`\u003c`);
+
+/**
+ * A pending opt-in: an unconfirmed membership of a double opt-in list (B117b, D137 item 3). An unconfirmed
+ * membership of a single opt-in list is an active subscription, so the pending-only pages never list it or end it.
+ */
+const pendingOptin = (list: { subscriptionStatus: string; optin: string }) =>
+  list.subscriptionStatus === "unconfirmed" && list.optin === "double";
 
 /**
  * The public lists a revisited link covers, when every membership it covers is unsubscribed; `null`
@@ -77,9 +84,7 @@ function alreadyUnsubscribed(
  */
 function transactionalMemberships(subscribers: SubscriberStore, id: bigint) {
   const all = subscribers.allSubscriptions(id);
-  const pending = all.filter(
-    (list) => list.subscriptionStatus === "unconfirmed" && list.optin === "double",
-  );
+  const pending = all.filter(pendingOptin);
   return {
     pending: pending.length > 0,
     pendingNames: pending.filter((list) => list.type === "public").map((list) => list.name),
@@ -128,8 +133,9 @@ export function subscriptionPage(
   // B126 (D123 item 8): a transactional link with an active subscription and no manage view is the email
   // settings page. Its pending form is titled as its button, and its already-unsubscribed page is titled
   // as a marketing link's already-unsubscribed page is.
+  // B117b (D137 item 2): a transactional manage view is the email settings page too, with preferences on.
   const pageTitle =
-    transactionalView === "confirmed"
+    transactionalView === "confirmed" || (transactional && showManage)
       ? t.T("public.emailSettings")
       : transactionalView === "form"
         ? t.T("public.cancelPending")
@@ -137,14 +143,13 @@ export function subscriptionPage(
           ? t.T("globals.terms.unsubscribed")
           : t.T("public.unsubscribeTitle");
   const pending = mode.kind === "pending";
-  // The public lists a manage view changes: those not unsubscribed (unconfirmed, for a pending link).
+  // B117b (D137 item 1): only a paired marketing or campaign page changes the name. The transactional and
+  // pending pages never do, with or without copies.
+  const renames = mode.kind === "paired";
+  // The public lists a manage view changes: those not unsubscribed (pending opt-ins, for a pending link).
   const manageable = subscribers
     .visibleSubscriptions(subscriber.id)
-    .filter((list) =>
-      pending
-        ? list.subscriptionStatus === "unconfirmed"
-        : list.subscriptionStatus !== "unsubscribed",
-    );
+    .filter((list) => (pending ? pendingOptin(list) : list.subscriptionStatus !== "unsubscribed"));
   // B130 (D128): with no public list to manage, the page has no manage link and no preference form, and
   // the manage view keeps only the privacy actions. `privacy.allow_preferences` stays the explicit switch.
   const managePrefs = options.allowPreferences && manageable.length > 0;
@@ -244,8 +249,8 @@ export function subscriptionPage(
             <form method="post" class="manage-form">
               <div>
                 <input type="hidden" name="manage" value="true" />
-                <h2>{t.T("public.managePrefs")}</h2>
-                {pending ? null : (
+                <h2>{transactional ? t.T("public.emailSettings") : t.T("public.managePrefs")}</h2>
+                {renames ? (
                   <>
                     <label for="manage-name">{t.T("globals.fields.name")}</label>
                     <input
@@ -257,7 +262,7 @@ export function subscriptionPage(
                       required
                     />
                   </>
-                )}
+                ) : null}
                 {subscriptions.length ? (
                   <>
                     <br />
@@ -404,6 +409,9 @@ export function savePreferences(
   options: PageOptions,
   form: PreferenceForm,
   current: () => { id: bigint } | null,
+  // Whether the page may change the name: a marketing or campaign page does, a transactional page never
+  // does (B117b, D137 item 1). A name sent to a transactional page is ignored, not refused.
+  rename: boolean,
 ): Response | null {
   const failed = (message: string) =>
     publicMessage(t, {
@@ -416,7 +424,7 @@ export function savePreferences(
     return failed(t.T("public.invalidFeature"));
   }
   const name = trimSpace(form.name);
-  if (!name || Buffer.byteLength(name) > 256 || name.includes("\0")) {
+  if (rename && (!name || Buffer.byteLength(name) > 256 || name.includes("\0"))) {
     return failed(t.T("globals.messages.invalidName"));
   }
   const kept = new Set(form.lists.map((uuid) => uuid.toLowerCase()));
@@ -425,7 +433,9 @@ export function savePreferences(
     if (!subscriber) {
       return false;
     }
-    deps.subscribers.rename(subscriber.id, name);
+    if (rename) {
+      deps.subscribers.rename(subscriber.id, name);
+    }
     for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
       if (kept.has(list.uuid) || list.subscriptionStatus === "unsubscribed") {
         continue;
@@ -516,7 +526,8 @@ export function savePendingLists(
       return false;
     }
     for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
-      if (list.subscriptionStatus !== "unconfirmed" || kept.has(list.uuid)) {
+      // B117b (D137 item 3): only a pending double opt-in is ended; an active single opt-in stays.
+      if (!pendingOptin(list) || kept.has(list.uuid)) {
         continue;
       }
       const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId);

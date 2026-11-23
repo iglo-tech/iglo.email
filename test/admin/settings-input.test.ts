@@ -197,3 +197,102 @@ test("a trusted URL refuses a port outside 1 to 65535 and a user name or passwor
   });
   await put("security.trusted_urls", []);
 });
+
+/** Writes a setting straight into the settings table, as an older build would have stored it. */
+function storeAsOlderBuild(key: string, value: unknown): void {
+  const db = openDatabase(f.persisted.dataDir);
+  try {
+    db.run("UPDATE settings SET value = ? WHERE key = ?", [JSON.stringify(value), key]);
+  } finally {
+    db.close();
+  }
+}
+
+/** The admin form's save: the whole settings object, as the form posts it. Its status. */
+async function saveForm(): Promise<number> {
+  return (await api(f, cookie, "/api/settings", "PUT", await settings())).status;
+}
+
+// B117a (D136), lead decision 1 of round 1: a save checks only what it changes. Values an older build or
+// upstream stored, probed with an unrelated save (a single key or the whole form), must not block it.
+test("a trusted URL an older build stored does not block another save or the form", async () => {
+  const stored = ["https://user@example.test", "https://example.test:0"];
+  storeAsOlderBuild("security.trusted_urls", stored);
+  try {
+    expect(await put("app.site_name", "Renamed past stored trusted URLs")).toEqual({
+      status: 200,
+      message: undefined,
+    });
+    expect(await saveForm()).toBe(200);
+    expect((await settings())["security.trusted_urls"]).toEqual(stored);
+    // A new invalid entry is still refused, and only that entry is named.
+    const added = await put("security.trusted_urls", [...stored, "https://new.example.test:99999"]);
+    expect(added.status).toBe(400);
+    expect(added.message).toContain("https://new.example.test:99999");
+    expect(added.message).not.toContain("user@");
+    expect(added.message).not.toContain("example.test:0");
+  } finally {
+    storeAsOlderBuild("security.trusted_urls", []);
+  }
+});
+
+test("a from address an older build stored does not block another save or the form", async () => {
+  const original = (await settings())["app.from_email"];
+  const stored = ["=?Q?x?= <a@example.test>"];
+  storeAsOlderBuild("app.from_email", stored);
+  try {
+    expect(await put("app.site_name", "Renamed past a stored from address")).toEqual({
+      status: 200,
+      message: undefined,
+    });
+    expect(await saveForm()).toBe(200);
+    expect((await settings())["app.from_email"]).toEqual(stored);
+    const added = await put("app.from_email", [...stored, "=?Q?y?= <b@example.test>"]);
+    expect(added.status).toBe(400);
+    expect(added.message).toBe("invalid from email address: =?Q?y?= <b@example.test>");
+  } finally {
+    storeAsOlderBuild("app.from_email", original);
+  }
+});
+
+test("an administrator address an older build stored untrimmed does not block another save", async () => {
+  storeAsOlderBuild("app.notify_emails", [" ops@ "]);
+  try {
+    expect(await put("app.site_name", "Renamed past an untrimmed stored address")).toEqual({
+      status: 200,
+      message: undefined,
+    });
+    expect(await saveForm()).toBe(200);
+    // The stored entry is compared trimmed on both sides, so it is not checked again.
+    const added = await put("app.notify_emails", [" ops@ ", "new@"]);
+    expect(added.status).toBe(400);
+    expect(added.message).toBe("invalid notification email address: new@");
+  } finally {
+    storeAsOlderBuild("app.notify_emails", []);
+  }
+});
+
+test("a site URL with a control character an older build stored does not block another save", async () => {
+  const original = (await settings())["app.site_url"];
+  // Mid-path: a trailing C1 character is trimmed by any save, as Go's TrimSpace does, so it would not be kept.
+  const stored = "https://brand.example.test/a\u0085b";
+  storeAsOlderBuild("app.site_url", stored);
+  try {
+    expect(await put("app.site_name", "Renamed past a stored site URL")).toEqual({
+      status: 200,
+      message: undefined,
+    });
+    expect(await saveForm()).toBe(200);
+    expect((await settings())["app.site_url"]).toBe(stored);
+    // A changed site URL is checked as before: a new fragment is refused and names the site URL.
+    const refused = await put("app.site_url", "https://brand.example.test/#top");
+    expect(refused.status).toBe(400);
+    expect(refused.message).toContain("site URL");
+    expect(await put("app.site_url", "https://brand.example.test/new")).toEqual({
+      status: 200,
+      message: undefined,
+    });
+  } finally {
+    storeAsOlderBuild("app.site_url", original);
+  }
+});

@@ -213,6 +213,10 @@ export function registerUnsubscribeRoutes(
         return notFound(t);
       }
       if (form.manage && !blocklist) {
+        const found = pairedSend(sendUuid, subUuid);
+        if (!found) {
+          return notFound(t);
+        }
         return (
           savePreferences(
             { db: deps.db, subscribers: deps.subscribers, effects },
@@ -220,6 +224,8 @@ export function registerUnsubscribeRoutes(
             options(),
             form,
             () => pairedSend(sendUuid, subUuid)?.subscriber ?? null,
+            // B117b (D137 item 1): a transactional send's manage view never renames, with or without copies.
+            found.marketing,
           ) ?? notFound(t)
         );
       }

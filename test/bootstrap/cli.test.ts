@@ -678,6 +678,20 @@ describe("compiled executable", () => {
     }
   });
 
+  test("a root URL that is withheld names nothing taken from it, not even its scheme or port", async () => {
+    // B117a (D136): a value with credentials, a query or a fragment is shown as "(value not shown)", so the
+    // message names neither its scheme (`token`) nor its leading-zero port (`00080`).
+    for (const value of ["token:x-oauth@news.example.com", "news.example.com:00080/?x=1"]) {
+      const result = await runCli(["--root-url", value]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("Invalid root-url (value not shown)");
+      expect(result.stderr).not.toContain("token");
+      expect(result.stderr).not.toContain("x-oauth");
+      expect(result.stderr).not.toContain("00080");
+      expect(result.stderr).not.toContain("news.example.com");
+    }
+  });
+
   test("root URL errors name the value and the fix, and never echo credentials", async () => {
     for (const [value, expected] of [
       [

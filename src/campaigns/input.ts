@@ -92,8 +92,9 @@ const bad = (): never => {
 };
 const text = (value: unknown) =>
   typeof value === "string" && value.length <= TEXT_LIMIT ? value.toWellFormed() : bad();
+// Upper-case T and Z only: Go's RFC 3339 parse refuses `t` and `z` (B117a, D136).
 const sendAtPattern =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/i;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/;
 /**
  * The instant an RFC 3339 `send_at` names, or undefined when it names no such moment (B117a). Date.parse
  * rolls an impossible day (2030-02-29) or hour (T24:00) over to the next valid one, so each field is

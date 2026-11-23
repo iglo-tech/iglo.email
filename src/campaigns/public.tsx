@@ -214,7 +214,14 @@ export function registerCampaignPublicRoutes(
         const save =
           camp === dummyUUID
             ? savePendingLists({ ...deps, effects: deps.effects }, t, options(), form, current)
-            : savePreferences({ ...deps, effects: deps.effects }, t, options(), form, current);
+            : savePreferences(
+                { ...deps, effects: deps.effects },
+                t,
+                options(),
+                form,
+                current,
+                true,
+              );
         return save ?? unpaired(t);
       }
       writeTransaction(deps.db, () => {
@@ -224,9 +231,10 @@ export function registerCampaignPublicRoutes(
           return;
         }
         const sub = found.subscriber;
-        // The placeholder campaign is the opt-in mail's link: end every unconfirmed subscription.
+        // The placeholder campaign is the opt-in mail's link: it ends pending double opt-ins only, never an
+        // active single opt-in (B117b, D137 item 3).
         if (found.campaign === null) {
-          const changed = deps.subscribers.unsubscribeUnconfirmed(sub.id);
+          const changed = deps.subscribers.unsubscribeDoubleOptinPending(sub.id);
           for (const list of changed) {
             deps.effects.unsubscribed({
               subscriberId: sub.id,

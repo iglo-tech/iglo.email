@@ -913,13 +913,13 @@ export const differences: Array<Difference> = [
   {
     area: "From address encoded words (B117a, D136)",
     summary:
-      "`app.from_email` refuses an encoded word with no charset or an encoding other than B or Q, where upstream keeps it as literal text, wherever the word stands. An unsupported charset keeps upstream's rule.",
+      "`app.from_email` refuses an encoded word with no charset or an encoding other than B or Q, where upstream keeps it as literal text, wherever the word stands. An unsupported charset keeps upstream's rule. An entry already stored is not checked again.",
     applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
   },
   {
     area: "Trusted URL port and userinfo (B117a, D136)",
     summary:
-      "`security.trusted_urls` refuses a port outside 1 to 65535 and a user name or password in the URL. Upstream accepts both.",
+      "`security.trusted_urls` refuses a port outside 1 to 65535 and a user name or password in the URL. An entry already stored is not checked again. Upstream accepts both.",
     applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
   },
 ];

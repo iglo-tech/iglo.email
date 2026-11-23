@@ -338,12 +338,16 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   if (next["app.from_email"].length > 250) {
     return fail("omax 250 `from` addresses are allowed");
   }
+  // B117a (D136): an address already stored is not checked again, so an entry an older build saved does
+  // not block a save of anything else. A new or changed entry is checked as before.
+  const storedFrom = new Set<string>(current["app.from_email"] ?? []);
   for (const raw of next["app.from_email"]) {
     const value = trimSpace(raw ?? "");
     if (!value) {
       continue;
     }
-    if (Array.from(value).length > 2000) {
+    const stored = storedFrom.has(value);
+    if (!stored && Array.from(value).length > 2000) {
       return fail("`from` address cannot exceed 2000 characters");
     }
     const opening = value.indexOf("{{");
@@ -351,7 +355,7 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     if (tpl && !addresses.length) {
       return fail("default (first) `from` address cannot contain template expressions");
     }
-    if (!tpl) {
+    if (!tpl && !stored) {
       if (!validFromAddress(value)) {
         return fail(`invalid from email address: ${value}`);
       }
@@ -367,7 +371,10 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   // B117a (D136): every administrator address is checked as a from address is. An address already stored
   // is kept as it is, so an entry an older build saved does not block saving anything else; blank entries
   // stay blank, as a send skips them.
-  const storedNotify = new Set<string>(current["app.notify_emails"] ?? []);
+  // The stored entries are compared trimmed, as the new ones are.
+  const storedNotify = new Set<string>(
+    (current["app.notify_emails"] ?? []).map((raw: string) => trimSpace(raw ?? "")),
+  );
   next["app.notify_emails"] = next["app.notify_emails"].map((raw: string) => {
     const value = trimSpace(raw ?? "");
     if (!value || storedNotify.has(value)) {
@@ -381,9 +388,10 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     }
     return value;
   });
-  // B126 (D123): the operator's own site, an absolute http(s) URL under the root URL rules (D107).
+  // B126 (D123): the operator's own site, an absolute http(s) URL under the root URL rules (D107). It is
+  // checked when it changes (D136), so a stored value an older build saved does not block a save.
   next["app.site_url"] = trimSpace(next["app.site_url"] ?? "");
-  if (next["app.site_url"]) {
+  if (next["app.site_url"] && next["app.site_url"] !== current["app.site_url"]) {
     try {
       validateAbsoluteUrl(next["app.site_url"], "site-url");
     } catch (error) {
@@ -568,8 +576,10 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   next["security.trusted_urls"] = next["security.trusted_urls"]
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
+  // B117a (D136): an entry already stored is not checked again, as an address is not (see app.from_email).
+  const storedTrusted = new Set<string>(current["security.trusted_urls"] ?? []);
   for (const url of next["security.trusted_urls"]) {
-    if (url !== "*" && !validTrustedURL(url)) {
+    if (url !== "*" && !storedTrusted.has(url) && !validTrustedURL(url)) {
       return fail(`Invalid data: invalid trusted URL: ${url}`);
     }
   }

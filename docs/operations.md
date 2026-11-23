@@ -885,15 +885,16 @@ per-key update), until the settings page is saved once.
 
 From the release that pairs privacy actions (D126), the preference links of mail sent before the
 upgrade change in three ways. A transactional mail sent before the upgrade has a manage link to a
-placeholder path: opening it shows a page that lists only the subscriber's pending opt-ins, with
+placeholder path: opening it shows a page that lists only the subscriber's pending double opt-ins, with
 no name field, so changing confirmed lists or the name from that mail is not possible. Recipients
 who want to change their lists should use a newer mail, or contact the operator. A campaign's
 manage and privacy forms work only for mail the campaign delivered, and a subscriber's UUID alone no
 longer exports, wipes or blocklists anyone: `POST /subscription/export/{uuid}` and
 `POST /subscription/wipe/{uuid}` answer 404. An application that used those sub-only paths for
 data export or erasure must use a campaign's or marketing send's own paths, or the admin API
-(`GET /api/subscribers/{id}/export`, `DELETE /api/subscribers/{id}`). Opt-in mail still ends and
-confirms pending subscriptions as before, and a test send still shows its test page.
+(`GET /api/subscribers/{id}/export`, `DELETE /api/subscribers/{id}`). Opt-in mail still confirms
+pending subscriptions, and its links end pending double opt-ins only (D137): an active single opt-in
+membership is kept. A test send still shows its test page.
 
 From the release that suppresses after a wipe (D125), a person who wiped their data is not put back
 on a list by the next event, create or import that names their address. Before upgrading, decide
@@ -941,7 +942,7 @@ Operators can receive notifications for campaign and import events by configurin
 - A campaign **finishes** (audience exhausted or zero recipients), is **cancelled** via the API, or **pauses automatically** upon reaching `app.max_send_errors`.
 - A subscriber CSV import **finishes** or **fails**.
 
-If `app.notify_emails` is empty or unset, no notifications are generated. An entry that is not a valid email address is skipped and logged as an error on every notification; the valid entries still receive the mail. If `app.from_email[0]` is not a valid address, no admin notification is sent and the bad value is logged once per distinct value per process, because the sender would be refused by SES. Nothing falls back to another sender. A notification that cannot be queued is logged and never changes the campaign or import it reports on. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
+If `app.notify_emails` is empty or unset, no notifications are generated. Each address is checked when you save the settings: a new or changed entry that is not a valid email address is refused, and nothing is saved (D136). An address already stored is not checked again, so an older one does not block saving another setting; a send skips such an entry and logs it as an error on every notification, and the valid entries still receive the mail. If `app.from_email[0]` is not a valid address, no admin notification is sent and the bad value is logged once per distinct value per process, because the sender would be refused by SES. Nothing falls back to another sender. A notification that cannot be queued is logged and never changes the campaign or import it reports on. Notifications are delivered via the durable transactional outbox queue and do not interfere with subscriber metrics or webhooks.
 
 ## Outbound webhooks
 
@@ -1224,6 +1225,9 @@ The wipe removes their subscriber row and leaves a suppression ([D125](design/09
   the list IDs, with an empty address, so your system can honour the erasure. iglo.email drops
   both from its stored copy when that delivery ends. Keep them in your system only as long as your
   own privacy policy says.
+- **Copies of a transactional mail.** A Cc or Bcc copy holder who opens the mail's manage link sees the
+  subscriber's confirmed lists, with no name field, and can end them. A copy cannot rename the subscriber
+  or wipe their data, and export still mails the address on record ([D137](design/09-decisions.md#d137-a-transactional-manage-view-never-renames-is-titled-as-the-email-settings-page-and-the-placeholders-links-end-pending-double-opt-ins-only-lead-2026-11-23)).
 - **Backups.** A wipe does not reach backups taken before it, and a backup holds the suppression key
   with the hashes, as it holds everything else in the database (see [Backups](#backups)).
 

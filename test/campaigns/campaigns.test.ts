@@ -75,6 +75,10 @@ test("send_at refuses a date or time the calendar does not have, and keeps the i
     "2040-06-15T23:60:00Z",
     "2040-06-15T23:59:60Z",
     "2040-06-15T10:00:00+24:00",
+    // RFC 3339 writes T and Z in upper case; Go's parse refuses a lower-case one (B117a, D136).
+    "2040-06-15t10:00:00Z",
+    "2040-06-15T10:00:00z",
+    "2040-06-15 10:00:00Z",
   ]) {
     const refused = await f.json("/api/campaigns", "POST", {
       name: `bad ${sendAt}`,

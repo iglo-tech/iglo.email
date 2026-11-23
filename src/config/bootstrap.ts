@@ -219,8 +219,11 @@ function suggestionFor(value: string, kind: AbsoluteUrlKind): string | undefined
   return candidate;
 }
 
-/** What is wrong with a value that gets no suggestion. The scheme is never guessed. */
-function missingSchemeReason(value: string): string {
+/**
+ * What is wrong with a value that gets no suggestion. The scheme is never guessed. A withheld value (see
+ * `validateAbsoluteUrl`) names no part of itself, so it gets no port number either (D136).
+ */
+function missingSchemeReason(value: string, withheld: boolean): string {
   // `https//host` and `https/host` have the scheme but not its colon.
   if (schemeSlash.test(value)) {
     return "the scheme must be followed by ://";
@@ -230,7 +233,7 @@ function missingSchemeReason(value: string): string {
     return "the port must be from 1 to 65535";
   }
   // B117a (D136): `host:00080` names a port with a leading zero, which gets no suggestion (D107).
-  if (port !== undefined && port.length > 1 && port.startsWith("0")) {
+  if (!withheld && port !== undefined && port.length > 1 && port.startsWith("0")) {
     return `${expectedUrl} with a host name; the port has a leading zero, so write ${Number(port)} instead of ${port}, and the scheme is not guessed`;
   }
   return `${expectedUrl} with a host name; the scheme is not guessed`;
@@ -273,15 +276,17 @@ export function validateAbsoluteUrl(value: string, kind: AbsoluteUrlKind): void 
     if (suggestion) {
       fail(`${expectedUrl}, such as ${suggestion}`);
     }
-    fail(missingSchemeReason(value));
+    fail(missingSchemeReason(value, withheld));
   }
   if (!/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) {
-    // B117a (D136): `a.b:/c` reads as a scheme `a.b` with one slash, and names that scheme.
+    // B117a (D136): `a.b:/c` reads as a scheme `a.b` with one slash, and names that scheme. A withheld
+    // value names no part of itself, so its scheme is left out.
     const scheme = value.slice(0, value.indexOf(":"));
+    const named = withheld ? "the scheme" : `"${scheme}"`;
     fail(
       schemeNames.test(value)
         ? "the scheme must be followed by //"
-        : `the scheme must be followed by //, and "${scheme}" is not http or https`,
+        : `the scheme must be followed by //, and ${named} is not http or https`,
     );
   }
 
