@@ -196,6 +196,9 @@ test("admin and API paths keep their own answers; only other paths get the publi
       expect(signedIn.status).toBe(404);
       expect(signedIn.headers.get("content-type")).toBe("text/html; charset=UTF-8");
       expect(adminBody).not.toContain('href="/public/custom.css');
+      // The admin's own error page, with the admin shell's stylesheet: not the public 404.
+      expect(adminBody).toContain("404 page not found");
+      expect(adminBody).toContain("/admin/static/oat.min.css");
 
       const api = await fetch(`${origin}/api/no-such`);
       expect(api.status).toBe(404);

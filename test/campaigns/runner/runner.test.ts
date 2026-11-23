@@ -680,12 +680,16 @@ test("a runner whose heartbeat stalled keeps its campaign from a second pipe in 
 });
 
 test("tracked links personalized per subscriber do not accumulate across batches", async () => {
-  f = await runnerFixture({ hold: true });
+  // This test's own fixture. The module's `f` is replaced by the next test, and a wait that outlives
+  // this test must keep driving this test's campaign, not the next one's.
+  const fx = await runnerFixture({ hold: true });
+  f = fx;
   const { heapStats } = await import("bun:jsc");
-  const list = await f.list("l");
-  const count = 300;
+  const list = await fx.list("l");
+  // 20 messages per batch: 8 batches. Each message carries 8 distinct tracked links of 7 KB.
+  const count = 160;
   for (let i = 0; i < count; i++) {
-    await f.member(`p${String(i).padStart(4, "0")}@x.test`, [list]);
+    await fx.member(`p${String(i).padStart(4, "0")}@x.test`, [list]);
   }
   const pad = "x".repeat(7000);
   const links = Array.from(
@@ -694,71 +698,66 @@ test("tracked links personalized per subscriber do not accumulate across batches
       `{% capture u${n} %}https://example.test/${pad}/${n}/{{ subscriber.uuid }}{% endcapture %}` +
       `<a href="{{ u${n} | track_link }}">${n}</a>`,
   ).join("");
-  const c = await f.campaign({
+  const c = await fx.campaign({
     name: "links",
     subject: "s",
     lists: [list],
     body: links,
   });
-  Object.assign(f.settings, { concurrency: 5, batchSize: 20 });
-  await f.status(c.id, "running");
-  f.start();
+  Object.assign(fx.settings, { concurrency: 5, batchSize: 20 });
+  await fx.status(c.id, "running");
+  fx.start();
   const heap = () => {
     Bun.gc(true);
     return heapStats().heapSize;
   };
-  let first = 0;
-  // Settle everything but the last message, measuring after the first few batches.
-  // The drive does not step the injected clock. Nothing this test asserts needs time, and a step
-  // per iteration tied fake time to how many iterations a slow host needed (the failed v1.3.0
-  // release run's clock had moved 27 h when its 60 s wall bound ended the drive). The renders are
-  // CPU-bound: 20 messages per batch, each with 8 tracked links of 7 KB and one link row per
-  // distinct URL. The 300 messages took 2.7 s on the B101 profile host and 14-16 s in the B103 runs,
-  // but 27-65 s in the B137 container runs at host load 5-13, so a 60 s bound on the whole drive
-  // failed about one run in six. The budget is 60 s without a new push instead: a stalled campaign
-  // still fails, with its state, and the 90 s test timeout still bounds the whole run.
+  // The first measurement is after two batches, so the first batches' own allocations are not counted.
+  // The drive does not step the injected clock: nothing asserted here needs fake time, and every
+  // wait below ends on the state it waits for, not on how long the host took to reach it.
   // Each push is settled once, when the wait first sees it. settle() does nothing after the first
   // call, and settling every push on every iteration kept a core busy for the length of the wait.
+  let first = 0;
   let settled = 0;
   const done = () => {
-    if (f.pushes.length >= 60 && !first) {
+    if (fx.pushes.length >= 40 && !first) {
       first = heap();
     }
-    if (f.pushes.length === count) {
+    if (fx.pushes.length === count) {
       return true;
     }
-    for (; settled < f.pushes.length; settled++) {
-      f.pushes[settled]!.settle();
+    for (; settled < fx.pushes.length; settled++) {
+      fx.pushes[settled]!.settle();
     }
     return false;
   };
-  // The 60 s budget can restart while pushes keep coming, but the whole wait stops at 75 s, before the
-  // test's 90 s timeout: a loop still running then would drive the next test's fixture.
-  const giveUp = Date.now() + 75_000;
+  // A wait ends when every message is pushed. The 60 s budget is per stretch without a new push: a
+  // campaign that is slow on a loaded host keeps pushing and is not cut off, while a stalled one
+  // fails with its state. The test's own timeout still bounds the whole run.
   for (;;) {
-    const pushed = f.pushes.length;
-    const remaining = giveUp - Date.now();
+    const pushed = fx.pushes.length;
     try {
-      await f.drive(done, 0, undefined, Math.max(1, Math.min(60_000, remaining)));
+      await fx.drive(done, 0, undefined, 60_000);
       break;
     } catch (error) {
-      if (f.pushes.length === pushed || Date.now() >= giveUp) {
+      if (fx.pushes.length === pushed) {
         throw error;
       }
     }
   }
   const last = heap();
-  // About 13 MB of distinct tracked URLs were rendered since the first measurement.
-  expect(last - first).toBeLessThan(6 * 1024 * 1024);
-  f.control.hold = false;
-  for (const push of f.pushes) {
+  // 120 messages after the first measurement, 8 distinct links of 7 KB each: about 6.7 MB of URLs. A
+  // cache that kept them across batches grew by about 7 MB in the mutation run; the correct run grew by
+  // 0.4 MB (the same run that failed a 6 MB bound on 300 messages).
+  expect(last - first).toBeLessThan(3 * 1024 * 1024);
+  fx.control.hold = false;
+  for (const push of fx.pushes) {
     push.settle();
   }
-  await f.until(c.id, "finished");
+  await fx.until(c.id, "finished");
   // Every link still redirects: campaign_links is the lasting record.
-  const body = Buffer.from(f.pushes.at(-1)!.message.body).toString();
+  const body = Buffer.from(fx.pushes.at(-1)!.message.body).toString();
   const link = /http:\/\/fixture\.test(\/link\/[^"]+)/.exec(body)![1]!;
-  expect((await f.request(link)).status).toBe(307);
+  expect((await fx.request(link)).status).toBe(307);
 }, 90_000);
 
 test("a wait that never completes fails with the stuck state, not at the test timeout", async () => {
