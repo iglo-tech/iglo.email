@@ -624,12 +624,22 @@ export function numberOf(value: unknown): number | undefined {
 const finite = (result: number): number | "" => (Number.isFinite(result) ? result : "");
 
 /**
- * `plus`, `minus`, `times` and `divided_by` (D134): the input and the argument, read as numbers. A nil or empty
- * input is empty (B135 review N6: an optional number that arrives as `""` must not fail the message). An input
- * that is not a number is a value failure, and so is an argument that is not one, or a division by zero: a
- * literal one of these is refused at save. An integer divided by an integer rounds down, as LiquidJS does, unless
- * the divisor is a literal written with a decimal point (`floatDivisor`), which divides as a float (B135 review).
- * A result that is not finite is empty.
+ * A value that holds no number and so renders empty (B117e): nil, an empty text, or a text of spaces only. An
+ * optional number that arrives as `""` or `" "` must not fail the message (B135 review N6).
+ */
+export function isEmptyValue(value: unknown): boolean {
+  return (
+    value === null || value === undefined || (typeof value === "string" && value.trim() === "")
+  );
+}
+
+/**
+ * `plus`, `minus`, `times` and `divided_by` (D134): the input and the argument, read as numbers. A nil, empty or
+ * blank input or argument is empty (B135 review N6, B117e: a data value of `""` or `" "` used as the argument
+ * renders empty too, as nil does). An input that is not a number is a value failure, and so is an argument that
+ * is not one, or a division by zero: a literal one of these is refused at save. An integer divided by an integer
+ * rounds down, as LiquidJS does, unless the divisor is written with a decimal point (`floatDivisor`), which
+ * divides as a float (B135 review). A result that is not finite is empty.
  */
 export function arithmetic(
   operator: "plus" | "minus" | "times" | "divided_by",
@@ -639,16 +649,20 @@ export function arithmetic(
   floatDivisor = false,
 ): number | "" {
   b.step();
-  const right = numberOf(argument);
+  // Both operands are read before either empty one renders empty, so a text that is not a number fails whatever
+  // the other operand is.
+  const emptyArgument = isEmptyValue(argument);
+  const emptyInput = isEmptyValue(value);
+  const right = emptyArgument ? 0 : numberOf(argument);
   if (right === undefined) {
     throw new ValueError(`${operator} needs a number argument, got ${kindOf(argument)}`);
   }
-  if (value === null || value === undefined || value === "") {
-    return "";
-  }
-  const left = numberOf(value);
+  const left = emptyInput ? 0 : numberOf(value);
   if (left === undefined) {
     throw new ValueError(`${operator} needs a number, got ${kindOf(value)}`);
+  }
+  if (emptyArgument || emptyInput) {
+    return "";
   }
   if (operator === "plus") {
     return finite(left + right);
@@ -668,7 +682,8 @@ export function arithmetic(
 
 /**
  * `round`: a number to `digits` places (none when not given, and at most 15), with halves rounded away
- * from zero. A nil or empty input is empty (B135 review N6); any other value that is not a number is a value failure.
+ * from zero. A nil, empty or blank input is empty (B135 review N6, B117e); any other value that is not a number is a
+ * value failure.
  */
 export function round(value: unknown, digits: unknown, b: FilterBudget): number | "" {
   b.step();
@@ -676,7 +691,7 @@ export function round(value: unknown, digits: unknown, b: FilterBudget): number 
   if (places < 0 || places > 15) {
     throw new ValueError("round needs whole digits from 0 to 15");
   }
-  if (value === null || value === undefined || value === "") {
+  if (isEmptyValue(value)) {
     return "";
   }
   const n = numberOf(value);

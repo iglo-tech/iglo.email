@@ -59,6 +59,8 @@ const MAX_WORK = 10_000;
 const MAX_DEPTH = 32;
 const dangerous = new Set(["__proto__", "prototype", "constructor"]);
 const loopProperties = new Set(["index", "index0", "rindex", "rindex0", "first", "last", "length"]);
+/** The name of the loop object a `for` tag binds, and of the only one a template may read (D134, B117e). */
+const LOOP_OBJECT = "forloop";
 const filterArguments = new Map([
   ["raw", 0],
   ["default", 1],
@@ -573,6 +575,41 @@ function filterFault(filter: Filter): string | undefined {
 /** An output that prints a loop object on its own (`{{ forloop }}`): a template fault whatever the data is (B135 review B1). */
 const bareLoop = /^\{\{-?\s*(?:forloop|tablerowloop)\s*-?\}\}$/;
 
+/**
+ * The loop-object fault in one value (B117e), whatever data a message carries. A bare `forloop` that an
+ * output prints, or that a filter reads (`{{ forloop | json }}`), is the template's own text: every filter
+ * and output refuses a loop object (`plainValue`), so the send fails wherever the loop runs. A property the
+ * renderer does not expose (`forloop.parentloop`) fails the same way. The loop properties it does expose are
+ * data, and are not judged here. A loop object stored with `assign` is not refused: `{% assign f = forloop %}`
+ * then `{{ f.index }}` works, and only printing `f` itself fails, at send.
+ */
+function loopFaultOf(value: Value, printed: boolean): string | undefined {
+  for (const token of value.initial.postfix) {
+    if (!TypeGuards.isPropertyAccessToken(token) || token.variable !== undefined) {
+      continue;
+    }
+    const [root, property] = token.props;
+    if (!TypeGuards.isWordToken(root) || root.content !== LOOP_OBJECT) {
+      continue;
+    }
+    if (property === undefined) {
+      if (printed || value.filters.length > 0) {
+        return LOOP_PRINT;
+      }
+      continue;
+    }
+    const name =
+      TypeGuards.isWordToken(property) || TypeGuards.isQuotedToken(property)
+        ? property.content
+        : undefined;
+    if (name !== undefined && !loopProperties.has(name)) {
+      const shown = name.length > SHOWN ? `${name.slice(0, SHOWN)}...` : name;
+      return `${LOOP_OBJECT}.${shown}: a loop property is not available; the loop properties are index, index0, rindex, rindex0, first, last and length`;
+    }
+  }
+  return undefined;
+}
+
 function literalFault(templates: ReadonlyArray<Template>): string | undefined {
   const pending = [...templates].reverse();
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
@@ -582,6 +619,10 @@ function literalFault(templates: ReadonlyArray<Template>): string | undefined {
     }
     for (const argument of next.arguments?.() ?? []) {
       if (argument instanceof Value) {
+        const loopFault = loopFaultOf(argument, next instanceof Output);
+        if (loopFault !== undefined) {
+          return loopFault;
+        }
         for (const filter of argument.filters) {
           const fault = filterFault(filter);
           if (fault !== undefined) {
@@ -964,9 +1005,13 @@ export function createRenderer(clock: Clock, translation: Translation) {
       return arithmetic("times", value, argument, budget(this.context));
     });
     liquid.registerFilter("divided_by", function (value: unknown, argument: unknown) {
-      // A divisor written with a decimal point (`4.0`) divides as a float, as Liquid's Ruby reference does (B135).
+      // A divisor written with a decimal point divides as a float, as Liquid's Ruby reference does (B135): the
+      // number literal `4.0`, and text that holds one, quoted or from data (B117e). A JSON number has no
+      // decimal point once parsed, so `4.0` in data divides as 4.
       const written: unknown = this.token.args[0];
-      const floatDivisor = TypeGuards.isNumberToken(written) && written.getText().includes(".");
+      const floatDivisor =
+        (TypeGuards.isNumberToken(written) && written.getText().includes(".")) ||
+        (typeof argument === "string" && argument.includes("."));
       return arithmetic("divided_by", value, argument, budget(this.context), floatDivisor);
     });
     liquid.registerFilter("round", function (value: unknown, digits: unknown) {
