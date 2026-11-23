@@ -1,8 +1,10 @@
 # B117f manual check: administrator notification addresses in the settings form
 
-The admin form's comma split runs in the browser (`assets/admin/js/views/settings.js`), and no
-automated test drives it, so this check is manual, with agent-browser. The server side (the array the
-API stores) is pinned by `test/admin/settings-input.test.ts`.
+The admin form's comma split runs in the browser (`assets/admin/js/views/settings.js`). It is covered
+by the settings browser spec, `test/e2e/specs/settings.e2e.js` ("saves notification addresses whose
+display name holds a comma, one entry per address"), which fails on the pre-fix split. This manual check
+is extra evidence, with agent-browser. The server side (the array the API stores) is pinned by
+`test/admin/settings-input.test.ts`.
 
 Local, throwaway instance, not a shared or production credential. The data directory was temporary and
 deleted after the check.
