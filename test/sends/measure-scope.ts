@@ -8,6 +8,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Database } from "bun:sqlite";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
@@ -26,6 +27,66 @@ const median = (values: Array<number>) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)]!;
 };
+
+// The predicate shapes the page could use, measured as SQL on the same database (the server's statements, with
+// the journal's ORDER BY and LIMIT). None of them is the journal's predicate; the journal keeps the first.
+const IN_MEMBERSHIP =
+  "subscriber_id IN (SELECT m.subscriber_id FROM subscriber_lists m WHERE m.list_id IN (SELECT value FROM json_each(?)))";
+const EXISTS_CORRELATED =
+  "EXISTS (SELECT 1 FROM subscriber_lists m WHERE m.subscriber_id = sends.subscriber_id AND m.list_id IN (SELECT value FROM json_each(?)))";
+const SHAPES: Array<{ name: string; where: string; setup?: string; teardown?: string }> = [
+  { name: "in-membership (the journal's predicate)", where: IN_MEMBERSHIP },
+  { name: "exists-correlated", where: EXISTS_CORRELATED },
+  {
+    name: "in-membership with covering index (list_id, subscriber_id)",
+    where: IN_MEMBERSHIP,
+    setup: "CREATE INDEX idx_sub_lists_list_sub ON subscriber_lists(list_id, subscriber_id)",
+    teardown: "DROP INDEX idx_sub_lists_list_sub",
+  },
+];
+function shapeExperiment(db: Database) {
+  const rows: Array<Record<string, unknown>> = [];
+  const timeQuery = (sql: string, list: string, reps: number) => {
+    const times: Array<number> = [];
+    for (let rep = 0; rep < reps; rep++) {
+      const start = performance.now();
+      db.query(sql).all(list);
+      times.push(performance.now() - start);
+    }
+    return Math.round(median(times) * 10) / 10;
+  };
+  for (const shape of SHAPES) {
+    if (shape.setup) {
+      db.run(shape.setup);
+    }
+    try {
+      for (const [label, list] of [
+        ["every subscriber", "[1]"],
+        ["a hundred", "[2]"],
+        ["nobody", "[3]"],
+      ] as const) {
+        // The correlated form takes minutes on the sparse lists, so it runs once there.
+        const reps = shape.name.startsWith("exists") && list !== "[1]" ? 1 : repetitions;
+        rows.push({
+          shape: shape.name,
+          list: label,
+          countMs: timeQuery(`SELECT count(*) AS n FROM sends WHERE ${shape.where}`, list, reps),
+          pageMs: timeQuery(
+            `SELECT id, json_extract(payload, '$.message.subject') AS subject FROM sends WHERE ${shape.where} ORDER BY id DESC LIMIT 20`,
+            list,
+            reps,
+          ),
+          runs: reps,
+        });
+      }
+    } finally {
+      if (shape.teardown) {
+        db.run(shape.teardown);
+      }
+    }
+  }
+  return rows;
+}
 
 const dataDir = join(root, "scope");
 const db = openDatabase(dataDir);
@@ -106,7 +167,10 @@ try {
       runs: times.map((t) => Math.round(t * 10) / 10),
     };
   });
-  console.log(JSON.stringify({ sends, repetitions, seedMs: seeded, pages: results }, null, 2));
+  const shapes = shapeExperiment(db);
+  console.log(
+    JSON.stringify({ sends, repetitions, seedMs: seeded, pages: results, shapes }, null, 2),
+  );
   journal.close();
   subscribers.close();
   lists.close();

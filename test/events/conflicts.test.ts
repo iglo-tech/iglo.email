@@ -273,3 +273,37 @@ test("POST /api/subscribers names the holder only to a caller that manages it", 
   });
   expect(f.count("subscribers")).toBe(1);
 });
+
+test("an e-mail-only event updates its holder's name and attribs for a caller that manages none of its lists, as an external-ID event does (D138)", async () => {
+  // Not a claim: no external ID is written, so the claim rule (D129) does not apply. The events-only
+  // role's profile write stands, and list scope governs only the grants and the naming of a conflict.
+  const f = await open();
+  const news = await f.list("news");
+  const holder = await make(f, { email: "out@example.com", name: "Out", lists: [news] });
+  const eventsOnly = await f.apiUser("events-only", ["subscriber_events:create"]);
+  const byEmail = await f.post(
+    event({ email: "out@example.com", name: "Renamed", attribs: { plan: "pro" } }),
+    eventsOnly,
+  );
+  expect(byEmail).toMatchObject({ status: 200, body: { data: { subscriber_id: holder } } });
+  expect(await f.subscriber(holder)).toMatchObject({
+    external_id: null,
+    name: "Renamed",
+    attribs: { plan: "pro" },
+    lists: [{ id: news, subscription_status: "confirmed" }],
+  });
+  // The same write under an external ID the holder now has.
+  const other = await make(f, {
+    email: "linked@example.com",
+    name: "Linked",
+    external_id: "u_9",
+    lists: [news],
+  });
+  const byExternal = await f.post(
+    event({ external_id: "u_9", email: "linked@example.com", name: "Linked again" }),
+    eventsOnly,
+  );
+  expect(byExternal).toMatchObject({ status: 200, body: { data: { subscriber_id: other } } });
+  expect((await f.subscriber(other)).name).toBe("Linked again");
+  expect(f.count("subscribers")).toBe(2);
+});

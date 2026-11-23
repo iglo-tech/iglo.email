@@ -76,7 +76,9 @@ test("the send log lists each send by its subject and sequence step, and filters
   await expect(page.getByTestId("send-row").filter({ hasText: email })).toHaveCount(0);
 });
 
-test("a list-scoped reader's send log lists the sends to its lists and no others", async ({ page }) => {
+test("a list-scoped reader's send log lists the sends to its lists and no others", async ({
+  page,
+}) => {
   await signIn(page);
   const mine = await makeList(page);
   const theirs = await makeList(page);

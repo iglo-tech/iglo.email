@@ -1183,7 +1183,7 @@ export function createSends(options: {
         // The membership SQL belongs to the subscribers module.
         const scoped = inListScopeSQL("subscriber_id", filter.scope);
         clauses.push(scoped.sql);
-        values.push(...(scoped.args as Array<string>));
+        values.push(...scoped.args);
       }
       const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
       const total = expectRow(

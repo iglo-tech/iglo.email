@@ -196,6 +196,8 @@ const users: Array<Operation> = [
     summary: "One user.",
     permissions: ["users:get"],
     data: ref("User"),
+    // listmonk's GetUser answers 404 for an absent user (core.GetUser, 6fcd95f), not 400.
+    errors: [404],
   },
   {
     route: "PUT /api/users/{id}",
@@ -1290,6 +1292,7 @@ const media: Array<Operation> = [
     summary: "One uploaded file.",
     permissions: ["media:get"],
     data: ref("Media"),
+    errors: [404],
   },
   {
     route: "DELETE /api/media/{id}",

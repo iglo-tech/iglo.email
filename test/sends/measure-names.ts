@@ -56,7 +56,7 @@ try {
       new Map(templateNames.all(`[${ids.join(",")}]`).map((row) => [row.id, row.name])),
   });
 
-  // One template for the queued sends, and the bulk of the journal as sent mail with no payload kept.
+  // One template for the queued sends, and the bulk of the journal as sent mail with its 2 KB payload kept.
   db.run(
     "INSERT INTO templates (name, type, subject, body) VALUES ('Measured template', 'tx', 'Subject', '<p>x</p>')",
   );
@@ -65,11 +65,12 @@ try {
   db.transaction(() => {
     db.run(
       `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
-       INSERT INTO sends (uuid, source, kind, to_email, status, smtp_message_id, created_at, sent_at)
+       INSERT INTO sends (uuid, source, kind, to_email, status, smtp_message_id, created_at, sent_at, payload)
        SELECT 'seed-' || i, 'tx', 'transactional', 'seed' || i || '@example.test', 'sent',
          '<seed-' || i || '@measure.test>',
          strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', '+' || (i % 300) || ' days'),
-         strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', '+' || (i % 300) || ' days')
+         strftime('%Y-%m-%dT%H:%M:%fZ', '2026-01-01', '+' || (i % 300) || ' days'),
+         json_object('message', json_object('subject', 'Subject ' || i, 'html', replace(printf('%2000s', ''), ' ', 'x')))
        FROM n`,
       [sends],
     );
