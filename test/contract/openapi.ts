@@ -1706,6 +1706,15 @@ export async function runOpenApiContract(target: {
     // against the operation's own response for its status, so a status the document does not list
     // fails here. Every failure is collected, so one run names them all. A PUT by ID is probed
     // below, with a body the server reads before it looks the ID up.
+    // Three answer an absent ID with an invalid_fields refusal that their messages name, and that
+    // not_found would not describe: a delete that checks the last active Super Admin before
+    // the lookup, a delete refused for "non-existent or default" (one message for both), and a
+    // default set of a template that is not a campaign's. Their status and message stay listmonk's.
+    const refusedAbsent = new Set([
+      "DELETE /api/users/{id}",
+      "DELETE /api/templates/{id}",
+      "PUT /api/templates/{id}/default",
+    ]);
     const absentFailures: Array<string> = [];
     for (const { key, operation } of operations) {
       // One path parameter only: the others would take a placeholder that is not an ID.
@@ -1722,8 +1731,11 @@ export async function runOpenApiContract(target: {
             query: needed(operation),
             expect: [200, 400, 404],
           });
+          const code = reply.body?.code;
           check(
-            reply.status < 400 || reply.body?.code === "not_found",
+            reply.status < 400 ||
+              code === "not_found" ||
+              (refusedAbsent.has(key) && code === "invalid_fields"),
             `not-found-${key} ${reply.status} ${reply.text.slice(0, 200)}`,
           );
         } catch (error) {
