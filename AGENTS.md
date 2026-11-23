@@ -31,7 +31,7 @@ The MVP work plan (M0 to M6) is complete and merged: subscribers, lists, campaig
 - No process-global state. Modules receive the database, settings and clock they use. Every loop takes an injected clock.
 - A module owns its tables and SQL. Other modules call its functions instead of querying its tables.
 - Network calls (SMTP, webhooks) never run inside a database transaction.
-- Match listmonk results for realistic SDK, browser/dashboard and ordinary HTTP requests (D57); port implementation logic only where the result depends on it. Use native Bun/Web APIs elsewhere. Safe malformed/custom-input error differences are backlog; never relax formats, auth/permissions, atomicity or bounded-memory/security guarantees. Keep listmonk's HTTP API contract for ported endpoints by default (`docs/design/07-api-and-ui.md`). Do not copy upstream behavior that comes from a poor design decision: fix it, list it there as a deliberate difference with its reason, and mark it in the contract suite. A difference needs a concrete benefit, not a matter of taste.
+- listmonk's API is the starting point, not a constraint (D143). Ported endpoints begin with listmonk's paths, fields and results (D57), which is what an unchanged endpoint keeps. Change them whenever a feature, a simpler design or a better API needs it: listmonk compatibility never outweighs a simpler or better iglo.email. List each change in `docs/design/07-api-and-ui.md` with its reason and update the contract cases. A change needs a concrete benefit, not a matter of taste. Port implementation logic only where the result depends on it, and use native Bun/Web APIs elsewhere. Never relax formats, auth/permissions, atomicity or bounded-memory/security guarantees.
 - Marketing sends are at-most-once. Never add an automatic retry that could send a marketing email twice.
 - Add a runtime dependency only when the design lists it or a decision record justifies it.
 - Do not restore upstream community files (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue or PR templates, funding files).
@@ -41,7 +41,7 @@ The MVP work plan (M0 to M6) is complete and merged: subscribers, lists, campaig
 ## Tests
 
 - Tests verify observable behavior through public boundaries: HTTP API, rendered pages, emails received by the SMTP sink (Mailpit), and webhook deliveries received by a test server. Never read source files as text or assert on implementation details.
-- Upstream listmonk v7.0.0-beta.1 is the reference for ported behavior: the API contract suite runs against both. Read upstream source from a local checkout at the pinned commit, never from memory. Write the contract tests for an endpoint first and run them against upstream, then port the code.
+- Upstream listmonk v7.0.0-beta.1 is the reference for ported behavior, not an authority over it (D143): the API contract suite runs against both, and a deliberate difference is marked there. Read upstream source from a local checkout at the pinned commit, never from memory. Write the contract tests for an endpoint first and run them against upstream, then port the code.
 - Time-dependent behavior is tested by advancing the injected clock, not by sleeping.
 - Use `agent-browser` to verify the admin UI and public pages.
 - Store manual test data and test credentials in regular `.md` files in the repository.
