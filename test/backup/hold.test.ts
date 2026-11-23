@@ -25,7 +25,10 @@ import { asBody, readJson } from "@/test/read-body";
 
 const refused = async (response: Response) => {
   expect(response.status).toBe(503);
-  expect((await readJson<{ message: string }>(response)).message).toContain("held");
+  expect(response.headers.get("Retry-After")).toBe("30");
+  const body = await readJson<{ message: string; code: string }>(response);
+  expect(body.message).toContain("held");
+  expect(body.code).toBe("held");
 };
 
 setDefaultTimeout(120_000);
@@ -497,10 +500,13 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
     body: "email=admin%40example.test",
   });
   expect(forgot.status).toBe(503);
+  // The HTML 503s of a hold send Retry-After too (D138), as the API's do.
+  expect(forgot.headers.get("Retry-After")).toBe("30");
   const exported = await fetch(`${server!.origin}${exportPath}`, {
     method: "POST",
   });
   expect(exported.status).toBe(503);
+  expect(exported.headers.get("Retry-After")).toBe("30");
 
   // These are accepted and wait: queued rows, a due sequence step, opt-in mail and a webhook.
   await data(await held("/api/tx", json({ ...tx, subject: "Queued", async: true })));

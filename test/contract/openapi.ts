@@ -73,7 +73,7 @@ interface Options {
   raw?: BodyInit;
   headers?: Record<string, string>;
   auth?: string | null;
-  expect?: number;
+  expect?: number | Array<number>;
 }
 
 /** A real password login; the cookies and CSRF header a browser would send. */
@@ -230,8 +230,8 @@ export async function runOpenApiContract(target: {
       accepted(key, options.body);
     }
     const reply = await send(method, path, options);
-    const expected = options.expect ?? 200;
-    if (reply.status !== expected) {
+    const expected = [options.expect ?? 200].flat();
+    if (!expected.includes(reply.status)) {
       throw new Error(`FAIL openapi-${key}: status ${reply.status}: ${reply.text.slice(0, 300)}`);
     }
     conforms(key, reply);
@@ -1699,6 +1699,58 @@ export async function runOpenApiContract(target: {
       if (operation.responses["404"] && key.includes("{id}") && !operation.requestBody) {
         await op(key, { ...placeholders(key, "999999"), expect: 404 });
       }
+    }
+    // A well-formed ID nothing has (D138). listmonk answers 400 for some absent records (a list,
+    // bounce, user, template, campaign or transactional reference), 404 for others, and 200 for a
+    // delete of nothing. A failure answer's code is `not_found`, and every answer is checked
+    // against the operation's own response for its status, so a status the document does not list
+    // fails here. Every failure is collected, so one run names them all. A PUT by ID is probed
+    // below, with a body the server reads before it looks the ID up.
+    // Three answer an absent ID with an invalid_fields refusal that their messages name, and that
+    // not_found would not describe: a delete that checks the last active Super Admin before
+    // the lookup, a delete refused for "non-existent or default" (one message for both), and a
+    // default set of a template that is not a campaign's. Their status and message stay listmonk's.
+    const refusedAbsent = new Set([
+      "DELETE /api/users/{id}",
+      "DELETE /api/templates/{id}",
+      "PUT /api/templates/{id}/default",
+    ]);
+    const absentFailures: Array<string> = [];
+    for (const { key, operation } of operations) {
+      // One path parameter only: the others would take a placeholder that is not an ID.
+      const params = key.match(/\{\w+\}/g) ?? [];
+      if (
+        params.length === 1 &&
+        key.includes("{id}") &&
+        !operation.requestBody &&
+        !key.includes("twofa")
+      ) {
+        try {
+          const reply = await op(key, {
+            ...placeholders(key, "999999"),
+            query: needed(operation),
+            expect: [200, 400, 404],
+          });
+          const code = reply.body?.code;
+          check(
+            reply.status < 400 ||
+              code === "not_found" ||
+              (refusedAbsent.has(key) && code === "invalid_fields"),
+            `not-found-${key} ${reply.status} ${reply.text.slice(0, 200)}`,
+          );
+        } catch (error) {
+          absentFailures.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+    const absent = await op("PUT /api/subscribers/{id}", {
+      params: { id: "999999" },
+      body: { email: "absent@example.test", name: "Absent", status: "enabled", lists: [] },
+      expect: 400,
+    });
+    check(absent.body?.code === "not_found", "not-found-400-put-subscriber");
+    if (absentFailures.length) {
+      throw new Error(`FAIL openapi-absent:\n${absentFailures.join("\n")}`);
     }
 
     // A campaign's skipped list is empty here: a consent skip races the runner's push, which a

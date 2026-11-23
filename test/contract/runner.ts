@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { ERROR_CODES } from "@/server/error-codes";
+import { errorCodesFor } from "@/server/error-codes";
 import { asBody } from "@/test/read-body";
 import { cases as corpus } from "@/test/contract/cases";
 import { listmonkEnvelope } from "@/test/contract/envelope";
@@ -706,15 +706,16 @@ async function comparePublic404(
 
 /**
  * The bytes of an error without its stable `code` (B131, D129), which is the one member listmonk's
- * bytes lack. An owned error must carry a known code, or the check fails; the reference carries none.
+ * bytes lack. An owned error must carry the code its status can send (D138), or the check fails;
+ * the reference carries none.
  */
-function withoutCode(actual: string, mode: Mode): string {
+function withoutCode(actual: string, mode: Mode, status: number): string {
   if (mode === "reference") {
     return actual;
   }
   const match = /,"code":"([a-z_]+)"(?=[,}])/.exec(actual);
-  if (!match || !ERROR_CODES.some((known) => known === match[1])) {
-    throw new Error("FAIL error-code: an owned error carries no known code");
+  if (!match || !errorCodesFor(status).some((known) => known === match[1])) {
+    throw new Error(`FAIL error-code: an owned ${status} carries no code of its status`);
   }
   return actual.replace(match[0], "");
 }
@@ -741,7 +742,9 @@ async function compareBody(
     const jsonError =
       reply.status >= 400 && reply.contentType === "application/json" && actual !== "";
     const comparable =
-      expected.value.includes('"code"') || !jsonError ? actual : withoutCode(actual, reply.mode);
+      expected.value.includes('"code"') || !jsonError
+        ? actual
+        : withoutCode(actual, reply.mode, reply.status);
     if (comparable !== expected.value) {
       throw new Error(`body ${JSON.stringify(actual)}; expected ${JSON.stringify(expected.value)}`);
     }
@@ -792,7 +795,9 @@ async function compareBody(
     expected.value !== null &&
     Object.hasOwn(expected.value, "code");
   const comparable =
-    expectsCode || reply.status < 400 ? normalized : listmonkEnvelope(normalized, reply.mode);
+    expectsCode || reply.status < 400
+      ? normalized
+      : listmonkEnvelope(normalized, reply.mode, reply.status);
   if (!isDeepStrictEqual(comparable, expected.value)) {
     throw new Error(
       `JSON body ${JSON.stringify(normalized)}; expected ${JSON.stringify(expected.value)}`,
