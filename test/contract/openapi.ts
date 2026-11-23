@@ -1700,6 +1700,32 @@ export async function runOpenApiContract(target: {
         await op(key, { ...placeholders(key, "999999"), expect: 404 });
       }
     }
+    // A well-formed ID nothing has, where listmonk answers 400 (a list, bounce, user, template,
+    // campaign or transactional reference, D138): the code is `not_found`, and the per-status check
+    // reads it against the 400 response, which lists that code. A PUT by ID is probed below, with
+    // a body the server reads before it looks the ID up.
+    for (const { key, operation } of operations) {
+      if (
+        operation.responses["400"] &&
+        !operation.responses["404"] &&
+        key.includes("{id}") &&
+        !operation.requestBody &&
+        !key.includes("twofa")
+      ) {
+        const reply = await op(key, {
+          ...placeholders(key, "999999"),
+          query: needed(operation),
+          expect: 400,
+        });
+        check(reply.body?.code === "not_found", `not-found-400-${key}`);
+      }
+    }
+    const absent = await op("PUT /api/subscribers/{id}", {
+      params: { id: "999999" },
+      body: { email: "absent@example.test", name: "Absent", status: "enabled", lists: [] },
+      expect: 400,
+    });
+    check(absent.body?.code === "not_found", "not-found-400-put-subscriber");
 
     // A campaign's skipped list is empty here: a consent skip races the runner's push, which a
     // production run cannot hold still. The item's schema is checked against the shape the runner

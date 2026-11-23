@@ -355,6 +355,10 @@ each job.
   also needs `subscribers:manage`, and the list manage scope on each granted list: a list role with
   `list:manage` on that list, or the user role `lists:manage_all`, which gives that scope on every
   list.
+  An event's profile fields (`name`, `attribs`) are written to the subscriber it names, by its
+  external ID or its e-mail, with `subscriber_events:create` alone: list scope limits the grants and
+  the claim of an external ID, and nothing else in an event (D129, D138). A caller that manages no
+  list still updates a subscriber's name and attribs, and gets the subscriber's numeric ID back.
 - **Transactional mail** (`POST /api/tx`): `tx:send`. That is the only permission the operation names.
 - **Suppression removal** (`DELETE /api/suppressions`, B124, D125): `suppressions:manage`, and
   nothing else. `subscribers:manage` does not allow it. The built-in Super Admin holds the permission;
@@ -772,6 +776,11 @@ refusal must always land. Nothing leaves:
   starting or scheduling a campaign, SMTP tests, sequence test runs, the opt-in resend, a public
   data export and the [password reset](#locked-out-of-a-restored-install). An `async` `POST /api/tx`, opt-in mail from a signup and
   webhook events queue and wait.
+- Events (`POST /api/subscriber-events` and its batch) are recorded and answer `200`, as an `async`
+  send queues (D138). The sequence a recorded event starts waits with the rest of the scheduler, and
+  a list it grants takes effect at once, so a campaign to that list waits for the release, when
+  consent is checked again. Their answers carry no `held`, so an app that posts events keeps its facts
+  while the restore is reviewed.
 
 **What a hold does not do.** It does not recover a lost unsubscribe. A person who opted out in
 the app after the snapshot may be on no provider's list at all. Before releasing, look for what
