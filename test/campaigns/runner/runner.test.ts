@@ -734,11 +734,12 @@ test("tracked links personalized per subscriber do not accumulate across batches
   };
   // A wait ends when every message is pushed. The 60 s budget is per stretch without a new push: a
   // campaign that is slow on a loaded host keeps pushing and is not cut off, while a stalled one fails
-  // with its state. The whole wait also ends at giveUp, 80 s after the test started, under its 90 s
-  // timeout. bun does not stop a timed-out body, so a drive that outlived the timeout would keep
+  // with its state. The whole wait also ends at giveUp, 140 s after the test started, under the test's
+  // 150 s timeout. bun does not stop a timed-out body, so a drive that outlived the timeout would keep
   // driving this fixture after the test had failed. Here the drive's own wall ends at giveUp, and the
-  // test fails there, with the state, before anything can run on.
-  const giveUp = started + 80_000;
+  // test fails there, with the state, before anything can run on. The give-up was 80 s until a run at host
+  // load 11 took 81.5 s with 130 of 160 messages pushed and still going, so 140 s leaves room for that.
+  const giveUp = started + 140_000;
   for (;;) {
     const pushed = fx.pushes.length;
     const remaining = giveUp - Date.now();
@@ -765,7 +766,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
   const body = Buffer.from(fx.pushes.at(-1)!.message.body).toString();
   const link = /http:\/\/fixture\.test(\/link\/[^"]+)/.exec(body)![1]!;
   expect((await fx.request(link)).status).toBe(307);
-}, 90_000);
+}, 150_000);
 
 test("a wait that never completes fails with the stuck state, not at the test timeout", async () => {
   f = await runnerFixture({ hold: true });
