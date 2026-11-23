@@ -152,6 +152,8 @@ export class Router {
   private async respond(app: App, request: Request, peerAddress: string): Promise<Response> {
     const url = new URL(request.url);
     const path = routingPath(url.pathname);
+    // The one API-path error without a `code` (D138): listmonk's own plain-text bytes for a path
+    // that does not decode, answered before routing. Every other error is JSON with a code.
     if (path === undefined) {
       return new Response("400 Bad Request", {
         status: 400,

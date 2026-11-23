@@ -53,7 +53,7 @@ export async function runSettingsNul(target: {
     check(response.status === (target.mode === "reference" ? 500 : 400), `full-${i}`);
     if (target.mode === "normal") {
       check(
-        JSON.stringify(listmonkEnvelope(await response.json(), target.mode)) ===
+        JSON.stringify(listmonkEnvelope(await response.json(), target.mode, response.status)) ===
           '{"message":"Invalid data."}',
         "safe-error",
       );

@@ -68,7 +68,8 @@ export async function runSettingsCouncilParser(target: {
     check(response.status === 400, `${label}-status`);
     const body = await response.json();
     check(
-      JSON.stringify(listmonkEnvelope(body, target.mode)) === JSON.stringify({ message }),
+      JSON.stringify(listmonkEnvelope(body, target.mode, response.status)) ===
+        JSON.stringify({ message }),
       `${label}-error`,
     );
     check(JSON.stringify(await read()) === JSON.stringify(before), `${label}-rollback`);
