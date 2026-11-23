@@ -391,6 +391,39 @@ test("an old transactional link (the placeholder) can only end pending opt-ins",
   expect(await f.status(ada, news.id)).toBe("confirmed");
 });
 
+test("the placeholder's manage view lists and ends pending double opt-ins only, never an active single opt-in", async () => {
+  // B117b (D137 item 3): an unconfirmed membership of a single opt-in list is an active subscription
+  // (an API create without preconfirm_subscriptions), so the opt-in mail's manage page neither lists it
+  // nor ends it.
+  const f = await open();
+  const news = await f.list("News");
+  const weekly = await f.list("Weekly", "public", "single");
+  const double = await f.list("Double", "public", "double");
+  const ada = await f.subscriber("ada@example.test", "Ada", {
+    lists: [news.id, weekly.id, double.id],
+  });
+  await confirm(f, ada, [news.id]);
+  const adaUuid = await uuidOf(f, ada);
+  expect(await f.status(ada, weekly.id)).toBe("unconfirmed");
+
+  const manage = await visit(f, `/subscription/${placeholder}/${adaUuid}?manage=true`);
+  const html = await manage.text();
+  expect(html).toContain("Double");
+  expect(html).not.toContain("Weekly");
+  expect(html).not.toContain("News");
+
+  // A save that keeps nothing ends the pending double opt-in, and leaves the single opt-in alone.
+  const saved = await act(
+    f,
+    `/subscription/${placeholder}/${adaUuid}?manage=true`,
+    form([["manage", "true"]]),
+  );
+  expect(saved.status).toBe(200);
+  expect(await f.status(ada, double.id)).toBe("unsubscribed");
+  expect(await f.status(ada, weekly.id)).toBe("unconfirmed");
+  expect(await f.status(ada, news.id)).toBe("confirmed");
+});
+
 test("view in browser answers a subscriber the campaign was delivered to, and no one else", async () => {
   const f = await open();
   const news = await f.list("News");

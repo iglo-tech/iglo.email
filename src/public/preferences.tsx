@@ -51,6 +51,13 @@ export type PageMode =
 const script = (value: string) => JSON.stringify(value).replaceAll("<", String.raw`\u003c`);
 
 /**
+ * A pending opt-in: an unconfirmed membership of a double opt-in list (B117b, D137 item 3). An unconfirmed
+ * membership of a single opt-in list is an active subscription, so the pending-only pages never list it or end it.
+ */
+const pendingOptin = (list: { subscriptionStatus: string; optin: string }) =>
+  list.subscriptionStatus === "unconfirmed" && list.optin === "double";
+
+/**
  * The public lists a revisited link covers, when every membership it covers is unsubscribed; `null`
  * while the link still has something to unsubscribe from (B126, D123). The memberships decide,
  * whatever the list's type, so a private list counts. Only public lists are named, as the manage view
@@ -128,8 +135,9 @@ export function subscriptionPage(
   // B126 (D123 item 8): a transactional link with an active subscription and no manage view is the email
   // settings page. Its pending form is titled as its button, and its already-unsubscribed page is titled
   // as a marketing link's already-unsubscribed page is.
+  // B117b (D137 item 2): a transactional manage view is the email settings page too, with preferences on.
   const pageTitle =
-    transactionalView === "confirmed"
+    transactionalView === "confirmed" || (transactional && showManage)
       ? t.T("public.emailSettings")
       : transactionalView === "form"
         ? t.T("public.cancelPending")
@@ -141,9 +149,7 @@ export function subscriptionPage(
     ? subscribers
         .visibleSubscriptions(subscriber.id)
         .filter((list) =>
-          pending
-            ? list.subscriptionStatus === "unconfirmed"
-            : list.subscriptionStatus !== "unsubscribed",
+          pending ? pendingOptin(list) : list.subscriptionStatus !== "unsubscribed",
         )
     : [];
   const blocklist = mode.kind === "paired" && mode.blocklist && options.allowBlocklist;
@@ -230,7 +236,7 @@ export function subscriptionPage(
           <form method="post" class="manage-form">
             <div>
               <input type="hidden" name="manage" value="true" />
-              <h2>{t.T("public.managePrefs")}</h2>
+              <h2>{transactional ? t.T("public.emailSettings") : t.T("public.managePrefs")}</h2>
               {transactional && !subscriptions.length ? (
                 <p>{siteText(t.T("public.txConfirmedInfo"), options.siteName)}</p>
               ) : null}
@@ -495,7 +501,8 @@ export function savePendingLists(
       return false;
     }
     for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
-      if (list.subscriptionStatus !== "unconfirmed" || kept.has(list.uuid)) {
+      // B117b (D137 item 3): only a pending double opt-in is ended; an active single opt-in stays.
+      if (!pendingOptin(list) || kept.has(list.uuid)) {
         continue;
       }
       const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId, false);

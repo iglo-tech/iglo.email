@@ -195,6 +195,25 @@ test("an active subscriber with preferences off gets the email settings page, re
   }
 });
 
+test("with preferences on, an active subscriber's transactional manage view is titled and headed Your email settings", async () => {
+  // B117b (D137 item 2): the manage view of a transactional link is the email settings page, not the
+  // marketing unsubscribe page. Its title and heading are the same text as the preferences-off page.
+  const f = await open({ siteName: "Brand Co" });
+  const template = await receipt(f);
+  const weekly = await f.list("Weekly News", "public", "single");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [weekly.id] });
+  const link = await txPage(f, template, ada);
+
+  for (const path of [link.page, `${link.page}?manage=true`]) {
+    const html = await (await f.request(path)).text();
+    expect(html).toContain("<title>Your email settings - Brand Co</title>");
+    expect(html).toContain("<h2>Your email settings</h2>");
+    expect(html).not.toContain("Unsubscribe from mailing list");
+    expect(html).toContain('class="manage-form"');
+    expect(html).toContain('id="manage-name"');
+  }
+});
+
 test("with preferences off, the already-unsubscribed page has no manage link", async () => {
   const f = await open({ allowPreferences: false });
   const template = await receipt(f);
