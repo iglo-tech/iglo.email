@@ -8,22 +8,30 @@ import { asBody } from "@/test/read-body";
 const text = (html: string) => plainText(html, createMessageBudget());
 
 /**
- * The median of five conversions of one input, so one slow run on a loaded host does not decide it. The
- * linear-time tests below compare a 64 KiB input with a 1 MiB one (16x). Linear work gives about 16x, and
- * quadratic work about 256x; the bound of 64x sits between them on a log scale. That leaves room for host
- * noise of about 4x, which a 4x comparison with a 5x bound did not (B137 r1 and this change's container run
- * at load 21: 34x against 32x).
+ * Linear growth as a step ratio: one shape timed at 64 KiB, 256 KiB and 1 MiB (1x, 4x and 16x). Linear work
+ * gives about 4x for each 4x step and quadratic work about 16x, so a bound of 8x per step sits a factor of 2
+ * from each. Within a round the three sizes run in turn, so host load that slows one size slows the others
+ * in that round too, and each size's time is the median over the rounds.
  */
-const SMALL = 64 * 1024;
-const LINEAR_BOUND = 64;
-const medianOfThree = async (html: string) => {
-  const samples: Array<number> = [];
-  for (let run = 0; run < 5; run++) {
-    const started = performance.now();
-    await text(html);
-    samples.push(performance.now() - started);
+const SIZE = 64 * 1024;
+const ROUNDS = 5;
+const STEP_BOUND = 8;
+const median = (values: Array<number>) =>
+  [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+/** Asserts that each step's ratio, 4x/1x and 16x/4x, is under STEP_BOUND. `build` makes the input of a size. */
+const expectLinearGrowth = async (build: (size: number) => string) => {
+  const inputs = [SIZE, 4 * SIZE, 16 * SIZE].map((size) => build(size));
+  const samples = inputs.map((): Array<number> => []);
+  for (let round = 0; round < ROUNDS; round++) {
+    for (const [i, input] of inputs.entries()) {
+      const started = performance.now();
+      await text(input);
+      samples[i]!.push(performance.now() - started);
+    }
   }
-  return samples.sort((a, b) => a - b)[2]!;
+  const [one, four, sixteen] = samples.map((times) => median(times));
+  expect(four! / one!).toBeLessThan(STEP_BOUND);
+  expect(sixteen! / four!).toBeLessThan(STEP_BOUND);
 };
 
 // B1: character references in an href decode once. `&amp;` is the HTML form of `&`, and the URL
@@ -214,7 +222,8 @@ test("data:, vbscript: and javascript: links keep their text and write no URL, h
 });
 
 // r2 B1: nesting of each kind is bounded, and its cost grows with the input, not with its square. The
-// cap on pending end-tag handlers is what bounds it (D118). The cost is compared within one run.
+// cap on pending end-tag handlers is what bounds it (D118): past the cap a shape stops early, so the cap
+// bounds its cost. The growth steps time each shape at 64 KiB, 256 KiB and 1 MiB.
 const MIB = 1024 * 1024;
 const nested = {
   b: (n: number) => "<b>".repeat(n) + "t" + "</b>".repeat(n),
@@ -234,11 +243,9 @@ const bytesPerLevel: Record<keyof typeof nested, number> = {
 const nestedHtml = (kind: keyof typeof nested, size: number) =>
   nested[kind](Math.floor(size / bytesPerLevel[kind]));
 for (const kind of asBody<Array<keyof typeof nested>>(Object.keys(nested))) {
-  test(`1 MiB of nested ${kind} has no text part past the 1024 cap, and 16x the input costs at most ${LINEAR_BOUND}x the time`, async () => {
+  test(`1 MiB of nested ${kind} has no text part past the 1024 cap, and each 4x step of input costs under ${STEP_BOUND}x`, async () => {
     expect(await text(nestedHtml(kind, MIB))).toBe("");
-    const small = await medianOfThree(nestedHtml(kind, SMALL));
-    const large = await medianOfThree(nestedHtml(kind, MIB));
-    expect(large / Math.max(small, 5)).toBeLessThanOrEqual(LINEAR_BOUND);
+    await expectLinearGrowth((size) => nestedHtml(kind, size));
   });
 }
 
@@ -251,8 +258,8 @@ test("a URL's > and whitespace are percent-encoded in the text part", async () =
 
 // r3 B1: implied end tags leave the rewriter's end-tag handlers pending, so the cost grows with the
 // number of implied ends, not with the stack. Each shape repeats a unit with an omitted end tag. The
-// conversion gives up once it holds more handlers than its cap (D118), so the bound is on time, and
-// past the cap the message has no text part.
+// conversion gives up once it holds more handlers than its cap (D118), and past the cap the message has
+// no text part. Each shape gets a test of that at 64 KiB, and a test of its growth steps.
 const implied: Record<string, { unit: string; bytes: number }> = {
   "unclosed p": { unit: "<p>x<b>y</b>", bytes: 12 },
   "unclosed li": { unit: "<li>x<b>y</b>", bytes: 13 },
@@ -276,26 +283,27 @@ const prefix: Record<string, string> = {
   "div stack then stray end tags": "<div>".repeat(256),
 };
 for (const kind of Object.keys(implied)) {
-  test(`${kind} at 64 KiB and 1 MiB: 16x the input costs at most ${LINEAR_BOUND}x the time`, async () => {
-    const { unit, bytes } = implied[kind]!;
-    const build = (size: number) => prefix[kind]! + unit.repeat(Math.floor(size / bytes));
-    const small = await medianOfThree(build(SMALL));
-    const large = await medianOfThree(build(MIB));
-    expect(large / Math.max(small, 5)).toBeLessThanOrEqual(LINEAR_BOUND);
+  const { unit, bytes } = implied[kind]!;
+  const build = (size: number) => prefix[kind]! + unit.repeat(Math.floor(size / bytes));
+  // The cap, without timing: with the cap disabled, each of these shapes has text at this size, so the
+  // test fails every shape then.
+  test(`${kind} at 64 KiB has no text part: the end-tag cap stops it (D118)`, async () => {
+    expect(await text(build(SIZE))).toBe("");
+  });
+  test(`${kind}: each 4x step of input costs under ${STEP_BOUND}x`, async () => {
+    await expectLinearGrowth(build);
   });
 }
 
 // r4: the worst case the cap still allows: 1023 open elements, then stray end tags, each of which
 // searches the open elements. It was one absolute sample under 1 s, which failed at 1006-1181 ms on a
-// loaded host (B137). It is now a ratio within the run, the median of three at 64 KiB and at 1 MiB.
-// Linear work gives about 16x for 16x the input (measured 14-18x on macOS and 14-15x in the Linux
-// container); quadratic work gives 256x. The bound is LINEAR_BOUND (64x), between the two.
+// loaded host (B137). It is a growth step check now: the median of rounds at 64 KiB, 256 KiB and 1 MiB.
+// Under the cap at every size, its cost is real work: it is the shape that catches quadratic work on the
+// output, such as joining the output parts on every few writes.
 const worstStrayEnds = (size: number) =>
   "<span>".repeat(1023) + "x</q>".repeat(Math.floor(size / 5));
-test(`the worst linear case, 1023 open spans then stray end tags, costs at most ${LINEAR_BOUND}x for 16x the input`, async () => {
-  const small = await medianOfThree(worstStrayEnds(SMALL));
-  const large = await medianOfThree(worstStrayEnds(MIB));
-  expect(large / Math.max(small, 5)).toBeLessThanOrEqual(LINEAR_BOUND);
+test(`the worst linear case, 1023 open spans then stray end tags, has each 4x step of input under ${STEP_BOUND}x`, async () => {
+  await expectLinearGrowth(worstStrayEnds);
 });
 
 test("a message past the implied-end cap gives no text part, and its HTML is still converted by the caller", async () => {
