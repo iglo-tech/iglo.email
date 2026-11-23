@@ -1,0 +1,578 @@
+# Projects
+
+**Status: planned, not implemented** ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)). Until the tasks in [section 17](#17-tasks) merge, every other design document describes one project per instance ([D15](09-decisions.md#d15-one-instance-per-product)). When a task lands, it updates the documents it changes in the same PR.
+
+This is the implementation spec for a worker or lead picking up one of the tasks in [section 17](#17-tasks).
+
+- Read sections 1–16 before starting any task.
+- The invariants in [section 14](#14-invariants) apply to every task. Breaking one is a blocking review finding.
+- Where this spec describes today's code, check the code. The code wins, and the spec is fixed in the same PR.
+- **listmonk's API is a starting point, not a constraint** ([D143](09-decisions.md#d143-listmonks-api-is-a-starting-point-not-a-constraint-owner-2026-11-23)). Where staying compatible would make a design more complex, change the API, list the difference in 07 with its reason, and update the contract cases.
+
+## Goal
+
+One iglo.email process serves several independent projects (products, newsletters, apps) for one operator. An instance is mostly idle, so one instance per project wastes a server and duplicates the SES setup.
+
+- **One configuration** for the instance: SMTP/SES, the send rate, bounces and security.
+- **One send queue** across all projects. It respects the SES account's rate and shares it fairly. Marketing mail may wait up to an hour. Transactional mail does not wait.
+- **Plan against the real SES limits.** The app reads the account's rate and 24-hour quota from SES. Scheduling a campaign shows whether it fits, so quota problems are avoided when planning, not handled in the queue.
+- **One admin account** that works in every project.
+- **API and MCP credentials are scoped to one project.** An AI agent given a token for project A cannot read or change project B.
+
+## Non-goals
+
+These are out of scope. Do not build them, even partly:
+
+- Multi-tenancy for different customers, billing, quotas per customer.
+- New human-user features: invitations, per-project roles for humans, ACL screens. Project-local human users stay exactly as today ([section 5](#5-one-admin)). Removing them is a later decision.
+- Sharing subscribers, lists, templates or campaigns between projects. Each project's audience and consent stay separate, which was D15's reason for one instance per product.
+- Routing projects by path prefix (`/p/<slug>/…`). The UI and pages contain about 600 absolute paths, and listmonk's API contract assumes the root.
+- A second sending provider, or SMTP settings per project. All mail goes through the instance's SES configuration.
+- Moving subscribers between projects, merging projects, renaming a project's main hostname.
+- An upgrade path from earlier iglo.email data directories (owner, 2026-11-23: nothing is live).
+- Horizontal scaling. The process model is still one process and one data directory ([D69](09-decisions.md#d69-a-file-lock-enforces-one-process-per-data-directory)).
+
+## Terms
+
+| Term | Meaning |
+|---|---|
+| Instance | The process and its data directory. It owns the instance database, the instance settings, the admin account and the dispatcher |
+| Project | One audience. Its own SQLite database with today's whole schema: subscribers, lists, templates, campaigns, sequences, sends, webhooks, media, users |
+| Slug | A project's permanent ID: `[a-z0-9][a-z0-9-]{0,39}`, unique, never changed. It is the directory name |
+| Hostname | A project's main host, such as `news.example.com`. It is set at creation, never changed, and used for every new link and Message-ID |
+| Extra hostname | Another host that serves the same project, such as an old domain whose links in sent mail must keep working. It is never used for new links |
+| Instance host | The host of `--root-url`. It serves the instance pages and, optionally, the primary project |
+| Primary project | The project whose hostname is the instance host. At most one. Requests for a host no project claims go to it. A single-project install is an instance with only a primary project, and it behaves exactly as today |
+| Admin | The one admin account. It is kept in `instance.db` and copied into every project as a Super Admin user ([section 5](#5-one-admin)) |
+| Dispatcher | The instance's send scheduler: one emailer, one rate limiter and fair start slots across projects |
+| SES snapshot | The last values read from SES's `GetAccount`, held in memory: maximum send rate, maximum sends in 24 hours, sent in the last 24 hours, and the read time |
+
+## 1. Data layout
+
+```text
+data/
+  iglo-email.lock          instance lock (D69), unchanged; one for the whole directory
+  instance.db              (+ -wal, -shm) projects, hostnames, instance settings, admin account
+  projects/
+    <slug>/
+      iglo-email.db        (+ -wal, -shm) today's schema, unchanged in meaning
+      uploads/             media of this project
+      stage/               D62 staging of this project
+  backups/
+    <timestamp>/instance.db, <slug>.db …   `iglo.email backup` output
+    pre-migration/…        automatic snapshots before migrations (instance and each project)
+    deleted/<slug>-<timestamp>.db          final snapshot of a deleted project
+```
+
+- **Migrations:** `instance.db` has its own migration manifest in `migrations/instance/`. Project databases keep `migrations/`. Each manifest is applied to its own databases with the existing runner and the pre-migration snapshot rule.
+- **Directories:** the `--data-dir` flag is unchanged. Project directories are always under `projects/` and are never configurable.
+- **Pragmas:** a project database is opened with the same pragmas as today ([02-architecture](02-architecture.md#platform)).
+- **No upgrade:** start refuses a data directory that has `iglo-email.db` at its root, with a message that the layout changed. Nothing converts old data.
+
+## 2. Routing
+
+- **One server:** one `Bun.serve` on the existing port.
+- **Lookup:** each request is dispatched by its `Host` header. Lowercase it, strip the port, then look it up among hostnames and extra hostnames. Ignore `X-Forwarded-Host`: the reverse proxy must pass `Host` through, and `operations.md` says so.
+- **Project host:** the project's own router. It holds every route that exists today. The API, admin UI, public pages and MCP keep their current paths and contracts.
+- **Instance host:** the instance routes come first:
+  - `/admin/instance/**`: the instance pages
+  - `/api/instance/**`: JSON for those pages, session only
+  - `/webhooks/service/ses`
+  - the instance login and handoff paths ([section 5](#5-one-admin))
+
+  Every other path goes to the primary project, if there is one.
+- **A host no project claims:**
+  - **With a primary project:** the request is handled exactly as on the instance host: instance routes first, then the primary project.
+    - Existing tests and fixtures call `127.0.0.1` with a different configured host, including the SES bounce tests, and health checks call by IP. All of them keep working.
+    - Routing does not depend on how many projects exist.
+    - Such a request reaches only the instance and the primary project, so isolation holds.
+  - **Without a primary project:**
+    - the instance health route answers on any host
+    - `/admin` redirects to the instance host's `/admin/instance/projects`
+    - everything else gets a plain-text `404` that names no project and no hostname, with no log line per request
+- **Root URL:**
+  - A project's `app.root_url` is `--root-url` with its host replaced by the project's hostname. Scheme, port and path are kept.
+  - It stays read-only, as under D14.
+  - All links, Message-IDs (`rootDomain`), cookies, CORS and Origin checks of a project derive from it, as they do today from the bootstrap root URL.
+- **Routing table:** held by the instance object passed to the server, not by module-level state. A project created or deleted while running updates it without a restart.
+
+## 3. Instance store and composition
+
+- **New module `src/projects/`.** It owns `instance.db`'s registry tables:
+  - projects: slug, name, created time, primary flag
+  - hostnames: hostname, project, main or extra
+- **Other instance tables belong to their modules.** Settings owns the instance settings table and users owns the admin account. "A module owns its tables" still holds across both kinds of database.
+- **`createProject(instance, slug)`** replaces today's wiring in `src/main.ts`.
+  - It receives the instance services: dispatcher, instance settings reader, admin sync, clock, logger and process-wide budgets.
+  - It opens the project's database and wires every store, route and loop exactly as `main()` does now.
+  - It returns `{ router, start(), stop(), db, … }`.
+  - `main()` opens the instance, then calls `createProject` for each registered project.
+  - All projects are wired before the port binds, and loops start only after it binds, as [B52](../briefs/B52.md) requires.
+- **No shared database handles.** A project's modules see only that project's database. Instance services are passed in as narrow functions, never as the instance `Database`.
+- **No SQLite transaction across two database files.** There is no `ATTACH`. Each step that writes two databases states its order and why a crash between the two writes is safe.
+
+## 4. Settings: instance and project
+
+**Rule:**
+
+- **Instance key:** the key describes the server, the SES account, sending capacity or the operator.
+- **Project key:** the key describes an audience, a brand, consent, content or public pages.
+
+A new key must be classified in this table when it is added.
+
+**Removed:** `app.concurrency`, `app.message_rate`, `app.batch_size` and `app.message_sliding_window*`.
+- The dispatcher paces all sending ([section 7](#7-global-send-queue)), so a second, per-campaign pacing layer only adds rules that can conflict with it.
+- How many recipients a campaign claims at once comes from its grant, capped by a fixed internal maximum. The B141 worker measures it and picks it, starting at 100.
+
+| Instance | Project |
+|---|---|
+| `smtp` (all servers, DKIM, test pools) | `app.root_url` (read-only, derived from the hostname) |
+| `messaging.max_send_rate` | `app.site_name`, `app.site_url`, `app.favicon_url`, `app.logo_url`, `app.from_email` |
+| `ses.api_region`, `ses.api_access_key_id`, `ses.api_secret_access_key` (new; the secret is masked, [section 7](#ses-account-and-capacity-planning)) | `app.max_send_errors` |
+| `bounce.enabled`, `bounce.webhooks_enabled`, `bounce.ses_enabled`, `bounce.ses_topic_arns`, inert provider keys (`bounce.azure`, `bounce.sendgrid_*`, `bounce.postmark`, `bounce.forwardemail`, `bounce.lettermint`, `bounce.mailboxes`) | `bounce.actions` |
+| `security.trusted_proxies`, `security.session_duration`, `security.oidc` | `security.captcha`, `security.trusted_urls`, `security.public_rate_limit` |
+| `app.check_updates`, `app.cache_slow_queries`, `app.cache_slow_queries_interval`, `maintenance.db` | `app.enable_public_archive`, `app.enable_public_subscription_page`, `app.show_optin_page`, `app.enable_public_archive_rss_content`, `app.send_optin_confirmation`, `app.notify_emails`, `app.lang` |
+| `webhooks.block_private_addresses` | `privacy.*`, `marketing.min_interval` |
+| `upload.provider`, `upload.s3.*` (inert), `appearance.admin.custom_css`, `appearance.admin.custom_js` | `upload.extensions`, `upload.filesystem.*` (paths resolve inside the project directory), `appearance.brand.*`, `appearance.public.*` |
+
+**API:**
+
+- **Project host:** `GET` and `PUT /api/settings` read and write project keys only.
+  - A key that is not a project key, including any instance key, is a `400` that names it, and nothing is written.
+  - `app.root_url` stays read-only, as in D14 today.
+- **Instance host:** `GET` and `PUT /api/instance/settings` read and write instance keys only, with an instance session and CSRF. Secrets are masked as today.
+- **No merging:** there is no merged object, no rule for unchanged instance keys and no write order across two databases. Each request writes one database.
+
+**Admin UI:**
+
+- A project's Settings page shows only project keys, with a link to "Instance settings" on the instance host.
+- The instance Settings page shows only instance keys.
+
+## 5. One admin
+
+The owner works alone. The design keeps today's project authentication untouched, so the user and role contract suites (which also run against upstream) do not change. It adds one account that exists in every project.
+
+- **The admin account lives in `instance.db`:** username, password hash, optional TOTP and email. There is exactly one.
+  - `IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD` create it on first start, as today.
+  - `iglo.email reset-password` and `reset-totp` act on it.
+- **Copied into every project:**
+  - Each project database has one user row for the admin: same username, password hash and TOTP, Super Admin role, password login on. The project's users table marks it as the admin's copy.
+  - It is written on project creation and on every start, from `instance.db` to each project.
+- **Password and TOTP changes write through.** A change can come from any place that changes them today:
+  - the project profile and 2FA routes
+  - the email password reset (`issueReset` and its completion in `src/users/auth.ts`)
+  - the instance Account page
+  - the CLI
+
+  Each one writes `instance.db` first, then every project's copy. A crash in between is repaired at the next start, because the instance is the source. So the existing profile, 2FA and reset tests and e2e specs keep passing on the copy.
+- **The copy is protected:**
+  - Through a project's API or UI it cannot be deleted or disabled, or have its role or username changed. Those return `403` and write nothing.
+  - This is the only change to project user behavior.
+  - The B140 worker lists every test that touches the bootstrap admin, and confirms that none of them deletes it, disables it or changes its role.
+- **Username clash:** the admin's username is reserved in every project.
+  - Creating a project user with that name is a `409`.
+- **Logging in:**
+  - Today's project login on any project host works with the admin's credentials, because the copy is a normal user row.
+  - The instance pages have their own login at `/admin/instance/login`, checked against `instance.db`.
+    - Its session cookie is `instance_session` with `Path=/`. It has a different name from a project's `session` cookie, so neither replaces the other.
+    - Both can exist on the instance host at once.
+- **Handoff, so one sign-in is enough:**
+  1. On the instance host, with a valid instance session, `GET /admin/instance/open/<slug>?next=<path>` mints a random 32-byte token. It is held in memory, used once, valid for 60 s and bound to the slug.
+  2. The instance host answers 303 to `<project root URL>/admin/handoff?token=…&next=…`.
+  3. The project redeems the token in-process and creates a normal project session for the admin's copy, through a narrow `createSession(userId)` from the project's users module. It sets today's cookie.
+  4. It answers 303 to `next`.
+
+  `next` must be a path that starts with `/` and not `//`. Anything else becomes `/admin`. A spent, expired or foreign token is a `403` with no session.
+- **Logout and session expiry** work per host, as today.
+- **Other human users** in a project keep working exactly as today. The owner simply does not create any.
+
+## 6. API and MCP scoping
+
+- **API users are project users.** They live in the project database and are created on that project's Users page with today's roles. A role can still restrict a user to some lists.
+- **A credential is checked only against the database of the project its request reaches.**
+  - The same `user:token` sent to another project's host is a `401`, even when a user of that name exists there.
+  - On the instance host or an unclaimed host, it reaches only the primary project.
+  - Instance routes never accept API credentials.
+- **No API route or MCP tool takes a project argument, lists projects or names another project.** `tools/list` and the OpenAPI document gain only the capacity endpoint ([section 7](#ses-account-and-capacity-planning)), which reports instance totals and never names a project.
+- **MCP `initialize` instructions:** one added sentence naming the project and saying that the endpoint serves only that project, and one saying to check capacity before scheduling a large campaign. Keep the instructions within their size limit (D108).
+- **Instance JSON routes (`/api/instance/**`)** require an instance session plus CSRF, and are never exposed to API users or MCP. The OpenAPI coverage test lists them as excluded, with the reason "instance host, admin session only".
+
+## 7. Global send queue
+
+### Today
+
+Check this against the code before changing it:
+
+- **One rate limiter:** one process-wide token limiter, `messaging.max_send_rate`, paces every SMTP push ([D92](09-decisions.md#d92-one-shared-send-rate-cap-for-ses-lead-2026-11-07), `src/messaging/rate.ts`). It has two priorities, `outbox` before `campaign`. The emailer acquires a token per push, and the 60 s push deadline (D49) starts after the token is granted.
+- **Outbox:** claims up to 10 due rows per commit, of mixed kinds. It keeps a `live` set so a lease does not expire under a push that is waiting (`src/messaging/outbox.ts`).
+- **Campaign runner:** paces itself with `app.message_rate`, `app.concurrency` and the sliding window, and advances its cursor per batch (`app.batch_size`) in one transaction before sending. This work removes that per-campaign pacing. The runner renews its lease by heartbeat, and runs one batch at a time in the process.
+- **Durable work stays in each project's tables:** outbox `sends` rows and campaign cursors. Claiming and admitting a send must commit together with the same project's consent state: marketing policy, frequency cap, blocklist.
+
+### Why this changes with several projects
+
+**Restart loss.** A marketing row that is claimed and then waits for a token becomes `unknown` and is lost if the process stops. A restart turns `sending` into `unknown`, and marketing is never retried. Its consent and frequency-cap check also goes stale while it waits. With one project the wait is short. With many projects sharing one rate, a project could hold claimed rows for minutes. The fix is to claim only what can start almost at once.
+
+**Fairness.** Fair sharing across projects needs one place that decides whose message starts next.
+
+### The dispatcher
+
+An instance service in `src/messaging/`. It owns the emailer, its SMTP pools, the rate limiter and the SES snapshot. Projects never build their own emailer.
+
+- **"Global queue" means global scheduling, not one table.** Each project keeps its durable rows. The dispatcher decides which project's work starts in which slot.
+- **Per-push context:**
+  - The one emailer receives, with each push, what is per project today: the Message-ID domain (the project's root domain), the copy-allowed check (that project's blocklist) and the hold check (that project's restore hold, or the instance's).
+  - Today these are closed over in `createEmailer` (`src/main.ts`). They become arguments of the push.
+- **Classes, in strict priority order:**
+
+  | Class | What | Latency target |
+  |---|---|---|
+  | `transactional` | tx sends of kind transactional (sync and async), transactional sequence steps, opt-in confirmations, subscriber mails, password reset, admin notifications, campaign and step test sends | Starts within the reservation horizon (2 s) plus one token interval. Never waits for marketing or campaign work beyond that |
+  | `marketing` | outbox rows of kind marketing: sequence marketing steps and tx marketing sends | May wait. Budget: 1 hour from due to start under normal load |
+  | `campaign` | campaign recipients | Runs at whatever capacity is left |
+
+- **Start slots:**
+  - The dispatcher turns the effective rate into a schedule of start slots, one every `1000 / rate` ms. A slot is a time at which one message may start.
+  - It assigns slots in class order, round-robin across projects within a class, one slot per project per turn.
+  - Each assigned slot is consumed by exactly one push. A granted push does not acquire another token, so there is no double pacing.
+- **Transactional** keeps today's path: claim first, then take the next free slot ahead of the other classes.
+- **Marketing and campaign reserve before they claim** ([invariant 3](#14-invariants)):
+  1. The project loop asks for up to N slots for its class: the outbox's 10, or the campaign's fixed internal maximum.
+  2. The dispatcher grants only slots that fall within the next 2 seconds (the reservation horizon), at most N.
+  3. The loop claims at most as many rows or recipients as it was granted, with no transaction open while it waits for the grant.
+  4. Each message starts at its slot. Unused slots go back at once.
+  5. The campaign cursor advances only over granted recipients, so a campaign batch is at most the slots its project gets within 2 s.
+- **Mixed outbox claims:** the outbox claim is split by kind. Transactional rows are claimed as today. Marketing rows are claimed only against a grant.
+- **Synchronous `POST /api/tx` of kind marketing:**
+  - It waits at most the horizon plus 5 seconds for a grant.
+  - Without one (backlog, or the quota guard), its row stays `queued` and the response is the async answer, `status: "queued"`. The outbox sends it later.
+  - It never holds a request open longer than that.
+- **Rate `0`** (no cap, D92): slots are not paced. The dispatcher still grants in class order and round-robin, and the in-flight bound is a fixed 200 messages, process-wide, instead of `2 × rate`.
+- **One in-flight bound for the process.** The 2-second horizon bounds claimed-but-not-started marketing and campaign messages, process-wide, to at most `2 × rate`, or 200 at rate `0`. That bound replaces the runner's "one batch at a time" (invariant 7).
+- **Rate:**
+  - `messaging.max_send_rate` is instance-wide.
+  - The effective rate is the lower of it and SES's `MaxSendRate` ([below](#ses-account-and-capacity-planning)).
+- **Wake and idle:** enqueue and start signal the dispatcher. An idle instance runs no dispatcher timer.
+- **Restart:**
+  - Grants are in memory and are lost on restart, which is correct: nothing granted is claimed until the claim commits.
+  - The B118 note, that the first send after a restart can follow the last one at once, stays a separate backlog item.
+- **Shutdown order:**
+  1. Projects stop asking for slots.
+  2. Granted pushes start or are dropped before their claim.
+  3. In-flight sends drain under today's deadlines.
+  4. The dispatcher stops.
+
+### SES account and capacity planning
+
+The SES account already knows its limits, so the app reads them instead of having them typed in, and shows them when a campaign is planned.
+
+- **Reading the account:**
+  - **Credentials:** instance settings `ses.api_region`, `ses.api_access_key_id` and `ses.api_secret_access_key`, for an IAM user that only has `ses:GetAccount`. SES SMTP credentials cannot sign API calls, so these are separate. All three are empty by default.
+  - **The call:** SES v2 `GetAccount` (`GET https://email.<region>.amazonaws.com/v2/email/account`), signed by an in-house SigV4 signer on Web Crypto, with no AWS SDK (invariant 9) and a 10-second limit.
+  - **What it reads:** `SendQuota.MaxSendRate`, `Max24HourSend`, `SentLast24Hours`, `ProductionAccessEnabled` and `SendingEnabled`.
+  - **When it reads:** at start, every 5 minutes, every minute while the last read left at most `max(10% of the quota, effective rate × 300 s)`, and on demand when a forecast is asked for and the snapshot is older than 1 minute.
+  - **Storage:** the snapshot is held in memory only. A restart reads it again.
+  - **Failure:** a failed read keeps the last snapshot, shows its age, and writes one attention line per hour while reads fail. A failed read never stops sending.
+  - **Check button:** instance settings has a "Check SES account" button that shows the values or the AWS error.
+- **Rate:**
+  - Effective rate = the lower of `messaging.max_send_rate` and `MaxSendRate`. The setting stays a cap the operator may lower, default 14.
+  - Instance settings shows SES's rate beside the setting and warns when the setting is higher.
+  - Without API credentials, the setting alone applies, as today.
+- **Forecast:** one question, "does the busiest 24 hours around this campaign fit the quota?" Every number is computed from these inputs, so a test can compute it by hand.
+  - **Window:** the 24 hours ending at F, where F is the candidate's estimated finish: its start T plus its recipient count ÷ the effective rate. The rolling peak is reached when the campaign ends, not when it starts. Without a candidate (the Sending page), F is now.
+  - **App history:** the app's own starts per hour over the last 24 hours, from every project's `sends` and campaign deliveries.
+  - **Outside sends:** sends the app did not make, equal to `SentLast24Hours` minus the app's own 24-hour total, never below 0. This is mail from other software on the same account. It is spread evenly over the past 24 hours.
+  - **Still counted at F:** past sends, both the app's own by hour and the outside share, that are less than 24 hours older than F. This is zero when F is 24 hours or more from now. A daily newsletter at the same hour is therefore not double-counted against yesterday's run.
+  - **Baseline:** the app's non-campaign starts over the last 24 hours, counted for the part of the window that lies in the future.
+  - **Planned:**
+    - the recipients of every `scheduled` campaign whose `send_at` falls inside the window (F − 24 h, F]
+    - the remaining recipients of every `running` campaign, in every project
+    - the candidate campaign's recipients, if given, with an optional campaign ID so an already scheduled campaign being edited is not counted twice
+
+    These come from a narrow per-project function that returns `send_at` and recipient counts only, counted the way the runner counts them. A campaign counts in full in the window where it starts, which overstates rather than understates.
+  - **Output:**
+    - window demand = still counted + baseline + planned
+    - the quota and the headroom
+    - whether the window fits
+    - the snapshot's age
+
+    These are instance totals only, with no project name and no other project's campaign.
+- **Where it shows:**
+  - **API:** a native endpoint `GET /api/sending/capacity` (optional `at`, `count` and `campaign_id` for a candidate) on every project host, with the `campaigns:get` permission. The OpenAPI document covers it, and MCP exposes it through the existing generation rules.
+  - **Campaign page:**
+    - When a send time is set, when a campaign is scheduled and before it starts, the admin UI shows "Fits: 18,200 of 50,000 in the 24 h up to Tue 13:40" or "Over the quota by 3,100 in the 24 h up to Tue 13:40".
+    - If it is over, the user must confirm.
+    - Scheduling is never refused. The listmonk status API is unchanged.
+  - **Instance Sending page:** the effective rate, the snapshot, and the forecast for the 24 hours from now.
+- **Last-resort guard.** A forecast can still be wrong: lists grow, transactional mail spikes, other software sends. SES refusing mail past the quota would make marketing sends `failed` and lose them. So:
+  - The dispatcher stops granting slots to the `marketing` and `campaign` classes when the remaining quota is at most `max(2% of Max24HourSend, effective rate × 60 s)`. 60 s is the fast refresh interval, which is always in force before the hold line is reached. The remaining quota is `Max24HourSend − SentLast24Hours`, from the latest snapshot.
+  - The second term covers what the app can send between two fast reads: at rate 14 and a one-minute refresh that is 840, more than 2% of a 10,000 quota. Without it, SES would refuse mail past the quota and marketing would be lost as `failed`.
+  - It writes one attention line when it starts holding and one when it stops.
+  - Rows stay `queued`, with no lease. Running campaigns stay `running`, with their heartbeat, and their cursors do not move.
+  - Everything resumes by itself when a newer snapshot is above that line.
+  - No pause, no notification, no counter of the app's own.
+  - Transactional is never held.
+  - Without API credentials there is no forecast and no guard, and instance settings says so.
+
+### What does not change
+
+- At-most-once for marketing and campaigns, the transactional retry rules (D24, D53), the frequency cap, the restore hold and the Message-ID format.
+- Never add a retry that could send marketing mail twice.
+
+## 8. Bounces and SES notifications
+
+- **`POST /webhooks/service/ses` is served on the instance host.** It uses the instance's bounce settings and topic ARNs, and handles SNS `SubscriptionConfirmation` once, with today's checks.
+- **One project:** when exactly one project exists, every notification goes to it and is processed exactly as today, including today's fallback to the recipient address.
+- **Several projects:** routing to a project.
+  1. Take the Message-ID from the notification, as today.
+  2. Look up its domain among hostnames and extra hostnames.
+  3. If no host matches, ask each project, in slug order, whether the UUIDs in that Message-ID, name one of its sends, campaign deliveries or test sends.
+  4. Exactly one match decides the project. No match, or more than one, stores nothing in any project, acts on nobody, and writes one attention line: "An SES notice matched no project".
+  5. The project records the bounce with today's rules, including the `bounce_receipts` deduplication in its own database.
+- **No match by recipient address across projects.** The fallback to the recipient address applies only inside a project the notice was routed to. The same address can be a subscriber in two projects, and a bounce must never act on a project the message did not come from.
+- **Native bounce route:** `POST /webhooks/bounce` (native and listmonk-compatible) stays a project route, with project credentials.
+
+## 9. Background loops
+
+- **Per project, unchanged in behavior:** campaign runner, outbox, sequence scheduler, webhook delivery, maintenance, retention and summary refresh. Each uses its project's database and the injected clock. Sending loops get slots from the dispatcher.
+- **Process-wide budgets stay process-wide.** None of these may multiply by the number of projects:
+  - the tx attachment memory budget (D74, D87)
+  - the read-only helper child limits (D62)
+  - the VmRSS watchdogs
+  - the public rate limiter's memory bounds
+  - the in-memory ALTCHA replay state
+  - the in-flight sending bound (section 7)
+
+  Each project may hold its own state inside the one budget.
+- **Logs:**
+  - Each project has its own log buffer, and `GET /api/logs` on a project host shows that project's lines.
+  - Instance lines (dispatcher, SES endpoint, unmatched notices) go to the instance buffer.
+  - The instance Logs page shows the instance lines and every project's lines, labeled by slug.
+  - Stderr gets every line, prefixed with the slug or `instance`.
+- **Health:**
+  - The health route of a project reports that project.
+  - The instance health route reports the instance and every project, and is unhealthy if any project's loops are down. It is served on the instance host and on unclaimed hosts when there is no primary project.
+
+## 10. Project lifecycle
+
+All lifecycle actions are on instance pages, with JSON routes under `/api/instance/projects`. No restart is needed.
+
+- **Create** with slug, name and hostname. The primary flag is allowed only when no primary exists and the hostname is the instance host.
+  1. Validate everything.
+  2. Create `projects/<slug>/` and migrate the new database.
+  3. Seed defaults as a fresh install does: default templates and settings, plus the admin's copy.
+  4. Wire the project and write its registry rows. The registry is written last.
+  5. Start its loops.
+
+  A failure before the registry write removes the directory. A leftover directory with no registry row is reported at start with an attention line and is never served.
+- **Edit:**
+  - Rename the project.
+  - Add or remove extra hostnames. Removing one warns that links in old mail to that host will stop working.
+  - The slug and the main hostname never change.
+- **Delete:**
+  1. The admin must type the slug.
+  2. The project stops asking for slots, and in-flight sends drain under today's deadlines.
+  3. Its routes leave the table.
+  4. A final snapshot goes to `backups/deleted/<slug>-<timestamp>.db`, with a tarball of `uploads/` if there is one.
+  5. The directory is removed.
+
+  Delete is the only removal. There is no "disable", because a disabled project whose unsubscribe links fail would be worse than one that is gone.
+- **Limits:** no fixed maximum number of projects. The measurements cover 1 and 10 projects ([section 16](#16-measurements)).
+
+## 11. Moving data from listmonk
+
+There is no import feature in the app (owner, 2026-11-23). Moving the owner's listmonk v5 data is a one-time job done by an AI agent outside the app, with the public API, the CSV subscriber import and MCP that already exist.
+
+- **No import code:** no import command, no Go-template converter, no endpoint that writes chosen IDs or UUIDs, and no listmonk reference target for it.
+- **Not a gap:** if the agent finds the existing API missing something it needs, that becomes its own backlog item with a reason. It is not added to this work.
+
+## 12. CLI and operations
+
+- **`iglo.email backup`** snapshots `instance.db` and every project into one timestamped directory. `--project <slug>` snapshots one project. Each snapshot keeps today's guarantees: a read-only helper, a verified copy and a restore hold.
+- **Restore hold (D67)** is per database.
+  - A restored project database holds only that project's sending.
+  - A restored `instance.db` holds all sending until it is released.
+- **`reset-password` and `reset-totp`** act on the admin, and the copies follow at the next start.
+- **`operations.md` covers:**
+  - wildcard DNS and certificates (`*.mail.example.com`), or one record per project
+  - the reverse proxy must pass `Host`
+  - SES identities: each project's `from_email` domain must be verified in SES
+  - the read-only IAM user for `GetAccount`
+  - one SNS topic for the account
+  - backup and restore per project
+
+## 13. Admin UI
+
+Port and style rules are unchanged: server-rendered TSX, Alpine.js, Oat, like the existing admin.
+
+- **Instance pages:**
+  - **Projects:** a list with name, hostnames, primary flag, queued marketing count, running campaigns and sent in the last 24 h. Create, rename, extra hostnames, delete.
+  - **Sending:** the effective rate, the SES snapshot, and the forecast for the 24 hours from now.
+  - **Instance settings.**
+  - **Logs** from all projects.
+  - **Account:** password and TOTP.
+- **Project pages:**
+  - The header shows the project name and a switcher that lists projects and opens each through the handoff.
+  - Settings shows project keys only.
+  - The campaign page shows the forecast ([section 7](#ses-account-and-capacity-planning)).
+  - Everything else is unchanged.
+- **Verification:** with `agent-browser`. `bun run e2e` gains one multi-project spec ([section 15](#15-tests)).
+
+## 14. Invariants
+
+Any task that breaks one of these is not done.
+
+1. **Isolation.**
+   - No request, credential, loop, render or bounce ever reads or writes another project's database. A project's modules hold only their own `Database`.
+   - Nothing selects a subscriber across projects by address.
+   - Instance services (dispatcher, forecast, SES routing, admin sync) may reach every project only through narrow functions the project exports.
+   - A project's API or MCP responses contain instance totals at most, never another project's rows or names.
+2. **One project behaves exactly as today.**
+   - Every existing HTTP-level test, contract suite and e2e spec passes against a primary project without being edited.
+   - **Allowed edits:**
+     - tests that construct internal modules directly (such as `createEmailer` or `createOutbox`), where a signature changes
+     - tests that assert the data-directory layout
+     - the settings and admin-copy behavior that sections 4 and 5 change on purpose: the project settings API with project keys only, and the removed campaign pacing keys. These are listed in 07 as deliberate differences from listmonk
+
+     Each edit is listed in the PR body with its reason.
+3. **At-most-once survives scheduling.**
+   - Marketing and campaign work claims only against granted slots within the 2-second horizon.
+   - A crash (SIGKILL) at any moment leaves `unknown` at most the claimed-but-not-started messages, `2 × rate` process-wide (200 at rate `0`), plus the messages already in SMTP flight, which are correctly `unknown`.
+   - An orderly stop leaves no claimed-but-not-started marketing message `unknown`: not-started pushes go back before their claim, as today.
+   - No retry of marketing mail is added.
+4. **Transactional never waits behind other work.** With any backlog of marketing or campaign work in any project, a transactional message starts within the 2-second horizon plus one slot, plus SMTP time.
+5. **One configuration.**
+   - SMTP, the rate and the SES settings exist once, in the instance. No project can hold its own copy.
+   - Only an admin session can change them.
+6. **No cross-file transactions.** Every step that writes two databases has a documented order that is safe after a crash between the writes.
+7. **Budgets do not multiply.** Every process-wide memory, child-process, rate and in-flight budget stays process-wide with N projects.
+8. **No process-global state.** The instance, its routing table and its dispatcher are passed explicitly. No module-level maps of projects.
+9. **No new runtime dependency.** None is expected: the SigV4 signer uses Web Crypto, which is built in.
+10. **Old links keep working.** Unsubscribe works for every hostname a project's mail was sent from, extra hostnames included, until the project is deleted.
+
+## 15. Tests
+
+Rules from `AGENTS.md` apply: test through public boundaries, use the injected clock, no fixed ports, no DNS.
+
+- **Host routing in tests:** test requests set `Host` explicitly. The first worker (B138b) checks that Bun's `fetch` sends a caller's `Host` header unchanged, and otherwise adds a small raw-HTTP test helper. No test depends on `*.localhost` resolution.
+- **New contract suite `bun run contract:projects`.** It runs the compiled executable with three projects: primary, `a` and `b`.
+  - **Isolation:** each of A's API credentials and session cookies gets `401` or `403` on B, for every route family: subscribers, lists, campaigns, templates, sequences, sends, events, media, webhooks, settings and MCP `tools/call`. B's data never appears in A's responses. An unclaimed host reaches only the primary project.
+  - **Settings:**
+    - a project's GET returns project keys only
+    - an instance key or a removed pacing key in a project PUT is a `400` naming it, with nothing written
+    - the instance settings API needs an instance session and refuses API credentials
+    - the admin's change of an instance key is seen by every project
+  - **Admin:**
+    - instance login
+    - handoff to a project, and spent, expired and foreign tokens
+    - open-redirect attempts on `next`
+    - login on a project host with the admin's credentials
+    - a password change on the instance reaches every project
+    - the copy's protected fields return `403`
+    - the user and role contract suites still pass unchanged
+  - **Without a primary project:** an unclaimed host gets the fixed 404, and instance health answers.
+  - **Lifecycle:**
+    - create a project while running and send from it
+    - an extra hostname serves old unsubscribe links (the GET page and the RFC 8058 POST)
+    - delete drains, then the host answers like an unclaimed one, and the snapshot exists
+- **Dispatcher tests** (injected clock, test SMTP sink):
+  - **Priority and fairness:** rate 10/s. Project A runs a 10,000-recipient campaign, project B queues 50 marketing sends, and project C makes a sync tx call.
+    - C starts within the horizon plus one slot.
+    - B's 50 all start before A gets 50 more slots.
+    - Two campaigns in different projects stay within ±1 slot of each other per round.
+  - **Crash mid-wait:** rate 1/s, 20 projects, each with 30 due marketing rows. SIGKILL the compiled process halfway, then start it.
+    - At most `2 × rate` plus the in-flight count are `unknown`.
+    - Every other row is `sent` eventually.
+    - The test fails when the outbox claims before it has a grant.
+  - **Orderly stop mid-wait:** the same setup with SIGTERM leaves no `unknown` row that never started.
+  - **Synchronous marketing tx under backlog:** answers `queued` within the horizon plus 5 s and is sent later.
+  - **Rate `0`:** grants follow class order, and in-flight never exceeds 200.
+  - **No double pacing:** over 60 s at rate 10, starts are 600 ± 1, with no gap longer than two intervals while work is waiting.
+  - **Mixed claim:** a batch of transactional and marketing rows claims the transactional rows at once, and the marketing rows only against grants.
+- **SES account and forecast:**
+  - **Signer:** the SigV4 signer matches AWS's published test vectors. A test server stands in for `GetAccount`.
+  - **Refresh:** every 5 minutes, and every minute once the remaining quota is at most `max(10%, rate × 300 s)`, on the injected clock. That includes a 10,000 quota at rate 14, where the fast refresh starts at 4,200 remaining.
+  - **Failure:** a failed read keeps the last snapshot and writes the hourly attention line.
+  - **Rate:** the effective rate is the lower of the two values.
+  - **Forecast:** fixtures with app history, an outside share, campaigns in three projects and a candidate. Window demand matches a hand calculation from the rules in section 7, for a candidate starting now, in 12 h and in 30 h, for an edited scheduled campaign given its ID, and for a daily campaign at the same hour as yesterday's. The response names no project. MCP `tools/call` of the capacity tool works with a project token.
+  - **Guard:** at the hold line (both terms tested: a large quota where 2% applies, and a 10,000 quota where rate × interval applies), marketing rows stay `queued` with no lease, running campaigns keep their cursor, transactional continues, and everything resumes when a newer snapshot is above the line. One attention line marks the start and one the end.
+- **Bounces:**
+  - one project: today's behavior, including the address fallback
+  - several projects: each project's notice lands there, an extra hostname resolves, and an unknown domain falls back to the UUID probe
+  - no match stores nothing anywhere and writes the attention line
+  - the same address subscribed in two projects: only the sending project is affected
+- **Start refuses the old layout:** a data directory with `iglo-email.db` at its root is refused with the layout message.
+- **CLI:** `backup` with and without `--project`, the per-project restore hold, and `reset-password` on the admin.
+- **e2e:** one Playwright spec covers creating a project, the handoff switch, the settings split and sending a test from two projects. `bun run e2e:browser` covers the new instance pages.
+
+## 16. Measurements
+
+Required by `AGENTS.md` for sending, scheduling and storage changes. Store them in `docs/perf/projects-<task>.md`, before and after on the same host, three runs each.
+
+- **Campaign throughput** for one project against the 50 msg/s target: no regression above 5%.
+- **Outbox throughput** for one project: no regression above 5%.
+- **Idle cost** at 1 and 10 projects:
+  - RSS after start
+  - RSS and CPU time over 10 idle minutes
+  - startup time
+
+  The target is linear growth with no idle CPU spinning. Investigate if one idle project costs more than 15 MB RSS.
+- **Mixed load:** three projects sending at once at rate 14. Measure transactional start latency (p50, p99) and each project's share.
+
+## 17. Tasks
+
+One PR each, in the order listed. Each brief is written by the lead from this section, in the usual shape: Goal, Read first, Owns, Behavior, Acceptance, Out of scope.
+
+Every task's acceptance includes:
+
+- the full local checks from `AGENTS.md`
+- its new tests
+- invariant 2
+
+| Task | Content | Owns | Depends on | Done when |
+|---|---|---|---|---|
+| **B138a** Composition extraction | Behavior-neutral: today's `main()` wiring becomes `createProject(…)` for one database. No instance, no routing, no new behavior | `src/main.ts`, new `src/projects/compose.ts` | — | Every existing suite passes with no test edited. Outbox and campaign throughput unchanged within noise |
+| **B138b** Instance and routing | Sections 1–3: `instance.db` and its manifest, the registry, Host routing, primary and unclaimed hosts, refusal of the old layout, per-project logs and health, the unclaimed-host rule | `src/projects/**`, `src/main.ts`, `src/server/**` routing seam, `src/db/**` for the second manifest, `migrations/instance/`, tests | B138a | A fresh install runs as a primary project. Two projects registered by a test fixture are isolated on every route family. Every existing suite passes unchanged. Idle measurements for 1 and 10 projects recorded |
+| **B139** Settings split | Section 4: instance settings store, the split settings APIs (project keys on project hosts, instance keys on `/api/instance/settings`), `ses.api_*` settings accepted, validated and masked (not yet used), settings UI split | `src/settings/**`, its admin views, tests | B138b | The settings cases in `contract:projects` pass. The settings contract cases are updated for the split, and 07 lists it as a deliberate difference |
+| **B140** One admin | Section 5: admin account in `instance.db`, copies, write-through of password and TOTP (all paths), protection, reserved username, instance login and session, handoff, Account page, CLI reset | `src/users/**` (copy flag, `createSession`, protection), `src/admin/` instance login and account views, `src/projects/` admin sync, tests | B138b | The admin cases pass. The user and role contract suites pass unchanged |
+| **B141** Dispatcher | Section 7 up to "SES account": dispatcher, per-push context, classes, slots and round-robin, reserve before claim in the outbox (split claim) and campaign runner, removal of the campaign pacing keys (settings, runner, admin views), synchronous marketing tx, rate `0`, the in-flight bound | `src/messaging/**` (rate, email, outbox), `src/campaigns/runner/**` claim seam, `src/scheduler/**` claim seam, tests, `docs/perf/projects-B141.md` | B139 | All dispatcher tests pass, including crash and orderly stop mid-wait. The D92 and send-rate suites pass. Throughput and mixed-load measurements recorded. 04-sending updated |
+| **B145** SES account and forecast | Section 7, "SES account and capacity planning": SigV4 signer, `GetAccount` snapshot, effective rate, forecast, `GET /api/sending/capacity` and its MCP tool, campaign-page forecast, guard | `src/messaging/**` (SES client), `src/campaigns/**` (planned-count function, page), `src/openapi/**`, `src/mcp/**` instructions, tests | B141 | The SES and forecast tests pass. The campaign page shows the forecast in an `agent-browser` pass. The campaign status contract suites pass unchanged |
+| **B142** SES routing | Section 8 | `src/bounces/**` (the SES endpoint becomes an instance route), tests | B138b, B139 | The bounce cases pass. The existing bounce suites pass against a primary project |
+| **B143** Lifecycle and instance UI | Sections 10 and 13: create, rename, extra hostnames and delete at runtime; Projects, Sending and Logs pages; the switcher; `/api/instance/**`; OpenAPI exclusions | `src/projects/**`, `src/admin/**` instance views, `src/maintenance/` logs aggregation, tests, e2e spec | B140, B142, B145 | The lifecycle cases and the e2e spec pass. The `agent-browser` pass is clean |
+| **B144** Operations and docs | Section 12, `backup --project`, per-database restore hold, `operations.md`, README, and updates to 01, 02, 03, 04 and 07. D15 is marked superseded, and this document's status becomes "implemented" | `src/backup/**`, `docs/**`, tests | B143 | The CLI tests pass. The documents describe the shipped behavior. `bun run e2e` and the release pre-flight are green |
+
+The release after B144 is a major version. There is no upgrade from earlier data directories, and start refuses them.
+
+## 18. Definition of done for the feature
+
+- **Invariants:** all ten in section 14 hold, and each has at least one test that would fail if it broke. The tests are named in the B144 PR body.
+- **Day-to-day use:** an operator can:
+  - run three projects on one host
+  - set SES once
+  - add a project in the UI without a restart
+  - give an AI agent a token that works only on one project
+  - see before scheduling whether a campaign fits the SES quota
+  - rely on one queue that never sends faster than the SES account allows
+- **Evidence:**
+  - every check in `AGENTS.md`, plus `bun run contract:projects` and `bun run e2e`, passes on the merge head
+  - measurements are stored
+  - the design documents describe what shipped
+  - `docs/status.md` lists anything left over as a backlog item with its reason
+
+## 19. Decided defaults and open questions
+
+Decided here, so work is not blocked. Each can be revisited with a decision record.
+
+- **Routing:** by hostname, not by path. Wildcard DNS makes extra projects free to add. Unclaimed hosts go to the primary project.
+- **Hostnames:** a project's main hostname is fixed. Extra hostnames are added and removed explicitly.
+- **Admin:** one account, copied into every project. Project login and users stay as today.
+- **No import feature:** listmonk data is moved once by an agent outside the app ([section 11](#11-moving-data-from-listmonk)).
+- **No upgrade from earlier iglo.email data.**
+- **Transactional mail** is never delayed beyond the 2-second horizon. Only marketing and campaigns use the one-hour tolerance.
+- **SES limits come from SES** (`GetAccount`), with read-only IAM credentials. The app keeps no quota counter and stores no snapshot.
+- **The forecast warns and never refuses.** The guard only stops granting marketing and campaign slots while the remaining quota is under the hold line.
+- **Deleted projects:** a final snapshot is kept. There is no "disable".
+
+Open, with defaults:
+
+1. **Weights per project in the dispatcher.** Default: equal. Add a weight only if a real project needs it.
+2. **SES `SendingEnabled: false`** (the account paused by AWS). Default: shown on the Sending page and in the attention log only, because SES refuses the mail itself.

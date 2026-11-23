@@ -11,7 +11,7 @@ Questions that change scope or order and need the owner. Everything else is deci
    - **Why it matters:** open forms attract signup spam; turn a CAPTCHA on before making a form public.
 
 3. **Is any existing listmonk data to be imported?**
-   - **Default:** no. The listmonk importer stays "later".
+   - **Answered (owner, 2026-11-23, [D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)):** the owner's listmonk v5 data is moved once by an AI agent outside the app. No importer is built.
    - **Why it matters:** if there is data, the importer and the Go-template-to-Liquid converter move into M1.
 
 4. **Is the repository public from day one?**

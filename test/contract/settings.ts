@@ -274,6 +274,89 @@ export async function runSettingsContract(target: {
     (await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 400,
     "from-unsupported-encoded-name",
   );
+  // B117a (D136): the values below are refused on save by this build. Upstream stores them as sent, and
+  // its reload would exit on one it cannot read, so only the compiled build is written here.
+  if (target.mode !== "reference") {
+    const base = structuredClone(updated);
+    // Passwords are masked on read; an empty one keeps the stored secret by uuid.
+    base.smtp = asBody<Array<Record<string, unknown>>>(base.smtp).map((item) => ({
+      ...item,
+      password: "",
+    }));
+    const put = (body: Record<string, unknown>) =>
+      request("/api/settings", "PUT", JSON.stringify(body));
+    const settingsNow = async () =>
+      asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data;
+    for (const [label, body] of [
+      ["notify-not-an-address", { ...base, "app.notify_emails": ["not-an-address"] }],
+      ["notify-second-invalid", { ...base, "app.notify_emails": ["ops@example.test", "ops@"] }],
+      [
+        "vacuum-bad-cron",
+        { ...base, "maintenance.db": { vacuum: true, vacuum_cron_interval: "bad cron" } },
+      ],
+      [
+        "sliding-empty",
+        { ...base, "app.message_sliding_window": true, "app.message_sliding_window_duration": "" },
+      ],
+      [
+        "sliding-zero",
+        { ...base, "app.message_sliding_window": true, "app.message_sliding_window_duration": "0" },
+      ],
+      [
+        "sliding-1ms",
+        {
+          ...base,
+          "app.message_sliding_window": true,
+          "app.message_sliding_window_duration": "1ms",
+        },
+      ],
+      [
+        "sliding-word",
+        { ...base, "app.message_sliding_window": true, "app.message_sliding_window_duration": "x" },
+      ],
+      ["s3-expiry-word", { ...base, "upload.s3.expiry": "x" }],
+      ["s3-expiry-zero", { ...base, "upload.s3.expiry": "0s" }],
+      ["smtp-idle-1ms", { ...base, smtp: [{ ...base.smtp[0], idle_timeout: "1ms" }] }],
+      ["smtp-idle-over-5m", { ...base, smtp: [{ ...base.smtp[0], idle_timeout: "5m1s" }] }],
+      ["smtp-retry-word", { ...base, smtp: [{ ...base.smtp[0], msg_retry_delay: "x" }] }],
+      ["from-no-charset", { ...base, "app.from_email": ["=?Q?abc?= <a@example.invalid>"] }],
+      ["from-empty-charset", { ...base, "app.from_email": ["=??Q?abc?= <a@example.invalid>"] }],
+      [
+        "from-unknown-encoding",
+        { ...base, "app.from_email": ["=?utf-8?X?abc?= <a@example.invalid>"] },
+      ],
+      ["trusted-port", { ...base, "security.trusted_urls": ["https://example.invalid:99999"] }],
+      [
+        "trusted-userinfo",
+        { ...base, "security.trusted_urls": ["https://user:pass@example.invalid"] },
+      ],
+    ] as const) {
+      check((await put(body)).status === 400, label);
+    }
+    // The accepted side of each rule, then one restore of the stored settings.
+    const accepted = await put({
+      ...base,
+      "app.notify_emails": ["ops@example.test", " "],
+      "maintenance.db": { vacuum: false, vacuum_cron_interval: "bad cron" },
+      "app.message_sliding_window": true,
+      "app.message_sliding_window_duration": "1h",
+      "upload.s3.expiry": "167h",
+      smtp: [{ ...base.smtp[0], idle_timeout: "15s", msg_retry_delay: "" }],
+      "security.trusted_urls": ["https://example.invalid"],
+    });
+    check(accepted.status === 200, "accepted-side");
+    const stored = await settingsNow();
+    check(
+      JSON.stringify(stored["app.notify_emails"]) === '["ops@example.test",""]',
+      "accepted-notify-projection",
+    );
+    check((await put(base)).status === 200, "restore-after-accepted-side");
+    check(
+      JSON.stringify((await settingsNow())["app.notify_emails"]) ===
+        JSON.stringify(updated["app.notify_emails"]),
+      "restore-notify-projection",
+    );
+  }
   const cronCandidate = structuredClone(updated);
   cronCandidate["app.cache_slow_queries"] = true;
   cronCandidate["app.cache_slow_queries_interval"] = "not a cron";
