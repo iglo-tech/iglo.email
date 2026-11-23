@@ -140,7 +140,13 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
         !identity.user.password ||
         !(await auth.verifyPassword(password, identity.user.password))
       ) {
-        throw new HttpError(403, context.app.i18n.T("globals.messages.invalidPassword"));
+        // A wrong password is a wrong credential, as a wrong API token is (D138): 403 with its code.
+        throw new HttpError(
+          403,
+          context.app.i18n.T("globals.messages.invalidPassword"),
+          {},
+          "invalid_credentials",
+        );
       }
       auth.revalidate(context);
       self(context);

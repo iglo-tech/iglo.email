@@ -882,7 +882,7 @@ export const differences: Array<Difference> = [
   {
     area: "Stable error `code` and Retry-After (B131, D129)",
     summary:
-      "Every API error keeps listmonk's `message` and adds a `code` from one fixed snake_case list (`src/server/error-codes.ts`), listed per response in this document. Every 429 and 503 sends `Retry-After` in seconds, 1 s and 30 s where the route names no wait. Both are additive, so no client that reads `message` breaks. Upstream has neither.",
+      "Every API error keeps listmonk's `message` and adds a `code` from one fixed snake_case list (`src/server/error-codes.ts`), listed per response in this document. Every 429 and 503 sends `Retry-After` in seconds, 1 s and 30 s where the route names no wait. Both are additive, so no client that reads `message` breaks. The one error without a code is the plain-text `400` for an API path that does not decode, which keeps listmonk's bytes (D138). Upstream has neither.",
     applies: ["/api/"],
   },
   {

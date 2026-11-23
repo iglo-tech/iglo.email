@@ -37,7 +37,7 @@ export async function runSubscriberScope(target: {
   async function denied(response: Response, subject: string, label: string) {
     check(
       response.status === 403 &&
-        JSON.stringify(listmonkEnvelope(await response.json(), target.mode)) ===
+        JSON.stringify(listmonkEnvelope(await response.json(), target.mode, response.status)) ===
           JSON.stringify({ message: `Permission denied: ${subject}` }),
       label,
     );
