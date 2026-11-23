@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Eliminació de dades",
     "public.dataSent": "Les teves dades t'han estat enviades per correu electrònic com a fitxer adjunt.",
     "public.dataSentTitle": "Dades enviades per correu electrònic",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "S'ha produït un error en obtenir el missatge de correu electrònic.",
     "public.errorFetchingEmail": "No s'ha trobat el missatge de correu electrònic",
     "public.errorFetchingLists": "S'ha produït un error en obtenir les llistes. Si us plau, torna-ho a provar.",

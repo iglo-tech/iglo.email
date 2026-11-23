@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Dados removidos",
     "public.dataSent": "Os seus dados foram-lhe enviados em anexo por email.",
     "public.dataSentTitle": "Dados enviados por email",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Erro ao buscar mensagem de e-mail",
     "public.errorFetchingEmail": "Mensagem de email não encontrada",
     "public.errorFetchingLists": "Erro ao carregar listas. Por favor tente novamente.",

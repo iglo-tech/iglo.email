@@ -37,10 +37,11 @@ function upload(index: number, headers: Record<string, string>, url: string) {
 }
 
 /**
- * Bytes held in memfd files of this process: the store Bun gives a large Blob or File on Linux,
- * which is the upload's copy of its body. `external` does not count it, and neither does
- * `arrayBuffers`. It is read from /proc, which only Linux has (the harness is Linux-only, D89), so
- * it is null elsewhere.
+ * Bytes held in memfd files of this process: the store Bun gives the File that `formData()` returns
+ * for a large upload on Linux, which is the upload's own copy of its body. `external` does not count
+ * it, and neither does `arrayBuffers`. (The Blob that `formFile` builds from the body is counted by
+ * `external`.) It is read from /proc, which only Linux has (the harness is Linux-only, D89), so it is
+ * null elsewhere.
  */
 function memfdBytes(): number | null {
   if (process.platform !== "linux") {
@@ -62,8 +63,9 @@ function memfdBytes(): number | null {
 
 /**
  * What a full collection leaves held. `external` covers typed arrays made in JavaScript (a request
- * body, `Buffer.concat`) and native ArrayBuffers (`arrayBuffer()`); it does not cover the memfd
- * store of a Blob or File, which is why the memfd bytes are read too.
+ * body, `Buffer.concat`), native ArrayBuffers (`arrayBuffer()`) and the Blob that `formFile` builds;
+ * it does not cover the memfd store of the File that `formData()` returns, which is why the memfd
+ * bytes are read too.
  */
 function heldAfterCollection() {
   Bun.gc(true);

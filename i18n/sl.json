@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Podatki odstranjeni",
     "public.dataSent": "Vaši podatki so vam bili poslani po e-pošti kot priponka.",
     "public.dataSentTitle": "Podatki poslani po e-pošti",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Napaka pri pridobivanju e-poštnega sporočila.",
     "public.errorFetchingEmail": "E-poštnega sporočila ni bilo mogoče najti",
     "public.errorFetchingLists": "Napaka pri pridobivanju seznamov. Poskusite znova.",

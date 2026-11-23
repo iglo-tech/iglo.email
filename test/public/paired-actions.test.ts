@@ -450,6 +450,40 @@ test("the placeholder's one-click and manage save end a pending double opt-in, a
   expect(await f.status(bob, weekly.id)).toBe("unconfirmed");
 });
 
+test("the placeholder's one-click says so when nothing was pending, and says it unsubscribed when it ended a double opt-in (B117f)", async () => {
+  // B117b left the one-click answer "You have unsubscribed successfully." for a subscriber whose only memberships are
+  // active single opt-ins, which nothing ends. The page says there is nothing to manage instead.
+  const f = await open();
+  const weekly = await f.list("Weekly", "public", "single");
+  const double = await f.list("Double", "public", "double");
+  const cy = await f.subscriber("cy@example.test", "Cy", { lists: [weekly.id] });
+  const dee = await f.subscriber("dee@example.test", "Dee", { lists: [double.id] });
+  const cyUuid = await uuidOf(f, cy);
+  const none = await act(f, `/subscription/${placeholder}/${cyUuid}`, "List-Unsubscribe=One-Click");
+  expect(none.status).toBe(200);
+  const noneText = await none.text();
+  expect(noneText).toContain("There is nothing to manage here.");
+  expect(noneText).not.toContain("You have unsubscribed successfully.");
+  expect(await f.status(cy, weekly.id)).toBe("unconfirmed");
+
+  const deeUuid = await uuidOf(f, dee);
+  const ended = await act(
+    f,
+    `/subscription/${placeholder}/${deeUuid}`,
+    "List-Unsubscribe=One-Click",
+  );
+  expect(ended.status).toBe(200);
+  expect(await ended.text()).toContain("You have unsubscribed successfully.");
+  expect(await f.status(dee, double.id)).toBe("unsubscribed");
+  // The second one-click finds nothing pending any more.
+  const again = await act(
+    f,
+    `/subscription/${placeholder}/${deeUuid}`,
+    "List-Unsubscribe=One-Click",
+  );
+  expect(await again.text()).toContain("There is nothing to manage here.");
+});
+
 test("the placeholder's manage view lists and ends pending double opt-ins only, never an active single opt-in", async () => {
   // B117b (D137 item 3): an unconfirmed membership of a single opt-in list is an active subscription
   // (an API create without preconfirm_subscriptions), so the opt-in mail's manage page neither lists it

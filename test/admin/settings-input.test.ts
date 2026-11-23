@@ -255,6 +255,46 @@ test("a from address an older build stored does not block another save or the fo
   }
 });
 
+test("the default from address is checked when a save makes it first, even if an older build stored it", async () => {
+  const original = (await settings())["app.from_email"];
+  const valid = "Valid <valid@example.test>";
+  const refused = "=?Q?x?= <a@example.test>";
+  // An older build stored a valid default and an invalid second entry.
+  storeAsOlderBuild("app.from_email", [valid, refused]);
+  try {
+    expect(await saveForm()).toBe(200);
+    // Moving the stored invalid entry into first place makes it the default sender: it is checked.
+    const moved = await put("app.from_email", [refused, valid]);
+    expect(moved.status).toBe(400);
+    expect(moved.message).toBe(`invalid from email address: ${refused}`);
+    expect((await settings())["app.from_email"]).toEqual([valid, refused]);
+    // The same stored entry in second place, with a valid default, is not checked again.
+    expect(await put("app.from_email", [valid, refused])).toEqual({
+      status: 200,
+      message: undefined,
+    });
+    // The default that a save keeps unchanged is not checked again either, as before.
+    storeAsOlderBuild("app.from_email", [refused, valid]);
+    expect(await put("app.site_name", "Renamed past a stored default")).toEqual({
+      status: 200,
+      message: undefined,
+    });
+    expect((await settings())["app.from_email"]).toEqual([refused, valid]);
+  } finally {
+    storeAsOlderBuild("app.from_email", original);
+  }
+});
+
+test("a notification address whose display name has a comma is stored as one address", async () => {
+  const address = '"Ops, Team" <ops@example.test>';
+  expect(await put("app.notify_emails", [address, "other@example.test"])).toEqual({
+    status: 200,
+    message: undefined,
+  });
+  expect((await settings())["app.notify_emails"]).toEqual([address, "other@example.test"]);
+  await put("app.notify_emails", []);
+});
+
 test("an administrator address an older build stored untrimmed does not block another save", async () => {
   storeAsOlderBuild("app.notify_emails", [" ops@ "]);
   try {

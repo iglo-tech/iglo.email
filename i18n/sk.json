@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Údaje odstránené",
     "public.dataSent": "Vaše údaje sme odoslali e-mailem ako prílohu.",
     "public.dataSentTitle": "Údaje odoslané e-mailom",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Chyba pri načítání e-mailovej správy.",
     "public.errorFetchingEmail": "E-mailová správa sa nenašla",
     "public.errorFetchingLists": "Chyba pri načítání zoznamov. Zopakujte pokus.",

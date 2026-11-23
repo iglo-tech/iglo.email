@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Дані вилучено",
     "public.dataSent": "Ваші дані вкладено в надісланий вам лист.",
     "public.dataSentTitle": "Дані надіслано",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Помилка завантаження листа.",
     "public.errorFetchingEmail": "Листа не знайдено",
     "public.errorFetchingLists": "Помилка завантаження розсилок. Будь ласка, повторіть спробу.",
