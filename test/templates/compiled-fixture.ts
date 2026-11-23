@@ -249,7 +249,7 @@ try {
   );
   assert.throws(() =>
     renderer.renderSync({
-      body: '{{ value | replace: "a", "b" }}',
+      body: "{{ value | sort }}",
       mode: "html",
       data: JSON.stringify({ value: "a" }),
     }),

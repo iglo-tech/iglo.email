@@ -9,9 +9,15 @@ import type { Authentication } from "@/users/auth";
 import { readTemplateBody, templateInput } from "@/templates/input";
 import { TemplateError } from "@/templates/store";
 import type { TemplateRow, TemplateStore, TemplateType } from "@/templates/store";
-import { RenderCapacityError, TemplateSourceError } from "@/templates/renderer";
+import { RenderCapacityError, RenderFaultError, TemplateSourceError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
-import { parseSample, previewContext, SampleError } from "@/templates/sample";
+import {
+  parseSample,
+  previewBody,
+  previewContext,
+  previewDummy,
+  SampleError,
+} from "@/templates/sample";
 import type { Sample } from "@/templates/sample";
 
 const idValue = (id: bigint) =>
@@ -50,7 +56,16 @@ function translateError(context: RequestContext, error: unknown): never {
       case "subject":
         throw new HttpError(400, t.Ts("globals.messages.missingFields", "name", "subject"));
       case "subject-syntax":
-        throw new HttpError(400, t.Ts("templates.errorCompiling", "error", "invalid subject"));
+        throw new HttpError(
+          400,
+          t.Ts(
+            "templates.errorCompiling",
+            "error",
+            error.detail
+              ? `unknown filter "${error.detail}" (see template_reference)`
+              : "invalid subject",
+          ),
+        );
       case "slot":
         throw new HttpError(
           400,
@@ -68,7 +83,33 @@ function translateError(context: RequestContext, error: unknown): never {
       case "default":
         throw new HttpError(400, t.Ts("globals.messages.invalidFields", "name", "template"));
       case "body":
-        throw new HttpError(400, t.Ts("templates.errorCompiling", "error", "invalid body"));
+        throw new HttpError(
+          400,
+          t.Ts(
+            "templates.errorCompiling",
+            "error",
+            error.detail
+              ? `unknown filter "${error.detail}" (see template_reference)`
+              : "invalid body",
+          ),
+        );
+      case "loop":
+        throw new HttpError(
+          400,
+          t.Ts(
+            "templates.errorCompiling",
+            "error",
+            "a for loop cannot take a filter; assign the filtered value first",
+          ),
+        );
+      case "render":
+        // The cause in words: the detail names the template's expression and the kind of value, never a data value (D134).
+        throw new HttpError(
+          400,
+          t.Ts("templates.errorCompiling", "error", `it fails to render: ${error.detail}`),
+        );
+      case "capacity":
+        throw new HttpError(429, "Too many template renders in progress.");
     }
   }
   throw new HttpError(500);
@@ -82,34 +123,6 @@ function guarded(handler: Handler): Handler {
     }
   };
 }
-/** The context a template preview renders with. `aggregates` is empty: a template has no step. */
-const dummy = {
-  subscriber: {
-    name: "John Doe",
-    first_name: "John",
-    last_name: "Doe",
-    email: "dummy@example.invalid",
-    uuid: "00000000-0000-0000-0000-000000000000",
-    attribs: {},
-    external_id: "",
-  },
-  campaign: {
-    name: "Dummy campaign",
-    subject: "Dummy subject",
-    uuid: "00000000-0000-0000-0000-000000000000",
-  },
-  data: { order_id: "12345", shipping_date: "2026-01-02" },
-  trigger: { data: {} },
-  aggregates: {},
-  sequence: { name: "Example" },
-  step: { position: 1 },
-  unsubscribe_url: "",
-  manage_url: "",
-  optin_url: "",
-  message_url: "",
-  archive_url: "",
-};
-const sampleBody = "<p>Hi there</p><p>Lorem ipsum dolor sit amet.</p>";
 function html(body: string) {
   return new Response(body, {
     headers: {
@@ -160,7 +173,7 @@ export function registerTemplateRoutes(
     }
     // The dummy context with the brand read now, so a layout shows the accent, font and header it
     // would send with. A sample replaces only the parts it names (D105).
-    const dummyData = { ...dummy, ...mailBrand(brand()) };
+    const dummyData = { ...previewDummy, ...mailBrand(brand()) };
     const rendered = JSON.stringify(
       sample === undefined ? dummyData : previewContext(dummyData, sample),
     );
@@ -170,7 +183,7 @@ export function registerTemplateRoutes(
       }
       const result = await renderer.render(
         type === "campaign"
-          ? { body: sampleBody, layout: body, mode: "html", data: rendered }
+          ? { body: previewBody, layout: body, mode: "html", data: rendered }
           : { body, mode: "html", data: rendered, transactional: true },
       );
       auth.revalidate(context, "templates:get");
@@ -192,9 +205,14 @@ export function registerTemplateRoutes(
       if (error instanceof RenderCapacityError) {
         throw new HttpError(429, "Too many template renders in progress.");
       }
+      // A failed render names its expression and what was wrong (D134).
       throw new HttpError(
         400,
-        context.app.i18n.Ts("templates.errorRendering", "error", "invalid template"),
+        context.app.i18n.Ts(
+          "templates.errorRendering",
+          "error",
+          error instanceof RenderFaultError ? error.detail : "invalid template",
+        ),
       );
     }
   };

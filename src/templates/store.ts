@@ -8,6 +8,7 @@ import type { CampaignTemplateReferences } from "@/campaigns/template-references
 import { TemplateSourceError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
 import { initialTemplates } from "@/templates/builtins";
+import { previewBody, previewData } from "@/templates/sample";
 import sql from "@/templates/store.sql" with { type: "text" };
 
 export type TemplateType = "campaign" | "campaign_visual" | "tx";
@@ -31,6 +32,7 @@ export interface WritableTemplate {
 }
 export type TemplatePatch = Partial<WritableTemplate>;
 export class TemplateError extends Error {
+  /** `detail` names an unknown filter, for the save message (D134); it is empty otherwise. */
   constructor(
     readonly reason:
       | "name"
@@ -39,9 +41,13 @@ export class TemplateError extends Error {
       | "subject-syntax"
       | "slot"
       | "body"
+      | "loop"
+      | "render"
       | "missing"
       | "default"
-      | "delete",
+      | "delete"
+      | "capacity",
+    readonly detail = "",
   ) {
     super(reason);
   }
@@ -109,12 +115,32 @@ export function createTemplateStore(
       renderer.validate(value.body, value.subject, value.type === "campaign");
     } catch (error) {
       if (error instanceof TemplateSourceError && error.field === "subject") {
-        throw new TemplateError("subject-syntax");
+        throw new TemplateError("subject-syntax", error.detail);
       }
       if (error instanceof TemplateSourceError && error.field === "slot") {
         throw new TemplateError("slot");
       }
+      if (error instanceof TemplateSourceError && error.field === "loop") {
+        throw new TemplateError("loop");
+      }
+      if (error instanceof TemplateSourceError) {
+        throw new TemplateError("body", error.detail);
+      }
       throw new TemplateError("body");
+    }
+    // The save-time render (D134): as a send renders it, against the preview's sample.
+    const check =
+      value.type === "campaign"
+        ? renderer.check({ body: previewBody, layout: value.body, mode: "html" }, previewData)
+        : renderer.check(
+            { body: value.body, subject: value.subject, mode: "html", transactional: true },
+            previewData,
+          );
+    if (check.outcome === "busy") {
+      throw new TemplateError("capacity");
+    }
+    if (check.outcome === "refused") {
+      throw new TemplateError("render", check.reason);
     }
   }
   function initialize() {

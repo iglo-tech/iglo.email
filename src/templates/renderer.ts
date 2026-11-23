@@ -1,13 +1,55 @@
 // Liquid rendering context and composition adapted from listmonk models/campaigns.go,
 // models/messages.go and internal/manager/message.go at 6fcd95f.
-import { Context, Drop, Liquid, Output, defaultOperators, toValueSync } from "liquidjs";
-import type { Emitter, LiquidOptions, Template } from "liquidjs";
+import {
+  Context,
+  Drop,
+  Liquid,
+  Output,
+  TypeGuards,
+  Value,
+  defaultOperators,
+  toValueSync,
+} from "liquidjs";
+import type { Emitter, Filter, FilterImplOptions, LiquidOptions, Template } from "liquidjs";
 import { must } from "@/invariant";
 import type { Clock } from "@/clock";
 import type { Translation } from "@/i18n/i18n";
 import { parseTemplateData } from "@/templates/data";
 import type { TemplateData } from "@/templates/data";
 import { createMarkdownBudget, renderMarkdown } from "@/templates/markdown";
+import {
+  LineBreaks,
+  LOOP_PRINT,
+  append,
+  arithmetic,
+  byteLength,
+  capitalize,
+  downcase,
+  escapedBytes,
+  escapeHtml,
+  first,
+  join,
+  json,
+  kindOf,
+  last,
+  newlineToBr,
+  numberOf,
+  prepend,
+  replace,
+  replaceFirst,
+  round,
+  scalar,
+  sizeOf,
+  slice,
+  split,
+  stripHtml,
+  truncate,
+  truncatewords,
+  urlEncode,
+  ValueError,
+  wholeNumber,
+} from "@/templates/filters";
+import type { FilterBudget } from "@/templates/filters";
 
 const SOURCE_LIMIT = 64 * 1024;
 const OUTPUT_LIMIT = 1024 * 1024;
@@ -26,24 +68,188 @@ const filterArguments = new Map([
   ["date", 1],
   ["track_link", 0],
   ["number", 0],
+  ["size", 0],
+  ["json", 0],
+  ["downcase", 0],
+  ["capitalize", 0],
+  ["prepend", 1],
+  ["append", 1],
+  ["replace", 2],
+  ["replace_first", 2],
+  ["split", 1],
+  ["join", 1],
+  ["slice", 2],
+  ["truncate", 2],
+  ["truncatewords", 2],
+  ["strip_html", 0],
+  ["plus", 1],
+  ["minus", 1],
+  ["times", 1],
+  ["divided_by", 1],
+  ["round", 1],
+  ["first", 0],
+  ["last", 0],
+  ["newline_to_br", 0],
+  ["url_encode", 0],
 ]);
-const byteLength = (value: string) => Buffer.byteLength(value, "utf-8");
+/** The filters the renderer registers, in the order of its arity table (the documented allow-list). */
+export const registeredFilters: ReadonlyArray<string> = [...filterArguments.keys()];
 
 export class TemplateSourceError extends Error {
-  constructor(readonly field: "body" | "subject" | "slot") {
+  /**
+   * `detail` names the unknown filter of a body or subject (D134), or is empty. A `loop` is a `for`
+   * tag whose collection has a filter, which LiquidJS would silently drop.
+   */
+  constructor(
+    readonly field: "body" | "subject" | "slot" | "loop",
+    readonly detail = "",
+  ) {
     super(field);
   }
+}
+/**
+ * A `for` tag whose collection has a filter: LiquidJS reads only the value and ignores the filter. A `|`
+ * inside a quoted string is not a filter, and the tag ends at its `%}`, so the pattern steps over quotes.
+ */
+const forWithFilter = /\{%-?\s*for\s(?:"[^"]*"|'[^']*'|[^%"'])*?\|/;
+/** The contents of `raw` and `comment` blocks: their text is never parsed as a tag (D134). */
+const literalBlocks = /\{%-?\s*(raw|comment)\s*-?%\}[\s\S]*?\{%-?\s*end\1\s*-?%\}/g;
+/** Whether a template has a `for` tag with a filter outside its literal blocks. */
+function hasForWithFilter(source: string): boolean {
+  return forWithFilter.test(source.replaceAll(literalBlocks, ""));
+}
+/** The name of an unknown filter in a parse error, or "" (the library's text is not shown). */
+function unknownFilter(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  return /^undefined filter: ([^\s,]+)/.exec(message)?.[1] ?? "";
 }
 export class RenderCapacityError extends Error {
   constructor() {
     super("Render capacity");
   }
 }
+/**
+ * A failure of a message's render, with the expression that failed and what was wrong (D134). `detail`
+ * names the expression and the kind of value, with no value itself, and is what a send or a preview
+ * shows. `refused` is set when the template's own text causes the failure: a save refuses it with that
+ * reason, and it is undefined for a failure that depends on a value.
+ */
+export class RenderFaultError extends Error {
+  constructor(
+    readonly detail: string,
+    readonly refused?: string,
+  ) {
+    super(detail);
+  }
+}
+/**
+ * A failure the template's own text causes, whatever data a message carries, such as a date format with
+ * an unsupported directive. Its message is the reason a save gives.
+ */
+export class TextError extends Error {}
+/**
+ * The outcome of a save-time render (D134). `refused` names the cause of a template's own text in
+ * words, with the expression that causes it; `busy` is the render capacity, not a template fault.
+ */
+export type SaveCheck =
+  | { readonly outcome: "ok" }
+  | { readonly outcome: "refused"; readonly reason: string }
+  | { readonly outcome: "busy" };
+/**
+ * The renderer's messages for the template text that causes them, and the reason a save names. Only
+ * these and TextError and literal faults refuse a save: any other failure depends on a value.
+ */
+const refusalReasons = new Map<string, string>([
+  [LOOP_PRINT, LOOP_PRINT],
+  ["Invalid filter arguments", "a filter has the wrong number of arguments"],
+  ["Invalid for arguments", "a for tag has an unsupported argument"],
+  ["Invalid lookup", "a property name is not allowed"],
+  ["Invalid loop property", "a loop property is not available"],
+  ["Invalid collection", "a loop collection is not supported"],
+  ["Invalid translation", "a translation call is invalid"],
+  ["Nesting limit", "the template nests too deeply"],
+  ["Render limit", "the template exceeds a render limit"],
+  ["Output limit", "the template exceeds a render limit"],
+  ["Work limit", "the template exceeds a render limit"],
+]);
+/**
+ * The reason a save refuses a render fault, or undefined when the failure depends on the values a
+ * message carries: those are refused, if at all, at send (D134).
+ */
+function refusal(error: unknown): string | undefined {
+  if (error instanceof RenderFaultError) {
+    return error.refused;
+  }
+  if (error instanceof TextError) {
+    return error.message;
+  }
+  const message = error instanceof Error ? error.message : "";
+  return refusalReasons.get(message);
+}
+/** The expression a template holds, without its delimiters, shortened: the author's own text, no data. */
+function expressionOf(template: Template): string {
+  const text = template.token
+    .getText()
+    .replace(/^\{[{%]-?\s*/, "")
+    .replace(/\s*-?[}%]\}$/, "")
+    .trim();
+  return text.length > 120 ? `${text.slice(0, 120)}...` : text;
+}
+/**
+ * The error under LiquidJS's wrappers, which keep the thrown one as `originalError`. A wrapper adds the
+ * position of the template to its message, so the thrown message is the one that names the failure.
+ */
+function rootError(error: unknown): unknown {
+  let current = error;
+  for (
+    let depth = 0;
+    depth < 4 && current instanceof Error && "originalError" in current;
+    depth++
+  ) {
+    current = current.originalError;
+  }
+  return current;
+}
+/**
+ * LiquidJS's own range guard: a range whose bounds are not whole numbers, or span more than 1,024
+ * values. Its bounds come from the template or from data, so it is classified as a value failure.
+ */
+const RANGE_LIMIT = "range limit exceeded";
+/**
+ * The fault a template's failure becomes (D134). A value failure of an expression that read no data is a
+ * literal failure, which the template's own text causes: its detail is the reason a save refuses it.
+ * Any other failure names its expression and what was wrong, and a text cause keeps its refusal.
+ */
+function faultOf(error: unknown, template: Template, literal: boolean): RenderFaultError {
+  if (error instanceof RenderFaultError) {
+    return error;
+  }
+  const root = rootError(error);
+  const raw = root instanceof Error ? root.message : "";
+  const message = raw === RANGE_LIMIT ? "a range or loop is out of bounds" : raw;
+  const at = expressionOf(template);
+  const detail = message === "" ? at : `${at}: ${message}`;
+  const value = root instanceof ValueError || raw === RANGE_LIMIT;
+  if (value && literal) {
+    return new RenderFaultError(detail, detail);
+  }
+  if (root instanceof TextError) {
+    return new RenderFaultError(detail, message);
+  }
+  return new RenderFaultError(detail, value ? undefined : refusalReasons.get(message));
+}
 
 class Budget {
   bytes = 0;
   work = 0;
   depth = 0;
+  /** Property reads so far, and the count when the template being rendered started (D134). */
+  reads = 0;
+  start = 0;
+  /** True while the template being rendered has read no data: its text alone decides its result. */
+  literal(): boolean {
+    return this.reads === this.start;
+  }
   charge(n: number) {
     if (!Number.isSafeInteger(n) || n < 0 || this.bytes + n > TOTAL_LIMIT) {
       throw new Error("Render limit");
@@ -79,7 +285,7 @@ class BoundedEmitter implements Emitter {
     private readonly limit: number,
   ) {}
   write(value: unknown) {
-    const string = scalar(value);
+    const string = scalar(plainValue(value), this.budget);
     const n = byteLength(string);
     if (this.bytes + n > this.limit) {
       throw new Error("Output limit");
@@ -89,31 +295,19 @@ class BoundedEmitter implements Emitter {
     this.buffer += string;
   }
 }
-function scalar(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
-    return String(value);
-  }
-  throw new Error("Invalid value");
-}
-function url(value: unknown): string {
-  const text = scalar(value);
+function url(value: unknown, b: FilterBudget): string {
+  const text = scalar(value, b);
   if (!text) {
     return "";
   }
   try {
     const parsed = new URL(text);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error("Invalid URL");
+      throw new ValueError("Invalid URL");
     }
     return text;
   } catch {
-    throw new Error("Invalid URL");
+    throw new ValueError("Invalid URL");
   }
 }
 function checkSource(value: string, limit: number) {
@@ -140,8 +334,269 @@ export interface RenderTracking {
   readonly link?: (url: string) => string;
 }
 const attribute = (value: string) => value.replaceAll(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
 const pad = (n: number) => String(n).padStart(2, "0");
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** The single-character directives of a date format (`-d` is the day without padding). */
+const DIRECTIVES = "%YymdeHIMSpbBaAj";
+const SUPPORTED_DIRECTIVES =
+  "%%, %Y, %y, %m, %d, %-d, %e, %H, %I, %M, %S, %p, %b, %B, %a, %A and %j";
+/**
+ * The first directive of a date format that is not supported, or undefined. A format is read left to
+ * right, so `%%` is one literal percent sign and its second `%` is not a directive of its own.
+ */
+function unsupportedDirective(format: string): string | undefined {
+  for (let i = 0; i < format.length; i++) {
+    if (format[i] !== "%") {
+      continue;
+    }
+    const next = format[i + 1];
+    if (next === "-" && format[i + 2] === "d") {
+      i += 2;
+    } else if (next !== undefined && DIRECTIVES.includes(next)) {
+      i += 1;
+    } else {
+      return `%${next ?? ""}`;
+    }
+  }
+  return undefined;
+}
+/** The text one directive writes for a UTC date. Only the directive asked for is computed. */
+function directive(key: string, date: Date): string {
+  const hour = date.getUTCHours();
+  const month = date.getUTCMonth();
+  const weekday = date.getUTCDay();
+  switch (key) {
+    case "%":
+      return "%";
+    case "Y":
+      return String(date.getUTCFullYear());
+    case "y":
+      return pad(date.getUTCFullYear() % 100);
+    case "m":
+      return pad(month + 1);
+    case "d":
+      return pad(date.getUTCDate());
+    case "-d":
+      return String(date.getUTCDate());
+    case "e":
+      return String(date.getUTCDate()).padStart(2, " ");
+    case "H":
+      return pad(hour);
+    case "I":
+      return pad(hour % 12 === 0 ? 12 : hour % 12);
+    case "M":
+      return pad(date.getUTCMinutes());
+    case "S":
+      return pad(date.getUTCSeconds());
+    case "p":
+      return hour < 12 ? "AM" : "PM";
+    case "b":
+      return must(MONTHS[month], "month").slice(0, 3);
+    case "B":
+      return must(MONTHS[month], "month");
+    case "a":
+      return must(WEEKDAYS[weekday], "weekday").slice(0, 3);
+    case "A":
+      return must(WEEKDAYS[weekday], "weekday");
+    case "j": {
+      const year = date.getUTCFullYear();
+      const startOfYear = Date.UTC(year, 0, 1);
+      const day = Date.UTC(year, month, date.getUTCDate());
+      return String(Math.floor((day - startOfYear) / 86_400_000) + 1).padStart(3, "0");
+    }
+    default:
+      // Every directive has been checked by `unsupportedDirective`, so this is not reached.
+      return key;
+  }
+}
+/** The UTC date a format writes, one directive at a time. */
+function formatDate(format: string, date: Date): string {
+  return format.replaceAll(/%(-d|.)/g, (_, key: string) => directive(key, date));
+}
+/** One positional argument of a filter, and what its literal value must be (D134). */
+interface ArgumentRule {
+  readonly kind: "whole" | "digits" | "number" | "format";
+  /** A missing argument is a fault too: the filter reads it before anything else, so it fails every value. */
+  readonly required?: boolean;
+}
+/**
+ * The literal rules of the filters' arguments (D134), each the rule its filter applies at send: the
+ * same readers (`wholeNumber`, `numberOf`, the date format check) decide a literal here. An argument with
+ * no rule is text, which any literal is. An optional argument has a default the filter uses when it is
+ * missing. `plus`, `minus`, `times`, `divided_by` and `slice` read a required argument before any value.
+ */
+const argumentRules = new Map<string, ReadonlyArray<ArgumentRule>>([
+  ["truncate", [{ kind: "whole" }]],
+  ["truncatewords", [{ kind: "whole" }]],
+  ["slice", [{ kind: "whole", required: true }, { kind: "whole" }]],
+  ["round", [{ kind: "digits" }]],
+  ["plus", [{ kind: "number", required: true }]],
+  ["minus", [{ kind: "number", required: true }]],
+  ["times", [{ kind: "number", required: true }]],
+  ["divided_by", [{ kind: "number", required: true }]],
+  ["date", [{ kind: "format" }]],
+]);
+const ORDINALS = ["first", "second"];
+/** The longest literal shown in a save reason. The author's text is shown; data never is. */
+const SHOWN = 40;
+
+function expectedOf(rule: ArgumentRule): string {
+  switch (rule.kind) {
+    case "whole":
+      return "a whole number";
+    case "digits":
+      return "whole digits from 0 to 15";
+    case "number":
+      return "a number";
+    case "format":
+      return "a date format";
+  }
+}
+
+/**
+ * A literal argument's value and text, or undefined when the argument is not written as a literal (a
+ * variable, a range, a property, or a keyword argument), which depends on data and is left to the send.
+ */
+function literalOf(argument: Filter["args"][number]): { value: unknown; text: string } | undefined {
+  if (Array.isArray(argument)) {
+    return undefined;
+  }
+  if (
+    TypeGuards.isNumberToken(argument) ||
+    TypeGuards.isQuotedToken(argument) ||
+    TypeGuards.isLiteralToken(argument)
+  ) {
+    return { value: argument.content, text: argument.getText() };
+  }
+  return undefined;
+}
+
+/** The fault in one argument of a filter, or undefined. A literal is judged by the filter's own reader. */
+function argumentFault(
+  name: string,
+  index: number,
+  rule: ArgumentRule,
+  argument: Filter["args"][number] | undefined,
+): string | undefined {
+  const where = ORDINALS[index] ?? "";
+  if (argument === undefined) {
+    return rule.required
+      ? `${name}: missing its ${where} argument, which must be ${expectedOf(rule)}`
+      : undefined;
+  }
+  const literal = literalOf(argument);
+  if (literal === undefined) {
+    return undefined;
+  }
+  const { value, text } = literal;
+  const shown = text.length > SHOWN ? `${text.slice(0, SHOWN)}...` : text;
+  const wrong = `${name}: the ${where} argument must be ${expectedOf(rule)}, got ${shown}`;
+  switch (rule.kind) {
+    case "whole":
+      return wholeNumber(value) === undefined ? wrong : undefined;
+    case "digits": {
+      const digits = wholeNumber(value);
+      return digits === undefined || digits < 0 || digits > 15 ? wrong : undefined;
+    }
+    case "number": {
+      const number = numberOf(value);
+      if (number === undefined) {
+        return wrong;
+      }
+      return name === "divided_by" && number === 0
+        ? `${name}: the ${where} argument cannot be zero`
+        : undefined;
+    }
+    case "format": {
+      // A date format is text, or the number a literal writes; a nil or true literal is not a format.
+      if (typeof value !== "string" && typeof value !== "number") {
+        return undefined;
+      }
+      const format = String(value);
+      if (byteLength(format) > 256) {
+        return `${name}: the format is longer than 256 bytes`;
+      }
+      const unsupported = unsupportedDirective(format);
+      return unsupported === undefined
+        ? undefined
+        : `${name}: the format has the unsupported directive ${unsupported}; the supported directives are ${SUPPORTED_DIRECTIVES}`;
+    }
+  }
+}
+
+/** The fault in a filter's arguments (D134), or undefined: too many, an odd number for `t`, or a literal one that cannot be read. */
+function filterFault(filter: Filter): string | undefined {
+  const { name, args } = filter;
+  const maximum = filterArguments.get(name);
+  if (maximum === undefined) {
+    return undefined;
+  }
+  if (args.length > maximum) {
+    const allowed =
+      maximum === 0
+        ? "no arguments"
+        : `at most ${maximum} ${maximum === 1 ? "argument" : "arguments"}`;
+    return `${name}: takes ${allowed}, got ${args.length}`;
+  }
+  if (name === "t" && args.length % 2 !== 0) {
+    return `${name}: takes its arguments in pairs, got ${args.length}`;
+  }
+  for (const [index, rule] of (argumentRules.get(name) ?? []).entries()) {
+    const fault = argumentFault(name, index, rule, args[index]);
+    if (fault !== undefined) {
+      return fault;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The first fault in a template's literal filter arguments (D134), or undefined. Every output, assign,
+ * echo and tag body is checked, including the branches a sample never reaches, because the text alone
+ * decides it. An argument that reads data or a variable is not a literal, and the send judges it. The walk
+ * is iterative, so a deeply nested template cannot exhaust the stack, and it visits each template once.
+ */
+/** An output that prints a loop object on its own (`{{ forloop }}`): a template fault whatever the data is (B135 review B1). */
+const bareLoop = /^\{\{-?\s*(?:forloop|tablerowloop)\s*-?\}\}$/;
+
+function literalFault(templates: ReadonlyArray<Template>): string | undefined {
+  const pending = [...templates].reverse();
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const printed = next instanceof Output ? next.token.getText() : "";
+    if (bareLoop.test(printed)) {
+      return LOOP_PRINT;
+    }
+    for (const argument of next.arguments?.() ?? []) {
+      if (argument instanceof Value) {
+        for (const filter of argument.filters) {
+          const fault = filterFault(filter);
+          if (fault !== undefined) {
+            return fault;
+          }
+        }
+      }
+    }
+    // Children in source order: the first one is popped next.
+    const children = next.children ? toValueSync(next.children(false, true)) : [];
+    pending.push(...children.reverse());
+  }
+  return undefined;
+}
+
 function hasContent(templates: Array<Template>): boolean {
   for (const tpl of templates) {
     if (tpl instanceof Output && /^{{-?\s*content\s*\|\s*raw\s*-?}}$/.test(tpl.token.getText())) {
@@ -161,6 +616,37 @@ function hasContent(templates: Array<Template>): boolean {
   }
   return false;
 }
+/** A filter's handler as LiquidJS registers it: `this` carries the render context and the filter's token. */
+type FilterHandler = Extract<FilterImplOptions, (...args: Array<never>) => unknown>;
+/**
+ * The value a message prints, or a filter reads (B135 review B1). A literal `nil`, `empty` or `blank` is a LiquidJS
+ * Drop whose value is nil or empty, and it is nil. Any other Drop is a loop object (`forloop`): the template's own
+ * text, refused when it is printed or read by a filter.
+ */
+function plainValue(value: unknown) {
+  if (value instanceof LineBreaks) {
+    return value.text;
+  }
+  if (value instanceof Drop) {
+    const text: unknown = value.valueOf();
+    if (text === null || text === "") {
+      return null;
+    }
+    throw new Error(LOOP_PRINT);
+  }
+  return value;
+}
+/** A handler that reads its input and arguments with `plainValue`. The `raw` filter reads its own input. */
+function readsText(handler: FilterHandler): FilterHandler {
+  return function (
+    this: ThisParameterType<FilterHandler>,
+    value: unknown,
+    ...args: Array<unknown>
+  ) {
+    const result: unknown = handler.apply(this, [plainValue(value), ...args.map(plainValue)]);
+    return result;
+  };
+}
 /** Instance-owned renderer. Includes, render and layout tags are deliberately unavailable. */
 export function createRenderer(clock: Clock, translation: Translation) {
   // en-US only (D102). Negative zero and values that round to zero render as 0, not -0.
@@ -174,6 +660,25 @@ export function createRenderer(clock: Clock, translation: Translation) {
     }
     return result;
   };
+  /**
+   * The UTC date a `date` filter reads (D134): `now` and `today` are the clock's, and anything else must be
+   * a calendar date or UTC timestamp that exists. JavaScript rolls 2026-02-30 over to 2026-03-02, so a date
+   * is kept only when its canonical form keeps the date (and the time, for a timestamp).
+   */
+  function parseDate(text: string): Date | undefined {
+    if (text === "now" || text === "today") {
+      return clock.now();
+    }
+    if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)?$/.test(text)) {
+      return undefined;
+    }
+    const date = new Date(text);
+    if (!Number.isFinite(date.getTime())) {
+      return undefined;
+    }
+    const digits = text.length === 10 ? 10 : 19;
+    return date.toISOString().slice(0, digits) === text.slice(0, digits) ? date : undefined;
+  }
   function engine(html: boolean) {
     const operators = { ...defaultOperators };
     const chargeComparison = (value: unknown, b: Budget): number => {
@@ -185,12 +690,12 @@ export function createRenderer(clock: Clock, translation: Translation) {
         cost += textCost;
       } else if (Array.isArray(value)) {
         if (value.length > 1024) {
-          throw new Error("Array limit");
+          throw new ValueError("Array limit");
         }
         for (let i = 0; i < value.length; i++) {
           const descriptor = Object.getOwnPropertyDescriptor(value, String(i));
           if (descriptor && !("value" in descriptor)) {
-            throw new Error("Invalid value");
+            throw new ValueError("Invalid value");
           }
           cost += chargeComparison(descriptor?.value, b);
         }
@@ -249,16 +754,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
     // The HTML engine escapes output; the plain-text engine has no escape option at all.
     if (html) {
       options.outputEscape = function outputEscape(this: { context: Context }, value: unknown) {
-        const input = scalar(value);
-        let size = 0;
-        for (const c of input) {
-          size +=
-            c === "&" ? 5 : c === "<" || c === ">" ? 4 : c === '"' || c === "'" ? 5 : byteLength(c);
+        // A line break output is marked up already, escaped and charged when it was built (B135 review N5).
+        if (value instanceof LineBreaks) {
+          return value.markup;
         }
-        budget(this.context).charge(size);
-        return input.replaceAll(/[&<>"']/g, (c) =>
-          must({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&#34;", "'": "&#39;" }[c], "escape"),
-        );
+        const b = budget(this.context);
+        const input = scalar(plainValue(value), b);
+        b.charge(escapedBytes(input));
+        return escapeHtml(input);
       };
     }
     const liquid = new Liquid(options);
@@ -282,11 +785,18 @@ export function createRenderer(clock: Clock, translation: Translation) {
     for (const filter of Object.keys(liquid.filters)) {
       liquid.unregisterFilter(filter);
     }
+    // Every filter registered below reads its input and arguments with `plainValue` (B135 review B1).
+    const registerFilter = liquid.registerFilter.bind(liquid);
+    liquid.registerFilter = (name: string, filter: FilterImplOptions) => {
+      registerFilter(name, typeof filter === "function" ? readsText(filter) : filter);
+    };
     liquid.registerFilter("raw", {
       raw: true,
       handler(value) {
-        budget(this.context).step();
-        return scalar(value);
+        const b = budget(this.context);
+        b.step();
+        // A line break output is written as its markup, which is already escaped (B135 review N5).
+        return value instanceof LineBreaks ? value.markup : scalar(plainValue(value), b);
       },
     });
     liquid.registerFilter("default", function (value, fallback) {
@@ -294,22 +804,22 @@ export function createRenderer(clock: Clock, translation: Translation) {
       b.step();
       const out =
         value === null || value === undefined || value === false || value === ""
-          ? scalar(fallback)
-          : scalar(value);
+          ? scalar(fallback, b)
+          : scalar(value, b);
       b.charge(byteLength(out));
       return out;
     });
     liquid.registerFilter("strip", function (value) {
       const b = budget(this.context);
       b.step();
-      const input = scalar(value);
+      const input = scalar(value, b);
       b.charge(byteLength(input));
       return input.trim();
     });
     liquid.registerFilter("upcase", function (value) {
       const b = budget(this.context);
       b.step();
-      const input = scalar(value);
+      const input = scalar(value, b);
       let size = 0;
       for (const c of input) {
         size += byteLength(c.toUpperCase());
@@ -323,15 +833,15 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("t", function (value, ...args) {
       const b = budget(this.context);
       b.step();
-      const key = scalar(value);
+      const key = scalar(value, b);
       if (byteLength(key) > 256 || args.length > 8 || args.length % 2) {
         throw new Error("Invalid translation");
       }
       let out = translation.T(key);
       b.charge(byteLength(out));
       for (let i = 0; i < args.length; i += 2) {
-        const name = scalar(args[i]);
-        const value = scalar(args[i + 1]);
+        const name = scalar(args[i], b);
+        const value = scalar(args[i + 1], b);
         if (!/^[a-z0-9_.-]{1,128}$/i.test(name) || byteLength(value) > 1024) {
           throw new Error("Invalid translation");
         }
@@ -351,7 +861,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("track_link", function (value) {
       const b = budget(this.context);
       b.step();
-      let out = url(value);
+      let out = url(value, b);
       // listmonk trackLink: unescape &amp; and register the URL for this message.
       const link = trackers.get(this.context)?.link;
       if (out && link) {
@@ -363,35 +873,118 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("date", function (value, format) {
       const b = budget(this.context);
       b.step();
-      const text = scalar(value);
-      const fmt = scalar(format);
-      if (byteLength(fmt) > 256 || /%(?![%YmdHMS])/.test(fmt)) {
-        throw new Error("Invalid date format");
+      // Nil is empty, so a date of nothing renders nothing (D134).
+      const text = value === null || value === undefined ? "" : scalar(value, b);
+      const fmt = scalar(format, b);
+      if (byteLength(fmt) > 256) {
+        throw new TextError("a date format is longer than 256 bytes");
       }
-      if (
-        text !== "now" &&
-        text !== "today" &&
-        !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)?$/.test(text)
-      ) {
-        throw new Error("Invalid date");
+      const unsupported = unsupportedDirective(fmt);
+      if (unsupported !== undefined) {
+        throw new TextError(
+          `a date format has the unsupported directive ${unsupported}; the supported directives are ${SUPPORTED_DIRECTIVES}`,
+        );
       }
-      const date = text === "now" || text === "today" ? clock.now() : new Date(text);
-      if (!Number.isFinite(date.getTime())) {
-        throw new Error("Invalid date");
+      // An empty format returns the input, as LiquidJS does.
+      if (fmt === "") {
+        return text;
       }
-      const values = new Map([
-        ["%", "%"],
-        ["Y", String(date.getUTCFullYear())],
-        ["m", pad(date.getUTCMonth() + 1)],
-        ["d", pad(date.getUTCDate())],
-        ["H", pad(date.getUTCHours())],
-        ["M", pad(date.getUTCMinutes())],
-        ["S", pad(date.getUTCSeconds())],
-      ]);
-      // An unknown conversion letter renders as the text "undefined", as it always has.
-      const out = fmt.replaceAll(/%(.)/g, (_, key: string) => String(values.get(key)));
-      b.charge(byteLength(out));
-      return out;
+      const date = parseDate(text);
+      if (date === undefined) {
+        // A value that is not a date renders empty. A literal one is the template's own text, which a save refuses.
+        if (b.literal() && text !== "") {
+          throw new ValueError(
+            `needs a valid date (YYYY-MM-DD or a UTC timestamp), got ${kindOf(value)}`,
+          );
+        }
+        return "";
+      }
+      // Each format byte writes at most a month or weekday name of nine bytes, so the bound is charged first.
+      b.charge(byteLength(fmt) * 9);
+      return formatDate(fmt, date);
+    });
+    liquid.registerFilter("size", function (value: unknown) {
+      return sizeOf(value, budget(this.context));
+    });
+    liquid.registerFilter("json", function (value: unknown) {
+      return json(value, budget(this.context));
+    });
+    liquid.registerFilter("downcase", function (value: unknown) {
+      return downcase(value, budget(this.context));
+    });
+    liquid.registerFilter("capitalize", function (value: unknown) {
+      return capitalize(value, budget(this.context));
+    });
+    liquid.registerFilter("prepend", function (value: unknown, argument: unknown) {
+      return prepend(value, argument, budget(this.context));
+    });
+    liquid.registerFilter("append", function (value: unknown, argument: unknown) {
+      return append(value, argument, budget(this.context));
+    });
+    liquid.registerFilter(
+      "replace",
+      function (value: unknown, pattern: unknown, replacement: unknown) {
+        return replace(value, pattern, replacement, budget(this.context));
+      },
+    );
+    liquid.registerFilter(
+      "replace_first",
+      function (value: unknown, pattern: unknown, replacement: unknown) {
+        return replaceFirst(value, pattern, replacement, budget(this.context));
+      },
+    );
+    liquid.registerFilter("split", function (value: unknown, separator: unknown) {
+      return split(value, separator, budget(this.context));
+    });
+    liquid.registerFilter("join", function (value: unknown, separator: unknown) {
+      return join(value, separator, budget(this.context));
+    });
+    liquid.registerFilter("slice", function (value: unknown, begin: unknown, count: unknown) {
+      return slice(value, begin, count, budget(this.context));
+    });
+    liquid.registerFilter("truncate", function (value: unknown, limit: unknown, ellipsis: unknown) {
+      return truncate(value, limit, ellipsis, budget(this.context));
+    });
+    liquid.registerFilter(
+      "truncatewords",
+      function (value: unknown, count: unknown, ellipsis: unknown) {
+        return truncatewords(value, count, ellipsis, budget(this.context));
+      },
+    );
+    liquid.registerFilter("strip_html", function (value: unknown) {
+      return stripHtml(value, budget(this.context));
+    });
+    liquid.registerFilter("plus", function (value: unknown, argument: unknown) {
+      return arithmetic("plus", value, argument, budget(this.context));
+    });
+    liquid.registerFilter("minus", function (value: unknown, argument: unknown) {
+      return arithmetic("minus", value, argument, budget(this.context));
+    });
+    liquid.registerFilter("times", function (value: unknown, argument: unknown) {
+      return arithmetic("times", value, argument, budget(this.context));
+    });
+    liquid.registerFilter("divided_by", function (value: unknown, argument: unknown) {
+      // A divisor written with a decimal point (`4.0`) divides as a float, as Liquid's Ruby reference does (B135).
+      const written: unknown = this.token.args[0];
+      const floatDivisor = TypeGuards.isNumberToken(written) && written.getText().includes(".");
+      return arithmetic("divided_by", value, argument, budget(this.context), floatDivisor);
+    });
+    liquid.registerFilter("round", function (value: unknown, digits: unknown) {
+      return round(value, digits, budget(this.context));
+    });
+    liquid.registerFilter("first", function (value: unknown) {
+      return first(value, budget(this.context));
+    });
+    liquid.registerFilter("last", function (value: unknown) {
+      return last(value, budget(this.context));
+    });
+    liquid.registerFilter("url_encode", function (value: unknown) {
+      return urlEncode(value, budget(this.context));
+    });
+    // Not a raw filter: its output is a LineBreaks value, which an HTML output writes as its markup (escaped once)
+    // and a later filter reads as its text, so that filter escapes it once (B135 review N5).
+    liquid.registerFilter("newline_to_br", function (value: unknown) {
+      return newlineToBr(value, html, budget(this.context));
     });
     liquid.registerFilter("number", function (value: unknown) {
       const b = budget(this.context);
@@ -425,7 +1018,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
       try {
         for (const template of templates) {
           b.step();
-          const value: unknown = yield template.render(ctx, out);
+          const start = b.reads;
+          b.start = start;
+          let value: unknown;
+          try {
+            value = yield template.render(ctx, out);
+          } catch (error) {
+            throw faultOf(error, template, b.reads === start);
+          }
           if (value) {
             out.write(value);
           }
@@ -450,13 +1050,16 @@ export function createRenderer(clock: Clock, translation: Translation) {
     let compiled: Array<Template>;
     try {
       compiled = parse(body, true);
-    } catch {
-      throw new TemplateSourceError("body");
+    } catch (error) {
+      throw new TemplateSourceError("body", unknownFilter(error));
     }
     try {
       parse(subject, false, SUBJECT_LIMIT);
-    } catch {
-      throw new TemplateSourceError("subject");
+    } catch (error) {
+      throw new TemplateSourceError("subject", unknownFilter(error));
+    }
+    if (hasForWithFilter(body) || hasForWithFilter(subject)) {
+      throw new TemplateSourceError("loop");
     }
     if (campaign && !hasContent(compiled)) {
       throw new TemplateSourceError("slot");
@@ -477,6 +1080,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
     if (request.mode !== "html" && request.mode !== "plain" && request.mode !== "markdown") {
       throw new Error("Invalid render mode");
     }
+    const b = budget ?? new Budget();
     for (const key of [
       "unsubscribe_url",
       "manage_url",
@@ -488,7 +1092,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       "root_url",
     ]) {
       if (data[key] !== null && data[key] !== undefined) {
-        data[key] = url(data[key]);
+        data[key] = url(data[key], b);
       }
     }
     if (request.transactional) {
@@ -498,7 +1102,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
     // markup replaces it after the whole message is rendered.
     const viewMarker = tracking?.view ? `igloview${crypto.randomUUID().replaceAll("-", "")}` : "";
     data.track_view = viewMarker;
-    const b = budget ?? new Budget();
     const run = (source: string, html: boolean, limit: number, ready?: Array<Template>): string => {
       const e = html ? htmlEngine : plainEngine;
       const parsed =
@@ -564,7 +1167,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
             typeof value !== "boolean" &&
             !(typeof value === "number" && Number.isFinite(value))
           ) {
-            throw new Error("Invalid for argument value");
+            throw new ValueError("Invalid for argument value");
           }
         }
       };
@@ -578,7 +1181,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
       bounded.igloBudgetCollection = (value) => {
         if (Array.isArray(value)) {
           if (value.length > 1024) {
-            throw new Error("Array limit");
+            throw new ValueError("Array limit");
           }
           b.step(value.length);
           return;
@@ -590,7 +1193,7 @@ export function createRenderer(clock: Clock, translation: Translation) {
           let count = 0;
           for (const _key in value) {
             if (++count > 1024) {
-              throw new Error("Array limit");
+              throw new ValueError("Array limit");
             }
             b.step(3);
           }
@@ -600,12 +1203,14 @@ export function createRenderer(clock: Clock, translation: Translation) {
       };
       const read = ctx.readProperty.bind(ctx);
       ctx.readProperty = (object, key) => {
-        if (
-          (typeof key !== "string" && typeof key !== "number") ||
-          (typeof key === "number" && !Number.isFinite(key)) ||
-          (typeof key === "string" && dangerous.has(key))
-        ) {
+        // Every read counts, so a failure whose expression reads nothing is a literal one (D134).
+        b.reads++;
+        if (typeof key === "string" && dangerous.has(key)) {
           throw new Error("Invalid lookup");
+        }
+        // A key from data that is nil, a list or an object is a value failure, not a template fault.
+        if (typeof key !== "string" && (typeof key !== "number" || !Number.isFinite(key))) {
+          throw new ValueError(`a property name must be text or a number, got ${kindOf(key)}`);
         }
         if (object instanceof Drop && (typeof key !== "string" || !loopProperties.has(key))) {
           throw new Error("Invalid loop property");
@@ -613,11 +1218,13 @@ export function createRenderer(clock: Clock, translation: Translation) {
         const value: unknown = read(object, key);
         return value;
       };
-      // Only the range evaluator uses the built-in memory limiter in our supported subset.
+      // Only the range evaluator uses the built-in memory limiter in our supported subset. Its bounds
+      // come from the template's text or from data: a literal one is refused at save, a data one fails
+      // at send (D134).
       const use = ctx.memoryLimit.use.bind(ctx.memoryLimit);
       ctx.memoryLimit.use = (n: number) => {
         if (!Number.isInteger(n) || n < 0 || n > 1024) {
-          throw new Error("Range limit");
+          throw new ValueError("a range or loop is out of bounds");
         }
         use(n);
       };
@@ -655,6 +1262,48 @@ export function createRenderer(clock: Clock, translation: Translation) {
     return { body, subject };
   }
 
+  /**
+   * The first literal fault in any part of a message's text (D134), or undefined. Each part's whole text is
+   * read, so a branch the sample never reaches is checked too.
+   */
+  function literalFaultOf(request: Omit<RenderRequest, "data">): string | undefined {
+    const html = request.mode !== "plain";
+    return (
+      literalFault(parse(request.body, html)) ??
+      (request.subject === undefined
+        ? undefined
+        : literalFault(parse(request.subject, false, SUBJECT_LIMIT))) ??
+      (request.layout === undefined ? undefined : literalFault(parse(request.layout, html)))
+    );
+  }
+
+  /**
+   * The save-time render (D134): the parts render once, as a send renders them, against `data`.
+   * It refuses a failure the template's own text causes (`refused`). A failure of a value
+   * `data` does not carry is not refused: the sample cannot tell a missing value from a present one,
+   * so that message is refused, if at all, when it is sent.
+   */
+  function check(request: Omit<RenderRequest, "data">, data: string): SaveCheck {
+    if (active >= 4) {
+      return { outcome: "busy" };
+    }
+    active++;
+    try {
+      // A literal argument its filter cannot read fails every message, whatever data it carries, so the
+      // text alone refuses it, with the filter and the argument (D134).
+      const fault = literalFaultOf(request);
+      if (fault !== undefined) {
+        return { outcome: "refused", reason: fault };
+      }
+      runMessage({ ...request, data }, parseTemplateData(data));
+      return { outcome: "ok" };
+    } catch (error) {
+      const reason = refusal(error);
+      return reason === undefined ? { outcome: "ok" } : { outcome: "refused", reason };
+    } finally {
+      active--;
+    }
+  }
   function renderSync(request: RenderRequest, budget?: MessageBudget) {
     if (active >= 4) {
       throw new RenderCapacityError();
@@ -731,6 +1380,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
       },
     });
   }
-  return { validate, compile, render, renderSync };
+  return { validate, check, compile, render, renderSync };
 }
 export type TemplateRenderer = ReturnType<typeof createRenderer>;
