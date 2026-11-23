@@ -124,13 +124,31 @@ test("the flag must be the literal true or false, and a third argument is refuse
   expect(floor.body.message).toContain("floor");
 });
 
-test("a flag from data is whole only when it is the JSON boolean true; the text 'true' divides as a decimal", async () => {
+test("a named argument to divided_by is refused at save, not ignored (lead decision 2)", async () => {
   const f = await open();
+  // `integer: true` is a keyword argument, which LiquidJS passes on but the whole-number flag never reads: a save that
+  // accepted it would divide as a decimal while the author expects a whole number.
+  for (const body of [
+    "{{ data.n | divided_by: 4, integer: true }}",
+    "{{ data.n | divided_by: 4, integer: false }}",
+  ]) {
+    const refused = await saveTx(f, body);
+    expect(refused.status, body).toBe(400);
+    expect(refused.body.message, body).toContain(
+      "it fails to render: divided_by: takes no named arguments, got integer",
+    );
+  }
+});
+
+test("a flag from data is whole only when it is the JSON boolean true; the text 'true' and a number 1 divide as a decimal", async () => {
+  const f = await open();
+  // LiquidJS reads its flag as a number, so there a data 1 or "1" would round down; here only the JSON true does.
   const sent = await send(
     f,
-    "[{{ data.n | divided_by: 4, data.whole }}][{{ data.n | divided_by: 4, data.text }}]",
-    { n: 10, whole: true, text: "true" },
+    "[{{ data.n | divided_by: 4, data.whole }}][{{ data.n | divided_by: 4, data.text }}]" +
+      "[{{ data.n | divided_by: 4, data.one }}][{{ data.n | divided_by: 4, data.digit }}]",
+    { n: 10, whole: true, text: "true", one: 1, digit: "1" },
   );
   expect(sent.http).toBe(200);
-  expect(sent.html).toContain("[2][2.5]");
+  expect(sent.html).toContain("[2][2.5][2.5][2.5]");
 });

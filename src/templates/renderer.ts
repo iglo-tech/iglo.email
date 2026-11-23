@@ -570,6 +570,13 @@ function filterFault(filter: Filter): string | undefined {
   if (name === "t" && args.length % 2 !== 0) {
     return `${name}: takes its arguments in pairs, got ${args.length}`;
   }
+  // A named argument (`divided_by: 4, integer: true`) is passed on by LiquidJS but never read by the whole-number
+  // flag, so it would be ignored: refused at save instead (lead decision 2, D134).
+  const named =
+    name === "divided_by" ? args.find((argument) => Array.isArray(argument)) : undefined;
+  if (named !== undefined) {
+    return `${name}: takes no named arguments, got ${String(named[0])}`;
+  }
   for (const [index, rule] of (argumentRules.get(name) ?? []).entries()) {
     const fault = argumentFault(name, index, rule, args[index]);
     if (fault !== undefined) {
