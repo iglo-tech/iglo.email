@@ -413,7 +413,7 @@ test("a plain GET of the unsubscribe link, as a link scanner makes it, changes n
   expect(await membership(page, person, target)).toBe("unsubscribed");
 });
 
-test("blocklisting from the public page leaves the person with no mail from any of their lists", async ({
+test("unsubscribing from all mailing lists on the public page leaves no mail from any of them, and the status stays enabled", async ({
   page,
 }) => {
   const [first, second] = [await list(page), await list(page)];
@@ -422,7 +422,8 @@ test("blocklisting from the public page leaves the person with no mail from any 
   const [mail] = await mailsFor(person.email);
   await unsubscribeInBrowser(page, unsubscribeLink(mail), { blocklist: true });
 
-  expect(await ok(page, `/api/subscribers/${person.id}`)).toMatchObject({ status: "blocklisted" });
+  // B130 (D128): not a blocklist, so the person's transactional mail still goes out.
+  expect(await ok(page, `/api/subscribers/${person.id}`)).toMatchObject({ status: "enabled" });
   await sendCampaign(page, await campaign(page, [first, second]));
   expect(await settledMail([person.email])).toEqual([1]);
 });
@@ -495,9 +496,10 @@ test("a sequence enrollment waiting on its next step exits when its person unsub
     status: "exited",
     exit_reason: "unsubscribed",
   });
+  // The all-lists option ends a waiting marketing step as an unsubscribe does (B130, D128).
   expect(await ok(page, `/api/enrollments/${blockedStarted.id}`)).toMatchObject({
     status: "exited",
-    exit_reason: "blocklisted",
+    exit_reason: "unsubscribed",
   });
   await pastDueAndTwoTicks(leavingWaiting, blockedWaiting);
   expect(await settledMail([leaving.email, blocked.email])).toEqual([1, 1]);

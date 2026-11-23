@@ -151,7 +151,8 @@ test("with no open membership, the page says already unsubscribed, on private an
     expect(html).not.toContain('id="btn-unsub"');
     expect(html).not.toContain("Do you want to unsubscribe");
     expect(html).toContain('id="data-form"');
-    expect(html).toContain('href="?manage=true"');
+    // B130 (D128): nothing is left to manage on a public list, so there is no manage link.
+    expect(html).not.toContain('href="?manage=true"');
     expect(html).not.toContain("Back to Brand Co");
   }
 
@@ -160,10 +161,10 @@ test("with no open membership, the page says already unsubscribed, on private an
   expect(await (await f.request(adaLink.page)).text()).toContain(
     `<a href="${brandUrl}">Back to Brand Co</a>`,
   );
-  // With ?manage=true the manage view is shown, as preferences allow.
-  expect(await (await f.request(`${adaLink.page}?manage=true`)).text()).toContain(
-    'class="manage-form"',
-  );
+  // With ?manage=true the manage view shows the privacy actions only: no public list is left to manage (B130).
+  const manage = await (await f.request(`${adaLink.page}?manage=true`)).text();
+  expect(manage).not.toContain('class="manage-form"');
+  expect(manage).toContain('id="data-form"');
 });
 
 test("an active subscriber with preferences off gets the email settings page, reached by an API create and by a confirmed list", async () => {
@@ -365,7 +366,7 @@ test("an unconfirmed membership on a single opt-in list is active: no cancel for
   expect(f.mailTo("ada@example.test")).toHaveLength(before + 1);
 });
 
-test("a confirmed subscriber with only private lists sees the account sentence above the manage view", async () => {
+test("a confirmed subscriber with only private lists sees the account sentence and the privacy actions, with no preference form", async () => {
   const f = await open({ siteName: "Brand Co" });
   const template = await receipt(f);
   const members = await f.list("Members", "private");
@@ -373,9 +374,11 @@ test("a confirmed subscriber with only private lists sees the account sentence a
   expect((await change(f, ada, "add", [members.id], "confirmed")).status).toBe(200);
   const link = await txPage(f, template, ada);
 
+  // B130 (D128): no public list to manage, so no preference form (name or lists) and no manage link.
   const html = await (await f.request(link.page)).text();
-  expect(html).toContain('class="manage-form"');
-  expect(html).toContain('name="name"');
+  expect(html).not.toContain('class="manage-form"');
+  expect(html).not.toContain('name="name"');
+  expect(html).toContain('id="data-form"');
   expect(html).not.toContain("Members");
   expect(html).toContain(
     "This message was sent about your account with Brand Co. To stop other emails, use the unsubscribe link in one of them.",

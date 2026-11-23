@@ -360,6 +360,14 @@ test("campaign deliveries count toward the marketing frequency cap", async () =>
       settings: () => ({
         rootUrl: "http://fixture.test",
         siteName: "Fixture",
+        brand: {
+          logoUrl: "",
+          siteName: "Fixture",
+          siteUrl: "",
+          accent: "",
+          font: "system-sans",
+          header: "auto",
+        },
         minInterval: minInterval.value,
         unsubscribeHeader: true,
         allowBlocklist: false,
@@ -559,6 +567,14 @@ function capSends(minInterval: string) {
       settings: () => ({
         rootUrl: "http://fixture.test",
         siteName: "Fixture",
+        brand: {
+          logoUrl: "",
+          siteName: "Fixture",
+          siteUrl: "",
+          accent: "",
+          font: "system-sans",
+          header: "auto",
+        },
         minInterval,
         unsubscribeHeader: true,
         allowBlocklist: false,

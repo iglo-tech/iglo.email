@@ -232,29 +232,23 @@ export function registerCampaignPublicRoutes(
               subscriberId: sub.id,
               listId: list,
               listIds: [list],
-              blocklisted: false,
             });
           }
           return;
         }
         const lists = deps.store.listIds(found.campaign);
         if (blocklist) {
-          const changed = deps.subscribers.unsubscribe(sub.id, lists[0] ?? 0n, true);
-          deps.effects.unsubscribed({
-            subscriberId: sub.id,
-            listId: lists[0] ?? 0n,
-            listIds: changed,
-            blocklisted: true,
-          });
+          // B130 (D128): every list and a marketing suppression, not the admin blocklist (see unsubscribe/routes.tsx).
+          deps.subscribers.unsubscribeAll(sub.id);
+          deps.effects.unsubscribedAll({ subscriberId: sub.id });
           return;
         }
         for (const list of lists) {
-          const changed = deps.subscribers.unsubscribe(sub.id, list, false);
+          const changed = deps.subscribers.unsubscribe(sub.id, list);
           deps.effects.unsubscribed({
             subscriberId: sub.id,
             listId: list,
             listIds: changed,
-            blocklisted: false,
           });
         }
       });

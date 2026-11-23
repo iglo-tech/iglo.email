@@ -66,9 +66,16 @@ export interface SubscriberEffects {
   /**
    * Consent that really changed, after the write: `blocklisted` when the subscriber was not
    * blocklisted before, `listIds` for memberships that were not unsubscribed before. Unlike the
-   * effects above it stays silent on repeats, so a replayed request queues no webhook.
+   * effects above it stays silent on repeats, so a replayed request queues no webhook. `suppressed`
+   * is true when the change is the public all-lists option, which also wrote a marketing suppression
+   * (B130, D128); the webhook then says so.
    */
-  changed?(change: { id: bigint; blocklisted: boolean; listIds: Array<bigint> }): void;
+  changed?(change: {
+    id: bigint;
+    blocklisted: boolean;
+    listIds: Array<bigint>;
+    suppressed?: boolean;
+  }): void;
   /** Set-based `changed` for these subscribers, called before the write it reports. */
   blocklisting?(ids: Array<bigint>): void;
   unsubscribing?(ids: Array<bigint>, listIds: Array<bigint>): void;
@@ -212,9 +219,14 @@ export function createSubscriberStore(
     memberships(id)
       .filter((m) => m.status !== "unsubscribed")
       .map((m) => m.list_id);
-  const consentChanged = (id: bigint, blocklisted: boolean, listIds: Array<bigint>) => {
+  const consentChanged = (
+    id: bigint,
+    blocklisted: boolean,
+    listIds: Array<bigint>,
+    suppressed = false,
+  ) => {
     if (blocklisted || listIds.length) {
-      effects.changed?.({ id, blocklisted, listIds });
+      effects.changed?.({ id, blocklisted, listIds, suppressed });
     }
   };
   const webhookData = (name: string, ...args: Array<string | number | null>) =>
@@ -797,23 +809,41 @@ export function createSubscriberStore(
       return q.get("membership-insert").run(id, list, "confirmed", now, now).changes === 1;
     },
     /**
-     * Public unsubscribe, adapted from listmonk's unsubscribe-by-campaign query: mark the
-     * list (or with `blocklist`, every list) unsubscribed and optionally blocklist the
-     * subscriber. Returns the list IDs whose status changed. The caller holds the write.
+     * Public unsubscribe, adapted from listmonk's unsubscribe-by-campaign query: mark the list
+     * unsubscribed. Returns the list IDs whose status changed. The caller holds the write.
      */
-    unsubscribe(id: bigint, list: bigint, blocklist: boolean): Array<bigint> {
-      const now = clock.now().toISOString();
-      const newlyBlocklisted = blocklist && get(id)?.status !== "blocklisted";
-      // D81: the blocklist box takes the same path as every other way in.
-      const changed = blocklist
-        ? blockOne(id, now)
-        : (
-            q.get("membership-unsubscribe-list").all(now, id, list) as Array<{
-              list_id: bigint;
-            }>
-          ).map((row) => row.list_id);
-      consentChanged(id, newlyBlocklisted, changed);
+    unsubscribe(id: bigint, list: bigint): Array<bigint> {
+      const changed = (
+        q.get("membership-unsubscribe-list").all(clock.now().toISOString(), id, list) as Array<{
+          list_id: bigint;
+        }>
+      ).map((row) => row.list_id);
+      consentChanged(id, false, changed);
       return changed;
+    },
+    /**
+     * The public "Unsubscribe from all mailing lists" (B130, D128): every membership not already
+     * unsubscribed ends, and a marketing suppression (B124, D125) is written unless one already names
+     * this subscriber. The status stays: this is not the admin blocklist, so transactional mail and
+     * transactional sequence steps keep flowing. The caller's `unsubscribedAll` effect ends the running
+     * enrollments whose next step is marketing at once; a mixed sequence's marketing step is refused by the
+     * scheduler's consent check when it comes due. Webhooks are those of an unsubscribe, with
+     * `suppressed`. The caller holds the write.
+     */
+    unsubscribeAll(id: bigint): void {
+      const row = get(id);
+      if (!row) {
+        return;
+      }
+      if (!suppressedBy(row)) {
+        suppress(row);
+      }
+      const changed = (
+        q.get("membership-unsubscribe-all").all(clock.now().toISOString(), id) as Array<{
+          list_id: bigint;
+        }>
+      ).map((membership) => membership.list_id);
+      consentChanged(id, false, changed, true);
     },
     /**
      * record-bounce's block1. Unlike upstream it also unsubscribes every membership (D81), so

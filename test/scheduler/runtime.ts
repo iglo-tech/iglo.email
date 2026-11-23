@@ -65,6 +65,14 @@ export function startRuntime(options: {
   const marketing: MarketingSettings = {
     rootUrl: "http://scheduler.test",
     siteName: "Scheduler fixture",
+    brand: {
+      logoUrl: "",
+      siteName: "Scheduler fixture",
+      siteUrl: "",
+      accent: "",
+      font: "system-sans",
+      header: "auto",
+    },
     minInterval: "",
     unsubscribeHeader: true,
     allowBlocklist: false,

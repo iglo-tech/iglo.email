@@ -39,10 +39,10 @@
             }
 
             .button {
-                background: #0055d4;
+                background: {{ brand_accent }};
                 border-radius: 3px;
                 text-decoration: none !important;
-                color: #fff !important;
+                color: {{ brand_on_accent }} !important;
                 font-weight: bold;
                 padding: 10px 30px;
                 display: inline-block;
@@ -71,7 +71,7 @@
             }
 
             a {
-                color: #0055d4;
+                color: {{ brand_link }};
             }
                 a:hover {
                     color: #111;
@@ -86,7 +86,7 @@
             }
         </style>
     </head>
-<body style="background-color: #F0F1F3;font-family: 'Helvetica Neue', 'Segoe UI', Helvetica, sans-serif;font-size: 15px;line-height: 26px;margin: 0;color: #444;">
+<body style="background-color: #F0F1F3;font-family: {% if brand_font != "" %}{{ brand_font }}{% else %}'Helvetica Neue', 'Segoe UI', Helvetica, sans-serif{% endif %};font-size: 15px;line-height: 26px;margin: 0;color: #444;">
     <div class="gutter" style="padding: 30px;">&nbsp;</div>
     <div class="wrap" style="background-color: #fff;padding: 30px;max-width: 525px;margin: 0 auto;border-radius: 5px;">
         <p>Hello {{ subscriber.name }}</p>

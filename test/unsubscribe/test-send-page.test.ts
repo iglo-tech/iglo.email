@@ -67,7 +67,9 @@ test("POST to the placeholder, as the page form or one-click, answers the same p
   const receiver = startReceiver();
   cleanups.push(() => receiver.close());
   const events: Array<unknown> = [];
-  const f = await open({ effects: { unsubscribed: (event) => events.push(event) } });
+  const f = await open({
+    effects: { unsubscribed: (event) => events.push(event), unsubscribedAll: () => {} },
+  });
   const hook = await f.json("/api/webhooks", "POST", {
     url: receiver.url(),
     events: ["subscriber.unsubscribed"],
@@ -99,7 +101,9 @@ test("a real one-click on a real send still unsubscribes and queues its webhook"
   const receiver = startReceiver();
   cleanups.push(() => receiver.close());
   const events: Array<unknown> = [];
-  const f = await open({ effects: { unsubscribed: (event) => events.push(event) } });
+  const f = await open({
+    effects: { unsubscribed: (event) => events.push(event), unsubscribedAll: () => {} },
+  });
   const hook = await f.json("/api/webhooks", "POST", {
     url: receiver.url(),
     events: ["subscriber.unsubscribed"],
