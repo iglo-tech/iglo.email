@@ -222,8 +222,8 @@ test("data:, vbscript: and javascript: links keep their text and write no URL, h
 });
 
 // r2 B1: nesting of each kind is bounded, and its cost grows with the input, not with its square. The
-// cap on pending end-tag handlers is what bounds it (D118): past the cap a shape stops early, so the cap
-// bounds its cost. The growth steps time each shape at 64 KiB, 256 KiB and 1 MiB.
+// cap on pending end-tag handlers is what bounds it (D118): past the cap a shape stops early, so its cost
+// is bounded by the cap and it has no text part. Only the worst linear case below stays under the cap.
 const MIB = 1024 * 1024;
 const nested = {
   b: (n: number) => "<b>".repeat(n) + "t" + "</b>".repeat(n),
@@ -243,9 +243,8 @@ const bytesPerLevel: Record<keyof typeof nested, number> = {
 const nestedHtml = (kind: keyof typeof nested, size: number) =>
   nested[kind](Math.floor(size / bytesPerLevel[kind]));
 for (const kind of asBody<Array<keyof typeof nested>>(Object.keys(nested))) {
-  test(`1 MiB of nested ${kind} has no text part past the 1024 cap, and each 4x step of input costs under ${STEP_BOUND}x`, async () => {
+  test(`1 MiB of nested ${kind} has no text part past the 1024 cap (D118)`, async () => {
     expect(await text(nestedHtml(kind, MIB))).toBe("");
-    await expectLinearGrowth((size) => nestedHtml(kind, size));
   });
 }
 
@@ -259,7 +258,7 @@ test("a URL's > and whitespace are percent-encoded in the text part", async () =
 // r3 B1: implied end tags leave the rewriter's end-tag handlers pending, so the cost grows with the
 // number of implied ends, not with the stack. Each shape repeats a unit with an omitted end tag. The
 // conversion gives up once it holds more handlers than its cap (D118), and past the cap the message has
-// no text part. Each shape gets a test of that at 64 KiB, and a test of its growth steps.
+// no text part. Each shape gets a test of that at 64 KiB.
 const implied: Record<string, { unit: string; bytes: number }> = {
   "unclosed p": { unit: "<p>x<b>y</b>", bytes: 12 },
   "unclosed li": { unit: "<li>x<b>y</b>", bytes: 13 },
@@ -268,7 +267,7 @@ const implied: Record<string, { unit: string; bytes: number }> = {
   "unclosed dd": { unit: "<dd>x<b>y</b>", bytes: 13 },
   "unclosed option": { unit: "<option>x<b>y</b>", bytes: 17 },
   // r4 (the stray end tag): each </q> searches every open element, so open spans and a stack of divs
-  // closed by a stray end tag are timed the same way as the implied ends above.
+  // closed by a stray end tag hit the same cap as the implied ends above.
   "unclosed span with stray end tags": { unit: "<span>x</q>", bytes: 11 },
   "div stack then stray end tags": { unit: "<p>x</q>", bytes: 8 },
 };
@@ -290,16 +289,15 @@ for (const kind of Object.keys(implied)) {
   test(`${kind} at 64 KiB has no text part: the end-tag cap stops it (D118)`, async () => {
     expect(await text(build(SIZE))).toBe("");
   });
-  test(`${kind}: each 4x step of input costs under ${STEP_BOUND}x`, async () => {
-    await expectLinearGrowth(build);
-  });
 }
 
 // r4: the worst case the cap still allows: 1023 open elements, then stray end tags, each of which
 // searches the open elements. It was one absolute sample under 1 s, which failed at 1006-1181 ms on a
 // loaded host (B137). It is a growth step check now: the median of rounds at 64 KiB, 256 KiB and 1 MiB.
-// Under the cap at every size, its cost is real work: it is the shape that catches quadratic work on the
-// output, such as joining the output parts on every few writes.
+// It is the only shape here that stays under the cap at every size, so its cost is real work at each
+// size, and it is the one growth check: the other shapes stop at the cap in a few milliseconds, where a
+// ratio of two such times measured 13x and 19x under load and says nothing about linear work. It catches
+// quadratic work on the output, such as joining the output parts on every few writes.
 const worstStrayEnds = (size: number) =>
   "<span>".repeat(1023) + "x</q>".repeat(Math.floor(size / 5));
 test(`the worst linear case, 1023 open spans then stray end tags, has each 4x step of input under ${STEP_BOUND}x`, async () => {
