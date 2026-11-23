@@ -27,10 +27,15 @@ async function open(overrides: Partial<Record<string, unknown>> = {}) {
 
 const receipt = (f: PublicFixture) => f.template("<p>Your receipt</p>", "Receipt");
 
-/** A transactional send to one subscriber; its page and the subscriber's UUID. */
-async function txPage(f: PublicFixture, template: number, id: number) {
+/** A transactional send to one subscriber, with optional headers (a Bcc copy); its page and the subscriber's UUID. */
+async function txPage(
+  f: PublicFixture,
+  template: number,
+  id: number,
+  headers: Array<Record<string, string>> = [],
+) {
   const uuid = asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.uuid);
-  const sent = await f.tx({ subscriber_id: id, template_id: template });
+  const sent = await f.tx({ subscriber_id: id, template_id: template, headers });
   expect(sent.status).toBe(200);
   const send = asBody<string>(sent.body.data.sends[0].uuid);
   return { send, uuid, page: `/m/${send}/unsubscribe/${uuid}` };
@@ -193,6 +198,65 @@ test("an active subscriber with preferences off gets the email settings page, re
       );
       expect(html).not.toContain('id="btn-unsub"');
     }
+  }
+});
+
+test("with preferences on, an active subscriber's transactional manage view is titled and headed Your email settings, with no name field", async () => {
+  // B117b (D137 items 1 and 2): the manage view of a transactional link is the email settings page, not the
+  // marketing unsubscribe page. Its title and heading are the same text as the preferences-off page, and it
+  // offers the lists only: no name field.
+  const f = await open({ siteName: "Brand Co" });
+  const template = await receipt(f);
+  const weekly = await f.list("Weekly News", "public", "single");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [weekly.id] });
+  const link = await txPage(f, template, ada);
+
+  for (const path of [link.page, `${link.page}?manage=true`]) {
+    const html = await (await f.request(path)).text();
+    expect(html).toContain("<title>Your email settings - Brand Co</title>");
+    expect(html).toContain("<h2>Your email settings</h2>");
+    expect(html).not.toContain("Unsubscribe from mailing list");
+    expect(html).toContain('class="manage-form"');
+    expect(html).toContain(`value="${weekly.uuid}"`);
+    expect(html).not.toContain('id="manage-name"');
+    expect(html).not.toContain('name="name"');
+  }
+});
+
+test("a transactional manage save never renames, with a Bcc copy of the send or without one, and still ends a list it unchecks", async () => {
+  // B117b (D137 item 1): a copy holder (a Bcc) and the subscriber alike cannot rename through the manage view.
+  // A POST carrying a name changes nothing; a save without one (what the page now sends) works the same.
+  // Lists still change: an unchecked confirmed list is ended.
+  const f = await open({ siteName: "Brand Co" });
+  const template = await receipt(f);
+  const news = await f.list("News", "public");
+  const other = await f.list("Other", "public");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id, other.id] });
+  const bob = await f.subscriber("bob@example.test", "Bob", { lists: [news.id, other.id] });
+  for (const id of [ada, bob]) {
+    expect((await change(f, id, "add", [news.id, other.id], "confirmed")).status).toBe(200);
+  }
+  const plain = await txPage(f, template, ada);
+  const copied = await txPage(f, template, bob, [{ Bcc: "hidden@third.example.test" }]);
+
+  for (const [link, id, name] of [
+    [plain, ada, "Ada"],
+    [copied, bob, "Bob"],
+  ] as const) {
+    const page = await (await f.request(link.page)).text();
+    expect(page).toContain('class="manage-form"');
+    expect(page).not.toContain('name="name"');
+    expect(page).toContain(`value="${news.uuid}"`);
+
+    // The save keeps News and unchecks Other: Other ends, News stays, and the name does not change.
+    const withoutName = `manage=true&l=${news.uuid}`;
+    expect((await f.fresh(link.page, withoutName)).status).toBe(200);
+    const renamed = `manage=true&name=Mallory&l=${news.uuid}`;
+    expect((await f.fresh(link.page, renamed)).status).toBe(200);
+    const subscriber = await f.json(`/api/subscribers/${id}`);
+    expect(subscriber.body.data.name).toBe(name);
+    expect(await f.status(id, news.id)).toBe("confirmed");
+    expect(await f.status(id, other.id)).toBe("unsubscribed");
   }
 });
 
