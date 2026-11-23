@@ -1708,14 +1708,24 @@ export async function runOpenApiContract(target: {
     // below, with a body the server reads before it looks the ID up.
     const absentFailures: Array<string> = [];
     for (const { key, operation } of operations) {
-      if (key.includes("{id}") && !operation.requestBody && !key.includes("twofa")) {
+      // One path parameter only: the others would take a placeholder that is not an ID.
+      const params = key.match(/\{\w+\}/g) ?? [];
+      if (
+        params.length === 1 &&
+        key.includes("{id}") &&
+        !operation.requestBody &&
+        !key.includes("twofa")
+      ) {
         try {
           const reply = await op(key, {
             ...placeholders(key, "999999"),
             query: needed(operation),
             expect: [200, 400, 404],
           });
-          check(reply.status < 400 || reply.body?.code === "not_found", `not-found-${key}`);
+          check(
+            reply.status < 400 || reply.body?.code === "not_found",
+            `not-found-${key} ${reply.status} ${reply.text.slice(0, 200)}`,
+          );
         } catch (error) {
           absentFailures.push(error instanceof Error ? error.message : String(error));
         }
