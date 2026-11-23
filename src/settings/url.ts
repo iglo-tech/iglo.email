@@ -5,6 +5,10 @@ import { must } from "@/invariant";
 
 const hostChars = /^[A-Za-z0-9!$&'()*+,;=:[\]<>"_.~-]$/;
 const escaped = (s: string) => !/%(?![0-9a-fA-F]{2})/.test(s);
+/** A port is empty, as Go's URL parser keeps it, or a number from 1 to 65535 (B117a, D136). */
+function portInRange(digits: string): boolean {
+  return digits === "" || (Number(digits) >= 1 && Number(digits) <= 65_535);
+}
 function hostPartValid(s: string, zone = false): boolean {
   for (let i = 0; i < s.length; i++) {
     const c = s.charAt(i);
@@ -46,14 +50,11 @@ export function validTrustedURL(input: string): boolean {
     return false;
   }
   const authority = must(match[2], "URL authority");
-  const at = authority.lastIndexOf("@");
-  if (at >= 0) {
-    const user = authority.slice(0, at);
-    if (!/^[A-Za-z0-9\-._:~!$&'()*+,;=%@]*$/.test(user) || !escaped(user)) {
-      return false;
-    }
+  // B117a (D136): a trusted URL holds no user name or password, which would be kept as a secret.
+  if (authority.includes("@")) {
+    return false;
   }
-  const host = authority.slice(at + 1);
+  const host = authority;
   if (!host || !escaped(must(match[3], "URL path"))) {
     return false;
   }
@@ -63,7 +64,11 @@ export function validTrustedURL(input: string): boolean {
   }
   if (bracket === 0) {
     const close = host.lastIndexOf("]");
-    if (close < 0 || !/^(?::[0-9]*)?$/.test(host.slice(close + 1))) {
+    if (
+      close < 0 ||
+      !/^(?::[0-9]*)?$/.test(host.slice(close + 1)) ||
+      !portInRange(host.slice(close + 2))
+    ) {
       return false;
     }
     const literal = host.slice(1, close);
@@ -81,7 +86,7 @@ export function validTrustedURL(input: string): boolean {
     return isIP(address) === 6 && (zone < 0 || zoneName.length > 0);
   }
   const colon = host.indexOf(":");
-  if (colon >= 0 && !/^:[0-9]*$/.test(host.slice(colon))) {
+  if (colon >= 0 && (!/^:[0-9]*$/.test(host.slice(colon)) || !portInRange(host.slice(colon + 1)))) {
     return false;
   }
   return hostPartValid(host);

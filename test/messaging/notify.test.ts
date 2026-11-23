@@ -136,10 +136,12 @@ async function createNotifyFixture(
 
   const settingsStore = createSettings(db, clock, root, roles);
   if (options.notifyEmails !== undefined) {
-    settingsStore.update((current) => ({
-      ...current,
-      "app.notify_emails": options.notifyEmails!,
-    }));
+    // Written as the row is stored: the settings API refuses an invalid address on save (B117a, D136),
+    // and these fixtures test what a send does with one that an older build stored.
+    db.run("UPDATE settings SET value = ? WHERE key = ?", [
+      JSON.stringify(options.notifyEmails),
+      "app.notify_emails",
+    ]);
   }
 
   const renderer = createRenderer(clock, i18n);

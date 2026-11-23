@@ -651,6 +651,47 @@ describe("compiled executable", () => {
     expect(stderr).not.toContain("203.0.113");
   });
 
+  test("a root URL with a leading-zero port or a non-web scheme names that part, and escapes DEL and C1 controls", async () => {
+    // B117a (D136): `host:00080` names its leading zero, and `a.b:/c` names its scheme. A DEL or C1
+    // control is refused and shown escaped, as JSON escapes the C0 controls.
+    for (const [value, expected] of [
+      ["host:00080", ["the port has a leading zero, so write 80 instead of 00080"]],
+      ["a.b:/c", ['the scheme must be followed by //, and "a.b" is not http or https']],
+      [
+        "https://news.example.com\u007f",
+        ["the value contains a control character", String.raw`\u007f`],
+      ],
+      [
+        "https://news.example.com\u0085",
+        ["the value contains a control character", String.raw`\u0085`],
+      ],
+    ] as const) {
+      const result = await runCli(["--root-url", value]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(`Invalid root-url `);
+      for (const text of expected) {
+        expect(result.stderr).toContain(text);
+      }
+      expect(result.stderr).not.toContain("\u007f");
+      expect(result.stderr).not.toContain("\u0085");
+      expect(result.stderr).not.toContain("such as");
+    }
+  });
+
+  test("a root URL that is withheld names nothing taken from it, not even its scheme or port", async () => {
+    // B117a (D136): a value with credentials, a query or a fragment is shown as "(value not shown)", so the
+    // message names neither its scheme (`token`) nor its leading-zero port (`00080`).
+    for (const value of ["token:x-oauth@news.example.com", "news.example.com:00080/?x=1"]) {
+      const result = await runCli(["--root-url", value]);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("Invalid root-url (value not shown)");
+      expect(result.stderr).not.toContain("token");
+      expect(result.stderr).not.toContain("x-oauth");
+      expect(result.stderr).not.toContain("00080");
+      expect(result.stderr).not.toContain("news.example.com");
+    }
+  });
+
   test("root URL errors name the value and the fix, and never echo credentials", async () => {
     for (const [value, expected] of [
       [
