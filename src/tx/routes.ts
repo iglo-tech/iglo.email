@@ -19,7 +19,7 @@ import { HttpError, ok } from "@/server/response";
 import type { SubscriberStore } from "@/subscribers/store";
 import { allowedDomain, sanitizeEmail } from "@/subscribers/email";
 import type { TemplateStore } from "@/templates/store";
-import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
+import { createMessageBudget, RenderCapacityError, RenderFaultError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
 import { plainText } from "@/messaging/plain";
 import type { Authentication } from "@/users/auth";
@@ -340,8 +340,16 @@ export function registerTxRoutes(
       };
       let body: ReturnType<TemplateRenderer["compile"]>;
       let alt: ReturnType<TemplateRenderer["compile"]> | null = null;
-      const renderError = () =>
-        new HttpError(400, t.Ts("templates.errorRendering", "error", "invalid template"));
+      // A failed render names its expression and what was wrong (D134); a parse fault stays generic.
+      const renderError = (error?: unknown) =>
+        new HttpError(
+          400,
+          t.Ts(
+            "templates.errorRendering",
+            "error",
+            error instanceof RenderFaultError ? error.detail : "invalid template",
+          ),
+        );
       try {
         body = deps.renderer.compile({
           ...transactional,
@@ -406,7 +414,7 @@ export function registerTxRoutes(
           if (error instanceof RenderCapacityError) {
             throw new HttpError(429, "Too many template renders in progress.");
           }
-          throw renderError();
+          throw renderError(error);
         }
         if (/[\r\n\0]/.test(rendered.subject)) {
           throw renderError();

@@ -91,23 +91,32 @@ test("strings, booleans and nil render as they would without the filter", async 
   expect(plain.message).toContain("[1234567] [abc] [true] []");
 });
 
-test("objects and arrays fail exactly as they do without the filter", async () => {
+test("objects and arrays print as they do without the filter (D134)", async () => {
   const f = await open();
   const data = { o: { a: 1 }, list: [1, 2] };
   const plain = await render(f, "[{{ data.o }}]", data);
   const filtered = await render(f, "[{{ data.o | number }}]", data);
   const plainList = await render(f, "[{{ data.list }}]", data);
   const filteredList = await render(f, "[{{ data.list | number }}]", data);
-  expect(filtered).toEqual(plain);
-  expect(filteredList).toEqual(plainList);
-  expect(plain.status).not.toBe("sent");
+  // The filter passes them through unchanged: an object prints its JSON, a list its items' text.
+  expect(plain.status).toBe("sent");
+  expect(filtered.message).toContain("[{&#34;a&#34;:1}]");
+  expect(plain.message).toContain("[{&#34;a&#34;:1}]");
+  expect(filteredList.message).toContain("[12]");
+  expect(plainList.message).toContain("[12]");
 });
 
-test("the filter takes no argument: preview and a send refuse one", async () => {
+test("the filter takes no argument: a save and a preview refuse one (D134)", async () => {
   const f = await open();
-  const sent = await render(f, "[{{ data.n | number: 2 }}]", { n: 5 });
-  expect(sent.status).not.toBe("sent");
-  expect(sent.message).not.toContain("[5]");
+  // A template that always fails to render is refused at save, so it is never sent.
+  const saved = await f.json("/api/templates", "POST", {
+    name: "number-argument",
+    type: "tx",
+    subject: "s",
+    body: "[{{ data.n | number: 2 }}]",
+  });
+  expect(saved.status).toBe(400);
+  expect(saved.body.message).toContain("number: takes no arguments, got 1");
   const preview = await f.request("/api/templates/preview", {
     method: "POST",
     headers: {

@@ -7,6 +7,7 @@
 // linear scan of the collected text, and a link is one entry on the stack, so nested links are linear.
 import type { MessageBudget } from "@/templates/renderer";
 import { must } from "@/invariant";
+import { SYMBOLS } from "@/messaging/entities";
 
 /** Elements whose content is never shown: the document head, styles, scripts and the title. */
 const SKIPPED = new Set(["head", "script", "style", "title"]);
@@ -32,6 +33,13 @@ const HEAD_CONTENT = new Set([
  * (D118). The one cap bounds both costs.
  */
 const HELD_CAP = 1024;
+/**
+ * Indentation stops at this many levels: a list nested deeper is indented as at this depth. Each level of
+ * indent is two characters on every item, so an unbounded depth made the output grow with items x depth
+ * (B135 review, D118). Indentation can still make the text longer than the HTML (short items in deep
+ * lists), in which case the text is written without it (see `plainText`).
+ */
+const MAX_INDENT = 8;
 /** Block elements: a line break before and after. A list item gets a bullet instead. */
 const BLOCK = new Set([
   "address",
@@ -177,6 +185,7 @@ const PUNCTUATION: Array<[string, number]> = [
 const NAMED = new Map<string, string>([
   ...LATIN1.map((name, i) => [name, String.fromCodePoint(160 + i)] as [string, string]),
   ...PUNCTUATION.map(([name, code]) => [name, String.fromCodePoint(code)] as [string, string]),
+  ...SYMBOLS,
 ]);
 
 /** A reference is one pass over the text, so a decoded `&amp;nbsp;` stays the literal `&nbsp;`. */
@@ -190,6 +199,13 @@ const LEGACY = new Map<string, string>([
   ["lt", "<"],
   ["gt", ">"],
   ["quot", '"'],
+  // The uppercase legacy names of the HTML spec's list: a browser decodes them without a `;` too.
+  ["AMP", "&"],
+  ["LT", "<"],
+  ["GT", ">"],
+  ["QUOT", '"'],
+  ["COPY", "©"],
+  ["REG", "®"],
 ]);
 /** A numeric reference in 0x80 to 0x9F is the Windows-1252 character a browser shows for it. */
 const WINDOWS_1252 = new Map<number, string>([
@@ -227,7 +243,7 @@ const REFERENCE = /&(?:#[xX]([0-9a-fA-F]{1,8});?|#([0-9]{1,8});?|([A-Za-z][A-Za-
  * a `=`, a letter or a digit follows stays literal, as a browser leaves it; in text the longest legacy
  * prefix decodes.
  */
-function decodeReferences(text: string, attribute = false): string {
+export function decodeReferences(text: string, attribute = false): string {
   if (!text.includes("&")) {
     return text;
   }
@@ -325,7 +341,10 @@ function hiddenByStyle(style: string): boolean {
 }
 
 /** One text node: references decoded, invisible characters removed, whitespace collapsed to a space. */
-const clean = (text: string) => text.replaceAll(INVISIBLE, "").replaceAll(/\s+/g, " ");
+// A NUL has no place in a message's text; it is dropped, so the one NUL that stands for indentation
+// (INDENT) is never a character of the text.
+const clean = (text: string) =>
+  text.replaceAll(INVISIBLE, "").replaceAll("\u0000", "").replaceAll(/\s+/g, " ");
 
 /**
  * A URL in the text part is written between angle brackets, so the characters that could end it
@@ -352,25 +371,55 @@ interface Entry {
   own: boolean;
   popped: boolean;
   link: Link | undefined;
+  /** For an `ol`, the number its next item takes; unused for other elements. */
+  next: number;
+}
+
+/** The number an ordered list starts at: its `start` attribute when that starts with an integer, else 1. */
+function orderedStart(value: string | null): number {
+  const digits = /^\s*(-?\d{1,9})/.exec(value ?? "")?.[1];
+  return digits === undefined ? 1 : Number(digits);
 }
 
 /**
+ * Two of these per list the item sits in below the first. They are not spaces, so the whitespace
+ * passes of `convert` leave them alone; the last pass writes them as spaces.
+ */
+const INDENT = "\u0000\u0000";
+
+/**
  * Converts an HTML message to its text/plain alternative and charges the output to `budget`. The
- * output is never longer than the input, and a conversion fault or an over-long result sends the
- * message without a text part, as before D118. A link is written as its text and its URL in angle
- * brackets, `text <URL>`, the URL alone when the text is the URL or empty. A link whose text is only a
- * symbol is decoration and writes nothing; consecutive links with the same href write the URL once.
+ * output is never longer than the input, and a conversion fault sends the message without a text part,
+ * as before D118. A link is written as its text and its URL in angle brackets, `text <URL>`, the URL
+ * alone when the text is the URL or empty. A link whose text is only a symbol is decoration and writes
+ * nothing; consecutive links with the same href write the URL once.
+ *
+ * The text is indented first. When that text would be longer than the HTML, it is written again without
+ * indentation, which is the text this converter wrote before B135, so a message keeps its text part
+ * (B135 review, D134). Each pass stops once its output passes the HTML's size, so the two passes
+ * together stay linear. Only a text longer than the HTML even without indentation goes without a text
+ * part.
  */
 export async function plainText(html: string, budget: MessageBudget): Promise<string> {
   try {
-    return await convert(html, budget);
+    const text = (await convert(html, true)) ?? (await convert(html, false));
+    if (text === undefined) {
+      return "";
+    }
+    budget.charge(Buffer.byteLength(text));
+    return text;
   } catch {
     // A fault in the conversion never fails a send. The message goes without a text part.
     return "";
   }
 }
 
-async function convert(html: string, budget: MessageBudget): Promise<string> {
+/**
+ * One pass over the HTML. Returns the text, or undefined when the output would be longer than the HTML
+ * (the check runs as the output grows, so the pass stops at the HTML's size) or longer than its input
+ * once finished. `indented` writes list items indented by their list depth.
+ */
+async function convert(html: string, indented: boolean): Promise<string | undefined> {
   const parts: Array<string> = [];
   const stack: Array<Entry> = [];
   const open = new Map<string, Array<Entry>>();
@@ -384,6 +433,20 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
   let activeLink: Link | undefined;
   // End-tag handlers the rewriter holds: registered, and not yet fired (see HELD_CAP).
   let held = 0;
+  // The characters the output parts hold now, and the most they may hold: the HTML's size in bytes, which
+  // the final text is never longer than. The check runs as the output grows, so a document that would
+  // exceed it stops at once, not after it has been built (linear time and memory in the input).
+  let produced = 0;
+  let overflow = false;
+  const limit = Buffer.byteLength(html);
+  const emit = (text: string) => {
+    produced += text.length;
+    if (produced > limit) {
+      overflow = true;
+      throw new Error("output too long");
+    }
+    parts.push(text);
+  };
 
   const latest = (name: string) => open.get(name)?.at(-1);
   const indexOf = (name: string) => latest(name)?.index ?? -1;
@@ -398,9 +461,22 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
     return best;
   };
   const boundary = (...names: Array<string>) => Math.max(-1, ...names.map(indexOf));
+  // The marker of a list item: the next number of an ordered list, or a bullet, on a new line,
+  // indented for each list it sits in below the first (the innermost open list decides the marker).
+  const itemMarker = () => {
+    const list = newest("ul", "ol");
+    const depth = (open.get("ul")?.length ?? 0) + (open.get("ol")?.length ?? 0);
+    const indent = indented ? INDENT.repeat(Math.min(MAX_INDENT, Math.max(0, depth - 1))) : "";
+    if (list?.name === "ol") {
+      return `\n${indent}${list.next++}. `;
+    }
+    return `\n${indent}- `;
+  };
 
   const finishLink = (link: Link) => {
-    const text = parts.slice(link.at).join("").replaceAll(/\s+/g, " ").trim();
+    const removed = parts.slice(link.at).join("");
+    produced -= removed.length;
+    const text = removed.replaceAll(/\s+/g, " ").trim();
     parts.length = link.at;
     // A symbol with no letter or digit (an arrow, an emoji) is empty text: a reader still needs its URL.
     const shown = text !== "" && !/[\p{L}\p{N}]/u.test(text) ? "" : text;
@@ -413,13 +489,13 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
       !gap.includes("\n")
     ) {
       if (shown !== "") {
-        parts.push(` ${shown}`);
+        emit(` ${shown}`);
       }
       lastLink = { href: link.href, end: parts.length };
       return;
     }
     const url = `<${escapeUrl(link.href)}>`;
-    parts.push(shown === "" || shown === link.href ? ` ${url}` : ` ${shown} ${url}`);
+    emit(shown === "" || shown === link.href ? ` ${url}` : ` ${shown} ${url}`);
     lastLink = { href: link.href, end: parts.length };
   };
 
@@ -444,7 +520,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
       finishOnce(entry.link);
     }
     if (BLOCK.has(entry.name)) {
-      parts.push("\n");
+      emit("\n");
     }
   };
   // Closes an entry and everything above it, as an end tag or an implied end does.
@@ -520,11 +596,11 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
         const shown = hidden === 0;
         if (shown) {
           if (name === "li") {
-            parts.push("\n- ");
+            emit(itemMarker());
           } else if (name === "td" || name === "th") {
-            parts.push(" ");
+            emit(" ");
           } else if (BLOCK.has(name) || name === "br" || name === "hr") {
-            parts.push("\n");
+            emit("\n");
           }
         }
         let link: Link | undefined;
@@ -554,7 +630,14 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
           throw new Error("end-tag handlers held");
         }
         held++;
-        const entry: Entry = { name, index: stack.length, own, popped: false, link };
+        const entry: Entry = {
+          name,
+          index: stack.length,
+          own,
+          popped: false,
+          link,
+          next: name === "ol" ? orderedStart(el.getAttribute("start")) : 0,
+        };
         stack.push(entry);
         let list = open.get(name);
         if (!list) {
@@ -581,7 +664,7 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
           close(top);
         }
         if (hidden === 0) {
-          parts.push(value);
+          emit(value);
         }
       },
       end() {
@@ -591,18 +674,28 @@ async function convert(html: string, budget: MessageBudget): Promise<string> {
         }
       },
     });
-  await rewriter.transform(new Response(html)).text();
+  try {
+    await rewriter.transform(new Response(html)).text();
+  } catch (error) {
+    if (!overflow) {
+      throw error;
+    }
+  }
+  if (overflow) {
+    return undefined;
+  }
   const text = parts
     .join("")
     .replaceAll(/ {2,}/g, " ")
     .replaceAll(/ ?\n ?/g, "\n")
     .replaceAll(/\n{3,}/g, "\n\n")
-    .trim();
+    .trim()
+    .replaceAll("\u0000", " ");
   // A backstop: the output is never longer than the input. Markup is always longer than the text
-  // that replaces it, so this only matters for a URL escaped longer than the markup around it.
+  // that replaces it, so this only matters for a URL escaped longer than the markup around it, or
+  // indentation that the pass above did not stop at.
   if (Buffer.byteLength(text) > Buffer.byteLength(html)) {
-    return "";
+    return undefined;
   }
-  budget.charge(Buffer.byteLength(text));
   return text;
 }
