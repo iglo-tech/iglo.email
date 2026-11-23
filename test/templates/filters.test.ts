@@ -361,7 +361,7 @@ test("plus, minus, times, divided_by and round print nothing for an empty text, 
   expect(sent.message).toContain("[][][][][][5]");
 });
 
-test("a divisor written with a decimal point divides as a float; an integer divisor keeps integer division (B135)", async () => {
+test("divided_by is decimal for an integer divisor too, and divides a decimal divisor as a float (B135, lead decision 1)", async () => {
   const f = await open();
   const sent = await render(
     f,
@@ -370,7 +370,7 @@ test("a divisor written with a decimal point divides as a float; an integer divi
     { n: 10, d: 4 },
   );
   expect(sent.http).toBe(200);
-  expect(sent.message).toContain("[2.5][2][2.2222222222222223][2][3.5]");
+  expect(sent.message).toContain("[2.5][2.5][2.2222222222222223][2.5][3.5]");
 });
 
 test("newline_to_br escapes its text once in an HTML part, however it is printed (B135 review N5)", () => {

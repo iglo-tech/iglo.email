@@ -95,7 +95,7 @@ const filterArguments = new Map([
   ["plus", 1],
   ["minus", 1],
   ["times", 1],
-  ["divided_by", 1],
+  ["divided_by", 2],
   ["round", 1],
   ["first", 0],
   ["last", 0],
@@ -439,7 +439,7 @@ function formatDate(format: string, date: Date): string {
 }
 /** One positional argument of a filter, and what its literal value must be (D134). */
 interface ArgumentRule {
-  readonly kind: "whole" | "digits" | "number" | "format";
+  readonly kind: "whole" | "digits" | "number" | "format" | "flag";
   /** A missing argument is a fault too: the filter reads it before anything else, so it fails every value. */
   readonly required?: boolean;
 }
@@ -457,7 +457,7 @@ const argumentRules = new Map<string, ReadonlyArray<ArgumentRule>>([
   ["plus", [{ kind: "number", required: true }]],
   ["minus", [{ kind: "number", required: true }]],
   ["times", [{ kind: "number", required: true }]],
-  ["divided_by", [{ kind: "number", required: true }]],
+  ["divided_by", [{ kind: "number", required: true }, { kind: "flag" }]],
   ["date", [{ kind: "format" }]],
 ]);
 const ORDINALS = ["first", "second"];
@@ -474,6 +474,8 @@ function expectedOf(rule: ArgumentRule): string {
       return "a number";
     case "format":
       return "a date format";
+    case "flag":
+      return "true or false";
   }
 }
 
@@ -531,6 +533,9 @@ function argumentFault(
         ? `${name}: the ${where} argument cannot be zero`
         : undefined;
     }
+    case "flag":
+      // The whole-number flag of `divided_by` is a boolean: the literal `true` or `false`, never a number or text.
+      return typeof value === "boolean" ? undefined : wrong;
     case "format": {
       // A date format is text, or the number a literal writes; a nil or true literal is not a format.
       if (typeof value !== "string" && typeof value !== "number") {
@@ -715,8 +720,8 @@ function loopFaultOf(value: Value, printed: boolean, assigned: boolean): string 
 }
 
 /**
- * Every template in source order, each before its children (B117f): the walk the save check and the decimal scan
- * share. It is iterative, so a deeply nested template cannot exhaust the stack, and it visits each template once.
+ * Every template in source order, each before its children: the walk the save check makes. It is iterative, so a
+ * deeply nested template cannot exhaust the stack, and it visits each template once.
  */
 function* walkTemplates(templates: ReadonlyArray<Template>): Generator<Template> {
   const pending = [...templates].reverse();
@@ -764,46 +769,6 @@ function literalFault(templates: ReadonlyArray<Template>): string | undefined {
     }
   }
   return undefined;
-}
-
-/** Whether a token is a decimal literal: a number or a quoted text written with a decimal point (B117f). */
-function isDecimalLiteral(token: unknown): boolean {
-  const operand =
-    token instanceof Expression && token.postfix.length === 1 ? token.postfix[0] : token;
-  return (
-    (TypeGuards.isNumberToken(operand) || TypeGuards.isQuotedToken(operand)) &&
-    operand.getText().includes(".")
-  );
-}
-
-/** The operators whose decimal operand makes their result decimal (B117f, D134 item 4). */
-const DECIMAL_OPERATORS = new Set(["plus", "minus", "times", "divided_by"]);
-
-/**
- * The `divided_by` filters of a template that divide a decimal (B117f, D134 item 4). A chain's value is a decimal when
- * it starts as a decimal literal, and a decimal literal operand (`times: 1.0`, `plus: 0.5`, `divided_by: 4.0`) makes it
- * one from there on. The renderer reads the text of data at send, so only the literal chain is decided here. A filter is
- * named by its argument list, which the template owns and the filter shares (liquidjs keeps the token's array).
- */
-function decimalDivisions(templates: ReadonlyArray<Template>): ReadonlySet<ReadonlyArray<unknown>> {
-  const found = new Set<ReadonlyArray<unknown>>();
-  for (const next of walkTemplates(templates)) {
-    for (const argument of next.arguments?.() ?? []) {
-      if (!(argument instanceof Value)) {
-        continue;
-      }
-      let decimal = isDecimalLiteral(argument.initial);
-      for (const filter of argument.filters) {
-        if (filter.name === "divided_by" && decimal) {
-          found.add(filter.args);
-        }
-        if (DECIMAL_OPERATORS.has(filter.name) && isDecimalLiteral(filter.args[0])) {
-          decimal = true;
-        }
-      }
-    }
-  }
-  return found;
 }
 
 function hasContent(templates: Array<Template>): boolean {
@@ -862,8 +827,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
   const numberFormat = new Intl.NumberFormat("en-US", { signDisplay: "negative" });
   const budgets = new WeakMap<Context, Budget>();
   const trackers = new WeakMap<Context, RenderTracking>();
-  // The `divided_by` filters that divide a decimal, by their template (B117f); see decimalDivisions.
-  const divisions = new WeakMap<Context, ReadonlySet<ReadonlyArray<unknown>>>();
   const budget = (ctx: Context) => {
     const result = budgets.get(ctx);
     if (!result) {
@@ -1174,19 +1137,15 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("times", function (value: unknown, argument: unknown) {
       return arithmetic("times", value, argument, budget(this.context));
     });
-    liquid.registerFilter("divided_by", function (value: unknown, argument: unknown) {
-      // A decimal point in the dividend's text or in the divisor's makes the division a float (B135, B117e): the
-      // number literal `4.0` and text that holds one, quoted or from data. A JSON number has lost its decimal point
-      // once parsed, so data `4.0` divides as 4. A decimal that the template writes before this filter, a literal
-      // dividend or a `times: 1.0`, makes it a float too (B117f, D134 item 4): `10.0 | divided_by: 4` is 2.5.
-      const written: unknown = this.token.args[0];
-      const decimal =
-        (typeof value === "string" && value.includes(".")) ||
-        (TypeGuards.isNumberToken(written) && written.getText().includes(".")) ||
-        (typeof argument === "string" && argument.includes(".")) ||
-        (divisions.get(this.context)?.has(this.token.args) ?? false);
-      return arithmetic("divided_by", value, argument, budget(this.context), decimal);
-    });
+    liquid.registerFilter(
+      "divided_by",
+      function (value: unknown, argument: unknown, whole: unknown) {
+        // Division is always a decimal, as LiquidJS's own is (lead decision 1, D134): `10 | divided_by: 4` is 2.5,
+        // whatever the operands were written as. Only the literal `true` (or a JSON true from data) as the second
+        // argument rounds down, as LiquidJS's integer argument does: `10 | divided_by: 4, true` is 2.
+        return arithmetic("divided_by", value, argument, budget(this.context), whole === true);
+      },
+    );
     liquid.registerFilter("round", function (value: unknown, digits: unknown) {
       return round(value, digits, budget(this.context), this.token.args.length > 0);
     });
@@ -1326,7 +1285,6 @@ export function createRenderer(clock: Clock, translation: Translation) {
         ready ?? parse(source, html, limit === SUBJECT_LIMIT ? SUBJECT_LIMIT : SOURCE_LIMIT);
       const ctx = new Context(data, e.options, { sync: true }, { liquid: e });
       budgets.set(ctx, b);
-      divisions.set(ctx, decimalDivisions(parsed));
       if (tracking) {
         trackers.set(ctx, tracking);
       }
