@@ -96,6 +96,7 @@ test("a matching event starts an enrollment at the first step, due occurred_at +
     due_at: new Date(Date.parse(occurred) + 3_600_000).toISOString(),
     status: "active",
     exit_reason: null,
+    exit_condition: null,
     created_at: now,
     updated_at: now,
     finished_at: null,

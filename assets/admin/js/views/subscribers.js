@@ -7,6 +7,9 @@ import {
 import {
   api, urls, config, i18n, ListTag,
 } from '@/assets/admin/js/main.js';
+import {
+  exitText, sentText, sequenceOrTemplateText, skipLabel, skipText, statusText, statusVariant, subjectText,
+} from '@/assets/admin/js/send-labels.js';
 import * as u from '@/assets/admin/js/utils.js';
 
 const pageKeys = [
@@ -76,6 +79,10 @@ function component() {
     activityPages: [],
     views: [],
     clicks: [],
+    // Sends (transactional and sequence) the subscriber has, from the journal's count (B127).
+    sendCount: '-',
+    // A viewer who may read sequences gets a link to each sequence on the events tab (B127).
+    canSequences: config.can_sequences === true,
     currentList: null,
     bounces: [],
 
@@ -131,13 +138,35 @@ function component() {
       }
       try {
         const data = await read(`/subscribers?${query}`);
-        this.subscribers = data.results || [];
+        let results = data.results || [];
+        // A search that is exactly an external ID also finds that subscriber (B127), on the first page,
+        // through the external-ID route the API already has. It is shown above the search's own rows and
+        // is not counted: the count and the pages are the search's, so no later page is short or empty.
+        const exact = await this.externalMatch();
+        if (exact) {
+          results = [exact, ...results.filter((s) => s.id !== exact.id)];
+        }
+        this.subscribers = results;
         this.page = data;
         this.pages = pageLinks(params, data.page, data.per_page, data.total);
       } catch (e) {
         this.error = e.message;
       }
       this.loading = false;
+    },
+
+    // The subscriber whose external ID is the search, when the search is one and the viewer may read
+    // it; null for any other search, a miss, a refusal or a later page.
+    async externalMatch() {
+      const value = (params.get('search') || '').trim();
+      if (!value || Number(params.get('page') || 1) !== 1) {
+        return null;
+      }
+      try {
+        return await read(`/subscribers/external?${new URLSearchParams({ external_id: value })}`);
+      } catch (e) {
+        return null;
+      }
     },
 
     async fetchSubscriber() {
@@ -155,6 +184,10 @@ function component() {
           this.clicks = (act.link_clicks || []).map((c, i) => ({
             ...c, key: i, href: /^https?:\/\//i.test(c.url || '') ? c.url : '',
           }));
+          if (config.can_sends) {
+            const sends = await read(`/subscribers/${config.subscriber_id}/sends?per_page=1`);
+            this.sendCount = u.formatNumber(sends.total);
+          }
         }
         const activityPath = activityPaths[config.tab];
         if (activityPath) {
@@ -179,6 +212,26 @@ function component() {
     filterTitle,
     statusIcon,
     niceDate: u.niceDate,
+
+    // The sequence's name, as the events API names it, or its ID once the sequence is deleted.
+    sequenceLabel(item) {
+      return item.sequence_name || `#${item.sequence_id}`;
+    },
+
+    // The send labels are the send log's (send-labels.js), so one status and reason read the same.
+    statusText,
+    statusVariant,
+    skipText,
+    skipLabel,
+    sequenceOrTemplateText,
+    sentText,
+    subjectText,
+    exitText,
+
+    // A cap-held enrollment names the time the cap frees its step (B127), in the enrollment page's words.
+    heldText(row) {
+      return i18n.ts('sequences.heldByCap', { time: u.niceDate(row.held_until, true) });
+    },
 
     statusLabel(status) {
       return i18n.t(`globals.terms.${status}`);

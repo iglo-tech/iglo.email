@@ -33,7 +33,9 @@ import privateTargetsDefault from "@/migrations/0024_private_targets_default.sql
 import campaignDeliveryReason from "@/migrations/0025_campaign_delivery_reason.sql" with { type: "text" };
 import webhookRotation from "@/migrations/0026_webhook_rotation.sql" with { type: "text" };
 import templateCredit from "@/migrations/0027_remove_template_credit.sql" with { type: "text" };
-import sampleTemplateBrand from "@/migrations/0028_sample_template_brand.sql" with { type: "text" };
+import sendStatusOrder from "@/migrations/0028_send_status_order.sql" with { type: "text" };
+import exitCondition from "@/migrations/0029_exit_condition.sql" with { type: "text" };
+import sampleTemplateBrand from "@/migrations/0030_sample_template_brand.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -69,7 +71,9 @@ export const productionMigrations: ReadonlyArray<Migration> = [
   { version: 25, sql: campaignDeliveryReason },
   { version: 26, sql: webhookRotation },
   { version: 27, sql: templateCredit },
-  { version: 28, sql: sampleTemplateBrand },
+  { version: 28, sql: sendStatusOrder },
+  { version: 29, sql: exitCondition },
+  { version: 30, sql: sampleTemplateBrand },
 ];
 
 function validateCatalog(catalog: ReadonlyArray<Migration>): void {

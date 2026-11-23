@@ -50,7 +50,7 @@ import { validate } from "@/conditions/validate";
 import { compile } from "@/conditions/compile";
 import { SequenceConflict } from "@/sequences/store";
 import type { SequenceStore } from "@/sequences/store";
-import { timeline } from "@/sequences/timeline";
+import { frequencyHold, timeline } from "@/sequences/timeline";
 import type { RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -184,7 +184,7 @@ export function registerSequenceRoutes(
     enrollments: Enrollments;
     subscribers: Pick<SubscriberStore, "get" | "readable" | "byEmail">;
     events: Pick<EventStore, "get" | "latest" | "aggregate">;
-    sends: Pick<Sends, "marketingReason" | "enrollmentSends">;
+    sends: Pick<Sends, "marketingReason" | "enrollmentSends" | "capFreeAt">;
     templates: Pick<TemplateStore, "get">;
     renderer: TemplateRenderer;
     emailer: Pick<ReturnType<typeof createEmailer>, "push">;
@@ -736,6 +736,7 @@ export function registerSequenceRoutes(
         throw new HttpError(404, "Enrollment not found");
       }
       const addresses = readable(c, [row]);
+      const steps = enrollments.steps(row.sequence_id);
       return ok({
         enrollment: addressed(row, addresses),
         entries: timeline(
@@ -743,8 +744,9 @@ export function registerSequenceRoutes(
           row.trigger_event_id !== null && addresses.has(row.subscriber_id)
             ? events.get(row.trigger_event_id)
             : null,
-          enrollments.steps(row.sequence_id),
+          steps,
           sends.enrollmentSends(row.id),
+          frequencyHold(row, steps, sends.capFreeAt, c.app.clock.now()),
         ),
       });
     },

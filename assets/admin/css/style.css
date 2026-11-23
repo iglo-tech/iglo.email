@@ -1784,6 +1784,19 @@ section.sequences {
     .timeline {
         li {
             margin-block-end: var(--space-3);
+
+            /* A step's tone (B127): a skipped step is amber, a failed one red, a sent one green. */
+            &[data-variant="warning"] > strong {
+                color: var(--tone-amber);
+            }
+
+            &[data-variant="danger"] > strong {
+                color: var(--tone-red);
+            }
+
+            &[data-variant="success"] > strong {
+                color: var(--tone-green);
+            }
         }
 
         pre {
@@ -2087,13 +2100,20 @@ section.sequences {
             flex-wrap: wrap;
             align-items: baseline;
             column-gap: var(--space-4);
-            text-align: end;
+            /* A value that wraps reads left to right under its label, not right-aligned (B127). */
+            text-align: start;
 
             &::before {
                 content: attr(data-label);
                 flex: 0 0 auto;
                 margin-inline-end: auto;
                 color: var(--muted-foreground);
+                text-align: start;
+            }
+
+            /* Event data is read top to bottom: its JSON stays left-aligned in a card (B127). */
+            > pre {
+                flex: 1 1 100%;
                 text-align: start;
             }
         }
@@ -2226,5 +2246,12 @@ section.sequences {
             max-width: 100%;
             overflow-y: auto;
         }
+    }
+
+    /* The subscriber's tabs are wider than a phone, so they wrap onto a second row (B127): every tab
+       stays visible, and the page never scrolls sideways. */
+    section.subscribers [role="tablist"] {
+        flex-wrap: wrap;
+        max-width: 100%;
     }
 }

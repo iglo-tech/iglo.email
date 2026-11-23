@@ -6,6 +6,12 @@ SELECT id, uuid, name, status, trigger, exit_on, reentry, list_id, created_at, u
 -- name: steps-by-sequence
 SELECT id, uuid, position, wait, kind, template_id, subject, condition, aggregates, on_false, cap_policy, max_late, status, created_at, updated_at
   FROM sequence_steps WHERE sequence_id = ? AND status = 'active' ORDER BY position;
+-- name: step-labels
+-- The sequence and position of each listed step, for the send log's labels (B127). A removed step
+-- keeps the position it had, as its send does. The one parameter is a JSON array of step IDs.
+SELECT st.id, st.sequence_id, s.name AS sequence_name, st.position
+  FROM sequence_steps st JOIN sequences s ON s.id = st.sequence_id
+  WHERE st.id IN (SELECT value FROM json_each(?));
 -- name: sequence-insert
 INSERT INTO sequences (uuid, name, status, trigger, exit_on, reentry, list_id, created_at, updated_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;
@@ -43,3 +49,7 @@ SELECT id, uuid, name, status, trigger, exit_on, reentry, list_id, created_at, u
   FROM sequences WHERE ?1 IS NULL OR status = ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3;
 -- name: sequences-count
 SELECT count(*) AS n FROM sequences WHERE ?1 IS NULL OR status = ?1;
+-- name: sequence-names
+-- The name of each listed sequence, for an events row's refused starts (B127). The one parameter is a
+-- JSON array of IDs, read by ID so the names do not depend on a page of sequences.
+SELECT id, name FROM sequences WHERE id IN (SELECT CAST(value AS INTEGER) FROM json_each(?));

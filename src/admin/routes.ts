@@ -26,6 +26,7 @@ import { profileView } from "@/admin/views/profile";
 import { listRoleView, userRoleView } from "@/admin/views/role";
 import { rolesView } from "@/admin/views/roles";
 import { editSequenceView, newSequenceView } from "@/admin/views/sequence";
+import { sendsView } from "@/admin/views/sends";
 import { sequencesView } from "@/admin/views/sequences";
 import { settingsView } from "@/admin/views/settings";
 import { newSubscriberView, subscriberView } from "@/admin/views/subscriber";
@@ -111,6 +112,7 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   page("/admin/templates", templatesView, "templates:get");
   page("/admin/templates/new", newTemplateView, "templates:manage");
   withID("/admin/templates/:id", editTemplateView, "templates:get");
+  page("/admin/sends", sendsView, "sends:get");
   page("/admin/sequences", sequencesView, "sequences:get");
   page("/admin/sequences/new", newSequenceView, "sequences:manage");
   page("/admin/sequences/enrollments", enrollmentsView, "sequences:get");

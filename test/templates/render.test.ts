@@ -269,7 +269,7 @@ test("range rejects unsafe integer endpoints and unsupported capabilities", asyn
   ]) {
     expect((await call(`{% render '${name}' %}`, {})).status).toBe(400);
   }
-  expect((await call("{{ x | replace: 'a', 'b' }}", { x: "a" })).status).toBe(400);
+  expect((await call("{{ x | sort }}", { x: "a" })).status).toBe(400);
   expect((await call("{% include path %}", { path: "http://127.0.0.1:1/trap" })).status).toBe(400);
 });
 

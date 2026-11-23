@@ -1,7 +1,7 @@
 # B130 public defaults: before and after
 
 B130 (D128) touches three paths the repository measures: the render of a transactional template (`POST /api/tx`,
-sequence steps, and their previews), the sequence exit of the public "all lists" option, and migration 0028 on the
+sequence steps, and their previews), the sequence exit of the public "all lists" option, and migration 0030 on the
 sample transactional template. The render comparison is the one that matters per message, and the first version of
 this doc measured only a constant string; this version renders the real sample template.
 
@@ -37,16 +37,16 @@ In total, a transactional render costs about 8 µs more per recipient than on ma
 milliseconds, both are small. The scheduler could build the brand members once per pass rather than per render;
 that is not done, because the saving is a few microseconds per step.
 
-## Migration 0028 (the sample template)
+## Migration 0030 (the sample template)
 
 `bun test/perf/b130-migration.ts`. Each run starts from a fresh in-memory SQLite holding the sample as the pre-B129
-release seeded it, and an unrelated row. Migration 0027 runs untimed, so the sample holds the B129 body that 0028
-matches, then 0028 is timed. The script checks that exactly the sample row changed.
+release seeded it, and an unrelated row. Migration 0027 runs untimed, so the sample holds the B129 body that 0030
+matches, then 0030 is timed. The script checks that exactly the sample row changed.
 
 | Version | Median | p95 |
 |---|---|---|
 | No migration (the B129 state) | 0 ms | 0 ms |
-| Migration 0028, one `UPDATE` on the sample row | 0.012 ms | 0.021 ms |
+| Migration 0030, one `UPDATE` on the sample row | 0.012 ms | 0.021 ms |
 
 The statement runs once per upgrade, on one row of a table of about twenty.
 

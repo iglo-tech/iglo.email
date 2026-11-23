@@ -59,6 +59,8 @@ import { registerEventRoutes } from "@/events/routes";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createSequenceStore } from "@/sequences/store";
 import { registerSequenceRoutes } from "@/sequences/routes";
+import { linkEvents } from "@/sequences/event-links";
+import { listedWithHolds } from "@/sequences/timeline";
 import { createEventPurge } from "@/events/retention";
 import { createPurge } from "@/loops/purge";
 import { createConditionEvaluator } from "@/conditions/evaluate";
@@ -323,9 +325,22 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         },
       },
       {
-        events: (id, page, perPage) => wired(events, "events").page(id, page, perPage),
+        events: (id, page, perPage) =>
+          linkEvents(
+            wired(events, "events").page(id, page, perPage),
+            id,
+            wired(enrollments, "enrollments"),
+            wired(sequences, "sequences"),
+          ),
         enrollments: (id, page, perPage) =>
-          wired(enrollments, "enrollments").list({ subscriberId: id, page, perPage }),
+          wired(enrollments, "enrollments").list({ subscriberId: id, page, perPage }, (rows) =>
+            listedWithHolds(
+              rows,
+              (sequenceId) => wired(enrollments, "enrollments").steps(sequenceId),
+              wired(sends, "sends").capFreeAt,
+              clock.now(),
+            ),
+          ),
         sends: (id, page, perPage) =>
           wired(sends, "sends").list({ subscriberId: id, page, perPage }),
       },
@@ -435,6 +450,8 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         settings: marketing,
         campaignDeliveries: runnerStore,
       }),
+      stepLabels: (ids) => wired(sequences, "sequences").stepLabels(ids),
+      templateNames: (ids) => wired(templates, "templates").names(ids),
     });
     notifier = createAdminNotifier({
       sends,

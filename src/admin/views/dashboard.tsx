@@ -147,6 +147,7 @@ export const dashboardView: AdminView = ({ context, site, can }) => {
     title: term("dashboard"),
     pageId: "dashboard",
     script: "dashboard",
+    config: { can_sends: can("sends:get") },
     translationKeys: [
       "globals.buttons.view",
       "globals.buttons.filter",
@@ -216,10 +217,18 @@ export const dashboardView: AdminView = ({ context, site, can }) => {
             </Stat>
             <Stat
               icon="mail"
-              label={t.T("dashboard.messagesSent")}
+              label={t.T("dashboard.campaignMessagesSent")}
               name="messages"
               value="count('messages')"
-            />
+            >
+              {can("sends:get") ? (
+                <StatMeta
+                  href="/admin/sends?status=sent"
+                  value="sendsSent"
+                  label={t.T("dashboard.sendsSent")}
+                />
+              ) : null}
+            </Stat>
           </section>
           <Alert name="chartsError" />
           <section class="row" x-bind:aria-busy="chartsLoading">

@@ -45,7 +45,7 @@ export interface Enrollments {
    * blocklisted subscriber's start (`subscriber_blocklisted`), a suppressed person's marketing
    * start (`suppressed`). Stored with the event, so the subscriber's timeline shows it.
    */
-  skipped: Array<unknown>;
+  skipped: Array<{ sequence_id: number | object; reason: string }>;
 }
 /**
  * The subscriber an event names, as the grant check (D99) sees it before the event writes: the

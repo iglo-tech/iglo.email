@@ -20,6 +20,7 @@ const adminPages = [
   "/admin/lists/analytics",
   "/admin/lists/forms",
   "/admin/lists/new",
+  "/admin/sends",
   "/admin/sequences",
   "/admin/sequences/:id",
   "/admin/sequences/enrollments",

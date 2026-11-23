@@ -465,12 +465,18 @@ test("a step whose template was deleted records a skipped send, logs once, and a
 
 test("a rendering failure is a recorded skipped send, not a crash", async () => {
   const f = await open();
-  const bad = await f.template("{% for i in (1..100000000) %}xxxxxxxxxx{% endfor %}");
+  // The event's data makes the step overrun the output budget when it sends (D54). The save cannot
+  // judge a value the sample lacks (D134), so the template saves; a template whose own text cannot
+  // render is refused at save instead.
+  const bad = await f.template(
+    "{% for i in (1..trigger.data.n) %}{{ trigger.data.s }}{% endfor %}",
+  );
   const good = await f.template();
   const seq = await f.sequence({
     steps: [tx(bad), tx(good, { wait: "PT1H" })],
   });
-  const id = (await f.event("r@example.test")).enrollments.started[0]!.id;
+  const data = { n: 1024, s: "x".repeat(4096) };
+  const id = (await f.event("r@example.test", undefined, { data })).enrollments.started[0]!.id;
   await f.pass();
   expect(await sendsOf(f, id)).toMatchObject([
     {

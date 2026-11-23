@@ -64,6 +64,30 @@ interface PublicRow {
   next_attempt_at: string | null;
   created_at: string;
   sent_at: string | null;
+  /** From the prepared message; null once the payload is dropped (retention, or anonymization). */
+  subject: string | null;
+}
+/** Why a send has no subject (B127 r1): a skipped send never had a payload, a wiped one has no address. */
+export type SubjectMissing = "skipped" | "wiped" | "retention";
+/**
+ * The cause of a send's missing subject, or null when it has one. A wiped send has an empty address,
+ * since the anonymizer clears it with the payload (D135); a skipped one never had a payload; any other
+ * one lost its payload to the thirty-day retention (D70) and keeps its address.
+ */
+export function subjectMissing(row: { subject: string | null; to_email: string; status: string }) {
+  if (row.subject !== null) {
+    return null;
+  }
+  if (row.to_email === "") {
+    return "wiped" as const;
+  }
+  return row.status === "skipped" ? ("skipped" as const) : ("retention" as const);
+}
+/** The sequence and position a step sits at, for a send's label (B127). From the sequences module. */
+export interface StepLabel {
+  sequence_id: bigint;
+  sequence_name: string;
+  position: bigint;
 }
 /** One recipient of a producer request; the journal decides queued or skipped. */
 export interface RequestedSend {
@@ -86,9 +110,11 @@ export interface Claimed {
   row: Row;
   message: Message | null;
 }
+// The subject is read from the payload's JSON, one value per row returned, never stored apart.
 const publicColumns = `id, uuid, source, kind, subscriber_id, to_email, template_id,
   enrollment_id, step_id, list_id, status, skip_reason, smtp_message_id, error,
-  attempts, retry_of, next_attempt_at, created_at, sent_at`;
+  attempts, retry_of, next_attempt_at, created_at, sent_at,
+  json_extract(payload, '$.message.subject') AS subject`;
 /** More than the steps of a sequence, which a reorder can revisit. */
 const ENROLLMENT_SENDS = 200;
 export interface EnrollmentSend {
@@ -121,7 +147,7 @@ function expectRow<T>(row: T | null, what: string): T {
   }
   return row;
 }
-function project(row: PublicRow) {
+function project(row: PublicRow, label?: StepLabel, templateName?: string) {
   return {
     id: jsonID(row.id),
     uuid: row.uuid,
@@ -130,9 +156,17 @@ function project(row: PublicRow) {
     subscriber_id: jsonID(row.subscriber_id),
     to_email: row.to_email,
     template_id: jsonID(row.template_id),
+    // The template's name, so a transactional send names what it sent (B127); null once it is deleted.
+    template_name: templateName ?? null,
     enrollment_id: jsonID(row.enrollment_id),
     step_id: jsonID(row.step_id),
     list_id: jsonID(row.list_id),
+    subject: row.subject,
+    subject_missing: subjectMissing(row),
+    // A sequence send names its sequence and the step's position now (null for a removed step).
+    sequence_id: label ? jsonID(label.sequence_id) : null,
+    sequence_name: label?.sequence_name ?? null,
+    step_position: label ? Number(label.position) : null,
     status: row.status,
     skip_reason: row.skip_reason,
     smtp_message_id: row.smtp_message_id,
@@ -175,8 +209,40 @@ export function createSends(options: {
   marketingPolicy?: MarketingPolicy;
   /** A send became `failed` or `unknown`, inside that write's transaction. */
   ended?: (send: EndedSend) => void;
+  /** The sequence and position of each step, read by the sequences module (B127). */
+  stepLabels?: (ids: Array<bigint>) => Map<bigint, StepLabel>;
+  /** The name of each template, read by the templates module for a send's label (B127). */
+  templateNames?: (ids: Array<bigint>) => Map<bigint, string>;
 }) {
   const { db, clock, subscribers } = options;
+  // Every projection of a send carries its step's label, read in one call per list.
+  const labelRows = (rows: Array<PublicRow>): Map<bigint, StepLabel> => {
+    const ids = [...new Set(rows.flatMap((row) => (row.step_id === null ? [] : [row.step_id])))];
+    return ids.length && options.stepLabels
+      ? options.stepLabels(ids)
+      : new Map<bigint, StepLabel>();
+  };
+  // Every projection of a send carries its template's name too (B127), read in one call per list.
+  const templateRows = (rows: Array<PublicRow>): Map<bigint, string> => {
+    const ids = [
+      ...new Set(rows.flatMap((row) => (row.template_id === null ? [] : [row.template_id]))),
+    ];
+    return ids.length && options.templateNames
+      ? options.templateNames(ids)
+      : new Map<bigint, string>();
+  };
+  const projectAll = (rows: Array<PublicRow>) => {
+    const labels = labelRows(rows);
+    const names = templateRows(rows);
+    return rows.map((row) =>
+      project(
+        row,
+        row.step_id === null ? undefined : labels.get(row.step_id),
+        row.template_id === null ? undefined : names.get(row.template_id),
+      ),
+    );
+  };
+  const projectOne = (row: PublicRow) => expectRow(projectAll([row])[0] ?? null, "send");
   const ended = (row: Row, status: string, error: string, changes: number) => {
     if (!changes) {
       return;
@@ -503,7 +569,7 @@ export function createSends(options: {
       return expectRow(row, "inserted send").id;
     });
     wake();
-    return project(expectRow(getPublic(id), "queued send"));
+    return projectOne(expectRow(getPublic(id), "queued send"));
   }
   function resend(id: bigint, authorize: () => void) {
     const result = writeTransaction(db, () => {
@@ -514,7 +580,7 @@ export function createSends(options: {
       }
       const child = byChild(id);
       if (child) {
-        return project(child);
+        return projectOne(child);
       }
       if (!["failed", "unknown"].includes(original.status) || !original.payload) {
         throw new HttpError(409);
@@ -547,7 +613,7 @@ export function createSends(options: {
           now(),
         );
       const resent = expectRow(inserted, "resent send");
-      return project(expectRow(getPublic(resent.id), "resent send"));
+      return projectOne(expectRow(getPublic(resent.id), "resent send"));
     });
     wake();
     return result;
@@ -1024,7 +1090,7 @@ export function createSends(options: {
     },
     get(id: bigint) {
       const row = getPublic(id);
-      return row ? project(row) : null;
+      return row ? projectOne(row) : null;
     },
     list(filter: SendFilter) {
       const clauses: Array<string> = [],
@@ -1056,7 +1122,7 @@ export function createSends(options: {
         )
         .all(...values, filter.perPage, (filter.page - 1) * filter.perPage);
       return {
-        results: rows.map(project),
+        results: projectAll(rows),
         total: jsonID(total),
         page: filter.page,
         per_page: filter.perPage,

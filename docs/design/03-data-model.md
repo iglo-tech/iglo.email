@@ -112,6 +112,7 @@ Steps are never hard-deleted while enrollments point at them; deleting sets `sta
 | `due_at` | TEXT NULL | When `step_id` should run |
 | `status` | TEXT CHECK IN (`active`, `completed`, `exited`, `canceled`) | |
 | `exit_reason` | TEXT NULL | `condition`, `event:<name>`, `unsubscribed`, `blocklisted`, `manual`, `sequence_archived`, `subscriber_deleted` (M5.4) |
+| `exit_condition` | TEXT NULL | The step condition's JSON text that a `condition` exit ended the enrollment with: a snapshot, NULL for every other exit (migration 0029, B127) |
 | `claimed_until` | TEXT NULL | Scheduler lease |
 | `retry_at` | TEXT NULL | When a released enrollment may be claimed again after a failed attempt; `due_at` is kept for `max_late` (M5.4) |
 | `created_at`, `updated_at`, `finished_at` | TEXT | |

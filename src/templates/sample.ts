@@ -12,6 +12,42 @@ export class SampleError extends Error {
   }
 }
 
+/**
+ * The context a template preview renders with, and the save-time check (D134) renders with: a
+ * subscriber named John Doe, a campaign, `data` with two fields, and no sequence step, so
+ * `aggregates` is empty. The check renders without the brand a preview adds (routes.ts).
+ */
+export const previewDummy = {
+  subscriber: {
+    name: "John Doe",
+    first_name: "John",
+    last_name: "Doe",
+    email: "dummy@example.invalid",
+    uuid: "00000000-0000-0000-0000-000000000000",
+    attribs: {},
+    external_id: "",
+  },
+  campaign: {
+    name: "Dummy campaign",
+    subject: "Dummy subject",
+    uuid: "00000000-0000-0000-0000-000000000000",
+  },
+  data: { order_id: "12345", shipping_date: "2026-01-02" },
+  trigger: { data: {} },
+  aggregates: {},
+  sequence: { name: "Example" },
+  step: { position: 1 },
+  unsubscribe_url: "",
+  manage_url: "",
+  optin_url: "",
+  message_url: "",
+  archive_url: "",
+};
+/** The body a campaign layout's `content` slot holds in a preview and in the save-time check. */
+export const previewBody = "<p>Hi there</p><p>Lorem ipsum dolor sit amet.</p>";
+/** `previewDummy` as the JSON text a render takes. */
+export const previewData: string = JSON.stringify(previewDummy);
+
 type Json = { [key: string]: TemplateData };
 
 export interface Sample {

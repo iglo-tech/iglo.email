@@ -447,6 +447,39 @@ test("an unsubscribe or blocklist during a batch stops that subscriber's message
   ]);
 });
 
+test("a membership removed during a batch is skipped as membership_changed, and an unsubscribe stays unsubscribed", async () => {
+  f = await runnerFixture({ hold: true });
+  const list = await f.list("l");
+  await f.member("a@x.test", [list]);
+  const b = await f.member("b@x.test", [list]);
+  const c2 = await f.member("c@x.test", [list]);
+  const c = await f.campaign({ name: "m", subject: "s", lists: [list] });
+  Object.assign(f.settings, { concurrency: 1, batchSize: 10 });
+  await f.status(c.id, "running");
+  f.start();
+  await f.drive(() => f.pushes.length === 1);
+  // b leaves the list outright (its membership is deleted); c2 is unsubscribed from it.
+  await f.json("/api/subscribers/lists", "PUT", {
+    ids: [b.id],
+    action: "remove",
+    target_list_ids: [list],
+  });
+  await f.json("/api/subscribers/lists", "PUT", {
+    ids: [c2.id],
+    action: "unsubscribe",
+    target_list_ids: [list],
+  });
+  f.control.hold = false;
+  f.pushes[0]!.settle();
+  await f.until(c.id, "finished");
+  expect(recipientsOf()).toEqual(["a@x.test"]);
+  // B127: the reason names the change; only an unsubscribed membership is `unsubscribed`.
+  expect(await skippedOf(c.id)).toEqual([
+    [b.id, "membership_changed"],
+    [c2.id, "unsubscribed"],
+  ]);
+});
+
 /** The campaign's skipped deliveries as [subscriber id, reason], by subscriber ID. */
 async function skippedOf(campaign: number): Promise<Array<[number, string]>> {
   const r = await f.json(`/api/campaigns/${campaign}/skipped`);
