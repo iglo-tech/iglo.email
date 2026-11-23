@@ -892,16 +892,15 @@ uuid is refused with 400 and changes nothing. An install that already holds dupl
 hand-made API calls could store them) gets 400 on every API settings save (`PUT /api/settings` or a
 per-key update), until the settings page is saved once.
 
-From the release that divides as a decimal (D134), `divided_by` in a template no longer rounds down
-two whole numbers. `10 | divided_by: 4` is now 2.5, and so is a data value of 10 or the text `"10"`
-divided by 4, where an earlier release printed 2. A whole number needs `divided_by: 4, true`, which
-rounds down, so `-10 | divided_by: 4, true` is -3. There is no `floor` filter. The earlier release
-refuses the second argument, so the change cannot be made before upgrading. Before upgrading, search
-every stored template body and subject (transactional, campaign and sequence step templates, and
-campaign layouts) for `divided_by`, and note each match. After upgrading, add `, true` to each one whose
-output must be a whole number, as soon as possible: until then it prints decimals. The upgrade does not
-check stored templates again, so one that was saved with a named argument such as `integer: true` keeps
-rendering as a decimal until it is edited; a save now refuses that argument.
+Upgrading from a release needs no action for `divided_by`: every release up to v1.4.1 refuses it at
+save, as an unknown filter. Only an install that ran an untagged build of `main` from commit
+`0d71ed88` (B135, #193) or later can hold a stored `divided_by`, and it divides as a decimal (D134).
+After upgrading, such an install should search every stored Liquid field for `divided_by`: campaign
+subjects, bodies, alternative bodies, sender addresses and headers; campaign templates; transactional
+template bodies and subjects; and sequence step subject overrides. Where a whole number is needed, add
+`, true`, which rounds down, so `-10 | divided_by: 4, true` is -3. Until then the match prints decimals.
+A named argument such as `integer: true` is refused at save, so write `, true` instead. There is no
+`floor` filter. See [D134](design/09-decisions.md#d134-liquid-authoring-bounded-filters-a-save-time-render-and-the-converters-names-lead-2026-11-22).
 
 From the release that pairs privacy actions (D126), the preference links of mail sent before the
 upgrade change in three ways. A transactional mail sent before the upgrade has a manage link to a
