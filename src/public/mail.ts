@@ -92,7 +92,13 @@ export function createSubscriberMail(deps: {
       // Native sections, with the activity they sit beside (07-api-and-ui.md).
       sends: views
         ? deps.sends
-            .list({ page: 1, perPage: exportRows, subscriberId: sub.id })
+            // The subscriber's own export: every send to them, whatever list a staff reader holds (B117d).
+            .list({
+              page: 1,
+              perPage: exportRows,
+              subscriberId: sub.id,
+              scope: { all: true, ids: [] },
+            })
             .results.map((send) => ({
               uuid: send.uuid,
               source: send.source,

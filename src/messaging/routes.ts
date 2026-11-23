@@ -4,10 +4,47 @@ import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
 import { refuseWhileHeld } from "@/settings/hold";
 import { getID, hasID } from "@/server/validation";
+import type { Roles } from "@/roles/roles";
 import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
+import type { Scope } from "@/subscribers/store";
+import type { RequestContext } from "@/server/context";
 
-export function registerSendRoutes(router: Router, sends: Sends, auth: Authentication) {
+/**
+ * Which sends a reader may see (B117d, D139). A reader with no list role has the global send-journal grant
+ * (D53), as before. A list-scoped reader sees the sends to subscribers on its lists, by the rule a
+ * subscriber read applies: the list read permission, and the list permission of the manage grant when
+ * that covers no list.
+ */
+function readerScope(roles: Roles, context: RequestContext): Scope {
+  const identity = context.identity;
+  if (!identity) {
+    throw new Error("Identity required");
+  }
+  if (identity.user.list_role_id === null) {
+    return { all: true, ids: [] };
+  }
+  const get = roles.listScope(identity.role, identity.user.list_role_id, "list:get"),
+    manage = roles.listScope(identity.role, identity.user.list_role_id, "list:manage");
+  if (get.all || manage.all) {
+    return { all: true, ids: [] };
+  }
+  return get.ids.length ? get : manage;
+}
+
+/** The refusal for a send the reader's list scope does not cover, named as a subscriber's is (B117d). */
+const outOfScope = (context: RequestContext, id: bigint) =>
+  new HttpError(
+    403,
+    context.app.i18n.Ts("globals.messages.permissionDenied", "name", `send: ${id}`),
+  );
+
+export function registerSendRoutes(
+  router: Router,
+  sends: Sends,
+  auth: Authentication,
+  roles: Roles,
+) {
   router.route(
     "GET",
     "/api/sends",
@@ -47,6 +84,7 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
       const filter: SendFilter = {
         page: Number(positive("page", 1_000_000n) ?? 1n),
         perPage: Number(positive("per_page", 100n) ?? 20n),
+        scope: readerScope(roles, context),
       };
       const status = choice("status", [
           "queued",
@@ -83,9 +121,13 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
     "GET",
     "/api/sends/:id",
     (context) => {
-      const row = sends.get(BigInt(getID(context)));
-      if (!row) {
+      const id = BigInt(getID(context));
+      const row = sends.get(id, readerScope(roles, context));
+      if (row === null) {
         throw new HttpError(404);
+      }
+      if (row === "forbidden") {
+        throw outOfScope(context, id);
       }
       return ok(row);
     },
@@ -120,9 +162,16 @@ export function registerSendRoutes(router: Router, sends: Sends, auth: Authentic
           throw new HttpError(400);
         }
       }
-      return ok(
-        sends.resend(BigInt(getID(context)), () => auth.revalidate(context, "sends:manage")),
+      const id = BigInt(getID(context));
+      const result = sends.resend(
+        id,
+        () => auth.revalidate(context, "sends:manage"),
+        readerScope(roles, context),
       );
+      if (result === "forbidden") {
+        throw outOfScope(context, id);
+      }
+      return ok(result);
     },
     auth.middleware("sends:manage"),
     hasID,

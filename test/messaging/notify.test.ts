@@ -305,7 +305,8 @@ async function createNotifyFixture(
     {
       events: () => [],
       enrollments: () => ({ count: 0, results: [] }),
-      sends: (id, page, perPage) => sends.list({ subscriberId: id, page, perPage }),
+      sends: (id, page, perPage) =>
+        sends.list({ subscriberId: id, page, perPage, scope: { all: true, ids: [] } }),
     },
     {
       activity: (id) => subscriberTracking.activity(id),
@@ -314,7 +315,7 @@ async function createNotifyFixture(
     },
   );
   registerWebhookRoutes(router, { webhooks, auth });
-  registerSendRoutes(router, sends, auth);
+  registerSendRoutes(router, sends, auth, roles);
 
   const webhookDelivery = startWebhookDelivery({
     db,

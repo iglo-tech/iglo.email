@@ -799,6 +799,8 @@ const sending: Array<Operation> = [
     id: "getSends",
     tag: "Sends",
     summary: "The send log.",
+    description:
+      "A reader whose user has a list role sees only the sends to subscribers on its lists; a reader with no list role sees every send (D139).",
     native: true,
     permissions: ["sends:get"],
     query: [
@@ -830,6 +832,8 @@ const sending: Array<Operation> = [
     id: "getSendById",
     tag: "Sends",
     summary: "One send.",
+    description:
+      "A send to a subscriber outside the reader's list scope answers 403, as a subscriber read does (D139). The same reader sees a missing send as 404.",
     native: true,
     permissions: ["sends:get"],
     data: ref("Send"),

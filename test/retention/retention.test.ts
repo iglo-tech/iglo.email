@@ -480,7 +480,7 @@ test("analytics totals match before and after a compaction", async () => {
   const read = () => ({
     template: analytics.sends("template", range),
     step: analytics.sends("step", range),
-    listed: f.sends.list({ page: 1, perPage: 100 }),
+    listed: f.sends.list({ page: 1, perPage: 100, scope: { all: true, ids: [] } }),
   });
   const before = read();
   expect(before.template[0]).toMatchObject({

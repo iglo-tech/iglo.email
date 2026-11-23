@@ -115,7 +115,9 @@ an earlier unknown acceptance. Journal payloads and transport secrets are never
 returned by its HTTP routes, and collection/detail reads fetch only public
 metadata. Attachment media types must be syntactically valid before enqueue.
 Existing sends:get and sends:manage grants are global
-journal grants, independently of list roles and tx:send.
+journal grants, independently of tx:send. A reader with a list role sees, and may
+resend, only the sends to subscribers on its lists ([D139](09-decisions.md#d139-the-send-log-is-scoped-to-the-lists-a-reader-holds-and-a-send-names-its-template-and-sequence-as-queued-b117d-2026-11-23));
+a reader with no list role keeps the global grant.
 
 M2.4 finished this staging: production wires the real marketing policy
 (`src/unsubscribe/policy.ts`) into enqueue, outbox admission and manual resend.

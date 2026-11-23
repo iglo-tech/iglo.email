@@ -196,7 +196,7 @@ export async function sequencesFixture(
   registerSubscriberRoutes(router, subscribers, roles, auth);
   registerSubscriberQueryRoutes(router, query, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
-  registerSendRoutes(router, sends, auth);
+  registerSendRoutes(router, sends, auth, roles);
   registerTxRoutes(router, {
     auth,
     sends,

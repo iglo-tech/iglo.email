@@ -261,7 +261,7 @@ export async function txFixture(
     registerSubscriberQueryRoutes(router, subscriberQuery, subscribers, roles, auth);
   }
   registerTemplateRoutes(router, templates, renderer, auth, () => pageOptions());
-  registerSendRoutes(router, sends, auth);
+  registerSendRoutes(router, sends, auth, roles);
   if (webhooks) {
     registerWebhookRoutes(router, { webhooks, auth });
   }

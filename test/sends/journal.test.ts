@@ -61,7 +61,7 @@ async function fixture() {
   }
   const journal = createSends({ db, clock, subscribers, rootUrl: () => "http://fixture.test" });
   const router = createRouter();
-  registerSendRoutes(router, journal, auth);
+  registerSendRoutes(router, journal, auth, roles);
   const app = createApp({
     bootstrap: {
       host: "127.0.0.1",

@@ -112,7 +112,7 @@ const gate = new Promise<void>((resolve) => {
 });
 let loop: ReturnType<typeof startOutbox> | undefined;
 const router = createRouter();
-registerSendRoutes(router, sends, auth);
+registerSendRoutes(router, sends, auth, roles);
 router.route("POST", "/fixture/enqueue", async ({ request }) => {
   const input = await readJson<{
     subject: string;
