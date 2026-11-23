@@ -572,6 +572,10 @@ export async function txFixture(
     async crashWebhooks() {
       await delivery?.halt();
     },
+    /** Shutdown's stop: claims end and the start's target check ends with them (B118a item 8). */
+    async stopWebhooks() {
+      await delivery?.stop();
+    },
     /** A fresh loop over the same rows, as after a process restart. */
     /** Resolves when this start's check of refused targets has ended (B125 r2). */
     startWebhooks() {

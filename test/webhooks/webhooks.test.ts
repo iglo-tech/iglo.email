@@ -1416,3 +1416,24 @@ test("every start names each enabled webhook the block refuses, one line each, a
   await checked;
   expect(notices()).toHaveLength(2);
 });
+
+test("shutdown ends the start-up target check while its lookup is still pending (B118a item 8, D140)", async () => {
+  // Every lookup hangs, so the check of the enabled target can only end by shutdown or the deadline.
+  const f = await open({ webhooks: { lookup: () => new Promise<Array<string>>(() => {}) } });
+  await f.json("/api/webhooks", "POST", {
+    url: "http://hang.test/hook",
+    events: ["subscriber.blocklisted"],
+  });
+  // The start-up delivery from open() checked with the block off, so it has nothing to end.
+  await f.stopWebhooks();
+  f.blockPrivate.value = true;
+  const checked = f.startWebhooks();
+  let ended = false;
+  void checked?.then(() => (ended = true));
+  await Bun.sleep(20);
+  expect(ended).toBe(false);
+  // Shutdown, with the lookup still pending and the injected clock never moved: the check ends now.
+  await f.stopWebhooks();
+  await Bun.sleep(20);
+  expect(ended).toBe(true);
+});
