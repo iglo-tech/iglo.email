@@ -469,7 +469,7 @@
     "public.dataSent": "Τα δεδομένα σας έχουν αποσταλεί με ηλεκτρονικό ταχυδρομείο ως συνημμένο αρχείο.",
     "public.dataSentTitle": "Τα δεδομένα έχουν αποσταλεί με ηλεκτρονικό ταχυδρομείο",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Σφάλμα ανάκτησης μηνύματος ηλεκτρονικού ταχυδρομείου.",
+    "public.errorFetchingCampaign": "Σφάλμα ανάκτησης μηνύματος ηλεκτρονικού ταχυδρομείου.",
     "public.errorFetchingEmail": "Το μήνυμα ηλεκτρονικού ταχυδρομείου δεν βρέθηκε",
     "public.errorFetchingLists": "Σφάλμα ανάκτησης λιστών. Επαναλάβετε την προσπάθεια.",
     "public.errorProcessingRequest": "Σφάλμα επεξεργασίας αίτησης. Επαναλάβετε την προσπάθεια.",

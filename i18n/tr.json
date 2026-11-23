@@ -469,7 +469,7 @@
     "public.dataSent": "Size ait olan bilgiler size e-posta olarak gönderilmiştir.",
     "public.dataSentTitle": "Veri e-posta olarak gönderildi.",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Hata, e-posta getirilirken.",
+    "public.errorFetchingCampaign": "Hata, e-posta getirilirken.",
     "public.errorFetchingEmail": "E-posta mesajı bulunamadı",
     "public.errorFetchingLists": "Listeleri getirme hatası. Lütfen tekrarla.",
     "public.errorProcessingRequest": "İstek işleme hatası. Lütfen tekrarla.",

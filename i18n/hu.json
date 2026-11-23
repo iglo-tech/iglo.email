@@ -469,7 +469,7 @@
     "public.dataSent": "Adatait e-mailben (mellékletként) elküldtük.",
     "public.dataSentTitle": "Adatok elküldve",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Hiba az üzenet lekérésekor.",
+    "public.errorFetchingCampaign": "Hiba az üzenet lekérésekor.",
     "public.errorFetchingEmail": "Az üzenet nem található",
     "public.errorFetchingLists": "Hiba a listák lekérésekor. Kérjük, próbálja újra.",
     "public.errorProcessingRequest": "Hiba a kérelem feldolgozásakor. Kérjük, próbálja újra.",

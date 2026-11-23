@@ -469,7 +469,7 @@
     "public.dataSent": "Vaši podaci poslani su vam u privitku e-poruke.",
     "public.dataSentTitle": "Podaci su poslani",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Greška pri dohvaćanju e-poruke.",
+    "public.errorFetchingCampaign": "Greška pri dohvaćanju e-poruke.",
     "public.errorFetchingEmail": "E-poruka nije pronađena",
     "public.errorFetchingLists": "Greška pri dohvaćanju lista. Pokušajte ponovno.",
     "public.errorProcessingRequest": "Greška pri obradi zahtjeva. Pokušajte ponovno.",

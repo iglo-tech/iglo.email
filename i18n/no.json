@@ -469,7 +469,7 @@
     "public.dataSent": "Dine data har blitt sendt til deg som et e-postvedlegg.",
     "public.dataSentTitle": "Data sendt via e-post",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Feil ved henting av e-postmelding.",
+    "public.errorFetchingCampaign": "Feil ved henting av e-postmelding.",
     "public.errorFetchingEmail": "E-postmelding ikke funnet",
     "public.errorFetchingLists": "Feil ved henting av lister. Vennligst prøv igjen.",
     "public.errorProcessingRequest": "Feil ved behandling av forespørselen. Vennligst prøv igjen.",

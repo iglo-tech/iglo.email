@@ -469,7 +469,7 @@
     "public.dataSent": "Ваши данные отправлены вам по электронной почте в виде вложения.",
     "public.dataSentTitle": "Данные отправлены",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Ошибка получения сообщения электронной почты.",
+    "public.errorFetchingCampaign": "Ошибка получения сообщения электронной почты.",
     "public.errorFetchingEmail": "Сообщение электронной почты не найдено",
     "public.errorFetchingLists": "Ошибка получения списков. Пожалуйста, попробуйте снова.",
     "public.errorProcessingRequest": "Ошибка обработки запроса. Пожалуйста, попробуйте снова.",

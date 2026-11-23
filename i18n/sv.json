@@ -469,7 +469,7 @@
     "public.dataSent": "Din data has har skickats till din e-postadress.",
     "public.dataSentTitle": "Data har skickats via e-post",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Ett fel uppstod när e-postmeddelandet skulle hämtas.",
+    "public.errorFetchingCampaign": "Ett fel uppstod när e-postmeddelandet skulle hämtas.",
     "public.errorFetchingEmail": "E-postmeddelandet kunde inte hittas",
     "public.errorFetchingLists": "Ett fel uppstod när listan skulle hämtas. Vänligen försök igen.",
     "public.errorProcessingRequest": "Ett fel uppstod när begäran skulle hanteras. Vänligen försök igen.",

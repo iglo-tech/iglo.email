@@ -469,7 +469,7 @@
     "public.dataSent": "Vaše data vám byla odeslána e-mailem jako příloha.",
     "public.dataSentTitle": "Data odeslána e-mailem",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Chyba při načítání e-mailové zprávy.",
+    "public.errorFetchingCampaign": "Chyba při načítání e-mailové zprávy.",
     "public.errorFetchingEmail": "E-mailová zpráva nebyla nalezena",
     "public.errorFetchingLists": "Chyba při načítání seznamů. Zopakujte pokus.",
     "public.errorProcessingRequest": "Chyba při zpracování požadavku. Zopakujte pokus.",

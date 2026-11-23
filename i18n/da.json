@@ -469,7 +469,7 @@
     "public.dataSent": "Dine data er blevet sendt til dig via e-mail som en vedhæftet fil.",
     "public.dataSentTitle": "Data e-mailet",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Fejl ved hentning af e-mail.",
+    "public.errorFetchingCampaign": "Fejl ved hentning af e-mail.",
     "public.errorFetchingEmail": "E-mail ikke fundet",
     "public.errorFetchingLists": "Der opstod en fejl ved hentning af lister. Prøv venligst igen.",
     "public.errorProcessingRequest": "Anmodning om fejlbehandling. Prøv venligst igen.",

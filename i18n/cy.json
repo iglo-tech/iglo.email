@@ -469,7 +469,7 @@
     "public.dataSent": "Mae eich data wedi cael eu hanfon atoch chi dros e-bost fel atodiad.",
     "public.dataSentTitle": "Wedi anfon data dros e-bost",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Gwall wrth chwilio am y neges e-bost.",
+    "public.errorFetchingCampaign": "Gwall wrth chwilio am y neges e-bost.",
     "public.errorFetchingEmail": "Heb ddod o hyd i'r neges e-bost",
     "public.errorFetchingLists": "Gwall wrth chwilio am y rhestrau. Rhowch gynnig arall arni.",
     "public.errorProcessingRequest": "Gwall wrth brosesu'r cais. Rhowch gynnig arall arni.",

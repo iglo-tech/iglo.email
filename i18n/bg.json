@@ -469,7 +469,7 @@
     "public.dataSent": "Вашите данни са изпратени по имейл като прикачен файл.",
     "public.dataSentTitle": "Данните са изпратени по имейл",
     "public.emailSettings": "Your email settings",
-    "public.errorFetchingCampaign":"Грешка при извличане на имейл съобщение.",
+    "public.errorFetchingCampaign": "Грешка при извличане на имейл съобщение.",
     "public.errorFetchingEmail": "Имейл съобщението не е намерено",
     "public.errorFetchingLists": "Грешка при извличане на списъци. Моля, опитайте отново.",
     "public.errorProcessingRequest": "Грешка при обработка на заявката. Моля, опитайте отново.",
