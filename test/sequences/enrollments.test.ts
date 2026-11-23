@@ -560,7 +560,8 @@ test("unsubscribing exits enrollments of sequences tied to those lists only", as
     [onPromo.id]: "active:null",
     [plain.id]: "active:null",
   });
-  // Unsubscribing with blocklist ends every active enrollment as blocklisted.
+  // The public "all lists" option (B130, D128): an enrollment whose next step is marketing ends as an
+  // unsubscribe does. The plain sequence's step is transactional, so it keeps running; no blocklist.
   const four = await start("u4@example.test");
   const uuid4 = (await f.json(`/api/subscribers/${four}`)).body.data.uuid;
   const sent4 = await f.json("/api/tx", "POST", {
@@ -575,11 +576,48 @@ test("unsubscribing exits enrollments of sequences tied to those lists only", as
     body: "blocklist=true",
   });
   expect(block.status).toBe(200);
-  expect(Object.values(await states(four))).toEqual([
-    "exited:blocklisted",
-    "exited:blocklisted",
-    "exited:blocklisted",
-  ]);
+  expect(await states(four)).toEqual({
+    [onNews.id]: "exited:unsubscribed",
+    [onPromo.id]: "exited:unsubscribed",
+    [plain.id]: "active:null",
+  });
+  expect((await f.json(`/api/subscribers/${four}`)).body.data.status).toBe("enabled");
+});
+
+test("leaving one list ends only enrollments whose next step is marketing (B130, D128)", async () => {
+  const f = await open();
+  const tx = await f.template();
+  const news = await f.list("news");
+  const step = (kind: string) => ({ wait: "P1D", kind, template_id: tx });
+  const onNews = (steps: Array<JsonObject>) =>
+    sequence(f, { trigger: { event: "go" }, list_id: news, steps });
+  const marketingOnly = await onNews([step("marketing")]);
+  const transactionalOnly = await onNews([step("transactional")]);
+  const mixed = await onNews([step("transactional"), step("marketing")]);
+  const id = await f.subscriber("leaves@example.test", { lists: [news] });
+  await f.event({ subscriber: { email: "leaves@example.test" }, name: "go" });
+
+  // The admin unsubscribe action: the same single-list effect a mail's link has.
+  const left = await f.json("/api/subscribers/lists", "PUT", {
+    ids: [id],
+    action: "unsubscribe",
+    target_list_ids: [news],
+  });
+  expect(left.status).toBe(200);
+  // The transactional-only sequence and the mixed sequence's transactional step keep running; the mixed
+  // sequence's marketing step ends when it comes due (D128), not now.
+  expect(
+    Object.fromEntries(
+      (await enrollments(f, `?subscriber_id=${id}`)).map((e) => [
+        e.sequence_id,
+        `${e.status}:${e.exit_reason}`,
+      ]),
+    ),
+  ).toEqual({
+    [marketingOnly.id]: "exited:unsubscribed",
+    [transactionalOnly.id]: "active:null",
+    [mixed.id]: "active:null",
+  });
 });
 
 test("a repeated public unsubscribe exits enrollments started after the first one", async () => {

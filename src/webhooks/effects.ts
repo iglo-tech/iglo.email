@@ -71,12 +71,20 @@ export function createWebhookEffects(
   return {
     subscriberEffects: {
       /** Consent that really changed; a repeated request queues nothing. */
-      changed(change: { id: bigint; blocklisted: boolean; listIds: Array<bigint> }) {
+      changed(change: {
+        id: bigint;
+        blocklisted: boolean;
+        listIds: Array<bigint>;
+        suppressed?: boolean;
+      }) {
         const row = () => must(subscribers().get(change.id), "subscriber row");
         if (change.listIds.length) {
+          // B130 (D128): the public all-lists option carries `suppressed: true`; any other unsubscribe
+          // omits the field, so its payload is what it was.
           webhooks.queueWebhook("subscriber.unsubscribed", () => ({
             subscriber: subject(row()),
             list_ids: change.listIds.map(webhookID),
+            ...(change.suppressed ? { suppressed: true } : {}),
           }));
         }
         if (change.blocklisted) {

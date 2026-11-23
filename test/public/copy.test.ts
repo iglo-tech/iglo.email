@@ -299,23 +299,26 @@ test("a private list's revisited link says so from the membership, and never nam
   expect(again).not.toContain('id="btn-unsub"');
 });
 
-test("the already-unsubscribed page keeps the export, wipe and manage links, and links back when the site URL is set", async () => {
+test("the already-unsubscribed page keeps the export and wipe, with no manage link when only a private list is left, and links back when the site URL is set", async () => {
   const f = await open({ siteName: "Brand Co" });
   const { send, uuid } = await sendTo(f, "Members", "private");
   const page = `/m/${send}/unsubscribe/${uuid}`;
   await f.fresh(page, "List-Unsubscribe=One-Click");
 
+  // B130 (D128): a private list is not a public one to manage, so there is no manage link or form.
   const without = await (await f.request(page)).text();
   expect(without).toContain('id="data-form"');
-  expect(without).toContain('href="?manage=true"');
+  expect(without).not.toContain('href="?manage=true"');
   expect(without).not.toContain("Back to Brand Co");
 
   Object.assign(f.overrides, { siteUrl: brandUrl });
   const withSite = await (await f.request(page)).text();
   expect(withSite).toContain('id="data-form"');
   expect(withSite).toContain(`<a href="${brandUrl}">Back to Brand Co</a>`);
-  // The manage link leads to the manage view, so the page is not a dead end.
-  expect(await (await f.request(`${page}?manage=true`)).text()).toContain('class="manage-form"');
+  // The manage view is the privacy actions alone, so it has no preference form.
+  const manage = await (await f.request(`${page}?manage=true`)).text();
+  expect(manage).toContain('id="data-form"');
+  expect(manage).not.toContain('class="manage-form"');
 });
 
 test("a campaign's revisited link covers its own lists only, and its unsubscribed page links back", async () => {

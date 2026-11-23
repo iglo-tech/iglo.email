@@ -218,8 +218,8 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
   expect(status(await sub(a), optin)).toBe("unsubscribed");
   expect(status(await sub(a), single)).not.toBe("unsubscribed");
 
-  // The link now says the campaign's list is already unsubscribed (B126, D123). Blocking all mail is on
-  // the manage page that the link offers, so the person keeps the one way to block everything.
+  // The link now says the campaign's list is already unsubscribed (B126, D123). The person still has a
+  // public list, so the manage page the link offers keeps "Unsubscribe from all mailing lists" (B130, D128).
   await page.goto(url);
   await expect(page.locator("body")).toContainText(/already unsubscribed/i);
   const manage = new URL(url);
@@ -228,10 +228,10 @@ test("subscribes new subscribers, then unsubscribes and manages preferences", as
   await page.locator("#privacy-blocklist").check();
   await page.locator("#btn-unsub").click();
   await expect(page.locator("body")).toContainText(/unsubscribed/i);
-  const blocked = await sub(a);
-  expect(blocked.status).toBe("blocklisted");
-  expect(status(blocked, optin)).toBe("unsubscribed");
-  expect(status(blocked, single)).toBe("unsubscribed");
+  const unsubscribed = await sub(a);
+  expect(unsubscribed.status).toBe("enabled");
+  expect(status(unsubscribed, optin)).toBe("unsubscribed");
+  expect(status(unsubscribed, single)).toBe("unsubscribed");
 
   // Manage subscription preferences.
   await page.goto(`/subscription/${campaign.uuid}/${second.uuid}?manage=true`);

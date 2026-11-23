@@ -172,13 +172,13 @@ test("an action on an existing subscriber goes through the consent effects once"
   f.db.transaction(() => store.bounceUnsubscribe(id))();
   expect(calls).toEqual([
     ["unsubscribed", [id], [listId]],
-    ["changed", { id, blocklisted: false, listIds: [listId] }],
+    ["changed", { id, blocklisted: false, listIds: [listId], suppressed: false }],
   ]);
   calls.length = 0;
   f.db.transaction(() => store.bounceBlocklist(id))();
   expect(calls).toEqual([
     ["blocklisted", [id]],
-    ["changed", { id, blocklisted: true, listIds: [] }],
+    ["changed", { id, blocklisted: true, listIds: [], suppressed: false }],
   ]);
 });
 

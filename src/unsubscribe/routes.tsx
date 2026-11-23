@@ -28,17 +28,15 @@ import type { Tracking } from "@/unsubscribe/tracking";
  * including repeats. `listId` is the requested send's list; `listIds` are the memberships
  * whose status changed. M5 cancels active enrollments in sequences tied to `listId` and
  * `listIds` (exit_reason `unsubscribed`). Webhooks queue from the subscriber store's `changed`
- * effect, which only sees real changes.
+ * effect, which only sees real changes. `unsubscribedAll` is the public "all lists" option (B130,
+ * D128): it ends the subscriber's enrollments whose next step is marketing, and no other. It does not
+ * use `unsubscribed`, which would also cancel a transactional sequence tied to one of the lists.
  */
 export interface UnsubscribeEffects {
-  unsubscribed(event: {
-    subscriberId: bigint;
-    listId: bigint;
-    listIds: Array<bigint>;
-    blocklisted: boolean;
-  }): void;
+  unsubscribed(event: { subscriberId: bigint; listId: bigint; listIds: Array<bigint> }): void;
+  unsubscribedAll(event: { subscriberId: bigint }): void;
 }
-const noEffects: UnsubscribeEffects = { unsubscribed() {} };
+const noEffects: UnsubscribeEffects = { unsubscribed() {}, unsubscribedAll() {} };
 
 const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const noIndex = { "X-Robots-Tag": "noindex" };
@@ -240,19 +238,24 @@ export function registerUnsubscribeRoutes(
               subscriberId: found.subscriber.id,
               listId: list,
               listIds: [list],
-              blocklisted: false,
             });
           }
           return changed.length
             ? ({ kind: "cancelled", count: changed.length } as const)
             : ("unchanged" as const);
         }
-        const listIds = deps.subscribers.unsubscribe(found.subscriber.id, found.list, blocklist);
+        if (blocklist) {
+          // B130 (D128): every list and a marketing suppression, not the admin blocklist, so transactional
+          // mail keeps flowing. Its webhooks are an unsubscribe's, from the store's `changed` effect.
+          deps.subscribers.unsubscribeAll(found.subscriber.id);
+          effects.unsubscribedAll({ subscriberId: found.subscriber.id });
+          return "unsubscribed" as const;
+        }
+        const listIds = deps.subscribers.unsubscribe(found.subscriber.id, found.list);
         effects.unsubscribed({
           subscriberId: found.subscriber.id,
           listId: found.list,
           listIds,
-          blocklisted: blocklist,
         });
         return "unsubscribed" as const;
       });

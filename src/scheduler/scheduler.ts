@@ -346,6 +346,7 @@ export function createScheduler(options: SchedulerOptions) {
       aggregates,
       unsubscribe_url: unsubscribe,
       manage_url: manage,
+      brand: settings.marketing.brand,
     });
     const subject = row.subject || template.subject;
     let prepared: ReturnType<Sends["prepareSequence"]>;
