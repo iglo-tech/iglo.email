@@ -210,8 +210,8 @@ export async function audience(page, count = 1) {
   return { list, emails };
 }
 
-// Create a user with its own role. The page must hold an admin session.
-export async function createUser(page, permissions = null) {
+// Create a user with its own role, and the list role given (none by default). The page must hold an admin session.
+export async function createUser(page, permissions = null, listRoleId = null) {
   const name = unique("e2e");
   let role = 1;
   if (permissions) {
@@ -230,6 +230,7 @@ export async function createUser(page, permissions = null) {
     password: PASSWORD,
     password2: PASSWORD,
     user_role_id: role,
+    list_role_id: listRoleId,
   });
   expect(user.status).toBe(200);
   return { id: user.body.data.id, username: name, email };

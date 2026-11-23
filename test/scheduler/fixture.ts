@@ -273,10 +273,11 @@ export async function schedulerFixture(
           clock.now(),
         ),
       ),
-    sends: (id, page, perPage) => sends.list({ subscriberId: id, page, perPage }),
+    sends: (id, page, perPage) =>
+      sends.list({ subscriberId: id, page, perPage, scope: { all: true, ids: [] } }),
   });
   registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
-  registerSendRoutes(router, sends, auth);
+  registerSendRoutes(router, sends, auth, roles);
   registerUnsubscribeRoutes(router, {
     db,
     sends,

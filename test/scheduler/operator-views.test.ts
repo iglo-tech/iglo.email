@@ -88,6 +88,44 @@ test("a sequence send names its subject, its sequence and its step, and the send
   expect(Object.keys(row)).not.toContain("body");
 }, 60_000);
 
+// B117d (D139): a send names its sequence as it was when the send was queued. A rename afterwards does not
+// rewrite the log, and a send queued after it names the new name.
+test("a sequence send keeps the sequence name it was queued with, and a later send names the new one", async () => {
+  const f = await open();
+  const news = await f.list("News");
+  const template = await f.template("<p>{{ subscriber.name }}</p>", "Welcome aboard");
+  const definition = {
+    name: "Onboarding",
+    list_id: news,
+    reentry: "always",
+    trigger: { event: "signup_check" },
+    steps: [mk(template)],
+  };
+  const created = await f.sequence(definition);
+  const first = await f.event("first@example.test", "signup_check", {
+    subscriber: { email: "first@example.test", name: "Ana", grant_lists: [news] },
+  });
+  expect(first.enrollments.started.length).toBe(1);
+  await f.until(async () => (await f.sendLog("&status=sent")).length === 1);
+
+  const renamed = await f.json(`/api/sequences/${created.id}`, "PUT", {
+    ...definition,
+    status: "active",
+    name: "Renamed sequence",
+  });
+  expect(renamed.status).toBe(200);
+  const second = await f.event("second@example.test", "signup_check", {
+    subscriber: { email: "second@example.test", name: "Ben", grant_lists: [news] },
+  });
+  expect(second.enrollments.started.length).toBe(1);
+  await f.until(async () => (await f.sendLog("&status=sent")).length === 2);
+
+  const names = (await f.sendLog()).map((send) => send.sequence_name);
+  expect(names).toHaveLength(2);
+  expect(names).toContain("Onboarding");
+  expect(names).toContain("Renamed sequence");
+});
+
 // B127 r1: an event's row names the sequences it started and the ones it exited, each by its name read
 // by ID, so the names do not depend on a page of sequences (the first hundred are not special).
 test("an event names the sequences it started and exited, past the first hundred sequences", async () => {

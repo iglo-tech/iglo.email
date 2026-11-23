@@ -20,7 +20,41 @@ async function until(condition: () => boolean, ms: number) {
   return condition();
 }
 
-describe("raw-query time limit and admission", () => {
+describe("raw-query admission", () => {
+  let f: QueryFixture;
+  beforeAll(async () => {
+    // A deadline far longer than this test: the children stay running while the test looks at them,
+    // so the admission outcome does not depend on how fast the host is (B118a).
+    f = await queryFixture({
+      timeoutMs: 60_000,
+      admissionMs: 200,
+      command: [process.execPath, join(import.meta.dir, "stall-child.ts")],
+    });
+  });
+  afterAll(async () => {
+    await f.close();
+  });
+
+  test("a raw query past the two child slots is refused at admission and does not queue", async () => {
+    const first = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
+    const second = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
+    try {
+      expect([first.status, second.status]).toEqual([200, 200]);
+      // The slots are held for the whole test. The third query is refused, and the bound below
+      // only checks that it is answered at all: a queued query would stay pending.
+      const third = await within(f.json(`/api/subscribers?query=${q("1=1")}`), 3000);
+      expect(third).toEqual({
+        status: 429,
+        body: { message: "Too many subscriber queries in progress.", code: "rate_limited" },
+      });
+    } finally {
+      await first.body?.cancel().catch(() => {});
+      await second.body?.cancel().catch(() => {});
+    }
+  });
+});
+
+describe("raw-query deadline", () => {
   let f: QueryFixture;
   beforeAll(async () => {
     f = await queryFixture({
@@ -33,32 +67,22 @@ describe("raw-query time limit and admission", () => {
     await f.close();
   });
 
-  test("the deadline holds while the reader is paused and ends the response", async () => {
+  test("the deadline kills and reaps both children, and their unread responses end as failed", async () => {
     const before = childPids().length;
-    // Both exports start (their statements are validated), then nobody reads them.
+    // Both exports start, then nobody reads them. No step below needs the deadline to come after
+    // another step: the test waits for the outcome of the deadline, and does not race it. The wait
+    // is bounded far above the 1 s deadline, so a kill that never comes fails by name.
     const first = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     const second = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
-    expect([first.status, second.status]).toEqual([200, 200]);
-    expect(childPids().length).toBe(before + 2);
-    // A third raw query does not queue indefinitely behind them.
-    const started = performance.now();
-    const third = await within(f.json(`/api/subscribers?query=${q("1=1")}`), 3000);
-    expect(third).toEqual({
-      status: 429,
-      body: { message: "Too many subscriber queries in progress.", code: "rate_limited" },
-    });
-    expect(performance.now() - started).toBeLessThan(900);
-    // At the deadline both children are killed and reaped without any read.
-    const reaped = await until(() => childPids().length === before, 3000);
     try {
-      expect(reaped).toBe(true);
+      expect(await until(() => childPids().length === before, 15_000)).toBe(true);
       expect(
         await within(
           first.text().then(
             () => "ended",
             () => "failed",
           ),
-          1000,
+          3000,
         ),
       ).toBe("failed");
       expect(
@@ -67,7 +91,7 @@ describe("raw-query time limit and admission", () => {
             () => "ended",
             () => "failed",
           ),
-          1000,
+          3000,
         ),
       ).toBe("failed");
       // Their large-selection slots were released too.
@@ -76,7 +100,7 @@ describe("raw-query time limit and admission", () => {
       await first.body?.cancel().catch(() => {});
       await second.body?.cancel().catch(() => {});
     }
-  });
+  }, 30_000);
 });
 
 describe("large selections and unread responses", () => {

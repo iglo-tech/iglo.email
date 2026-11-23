@@ -627,14 +627,16 @@ describe("B37: send rate cap", () => {
       });
       const campId = campRes.body.data.id;
 
-      // Warm up the pool socket so connection establishment doesn't add an initial phase shift
-      await h.json("/api/tx", "POST", {
+      // Warm up the pool socket so connection establishment doesn't add an initial phase shift. The
+      // first grant after a start waits one interval (B118a), so the clock is driven while it waits.
+      const warmup = h.json("/api/tx", "POST", {
         subscriber_email: "warmup@example.test",
         template_id: txTemplateId,
         data: {},
         messenger: "email",
       });
       await h.drive(() => h.sink.messages.length === 1, 10);
+      await warmup;
       h.resetSink();
       await h.advance(1000);
 
@@ -995,8 +997,8 @@ describe("B37: send rate cap", () => {
     try {
       const txTemplateId = await h.template();
 
-      const startMs = h.clock.now().getTime();
-      // Send first message at t=0
+      // Send first message: the first grant after a start waits one interval (B118a), so it goes
+      // at t=1000. The measure starts after it.
       const p1 = h.json("/api/tx", "POST", {
         subscriber_email: "wake-1@example.test",
         template_id: txTemplateId,
@@ -1005,8 +1007,9 @@ describe("B37: send rate cap", () => {
       });
       await h.drive(() => h.sink.messages.length === 1, 10);
       await p1;
+      const startMs = h.clock.now().getTime();
 
-      // Send second message; at rate 1, it waits for t=1000
+      // Send second message; at rate 1, it waits for t=2000
       const p2 = h.json("/api/tx", "POST", {
         subscriber_email: "wake-2@example.test",
         template_id: txTemplateId,
@@ -1052,7 +1055,10 @@ describe("B37: send rate cap", () => {
     const clock = new TestClock();
     let rate = 14;
     const limiter = createSendRateLimiter({ clock, rate: () => rate });
-    await limiter.acquire("outbox");
+    // The first grant after a start waits one interval (B118a): 1000/14 ms, rounded up.
+    const first = limiter.acquire("outbox");
+    clock.advance(72);
+    await first;
 
     // Lower to 1/s just after a grant. The next grant must wait a full second; the old 71 ms
     // slot must not carry it, which would put two starts in one second under the new rate.
@@ -1450,12 +1456,10 @@ describe("B37: send rate cap", () => {
       };
       await h.drive(finished, 10);
       // The rolling cap is asserted at the sink only for the receipts before the restart. After it the
-      // limiter starts a fresh schedule, so a send can follow the last one from before at once, and
-      // sink receipts also carry each send's own latency: in one trace the two receipts were 50 ms
-      // and 1030 ms apart at a cap of one per second, straddling the restart's injected time. That
-      // boundary belongs to the restart, which is queued in B118. Before the restart only one receipt
-      // exists in this scenario (the cap holds the rest), so this check is brief here; test 1 asserts
-      // the rolling cap across a full run with a warm pool.
+      // limiter starts a fresh schedule: its first send waits one interval after the start (B118a,
+      // test/messaging/rate-restart.test.ts), so it does not follow a send from before at once. Before
+      // the restart only one receipt exists in this scenario (the cap holds the rest), so this check is
+      // brief here; test 1 asserts the rolling cap across a full run with a warm pool.
       const beforeRestart = h.sink.messages.slice(0, sentBeforeRestart).map((m) => m.at!);
       for (const t of beforeRestart) {
         expect(beforeRestart.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(1);

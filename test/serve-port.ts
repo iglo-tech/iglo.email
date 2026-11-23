@@ -186,12 +186,17 @@ export async function stopChild(
 
 /**
  * Resolves once the process answers /health on `port` and listens on it, or throws with its stderr
- * when it exits first. Gives up after `timeoutMs` (five seconds by default).
+ * when it exits first. Gives up after `timeoutMs` (fifteen seconds by default).
+ *
+ * The budget bounds a start that never finishes; a start that fails is seen at once through the
+ * exit code. It was five seconds, and a start on a loaded host (8 test workers, or amd64 emulation)
+ * could take longer than that for a reason that is not a failure (B118a). Fifteen seconds stays
+ * inside the 30-second per-test limit, so a hung start still fails by name before the test does.
  */
 export async function healthWhenReady(
   child: Child,
   port: number,
-  timeoutMs = 5000,
+  timeoutMs = 15_000,
 ): Promise<Response> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
