@@ -190,8 +190,60 @@ export interface Child {
   readonly pid?: number;
   readonly exitCode: number | null;
   readonly exited: Promise<number>;
+  readonly stdout?: ReadableStream<Uint8Array> | number | null | undefined;
   readonly stderr: ReadableStream<Uint8Array> | number | null | undefined;
   kill(signal?: number | NodeJS.Signals): void;
+}
+
+/** What a child with a piped stdout wrote: the port it named, and the whole text once it ends. */
+export interface CapturedOutput {
+  /** The port of the `listening on port N` line (D144). Rejects when stdout ends without one. */
+  readonly port: Promise<number>;
+  /** The whole stdout, resolved when the stream ends (the child has exited). */
+  readonly text: Promise<string>;
+}
+
+const boundPortLine = /^listening on port (\d+)$/m;
+
+/**
+ * Reads a child's stdout once, for both its port line and its whole text. A child started on port 0
+ * names the port the OS gave it on that line (D144), so the port is known only once it has written
+ * the line. The text is the same stream read in full, so no output is lost to the port read.
+ */
+export function captureOutput(child: Child): CapturedOutput {
+  const stream = child.stdout;
+  if (!stream || typeof stream === "number") {
+    throw new Error("captureOutput needs a child whose stdout is piped");
+  }
+  const named = Promise.withResolvers<number>();
+  // A caller that never awaits the port must not see an unhandled rejection when stdout ends first.
+  named.promise.catch(() => {});
+  const text = (async () => {
+    const decoder = new TextDecoder();
+    let written = "";
+    for await (const chunk of stream) {
+      written += decoder.decode(chunk, { stream: true });
+      const line = boundPortLine.exec(written);
+      if (line) {
+        named.resolve(Number(line[1]));
+      }
+    }
+    written += decoder.decode();
+    named.reject(new Error(`Server exited before it named its port. Its output: ${written}`));
+    return written;
+  })();
+  return { port: named.promise, text };
+}
+
+/** Starts `captureOutput` for the child's stdout, so `port` and `text` are read from one stream. */
+const captured = new WeakMap<Child, CapturedOutput>();
+export function outputOf(child: Child): CapturedOutput {
+  let output = captured.get(child);
+  if (!output) {
+    output = captureOutput(child);
+    captured.set(child, output);
+  }
+  return output;
 }
 
 /**

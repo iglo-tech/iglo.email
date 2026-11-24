@@ -93,11 +93,10 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
     expect(result.stderr).toContain("Server exited");
   });
 
-  // The first start is pinned to a port that another server holds, so the executable's bind fails
-  // with `port N in use` and the script starts again on a fresh port (D140 item 5). The plain
-  // holder answers /health exactly as iglo.email does, so only the check that the answering server
-  // is the started one can tell it apart.
-  test("moves to a fresh port when a plain HTTP server holds the first one", async () => {
+  // The executable binds the port it names (D144), so a port that another server holds cannot stop
+  // the start. The plain holder answers /health exactly as iglo.email does; the start still
+  // succeeds, because the answer that counts is the one from the process that named its port.
+  test("passes while a plain HTTP server holds a fixed port", async () => {
     const holder = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -107,7 +106,6 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
       const result = await run(script("verify", executable), {
         GITHUB_REF_TYPE: "branch",
         GITHUB_REF_NAME: "main",
-        RELEASE_VERIFY_FIRST_PORT: String(holder.port),
       });
       expect(result.stderr).toBe("");
       expect(result.code).toBe(0);
@@ -116,11 +114,11 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
     }
   });
 
-  // B118c item 4 (B118a r2): when every attempt finds its port in use, the final error names the
-  // attempt count and the child's port-in-use message. Mutation: throw the bare error again (as
-  // before) and the message lacks "after 5 attempts" and the child's text.
-  test("gives up after five attempts and names the child's port in use", async () => {
-    const fake = join(temporaryDirectory, "always-in-use");
+  // A port in use is no longer a race between two starts, since the child chooses its port (D144):
+  // a start that reports one fails once, with the child's own message, and no second start follows.
+  // Mutation: the five-attempt retry back in the script, and "after 5 attempts" is in the message.
+  test("fails at once, with the child's message, when its port is in use", async () => {
+    const fake = join(temporaryDirectory, "port-in-use");
     await writeFile(
       fake,
       `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nprintf '%s\\n' 'listen: port 4242 in use' >&2\nexit 1\n`,
@@ -131,11 +129,30 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
       GITHUB_REF_NAME: "main",
     });
     expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain("after 5 attempts");
     expect(result.stderr).toContain("port 4242 in use");
+    expect(result.stderr).not.toContain("attempts");
   });
 
-  test("moves to a fresh port when another iglo.email server holds the first one", async () => {
+  // The script reads the port from the child's line and checks that the child listens on it. The
+  // fake names port 1, where nothing listens, and then stays alive: the start must fail on that
+  // port, not on a port the script chose itself. Mutation: the script ignores the named port and
+  // starts its own check on another port, and the message no longer names port 1.
+  test("fails when the port the server names is not one it listens on", async () => {
+    const fake = join(temporaryDirectory, "names-another-port");
+    await writeFile(
+      fake,
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nprintf '%s\\n' 'listening on port 1'\nexec sleep 30\n`,
+    );
+    await chmod(fake, 0o755);
+    const result = await run(script("verify", fake), {
+      GITHUB_REF_TYPE: "branch",
+      GITHUB_REF_NAME: "main",
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("port 1");
+  });
+
+  test("passes while another iglo.email server holds a fixed port", async () => {
     const directory = join(temporaryDirectory, "holder");
     await Bun.write(join(directory, ".keep"), "");
     const holder = await startOnFreePort(async (port) => {
@@ -158,7 +175,6 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
       const result = await run(script("verify", executable), {
         GITHUB_REF_TYPE: "branch",
         GITHUB_REF_NAME: "main",
-        RELEASE_VERIFY_FIRST_PORT: String(holder.port),
       });
       expect(result.stderr).toBe("");
       expect(result.code).toBe(0);

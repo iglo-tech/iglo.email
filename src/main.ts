@@ -874,6 +874,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     // started, so the finally block closes the stores and releases the lock and nothing else.
     const server = startServer(app, router);
     serverRef.server = server;
+    // A port of 0 is known only now, so the one line that names it comes right after the bind (D144).
+    if (bootstrap.config.port === 0) {
+      process.stdout.write(`listening on port ${server.port}\n`);
+    }
     const listening = server;
     await new Promise<void>((resolve, reject) => {
       let closing = false;

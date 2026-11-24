@@ -15,7 +15,7 @@ import {
   cpuProgress,
   healthWhenReady,
   listensOn,
-  restartOnPort,
+  outputOf,
   startOnFreePort,
   stopChild,
 } from "@/test/serve-port";
@@ -134,7 +134,7 @@ async function runCli(
   onStart?.(child);
   const [code, stdout, stderr] = await Promise.all([
     child.exited,
-    new Response(child.stdout).text(),
+    outputOf(child).text,
     new Response(child.stderr).text(),
   ]);
   if (child.signalCode !== null) {
@@ -164,8 +164,31 @@ async function launch(
 }
 
 /**
+ * The root URL of a start on port 0. It is set before the bind, so it names no port (D144): the
+ * tests that need the port read it from the child's line, and the root URL stays this one.
+ */
+const rootUrl = "http://127.0.0.1";
+
+/**
+ * A start on port 0 (D144): the child is ready once it has named the port the OS gave it and answers
+ * /health on that port. A start that fails is killed, and its failure is thrown.
+ */
+async function launchBound(args: Array<string>, env: Record<string, string> = {}) {
+  const child = start(args, env);
+  try {
+    const port = await outputOf(child).port;
+    const health = await healthWhenReady(child, port);
+    return { child, port, health };
+  } catch (error) {
+    child.kill("SIGKILL");
+    await child.exited;
+    throw error;
+  }
+}
+
+/**
  * The executable started on a free port. `build` gives the arguments from the port; a start that
- * reports its port in use is retried on another port.
+ * reports its port in use is retried on another port. Only the fixed-port case uses it now.
  */
 function startOnPort(
   build: (port: number) => { args: Array<string>; env?: Record<string, string> },
@@ -179,9 +202,9 @@ function startOnPort(
  * process that exits before it is ready fails the start with the stderr `runCli` read, which
  * `startOnFreePort` checks for a port in use. A start that never becomes ready is killed.
  */
-async function startThroughCli(port: number, dataDir: string) {
+async function startThroughCli(dataDir: string) {
   const started: Array<ReturnType<typeof start>> = [];
-  const run = runCli(["--port", String(port), "--data-dir", dataDir], {}, (child) => {
+  const run = runCli(["--port", "0", "--root-url", rootUrl, "--data-dir", dataDir], {}, (child) => {
     started.push(child);
   });
   const [child] = started;
@@ -196,6 +219,15 @@ async function startThroughCli(port: number, dataDir: string) {
   const exited = run.then((result) => {
     throw new Error(`Server exited before it became ready: ${result.stderr}`);
   });
+  // The port is the one the child names on its line (D144); a child that exits first names none.
+  let port: number;
+  try {
+    port = await Promise.race([outputOf(child).port, exited]);
+  } catch (error) {
+    child.kill("SIGKILL");
+    await run.catch(() => undefined);
+    throw error;
+  }
   // Readiness is a stall window on the child's CPU time, as in `healthWhenReady` (B118g): a start
   // that is still computing keeps going, and one that hangs without CPU fails after 15 s. After an
   // exit the wait never settles: the exit alone decides the start.
@@ -245,8 +277,9 @@ async function startThroughCli(port: number, dataDir: string) {
  * so a failure says why the process ended and not only its code.
  */
 async function shutDown(child: ReturnType<typeof start>, signal: "SIGTERM" | "SIGINT") {
-  // 3 s, not the helper's 5 s: a serial `bun test` gives each test 5 s, so SIGKILL must come first.
-  const code = await stopChild(child, signal, 3000);
+  // 7 s: above the product's 5 s shutdown drain (D104), so SIGKILL ends only a shutdown that has
+  // stopped, not one still draining. The test's budget still ends a child that outlives its test.
+  const code = await stopChild(child, signal, 7000);
   if (code !== 0) {
     const stderr = await new Response(child.stderr).text();
     throw new Error(
@@ -298,9 +331,14 @@ function apiGet(port: number, user: string, token: string) {
 describe("compiled executable", () => {
   test("unprovisioned startup denies login and partial bootstrap pairs fail", async () => {
     const dataDir = join(temporaryDirectory, "unprovisioned-auth");
-    const { child, port } = await startOnPort((listenPort) => ({
-      args: ["--port", String(listenPort), "--data-dir", dataDir],
-    }));
+    const { child, port } = await launchBound([
+      "--port",
+      "0",
+      "--root-url",
+      rootUrl,
+      "--data-dir",
+      dataDir,
+    ]);
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
       const attempt = await login(port, adminUser, adminPassword);
@@ -331,18 +369,11 @@ describe("compiled executable", () => {
 
   test("compiled sessions survive restart and existing users ignore bootstrap inputs", async () => {
     const dataDir = join(temporaryDirectory, "persistent-auth");
-    const args = (listenPort: number) => [
-      "--port",
-      String(listenPort),
-      "--data-dir",
-      dataDir,
-      "--root-url",
-      `https://127.0.0.1:${listenPort}`,
-    ];
-    const { child: first, port } = await startOnPort((listenPort) => ({
-      args: args(listenPort),
-      env: { IGLO_EMAIL_ADMIN_USER: adminUser, IGLO_EMAIL_ADMIN_PASSWORD: adminPassword },
-    }));
+    const args = ["--port", "0", "--data-dir", dataDir, "--root-url", "https://127.0.0.1"];
+    const { child: first, port } = await launchBound(args, {
+      IGLO_EMAIL_ADMIN_USER: adminUser,
+      IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+    });
     let session = "";
     try {
       expect((await healthWhenReady(first, port)).status).toBe(200);
@@ -358,33 +389,30 @@ describe("compiled executable", () => {
     } finally {
       expect(await shutDown(first, "SIGTERM")).toBe(0);
     }
-    // The restart reuses the port its predecessor released, with the same retry as a fresh start.
-    const second = await restartOnPort(port, (listenPort) =>
-      launch(listenPort, () => ({
-        args: args(listenPort),
-        env: { IGLO_EMAIL_ADMIN_USER: "replacement-admin" },
-      })),
-    );
+    // The restart takes the port the OS picks now. Its session cookie names no port, so it still works.
+    const restarted = await launchBound(args, { IGLO_EMAIL_ADMIN_USER: "replacement-admin" });
+    const second = restarted.child;
+    const nextPort = restarted.port;
     try {
-      expect((await healthWhenReady(second, port)).status).toBe(200);
-      const profile = await fetch(`http://127.0.0.1:${port}/api/profile`, {
+      expect((await healthWhenReady(second, nextPort)).status).toBe(200);
+      const profile = await fetch(`http://127.0.0.1:${nextPort}/api/profile`, {
         headers: { cookie: session },
       });
       expect(profile.status).toBe(200);
       expect((await readJson<{ data: { username: string } }>(profile)).data.username).toBe(
         adminUser,
       );
-      expect((await login(port, adminUser, adminPassword)).status).toBe(302);
-      expect((await login(port, "replacement-admin", adminPassword)).status).toBe(200);
+      expect((await login(nextPort, adminUser, adminPassword)).status).toBe(302);
+      expect((await login(nextPort, "replacement-admin", adminPassword)).status).toBe(200);
     } finally {
       expect(await shutDown(second, "SIGTERM")).toBe(0);
     }
   });
   test("serves the upstream health response outside the checkout and stops on SIGTERM", async () => {
-    const { child, port } = await startOnPort((listenPort) => ({
-      args: ["serve", "--port", String(listenPort)],
-      env: { IGLO_EMAIL_ADMIN_USER: adminUser, IGLO_EMAIL_ADMIN_PASSWORD: adminPassword },
-    }));
+    const { child, port } = await launchBound(["serve", "--port", "0", "--root-url", rootUrl], {
+      IGLO_EMAIL_ADMIN_USER: adminUser,
+      IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+    });
     try {
       const response = await healthWhenReady(child, port);
       expect(response.status).toBe(200);
@@ -420,32 +448,33 @@ describe("compiled executable", () => {
     } finally {
       expect(await shutDown(child, "SIGTERM")).toBe(0);
     }
+    // The only line on stdout is the port the child named (D144), which is the port it served on.
     const [stdout, stderr] = await Promise.all([
-      new Response(child.stdout).text(),
+      outputOf(child).text,
       new Response(child.stderr).text(),
     ]);
-    expect(stdout).toBe("");
+    expect(stdout).toBe(`listening on port ${port}\n`);
     expect(stderr).toBe("");
   });
 
   test("flags override environment values and SIGINT closes the server", async () => {
-    const { child, port } = await startOnPort((listenPort) => ({
-      args: [
+    const { child, port } = await launchBound(
+      [
         "serve",
-        `--port=${listenPort}`,
+        "--port=0",
         "--host",
         "127.0.0.1",
         "--data-dir",
         "./chosen-data",
         "--root-url=https://example.test/root",
       ],
-      env: {
+      {
         IGLO_EMAIL_PORT: "invalid",
         IGLO_EMAIL_HOST: "invalid host",
         IGLO_EMAIL_DATA_DIR: "",
         IGLO_EMAIL_ROOT_URL: "not-a-url",
       },
-    }));
+    );
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
     } finally {
@@ -454,15 +483,12 @@ describe("compiled executable", () => {
   });
 
   test("environment bootstrap values work without flags or admin credentials", async () => {
-    const { child, port } = await startOnPort((listenPort) => ({
-      args: [],
-      env: {
-        IGLO_EMAIL_PORT: String(listenPort),
-        IGLO_EMAIL_HOST: "127.0.0.1",
-        IGLO_EMAIL_DATA_DIR: "./env-data",
-        IGLO_EMAIL_ROOT_URL: "https://example.test",
-      },
-    }));
+    const { child, port } = await launchBound([], {
+      IGLO_EMAIL_PORT: "0",
+      IGLO_EMAIL_HOST: "127.0.0.1",
+      IGLO_EMAIL_DATA_DIR: "./env-data",
+      IGLO_EMAIL_ROOT_URL: "https://example.test",
+    });
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
     } finally {
@@ -473,9 +499,14 @@ describe("compiled executable", () => {
   test("opens the persistent version-two production schema on standalone restart", async () => {
     const dataDir = join(temporaryDirectory, "persistent-db");
     for (let i = 0; i < 2; i++) {
-      const { child, port } = await startOnPort((listenPort) => ({
-        args: ["--port", String(listenPort), "--data-dir", dataDir],
-      }));
+      const { child, port } = await launchBound([
+        "--port",
+        "0",
+        "--root-url",
+        rootUrl,
+        "--data-dir",
+        dataDir,
+      ]);
       try {
         expect((await healthWhenReady(child, port)).status).toBe(200);
       } finally {
@@ -624,7 +655,6 @@ describe("compiled executable", () => {
 
   test("rejects invalid bootstrap values from flags and environment", async () => {
     for (const [args, env, message] of [
-      [["--port", "0"], {}, "port"],
       [["--port", "65536"], {}, "port"],
       [["--port", "1.5"], {}, "port"],
       [["--host", "http://127.0.0.1"], {}, "host"],
@@ -659,11 +689,11 @@ describe("compiled executable", () => {
     const dataDir = join(temporaryDirectory, "api-bootstrap");
     const apiUser = "bootstrap-api";
     const token = apiTokenValue();
-    const args = (listenPort: number) => ["--port", String(listenPort), "--data-dir", dataDir];
-    const { child: first, port } = await startOnPort((listenPort) => ({
-      args: args(listenPort),
-      env: { IGLO_EMAIL_API_USER: apiUser, IGLO_EMAIL_API_TOKEN: token },
-    }));
+    const args = ["--port", "0", "--root-url", rootUrl, "--data-dir", dataDir];
+    const { child: first, port } = await launchBound(args, {
+      IGLO_EMAIL_API_USER: apiUser,
+      IGLO_EMAIL_API_TOKEN: token,
+    });
     try {
       expect((await healthWhenReady(first, port)).status).toBe(200);
       expect((await apiGet(port, apiUser, token)).status).toBe(200);
@@ -672,21 +702,20 @@ describe("compiled executable", () => {
       expect(await shutDown(first, "SIGTERM")).toBe(0);
     }
     // Nothing is printed: the operator chose the token and already knows it.
-    expect(await new Response(first.stdout).text()).not.toContain(token);
+    expect(await outputOf(first).text).not.toContain(token);
     expect(await new Response(first.stderr).text()).not.toContain(token);
 
     // A later start with other values changes nothing: the first token still works.
     const replacement = apiTokenValue();
-    const second = await restartOnPort(port, (listenPort) =>
-      launch(listenPort, () => ({
-        args: args(listenPort),
-        env: { IGLO_EMAIL_API_USER: "replacement-api", IGLO_EMAIL_API_TOKEN: replacement },
-      })),
-    );
+    const restarted = await launchBound(args, {
+      IGLO_EMAIL_API_USER: "replacement-api",
+      IGLO_EMAIL_API_TOKEN: replacement,
+    });
+    const second = restarted.child;
     try {
-      expect((await healthWhenReady(second, port)).status).toBe(200);
-      expect((await apiGet(port, apiUser, token)).status).toBe(200);
-      expect((await apiGet(port, "replacement-api", replacement)).status).toBe(403);
+      expect((await healthWhenReady(second, restarted.port)).status).toBe(200);
+      expect((await apiGet(restarted.port, apiUser, token)).status).toBe(200);
+      expect((await apiGet(restarted.port, "replacement-api", replacement)).status).toBe(403);
     } finally {
       expect(await shutDown(second, "SIGTERM")).toBe(0);
     }
@@ -696,15 +725,15 @@ describe("compiled executable", () => {
     const dataDir = join(temporaryDirectory, "both-bootstrap");
     const apiUser = "both-api";
     const token = apiTokenValue();
-    const { child, port } = await startOnPort((listenPort) => ({
-      args: ["--port", String(listenPort), "--data-dir", dataDir],
-      env: {
+    const { child, port } = await launchBound(
+      ["--port", "0", "--root-url", rootUrl, "--data-dir", dataDir],
+      {
         IGLO_EMAIL_ADMIN_USER: adminUser,
         IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
         IGLO_EMAIL_API_USER: apiUser,
         IGLO_EMAIL_API_TOKEN: token,
       },
-    }));
+    );
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
       expect((await login(port, adminUser, adminPassword)).status).toBe(302);
@@ -752,15 +781,15 @@ describe("compiled executable", () => {
   test("an untrusted X-Forwarded-For report reaches the logs page as its own line, without the address", async () => {
     const dataDir = join(temporaryDirectory, "forwarded-report");
     const token = apiTokenValue();
-    const { child, port } = await startOnPort((listenPort) => ({
-      args: ["--port", String(listenPort), "--data-dir", dataDir],
-      env: {
+    const { child, port } = await launchBound(
+      ["--port", "0", "--root-url", rootUrl, "--data-dir", dataDir],
+      {
         IGLO_EMAIL_ADMIN_USER: adminUser,
         IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
         IGLO_EMAIL_API_USER: "logs-api",
         IGLO_EMAIL_API_TOKEN: token,
       },
-    }));
+    );
     try {
       expect((await healthWhenReady(child, port)).status).toBe(200);
       // A login from the test host, which is not in security.trusted_proxies, with a forwarded header.
@@ -980,10 +1009,10 @@ describe("compiled executable", () => {
 
       // The suggestion starts the server, and the server's root URL is the one meant.
       const dataDir = join(temporaryDirectory, `suggest-${crypto.randomUUID()}`);
-      const { child, port } = await startOnPort((listenPort) => ({
-        args: ["--port", String(listenPort), "--data-dir", dataDir, "--root-url", suggestion],
-        env: { IGLO_EMAIL_API_USER: "suggested-api", IGLO_EMAIL_API_TOKEN: token },
-      }));
+      const { child, port } = await launchBound(
+        ["--port", "0", "--data-dir", dataDir, "--root-url", suggestion],
+        { IGLO_EMAIL_API_USER: "suggested-api", IGLO_EMAIL_API_TOKEN: token },
+      );
       try {
         expect((await healthWhenReady(child, port)).status).toBe(200);
         const settings = await apiGet(port, "suggested-api", token);
@@ -1000,14 +1029,14 @@ describe("compiled executable", () => {
       "a body that outlives its budget fails its next CLI run by name and kills its children";
     // The budget ends 9 s after the test starts (the 12 s timeout less 3 s), and kills the child
     // then. The wait is on that exit itself: when no kill comes, the test's own timeout ends it.
-    const { child } = await startOnPort((listenPort) => ({
-      args: [
-        "--port",
-        String(listenPort),
-        "--data-dir",
-        join(temporaryDirectory, "outlives-budget"),
-      ],
-    }));
+    const child = start([
+      "--port",
+      "0",
+      "--root-url",
+      rootUrl,
+      "--data-dir",
+      join(temporaryDirectory, "outlives-budget"),
+    ]);
     try {
       await child.exited;
       expect(child.signalCode).toBe("SIGKILL");
@@ -1022,15 +1051,13 @@ describe("compiled executable", () => {
   // B118c item 2: runCli has no fixed kill timer. A server that runs past 3 s lives until its budget
   // ends at 9 s. The sleep is the thing under test: the server must still run at 4 s. The server is
   // started through runCli, the path every other CLI run here takes, so a fixed timer in runCli is
-  // what this test sees. A start that finds its port in use is retried on another port
-  // (startOnFreePort). Mutation 1: main's 3 s SIGKILL timer in runCli; the server is then gone
-  // before the check at 4 s. Mutation 2: the "did not exit before its budget ended" check removed
-  // from runCli; the run then resolves, and the expectation on its rejection fails.
+  // what this test sees. The server picks its port (port 0, D144), so no start races another for it.
+  // Mutation 1: main's 3 s SIGKILL timer in runCli; the server is then gone before the check at 4 s.
+  // Mutation 2: the "did not exit before its budget ended" check removed from runCli; the run then
+  // resolves, and the expectation on its rejection fails.
   test("a server that runs past 3 s is killed by its budget, not by a fixed timer", async () => {
     const begun = performance.now();
-    const { child, run } = await startOnFreePort((port) =>
-      startThroughCli(port, join(temporaryDirectory, "past-3s")),
-    );
+    const { child, run } = await startThroughCli(join(temporaryDirectory, "past-3s"));
     // B118c r3 item 8b: a start that takes 5 to 9 s would leave the check below to find the process
     // already killed, with the same output as mutation 1. The start is measured to readiness (the
     // helper returns once this process answers /health), and the 4 s check runs from that point.
@@ -1060,11 +1087,101 @@ describe("compiled executable", () => {
   // "runCli did not start the executable". Mutation: the `await run` in startThroughCli removed.
   test("a start after its budget ended is refused with the budget message", async () => {
     await Bun.sleep(budgetMs + 100);
-    const outcome = await startThroughCli(1, join(temporaryDirectory, "after-budget")).then(
+    const outcome = await startThroughCli(join(temporaryDirectory, "after-budget")).then(
       () => "started",
       String,
     );
-    expect(outcome).toContain("budget ended before: --port 1 --data-dir");
+    expect(outcome).toContain("budget ended before: --port 0 --root-url");
     expect(outcome).not.toContain("did not start the executable");
   }, 12_000);
+});
+
+// D144: a port of 0 binds a port the OS chooses and names it on one stdout line. The root URL is set
+// before the bind, so a port of 0 needs --root-url, and these starts pass a root URL with no port.
+describe("a port of 0 (D144)", () => {
+  const root = rootUrl;
+
+  test("is refused without a root URL, and the refusal names it", async () => {
+    const result = await runCli([
+      "--port",
+      "0",
+      "--data-dir",
+      join(temporaryDirectory, "port-zero-no-root"),
+    ]);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("--root-url");
+    expect(result.stdout).toBe("");
+  });
+
+  test("binds a port the OS chooses, names it on one stdout line, and serves on it", async () => {
+    const { child, port, health } = await launchBound([
+      "--port",
+      "0",
+      "--root-url",
+      root,
+      "--data-dir",
+      join(temporaryDirectory, "port-zero-one"),
+    ]);
+    expect(port).toBeGreaterThan(0);
+    expect(health.status).toBe(200);
+    expect(await shutDown(child, "SIGTERM")).toBe(0);
+    expect(await outputOf(child).text).toBe(`listening on port ${port}\n`);
+  });
+
+  test("IGLO_EMAIL_PORT=0 binds the same way", async () => {
+    const { child, port, health } = await launchBound([], {
+      IGLO_EMAIL_PORT: "0",
+      IGLO_EMAIL_ROOT_URL: root,
+      IGLO_EMAIL_DATA_DIR: join(temporaryDirectory, "port-zero-env"),
+    });
+    expect(health.status).toBe(200);
+    expect(await shutDown(child, "SIGTERM")).toBe(0);
+    expect(await outputOf(child).text).toBe(`listening on port ${port}\n`);
+  });
+
+  test("two starts on port 0 at once take two ports, and each serves on its own", async () => {
+    const started = await Promise.all(
+      [1, 2].map((index) =>
+        launchBound([
+          "--port",
+          "0",
+          "--root-url",
+          root,
+          "--data-dir",
+          join(temporaryDirectory, `port-zero-pair-${index}`),
+        ]),
+      ),
+    );
+    try {
+      expect(new Set(started.map((item) => item.port)).size).toBe(2);
+      for (const item of started) {
+        expect(item.health.status).toBe(200);
+      }
+    } finally {
+      for (const item of started) {
+        expect(await shutDown(item.child, "SIGTERM")).toBe(0);
+      }
+    }
+  });
+
+  test("a fixed port prints no port line, so only a port of 0 names one", async () => {
+    const { child } = await startOnPort((listenPort) => ({
+      args: [
+        "--port",
+        String(listenPort),
+        "--root-url",
+        root,
+        "--data-dir",
+        join(temporaryDirectory, "port-fixed-silent"),
+      ],
+    }));
+    expect(await shutDown(child, "SIGTERM")).toBe(0);
+    expect(await outputOf(child).text).toBe("");
+  });
+
+  test("the help says that port 0 binds a port the OS chooses", async () => {
+    const result = await runCli(["--help"]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("binds a port the OS chooses");
+  });
 });
