@@ -6,6 +6,8 @@ import { createTranslation } from "@/i18n/i18n";
 import { startFixture } from "@/test/server/fixture";
 import { adminLogin, lifetimeWithinTest, withProduction } from "@/test/contract/owned";
 import { rawRequest } from "@/test/server/raw-request";
+import { totp } from "@/test/e2e/totp";
+import { readJson } from "@/test/read-body";
 
 let directory = "";
 let executable = "";
@@ -267,6 +269,139 @@ test("the sign-in, forgot-password and reset pages show the site's logo", async 
         expect(html).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
         expect(html).not.toContain("/public/static/logo.svg");
       }
+    },
+    admin,
+    lifetimeWithinTest(started),
+  );
+}, 30_000);
+
+// B118f (B118b and B121 r2 gaps): the two-factor and archive-preview error pages are branded like
+// the public pages, not the admin shell (09-decisions, B121 review: operator pages take the site
+// getter). A signed-in admin with two-factor on reaches the challenge from a fresh sign-in, then
+// answers a wrong code; the same session posts an archive preview whose `archive_meta` is broken.
+test("the two-factor and archive-preview error pages show the site's logo, not the admin shell", async () => {
+  const started = Date.now();
+  const logo = "https://brand.example.test/factor.png";
+  const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+  await withProduction(
+    executable,
+    new AbortController().signal,
+    async (origin) => {
+      const { cookie, token } = await adminLogin(origin, admin);
+      const signed = { "Content-Type": "application/json", Cookie: cookie, "X-CSRF-Token": token };
+      const profile = await readJson<{ data: { id: number } }>(
+        await fetch(`${origin}/api/profile`, { headers: { Cookie: cookie } }),
+      );
+      const set = await fetch(`${origin}/api/settings/app.logo_url`, {
+        method: "PUT",
+        headers: signed,
+        body: JSON.stringify(logo),
+      });
+      expect(set.status).toBe(200);
+      const enable = await fetch(`${origin}/api/users/${profile.data.id}/twofa`, {
+        method: "PUT",
+        headers: signed,
+        body: JSON.stringify({ secret, code: totp(secret) }),
+      });
+      expect(enable.status).toBe(200);
+
+      // A fresh sign-in with the right password waits on the second factor.
+      const form = await fetch(`${origin}/admin/login`);
+      const formNonce = /name="nonce"\s+value="([^"]+)"/.exec(await form.text())?.[1] ?? "";
+      const formCookie =
+        form.headers
+          .getSetCookie()
+          .find((item) => item.startsWith("nonce="))
+          ?.split(";", 1)[0] ?? "";
+      const challenge = await fetch(`${origin}/admin/login`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: formCookie },
+        body: new URLSearchParams({
+          username: admin.user,
+          password: admin.password,
+          nonce: formNonce,
+          next: "/api/profile",
+        }),
+      });
+      expect(challenge.status).toBe(302);
+      const location = challenge.headers.get("location") ?? "";
+      expect(location).toStartWith("/admin/login/twofa?");
+
+      const twofa = await fetch(`${origin}${location}`);
+      const twofaHtml = await twofa.text();
+      expect(twofa.status).toBe(200);
+      expect(twofaHtml).toContain(`src="${logo}"`);
+      expect(twofaHtml).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
+      expect(twofaHtml).not.toContain("/admin/static/oat.min.css");
+
+      // A code outside the window the server accepts, so the answer is the error page.
+      const accepted = new Set(
+        [-30_000, 0, 30_000].map((offset) => totp(secret, Date.now() + offset)),
+      );
+      const wrong = ["000000", "000001"].find((code) => !accepted.has(code)) ?? "000000";
+      const twofaNonce = /name="nonce"\s+value="([^"]+)"/.exec(twofaHtml)?.[1] ?? "";
+      const twofaCookie =
+        twofa.headers
+          .getSetCookie()
+          .find((item) => item.startsWith("nonce="))
+          ?.split(";", 1)[0] ?? "";
+      const rejected = await fetch(`${origin}/admin/login/twofa`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: twofaCookie },
+        body: new URLSearchParams({
+          nonce: twofaNonce,
+          token: new URL(location, origin).searchParams.get("token") ?? "",
+          next: "/api/profile",
+          totp_code: wrong,
+        }),
+      });
+      const rejectedHtml = await rejected.text();
+      expect(rejected.status).toBe(200);
+      expect(rejectedHtml).toContain("Invalid value");
+      expect(rejectedHtml).toContain(`src="${logo}"`);
+      expect(rejectedHtml).not.toContain("/admin/static/oat.min.css");
+
+      // The signed-in session's archive preview: broken `archive_meta` is the public error page.
+      const list = await fetch(`${origin}/api/lists`, {
+        method: "POST",
+        headers: signed,
+        body: JSON.stringify({ name: "Branding", type: "public", optin: "single" }),
+      });
+      expect(list.status).toBe(200);
+      const listID = (await readJson<{ data: { id: number } }>(list)).data.id;
+      const created = await fetch(`${origin}/api/campaigns`, {
+        method: "POST",
+        headers: signed,
+        body: JSON.stringify({
+          name: "Branding",
+          subject: "Branding",
+          lists: [listID],
+          content_type: "richtext",
+          type: "regular",
+          messenger: "email",
+          body: "<p>Hello</p>",
+          from_email: "",
+        }),
+      });
+      expect(created.status).toBe(200);
+      const campaign = (await readJson<{ data: { id: number } }>(created)).data;
+      const preview = await fetch(`${origin}/api/campaigns/${campaign.id}/preview/archive`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: cookie,
+          "X-CSRF-Token": token,
+        },
+        body: new URLSearchParams({ template_id: "", archive_meta: "{" }),
+      });
+      const previewHtml = await preview.text();
+      expect(preview.status).toBe(500);
+      expect(previewHtml).toContain("Error fetching e-mail message.");
+      expect(previewHtml).toContain(`src="${logo}"`);
+      expect(previewHtml).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
+      expect(previewHtml).not.toContain("/admin/static/oat.min.css");
     },
     admin,
     lifetimeWithinTest(started),

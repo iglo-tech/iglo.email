@@ -1,4 +1,5 @@
 import { createApp } from "@/app";
+import type { ErrorLogger } from "@/app";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -103,6 +104,8 @@ export function startFixture(
     routePaths?: ReadonlyArray<string>;
     /** No public not-found: a bare router, which answers unknown pages with a bodyless 404. */
     bare?: boolean;
+    /** The production logger, so an unexpected error reaches this process's stderr (B110). */
+    logger?: ErrorLogger;
   } = {},
 ) {
   const errors: Array<unknown> = [];
@@ -121,7 +124,7 @@ export function startFixture(
     clock,
     db,
     i18n,
-    logger: {
+    logger: options.logger ?? {
       error: (error) => errors.push(error),
       attention: (message) => errors.push(new Error(message)),
     },
