@@ -3,6 +3,7 @@
 // (127.0.0.1), `a` and `b` on their own hostnames. Each project's credentials, rows, mail, logs and
 // health stay its own, and a host no project claims reaches only the primary.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { connect } from "node:net";
 import { join } from "node:path";
 import {
   adminCredentials,
@@ -356,6 +357,71 @@ test("the subscriber query runner's two children are one budget across projects"
       (await api(port, B, key(B), "GET", `/api/subscribers?query=${quick}`)).status === 200,
     { label: "B's query after A's children ended", progress: () => "", stallMs: 15_000 },
   );
+});
+
+/**
+ * A GET on `host` whose response is read only up to its status line, then left unread with the
+ * connection open, as a slow download leaves it. Bun's fetch would buffer the whole body.
+ */
+function pausedRequest(port: number, host: string, path: string, authorization: string) {
+  return new Promise<{ status: number; close: () => void }>((resolve, reject) => {
+    const socket = connect(port, "127.0.0.1", () => {
+      socket.write(
+        `GET ${path} HTTP/1.1\r\nHost: ${host}\r\nAuthorization: ${authorization}\r\n\r\n`,
+      );
+    });
+    socket.once("error", reject);
+    socket.once("data", (chunk: Buffer) => {
+      socket.pause();
+      const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(chunk.toString("latin1"))?.[1] ?? 0);
+      resolve({ status, close: () => socket.destroy() });
+    });
+  });
+}
+
+test("a paused raw-query export frees its shared child slot when its child exits", async () => {
+  const query = encodeURIComponent("subscribers.id > 0");
+  // Enough of A's rows that an export's CSV outgrows the socket buffers while nobody reads it.
+  // An export writes 500 rows a batch and the server buffers about two batches of 4 MiB, so
+  // 2,000 rows of about 8 KiB leave the export's ID reader unfinished.
+  const filler = "x".repeat(8 * 1024);
+  for (let n = 0; n < 2000; n++) {
+    const created = await api(port, A, key(A), "POST", "/api/subscribers", {
+      email: `bulk-${n}@a.example.test`,
+      name: `bulk-of-a-${n}`,
+      status: "enabled",
+      attribs: { filler },
+    });
+    expect(created.status).toBe(200);
+  }
+  // Two exports in A whose bodies are not read past their headers: each keeps its response open,
+  // but its child ends as soon as it has spooled the IDs (D62).
+  const exports = await Promise.all(
+    [1, 2].map(() => pausedRequest(port, A, `/api/subscribers/export?query=${query}`, key(A))),
+  );
+  try {
+    expect(exports.map((paused) => paused.status)).toEqual([200, 200]);
+    // Both exports still hold A's large-selection slots, so neither has been read to its end.
+    const third = await api(port, A, key(A), "GET", `/api/subscribers/export?query=${query}`);
+    expect(third.status).toBe(429);
+    // Once their children have exited, a raw query in another project runs, as one in A does.
+    for (const host of [B, A]) {
+      await untilState(
+        async () =>
+          (await api(port, host, key(host), "GET", `/api/subscribers?query=${query}`)).status ===
+          200,
+        {
+          label: `a raw query on ${host} beside two paused exports`,
+          progress: () => "",
+          stallMs: 8000,
+        },
+      );
+    }
+  } finally {
+    for (const paused of exports) {
+      paused.close();
+    }
+  }
 });
 
 test("stderr lines carry the project's slug", async () => {

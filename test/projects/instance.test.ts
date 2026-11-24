@@ -80,7 +80,8 @@ test("a data directory of the earlier layout is refused, and nothing is written 
   expect(stdout).toBe("");
   expect(stderr).toBe(
     `${dataDir} is a data directory from an earlier iglo.email: it has iglo-email.db at its root. ` +
-      "The data directory layout changed and nothing is converted; start with an empty data directory.\n",
+      "The data directory layout changed and nothing is converted; start with an empty data directory. " +
+      "An earlier backup is restored into projects/main/ of the new data directory.\n",
   );
   expect(readdirSync(dataDir)).toEqual(["iglo-email.db"]);
 });

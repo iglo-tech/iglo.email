@@ -4,15 +4,15 @@
 // tables are keyed by its slug, and its queries keep their own database and staging directory.
 import type { Clock } from "@/clock";
 import { must } from "@/invariant";
-import { ReaderError } from "@/analytics/reader";
-import type { AnalyticsReader } from "@/analytics/reader";
+import { createAnalyticsReader, createEgressBudget, ReaderError } from "@/analytics/reader";
+import type { AnalyticsReader, ReaderOptions } from "@/analytics/reader";
 import { createCaptcha } from "@/captcha/captcha";
 import type { Captcha, CaptchaOptions } from "@/captcha/captcha";
 import type { PageSite } from "@/public/layout";
 import { rateLimited } from "@/public/rate-limit";
 import type { Middleware, RequestContext } from "@/server/context";
-import { RunnerError } from "@/subscribers/query-runner";
-import type { QueryRunner } from "@/subscribers/query-runner";
+import { createQueryRunner, RunnerError } from "@/subscribers/query-runner";
+import type { QueryRunner, RunnerOptions } from "@/subscribers/query-runner";
 import type { ByteGate } from "@/tx/gate";
 import { createAttachmentGate } from "@/tx/routes";
 
@@ -182,15 +182,8 @@ export async function createInstanceBudgets(clock: Clock) {
     busy: () => new ReaderError("busy", "too many analytics reads in progress"),
     cancelled: () => new ReaderError("cancelled", "analytics read cancelled"),
   });
-  /** Runs `work` holding one of the process's query slots. */
-  const held = async <T>(work: () => Promise<T>): Promise<T> => {
-    const release = await querySlots.acquire();
-    try {
-      return await work();
-    } finally {
-      release();
-    }
-  };
+  /** Bytes of finished analytics responses waiting to be written, across every project. */
+  const analyticsEgress = createEgressBudget();
   const attachments: ByteGate = createAttachmentGate(clock);
 
   return {
@@ -213,31 +206,19 @@ export async function createInstanceBudgets(clock: Clock) {
       };
     },
     /**
-     * A project's query runner whose children count against the process's slots. The project's
+     * A project's query runner whose children also take the process's slots. The runner frees a
+     * child's slot when the child exits, however slowly its output is read (D62). The project's
      * own runner keeps its database, its staging directory and its per-child limits.
      */
-    queries(inner: QueryRunner): QueryRunner {
-      return {
-        ...inner,
-        async *run(statements, onError) {
-          const release = await querySlots.acquire();
-          try {
-            // A child stopped at its limit tells onError at once; its slot is free from then on.
-            yield* inner.run(statements, (error) => {
-              release();
-              onError?.(error);
-            });
-          } finally {
-            release();
-          }
-        },
-        all: (statements) => held(() => inner.all(statements)),
-        stage: (statements) => held(() => inner.stage(statements)),
-        condition: (statement) => held(() => inner.condition(statement)),
-      };
+    queries(options: Omit<RunnerOptions, "slots">): QueryRunner {
+      return createQueryRunner({ ...options, slots: querySlots });
     },
-    /** A project's analytics reader whose children count against the process's slots. */
-    analytics(inner: AnalyticsReader): AnalyticsReader {
+    /**
+     * A project's analytics reader whose children count against the process's slots, and whose
+     * finished responses count against the process's one egress budget.
+     */
+    analytics(options: Omit<ReaderOptions, "egress" | "egressBytes">): AnalyticsReader {
+      const inner = createAnalyticsReader({ ...options, egress: analyticsEgress });
       return {
         ...inner,
         async read(method, args, signal, counted) {

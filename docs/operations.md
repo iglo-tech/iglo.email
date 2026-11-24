@@ -222,7 +222,7 @@ from a release before projects. The server exits nonzero with one line and write
 converts it (there is no upgrade path from it):
 
 ```text
-/var/lib/iglo.email is a data directory from an earlier iglo.email: it has iglo-email.db at its root. The data directory layout changed and nothing is converted; start with an empty data directory.
+/var/lib/iglo.email is a data directory from an earlier iglo.email: it has iglo-email.db at its root. The data directory layout changed and nothing is converted; start with an empty data directory. An earlier backup is restored into projects/main/ of the new data directory.
 ```
 
 `backup`, `reset-password`, `reset-totp` and `backup --release-hold` act on the primary project's

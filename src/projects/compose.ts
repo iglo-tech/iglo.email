@@ -26,7 +26,8 @@ import { createSubscriberStore } from "@/subscribers/store";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createSubscriberQuery } from "@/subscribers/query";
 import { registerSubscriberQueryRoutes } from "@/subscribers/query-routes";
-import { createQueryRunner, openReadOnly } from "@/subscribers/query-runner";
+import { openReadOnly } from "@/subscribers/query-runner";
+import type { QueryRunner } from "@/subscribers/query-runner";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createListReferences } from "@/lists/references";
@@ -98,7 +99,7 @@ import { createWebhookDelivery } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
-import { createAnalyticsReader } from "@/analytics/reader";
+import type { AnalyticsReader } from "@/analytics/reader";
 import { createAnalyticsPurge } from "@/analytics/purge";
 import { createSubscriberTracking } from "@/analytics/subscriber";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
@@ -180,7 +181,7 @@ export async function createProject(
   let subscriberStore: ReturnType<typeof createSubscriberStore> | undefined;
   let counts: ReturnType<typeof createListCounts> | undefined;
   let readonly: ReturnType<typeof openReadOnly> | undefined;
-  let queryRunner: ReturnType<typeof createQueryRunner> | undefined;
+  let queryRunner: QueryRunner | undefined;
   let subscriberQuery: ReturnType<typeof createSubscriberQuery> | undefined;
   let campaigns: ReturnType<typeof createCampaignListReferences> | undefined;
   let roles: ReturnType<typeof createRoles> | undefined;
@@ -209,7 +210,7 @@ export async function createProject(
   let webhooks: ReturnType<typeof createWebhookStore> | undefined;
   let bounces: ReturnType<typeof createBounceStore> | undefined;
   let deliveries: ReturnType<typeof createWebhookDelivery> | undefined;
-  let analyticsReader: ReturnType<typeof createAnalyticsReader> | undefined;
+  let analyticsReader: AnalyticsReader | undefined;
   let summaries: ReturnType<typeof createSummaries> | undefined;
   let summaryRefresh: ReturnType<typeof createSummaryRefresh> | undefined;
   let analyticsPurge: ReturnType<typeof createAnalyticsPurge> | undefined;
@@ -300,13 +301,11 @@ export async function createProject(
     subscriberStore = createSubscriberStore(db, clock, lists, subscriberEffects);
     readonly = openReadOnly(db.filename);
     // The project's own runner, whose children count against the process's slots (invariant 7).
-    queryRunner = budgets.queries(
-      createQueryRunner({
-        path: db.filename,
-        timeoutMs: 10_000,
-        concurrency: 2,
-      }),
-    );
+    queryRunner = budgets.queries({
+      path: db.filename,
+      timeoutMs: 10_000,
+      concurrency: 2,
+    });
     subscriberQuery = createSubscriberQuery({
       db,
       readonly,
@@ -316,13 +315,11 @@ export async function createProject(
     });
     campaigns = createCampaignListReferences(db);
     const writer = db;
-    analyticsReader = budgets.analytics(
-      createAnalyticsReader({
-        path: db.filename,
-        // After a long run of overlapping reads, let the WAL be checkpointed and restarted (D62).
-        onGap: () => void writer.run("PRAGMA wal_checkpoint(PASSIVE)"),
-      }),
-    );
+    analyticsReader = budgets.analytics({
+      path: db.filename,
+      // After a long run of overlapping reads, let the WAL be checkpointed and restarted (D62).
+      onGap: () => void writer.run("PRAGMA wal_checkpoint(PASSIVE)"),
+    });
     summaries = createSummaries(db, clock, analyticsReader);
     const liveCounts = counts;
     const cachedSummaries = summaries;

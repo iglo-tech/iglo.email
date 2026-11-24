@@ -109,6 +109,11 @@ export interface ReaderOptions {
    */
   egressBytes?: number;
   /**
+   * A budget shared with other readers (one process's projects, 14-projects invariant 7), used
+   * instead of one of `egressBytes` of this reader's own.
+   */
+  egress?: EgressBudget;
+  /**
    * After reads have overlapped continuously for this long, new reads wait until every running
    * one has finished, so the WAL can be checkpointed and restarted (D62).
    */
@@ -131,6 +136,16 @@ function defaultCommand(): Array<string> {
     : [process.execPath, join(import.meta.dir, "child.ts")];
 }
 
+/** Bytes of finished responses waiting to be written, against one limit; readers may share it. */
+export interface EgressBudget {
+  readonly bytes: number;
+  held: number;
+}
+
+export function createEgressBudget(bytes = 64 * 1024 * 1024): EgressBudget {
+  return { bytes, held: 0 };
+}
+
 const overloaded = () => new ReaderError("egress", "analytics responses are waiting to be sent");
 const busy = () => new ReaderError("busy", "too many analytics reads in progress");
 const cancelled = () => new ReaderError("cancelled", "analytics read cancelled");
@@ -143,10 +158,9 @@ export function createAnalyticsReader(options: ReaderOptions) {
   const admissionMs = options.admissionMs ?? 30_000;
   const memoryBytes = options.memoryBytes ?? 256 * 1024 * 1024;
   const maxOutputBytes = options.maxOutputBytes ?? 32 * 1024 * 1024;
-  const egressBytes = options.egressBytes ?? 64 * 1024 * 1024;
+  const egress = options.egress ?? createEgressBudget(options.egressBytes);
   const gapAfterMs = options.gapAfterMs ?? 15_000;
   const now = options.now ?? Date.now;
-  let held = 0;
   let streakStart = 0;
   /** Each running child and how to stop it with a reason. */
   const children = new Map<Bun.Subprocess, (error: ReaderError) => void>();
@@ -297,7 +311,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
         }
         // A read that waited for a child meets the budget again, so a queue of reads cannot
         // all pass a check made while nothing was held yet.
-        if (counted && held >= egressBytes) {
+        if (counted && egress.held >= egress.bytes) {
           throw overloaded();
         }
         if (signal?.aborted) {
@@ -318,7 +332,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
       args: Parameters<AnalyticsStore[M]>,
       signal?: AbortSignal,
     ): Promise<Response> {
-      if (held >= egressBytes) {
+      if (egress.held >= egress.bytes) {
         throw overloaded();
       }
       const bytes = await this.read(method, args, signal, true);
@@ -328,7 +342,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
       if (bytes.length <= PIECE) {
         return new Response(bytes, { headers });
       }
-      held += bytes.length;
+      egress.held += bytes.length;
       let at = 0;
       let returned = false;
       const done = () => {
@@ -336,7 +350,7 @@ export function createAnalyticsReader(options: ReaderOptions) {
           return;
         }
         returned = true;
-        held -= bytes.length;
+        egress.held -= bytes.length;
       };
       return new Response(
         new ReadableStream<Uint8Array>({
@@ -353,8 +367,8 @@ export function createAnalyticsReader(options: ReaderOptions) {
         { headers },
       );
     },
-    /** Bytes of responses finished but not yet fully written. */
-    heldBytes: () => held,
+    /** Bytes of responses finished but not yet fully written, across a shared budget's readers. */
+    heldBytes: () => egress.held,
     /** Refuse new and queued reads, kill running children and wait for them to exit. */
     async close() {
       closed = true;

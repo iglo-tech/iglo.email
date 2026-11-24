@@ -28,6 +28,7 @@ export function usesOldLayout(dataDir: string): boolean {
 export function oldLayoutMessage(dataDir: string): string {
   return (
     `${dataDir} is a data directory from an earlier iglo.email: it has ${PROJECT_DATABASE} at its root. ` +
-    `The data directory layout changed and nothing is converted; start with an empty data directory.`
+    `The data directory layout changed and nothing is converted; start with an empty data directory. ` +
+    `An earlier backup is restored into projects/main/ of the new data directory.`
   );
 }
