@@ -5,6 +5,7 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { asBody, readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 const executable = resolve(process.argv[2] ?? join(repository, "dist/iglo.email"));
@@ -118,8 +119,14 @@ try {
         unsubscribe.push(performance.now() - started);
       }
       const drainStart = performance.now();
-      while (hooks && received < N * hooks && performance.now() - drainStart < 120_000) {
-        await Bun.sleep(25);
+      // Drains until every delivery has arrived; a receiver that stops receiving fails by name.
+      if (hooks) {
+        await untilState(() => received >= N * hooks, {
+          label: "webhook deliveries drained",
+          progress: () => String(received),
+          stallMs: 120_000,
+          intervalMs: 25,
+        });
       }
       return {
         bun: Bun.version,

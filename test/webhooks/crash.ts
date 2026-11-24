@@ -11,6 +11,7 @@ import { provisionApiUser } from "@/test/contract/owned";
 import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const admin = { user: "crash-admin", password: "crash-admin-password" };
 const executable = resolve(import.meta.dir, "../../dist/iglo.email");
@@ -53,20 +54,22 @@ async function start(listenPort: number) {
       errors = (errors + chunk.toString()).slice(-4000);
     }
   });
-  const deadline = Date.now() + 10_000;
-  for (;;) {
-    // An exit here is a failed start (the port in use, for one); /health alone could be another server's.
-    if (child.exitCode !== null) {
-      await stderrDrained(child);
-      throw new Error(`not ready: ${errors}`);
-    }
-    const response = await fetch(`${origin}/health`).catch(() => null);
-    if (response?.status === 200 && child.pid !== undefined && listensOn(child.pid, listenPort)) {
-      return;
-    }
-    assert(Date.now() < deadline, `not ready: ${errors}`);
-    await Bun.sleep(20);
-  }
+  let observed = "starting";
+  // An exit here is a failed start (the port in use, for one); /health alone could be another server's.
+  await untilState(
+    async () => {
+      if (child!.exitCode !== null) {
+        await stderrDrained(child!);
+        throw new Error(`not ready: ${errors}`);
+      }
+      const response = await fetch(`${origin}/health`).catch(() => null);
+      observed = `status ${response?.status ?? "none"}`;
+      return (
+        response?.status === 200 && child!.pid !== undefined && listensOn(child!.pid, listenPort)
+      );
+    },
+    { label: `not ready: ${errors}`, progress: () => observed, stallMs: 10_000, intervalMs: 20 },
+  );
 }
 const exit = (process: ChildProcess) =>
   new Promise<number | null>((done) => {
