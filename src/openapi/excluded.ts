@@ -75,6 +75,11 @@ export const excluded: Array<Excluded> = [
     reason: "Login and password reset: HTML forms with a nonce, for a browser.",
   },
   {
+    routes: ["GET /admin/handoff"],
+    reason:
+      "The instance admin's handoff (B140): a single-use token from the instance host, redeemed by a browser.",
+  },
+  {
     routes: [
       "GET /admin/custom.css",
       "GET /admin/custom.js",

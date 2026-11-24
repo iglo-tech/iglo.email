@@ -781,6 +781,12 @@ export const differences: Array<Difference> = [
     applies: [],
   },
   {
+    area: "Instance admin (B140)",
+    summary:
+      "Changing the admin copy's name, status, type, roles or login, or deleting it: 403. Its name is 409 for others.",
+    applies: ["PUT /api/users/{id}"],
+  },
+  {
     area: "Sort direction (`order`)",
     summary:
       "`order` takes `asc`, `ASC` or `Asc` (any case) on every endpoint that documents it. Upstream's documented `ASC` sorts descending, so a client that reads the enum gets the wrong order there.",

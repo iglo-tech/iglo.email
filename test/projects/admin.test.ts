@@ -82,6 +82,16 @@ async function projectLogin(host: string, credentials: Credentials): Promise<str
   return response.status === 302 ? (response.headers.get("location") ?? "") : "";
 }
 
+/** A cookie's attributes as a response set it, without its value. */
+function attributes(response: Response, name: string): Array<string> | undefined {
+  return response.headers
+    .getSetCookie()
+    .find((value) => value.startsWith(`${name}=`))
+    ?.split(";")
+    .slice(1)
+    .map((part) => part.trim());
+}
+
 async function start() {
   server = await startInstance(prepared.executable, dataDir, environment);
   port = server.port;
@@ -156,13 +166,6 @@ test("instance_session has the project session's attributes, and both live on th
       }).toString(),
     });
   })();
-  const attributes = (response: Response, name: string) =>
-    response.headers
-      .getSetCookie()
-      .find((value) => value.startsWith(`${name}=`))
-      ?.split(";")
-      .slice(1)
-      .map((part) => part.trim());
   expect(attributes(instance, "instance_session")).toEqual(attributes(project, "session"));
   expect(attributes(instance, "instance_csrf")).toEqual(attributes(project, "csrf"));
   expect(attributes(instance, "instance_session")).toContain("Path=/");
@@ -283,8 +286,8 @@ test("next must be a local path: open-redirect attempts all land on /admin", asy
   const instance = shared;
   const attempts = [
     "//evil.example/",
-    "/\\evil.example/",
-    "\\\\evil.example/",
+    String.raw`/\evil.example/`,
+    String.raw`\\evil.example/`,
     "http://evil.example/",
     "https://evil.example/admin",
     "evil.example",

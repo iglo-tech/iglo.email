@@ -1,6 +1,6 @@
 # Projects
 
-**Status: in progress** ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)). B138a and B138b are built: the data directory is an instance with `instance.db` and `projects/<slug>/`, and one server routes by `Host` ([section 3, "As built"](#as-built-b138b)). Until the remaining tasks in [section 17](#17-tasks) merge, the other design documents describe one project per instance ([D15](09-decisions.md#d15-one-instance-per-product)) except for the data layout. When a task lands, it updates the documents it changes in the same PR.
+**Status: in progress** ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)). B138a, B138b and B140 are built: the data directory is an instance with `instance.db` and `projects/<slug>/`, one server routes by `Host` ([section 3, "As built"](#as-built-b138b)), and one admin account is copied into every project ([section 5, "As built"](#as-built-b140)). Until the remaining tasks in [section 17](#17-tasks) merge, the other design documents describe one project per instance ([D15](09-decisions.md#d15-one-instance-per-product)) except for the data layout. When a task lands, it updates the documents it changes in the same PR.
 
 This is the implementation spec for a worker or lead picking up one of the tasks in [section 17](#17-tasks).
 
@@ -119,13 +119,13 @@ data/
 - **`createProject(services, options)`.** Services: the clock, the shared budgets, and the listen address (only `App.bootstrap` carries it). Options: slug, directory, root URL, where its pre-migration snapshot goes, and its seed (the first admin, and for the primary project the first API user). No host, port or other instance configuration.
 - **Fresh install.** With an empty registry and nothing under `projects/` but possibly `main/`, the instance registers the primary project `main`, named after the site name default, on the instance host. An existing `projects/main/` is used as it is (a restore, or a first start that stopped before its row).
 - **The primary's main hostname follows `--root-url`.** At each start it is set to the instance host. A non-primary project may not hold the instance host.
-- **Seeds.** `IGLO_EMAIL_ADMIN_*` seeds every project with no users (a stand-in for the admin copy of B140). `IGLO_EMAIL_API_*` seeds the primary project only: an API credential belongs to one project.
+- **Seeds.** `IGLO_EMAIL_ADMIN_*` creates the admin account, which B140 copies into every project ([section 5, "As built"](#as-built-b140)). `IGLO_EMAIL_API_*` seeds the primary project only: an API credential belongs to one project.
 - **Routing.** `Host`, lowercased and without its port; a missing or unparsable `Host` is an unclaimed host. Without a primary: `GET /health` answers the instance's health; `/admin` and every `/admin/…` path except `/admin/instance/…` answer `302` to `--root-url` + `/admin/instance/projects`; anything else is `404` with the body `404 page not found\n`, `text/plain`.
 - **Instance health.** `200 {"data":true}` while no project's loops have failed, else `503`. A loop failure still stops the whole process, as one install did.
 - **Runtime add and remove.** `add` validates, wires the project (creating its directory and database), writes the registry rows last, then serves and starts it. A failure before the rows removes the new directory. `remove` takes the project off the routing table, stops and closes it, then deletes its rows; its directory stays (the final snapshot and removal are B143's).
 - **Budgets (invariant 7).** One rate-limit table per public limit kind (subscribe, opt-in, privacy, unsubscribe, bounce webhooks), with each project's peers keyed by its slug inside the one 10,000-peer bound; one ALTCHA key and replay table; one pair of subscriber-query children, which every project's own runner takes after its own and frees when the child exits; one pair of analytics children, which every project's reader acquires before its own; one analytics egress budget (64 MiB of finished responses for the process); one tx attachment byte gate. Still per project, as a follow-up: the send rate limiter, which the dispatcher replaces (B141).
 - **Logs.** Each project keeps its own buffer for `GET /api/logs`; every stderr line starts with `[<slug>] ` or `[instance] `.
-- **CLI.** `backup`, `reset-password`, `reset-totp` and `backup --release-hold` act on the primary project under the one lock, until B140 and B144.
+- **CLI.** `backup` and `backup --release-hold` act on the primary project under the one lock, until B144. `reset-password` and `reset-totp` act on the admin account and every copy for the admin's name, and on the primary project's user for any other (B140).
 - **Two databases.** Two steps write both. Runtime `add` writes the project's database first, then its registry row: a crash between leaves a directory with no row, reported at start and never served. The fresh install writes the primary's row first, then its database: a crash between leaves a row whose project is created at the next start, and a crash before the row leaves at most `projects/main/`, which the next start adopts.
 
 ## 4. Settings: instance and project
@@ -202,6 +202,21 @@ The owner works alone. The design keeps today's project authentication untouched
   `next` must be a path that starts with `/` and not `//`. Anything else becomes `/admin`. A spent, expired or foreign token is a `403` with no session.
 - **Logout and session expiry** work per host, as today.
 - **Other human users** in a project keep working exactly as today. The owner simply does not create any.
+
+### As built (B140)
+
+[D153](09-decisions.md#d153-one-admin-b140-lead-2026-11-24) records the choices this section left open. Where this list and the text above differ, this list is the code.
+
+- **Modules.** The users module owns the account: `src/users/account.ts` (instance.db's `admin_account` and `admin_sessions`, migration `instance/0002`), `instance-auth.ts` (the instance login, session and Account changes), `handoff.ts` (the tokens and the project's `/admin/handoff`), and in `store.ts` the copy (`users.admin_copy`, migration 32): `syncCopy`, its protection, the reserved name and the write-through hook. `src/admin/instance/routes.tsx` has the instance pages and JSON routes; `assets/admin/js/views/instance-account.js` the Account page's script. `src/projects/admin-sync.ts` writes a change to instance.db, then every other project; `admin-recovery.ts` is the CLI's admin path. `createProject` takes the admin as an instance service (`account`, `changed`, `redeem`) and exports `syncAdmin`.
+- **No account** without the variables on a start with none: the instance login refuses everyone, and projects behave as before.
+- **Copies** are written at each wiring; a row with the admin's name and no mark is adopted. Name and email stay the project's.
+- **Write-through:** instance.db, then every other copy, then the source's own commit; a crash is repaired at the next start.
+- **Protection** answers after the last-admin rule: `403` for a change to username, status, type, user or list role or password login, and for a delete naming the copy. The reserved name is `409`.
+- **Instance routes** on the instance host and on unclaimed hosts: `/admin/instance` (to Account), `/admin/instance/login`, `/admin/instance/login/twofa`, `/admin/instance/account`, `/admin/instance/open/<slug>`, and `/api/instance/account`, `/api/instance/account/password`, `/api/instance/account/totp`, `/api/instance/account/twofa`, `/api/instance/logout`. Any `Authorization` header is `401`.
+- **Cookies** `instance_session`, `instance_csrf` and `instance_nonce`, with the project cookies' attributes; the instance session lasts the default 7 days until B139.
+- **Handoff:** `GET /admin/instance/open/<slug>?next=` answers `303` to `<project root URL>/admin/handoff?token=…&next=…`; the project answers `303` to `next` with today's cookies, or `403`.
+- **CLI:** `reset-password` and `reset-totp` with the admin's name write instance.db and every copy under the one lock; any other name is the primary project's user.
+- **Tests:** `bun run contract:projects` runs `test/projects`: B138b's isolation and instance tests, the admin cases (`admin.test.ts`, compiled executable) and the handoff expiry on an injected clock (`handoff.test.ts`).
 
 ## 6. API and MCP scoping
 
