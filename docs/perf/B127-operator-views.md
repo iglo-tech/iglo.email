@@ -19,11 +19,16 @@ plan and its time at a million sends.
   schema 28, each filled with the same million sends (5,000 subscribers), then three repetitions of the
   send path's write work, and the two analytics reads through the production store.
 - B118g: the script's claim and settle are now the production `createSends` functions (`claim`,
-  `finish`), and migration 0029 is timed with its production SQL. The claim and settle figures under
-  "Write path at a million sends" were taken with the earlier hand-written statements, so they are
-  not a comparison for the script as it is now; a re-run at the size above is needed before a claim
-  or settle number is compared. The migration 0029 figure was taken with a stand-in `ALTER` of the
-  same shape. The insert and the reads are unchanged.
+  `finish`), and migration 0029 is timed with its production SQL. The migration 0029 figure was
+  taken with a stand-in `ALTER` of the same shape. The insert and the reads are unchanged.
+- B118j item 3: the script's claim is now `claimBatch` at the outbox's batch size (10, as
+  `src/messaging/outbox.ts`), one write transaction per claimed batch, and its settle is `finishAll`,
+  one commit per batch, the outbox's shape. The seeded queued rows carry payloads that admission
+  accepts (one per subscriber, from `encodePayload`): with the earlier `{}` payload, admission
+  refused every row as `payload_unavailable` and the settle timed nothing. The script now fails if a
+  claimed row is not admitted or a settled row is not `sent`. The claim and settle figures in the
+  table under "Write path at a million sends (B127 r2)" are for the single claim and per-row finish of
+  r2 and are not comparable with the re-run below.
 
 ## Before and after migration 0028
 
@@ -61,6 +66,24 @@ were running on it, so the spread between invocations is the noise):
 No phase is slower on schema 28 beyond the spread between invocations. A status change updates the same
 two status-prefixed indexes on both schemas (`idx_sends_due` and the status index, which migration 0028
 swaps), so the index count per write is unchanged.
+
+**Write path re-run with the production batch (B118j item 3).** Each repetition inserts 20,000 queued
+sends in one transaction, claims them ten at a time with `claimBatch` (one write transaction per claimed
+batch, as the outbox runs it), and settles each batch with `finishAll` (one commit per batch), with
+`synchronous = FULL`. Medians of three repetitions, in milliseconds, from three invocations of
+`bun test/sends/measure-status-index.ts 1000000 20000 3` on the same macOS arm64 host (the host was
+shared, so the spread between invocations is the noise):
+
+| Phase | Run A, schema 27 | Run A, schema 28 | Run B, schema 27 | Run B, schema 28 | Run C, schema 27 | Run C, schema 28 |
+|---|---|---|---|---|---|---|
+| Insert 20,000 | 906 | 1,436 | 628 | 816 | 857 | 932 |
+| `claimBatch` 20,000 (10 per claim) | 4,700 | 3,781 | 2,515 | 3,499 | 3,639 | 3,740 |
+| `finishAll` 20,000 (10 per commit) | 3,819 | 3,937 | 2,497 | 3,543 | 3,582 | 3,593 |
+
+The claim and settle phases are within the spread of the host: the sign of the difference changes from
+run to run. The insert is slower on schema 28 in all three invocations (by 9% to 59%), which the r2 runs
+did not show; no write in migration 0028 changes the insert itself, so the cause is not known. This is a
+question for the lead before the decision below is taken as settled.
 
 **Migration 0029 (B127 r2, `enrollments.exit_condition`).** The migration adds one nullable column with
 no default, which SQLite does not rewrite rows for: `ALTER TABLE enrollments ADD COLUMN` on one million
@@ -123,7 +146,8 @@ are read once, through the index that already serves the subscriber's enrollment
 ## Decision
 
 Migration 0028 is accepted: the status-filtered send log and the dashboard drop from about half a
-second to microseconds, the count stays at 25 ms, and writes cost the same (three repetitions, three
-invocations, above). Decision D135's "no measurement" was wrong; this note is the measurement it needed.
+second to microseconds, the count stays at 25 ms, and writes cost the same (the r2 table, three
+repetitions, three invocations). The B118j re-run shows the claim and settle within the spread but the
+insert slower on schema 28 in every invocation, which this decision has not yet accounted for. Decision D135's "no measurement" was wrong; this note is the measurement it needed.
 Migration 0029 is accepted on the 14 ms column probe: it rewrites no row, and the send path does not
 change.
