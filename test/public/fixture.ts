@@ -19,7 +19,6 @@ import { createSettings } from "@/settings/store";
 import { txFixture } from "@/test/tx/fixture";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 import { asBody } from "@/test/read-body";
-import { untilState } from "@/test/wait";
 
 const unsetSettings = (): PublicSettings => {
   throw new Error("unset");
@@ -203,15 +202,20 @@ export async function publicFixture() {
         (await f.json(`/api/subscribers/${id}`)).body.data.lists,
       ).find((item) => item.id === list)?.subscription_status,
     mailTo: (address: string) => f.sink.messages.filter((m) => m.to.includes(address)),
+    /**
+     * Advances the injected clock a second per step, at most 200 steps, while mail is queued or a
+     * send is open. The bound is in injected time, so every host sees the same window: a send that
+     * never settles uses all 200 steps. Returns what is still open (0 when drained).
+     */
     async drain() {
       // The outbox also polls on the clock; a wake during its previous batch waits for that.
-      await untilState(
-        async () => {
-          f.clock.advance(1000);
-          return mail.queued() === 0 && !(await pending(f));
-        },
-        { label: "public outbox drained", progress: () => String(mail.queued()), intervalMs: 5 },
-      ).catch(() => undefined);
+      let open = mail.queued() + openSends(f);
+      for (let i = 0; i < 200 && open > 0; i++) {
+        f.clock.advance(1000);
+        await Bun.sleep(5);
+        open = mail.queued() + openSends(f);
+      }
+      return open;
     },
     async close() {
       await signups.stop();
@@ -223,8 +227,10 @@ export async function publicFixture() {
     },
   };
 }
-const pending = async (f: { db: { query(sql: string): { get(): unknown } } }) =>
-  asBody<{ n: bigint }>(
-    f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
-  ).n > 0n;
+const openSends = (f: { db: { query(sql: string): { get(): unknown } } }) =>
+  Number(
+    asBody<{ n: bigint }>(
+      f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
+    ).n,
+  );
 export type PublicFixture = Awaited<ReturnType<typeof publicFixture>>;

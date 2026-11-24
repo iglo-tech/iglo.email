@@ -1,6 +1,14 @@
 // M1.9 behavior through HTTP on a real server process: CSV corners, limits, and what a stop, a
 // shutdown or a crash leaves. The corpus shared with upstream is in test/contract/import.ts.
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from "bun:test";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,6 +16,9 @@ import { provisionApiUser } from "@/test/contract/owned";
 import { listensOn, startOnFreePort } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+
+// A 30 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(40_000);
 
 const subscribe = (lists: number) => ({ mode: "subscribe", delim: ",", lists: [lists] });
 const running = async (dataDir: string) => {

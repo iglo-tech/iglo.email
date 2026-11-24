@@ -1,7 +1,7 @@
 // A test send that is not delivered leaves one attention line (B101), through HTTP: the send
 // answers `true` at once, a refused recipient leaves a line in GET /api/logs, and a delivered one
 // leaves none. The buffer keeps a fixed text with no address; stderr keeps the recipient and stage.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { createAnalyticsPurge } from "@/analytics/purge";
 import { createErrorLogger } from "@/app";
 import { createLogBuffer } from "@/maintenance/log-buffer";
@@ -11,6 +11,9 @@ import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const REFUSED = "refused@example.test";
 const DELIVERED = "delivered@example.test";

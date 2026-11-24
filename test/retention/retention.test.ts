@@ -1,5 +1,5 @@
 // B2 bounded retention through the HTTP API, the public pages and the injected clock.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { createAnalyticsStore } from "@/analytics/store";
 import type { Clock } from "@/clock";
 import { permissions } from "@/roles/roles";
@@ -12,6 +12,9 @@ import { startReceiver } from "@/test/webhooks/receiver";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const noop = () => {};
 const cookie = (id: string) => ({ cookie: `session=${id}` });

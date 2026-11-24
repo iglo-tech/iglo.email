@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { createAnalyticsPurge } from "@/analytics/purge";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
@@ -7,6 +7,9 @@ import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { MAINTENANCE_SUBSCRIBERS as BATCH } from "@/subscribers/store";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+
+// A 5 s stall would end at the single-file run's 5 s default before it fails by name.
+setDefaultTimeout(30_000);
 
 let f: CampaignsFixture;
 let purge: ReturnType<typeof createAnalyticsPurge>;

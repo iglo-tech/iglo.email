@@ -4,7 +4,7 @@
 // Data is generated and arranged in the v4 shape with SQL; mail goes to a loopback sink only.
 import { Database } from "bun:sqlite";
 import { ascending } from "@/test/order";
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,9 @@ import { productionMigrations, runMigrations } from "@/db/migrations";
 import { startRuntime } from "@/test/scheduler/runtime";
 import { startSink } from "@/test/tx/sink";
 import { untilState } from "@/test/wait";
+
+// A 15 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 /** Arrange data as v4 saves left it: deleted steps keep their pre-save position. */
 function seedVersion4(directory: string) {

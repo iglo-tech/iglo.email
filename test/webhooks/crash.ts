@@ -68,7 +68,14 @@ async function start(listenPort: number) {
         response?.status === 200 && child!.pid !== undefined && listensOn(child!.pid, listenPort)
       );
     },
-    { label: `not ready: ${errors}`, progress: () => observed, stallMs: 10_000, intervalMs: 20 },
+    {
+      label: "not ready",
+      progress: () => observed,
+      stallMs: 10_000,
+      intervalMs: 20,
+      // Read when the stall fires, so the failure carries the child's stderr as it is then.
+      describe: () => `stderr: ${errors || "(none)"}`,
+    },
   );
 }
 const exit = (process: ChildProcess) =>

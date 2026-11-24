@@ -1019,14 +1019,17 @@ describe("compiled executable", () => {
       startThroughCli(port, join(temporaryDirectory, "past-3s")),
     );
     // B118c r3 item 8b: a start that takes 5 to 9 s would leave the check below to find the process
-    // already killed, with the same output as mutation 1. Name a slow start instead (mutation 3: a
-    // 5 s sleep before the start fails with this message, not with "SIGKILL").
-    const startMs = performance.now() - begun;
-    if (startMs > budgetMs - 4000) {
+    // already killed, with the same output as mutation 1. The start is measured to readiness (the
+    // helper returns once this process answers /health), and the 4 s check runs from that point.
+    // A late sleep can overshoot by up to 500 ms, so the check must come 500 ms before the kill
+    // (mutation 3: a 5 s sleep before the start fails with this message, not with "SIGKILL").
+    const readyMs = performance.now() - begun;
+    if (readyMs + 4000 + 500 > budgetMs) {
       child.kill("SIGKILL");
       await run.catch(() => undefined);
       throw new Error(
-        `start took ${Math.round(startMs)} ms, too slow to leave the 4 s check within the ${budgetMs} ms budget`,
+        `ready after ${Math.round(readyMs)} ms, too slow for the 4 s check with 500 ms of margin ` +
+          `within the ${budgetMs} ms budget`,
       );
     }
     await Bun.sleep(4000);

@@ -375,8 +375,9 @@ async function limits() {
     windowRate = 2500,
     windowMs = 60_000,
     // The account-wide cap (D92, since B37) applies to campaigns too. Set explicitly to the
-    // default these runs have always had, so they stay comparable. With the cap off (0) a 1 s
-    // count reaches 70+, above the per-second bound below. See docs/perf/M3.2-runner.md.
+    // default these runs have always had, so they stay comparable. With the cap off (0) the most
+    // messages in any one second reaches 70+, a peak above the per-second bound below; the
+    // sustained rate is about 50 msg/s. See docs/perf/M3.2-runner.md.
     maxSendRate = 14;
   await withRun("limits", async (directory, sink) => {
     const before = free();

@@ -1,11 +1,14 @@
 // B7: the process-wide egress budget for finished analytics responses, and the forced gap that
 // lets the WAL restart under continuous polling. The child is a stand-in that prints bytes.
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAnalyticsReader } from "@/analytics/reader";
 import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 // Each child logs when it starts and, once released, when it ends; the order of the log says
 // whether the second read ran beside the first or waited for it. No elapsed time is measured.

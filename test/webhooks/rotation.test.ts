@@ -1,5 +1,5 @@
 // Secret rotation (D130) through the HTTP API, the injected clock and a local receiver.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { writeTransaction } from "@/db/transaction";
 import { startPurge } from "@/loops/purge";
 import { txFixture } from "@/test/tx/fixture";
@@ -8,6 +8,9 @@ import { signatureCount, signatureValid, startReceiver } from "@/test/webhooks/r
 import type { Receiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;

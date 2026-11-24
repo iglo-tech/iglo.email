@@ -1,10 +1,13 @@
 // What the server does with an upload directory it finds at startup.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { listensOn, startOnFreePort } from "@/test/serve-port";
 import { untilState } from "@/test/wait";
+
+// A 15 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const repository = resolve(import.meta.dir, "../..");
 const directories: Array<string> = [];

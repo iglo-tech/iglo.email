@@ -1,5 +1,5 @@
 // M2.6 outbound webhooks through the HTTP API, the injected clock and a local receiver.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { ascending } from "@/test/order";
 import { createServer } from "node:https";
 import type { AddressInfo } from "node:net";
@@ -13,6 +13,9 @@ import type { JsonObject } from "@/test/json-object";
 import type { Receiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 // A webhook delivery body as the receiver saw it: the fields these tests assert.
 type DeliveryBody = {

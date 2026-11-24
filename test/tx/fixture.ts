@@ -77,7 +77,6 @@ import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
 import type { Captcha } from "@/captcha/captcha";
 import { asBody } from "@/test/read-body";
-import { untilState } from "@/test/wait";
 
 const open: Middleware = (_context, next) => next();
 
@@ -601,15 +600,19 @@ export async function txFixture(
     count: () => Number(asBody<{ n: bigint }>(db.query("SELECT count(*) AS n FROM sends").get()).n),
     settings: settingsStore,
     mailTo: (address: string) => sink.messages.filter((m) => m.to.includes(address)),
+    /**
+     * Advances the injected clock a second per step, at most 200 steps, while a send is open. The
+     * bound is in injected time, so every host sees the same window: a send that never settles uses
+     * all 200 steps. Returns the sends still open (0 when drained).
+     */
     async drain() {
-      // Each check moves the clock a second; the wait fails by name when the open sends stop moving.
-      await untilState(
-        () => {
-          testClock.advance(1000);
-          return openSends() === 0n;
-        },
-        { label: "sends drained", progress: () => String(openSends()), intervalMs: 5 },
-      ).catch(() => undefined);
+      let open = openSends();
+      for (let i = 0; i < 200 && open > 0; i++) {
+        testClock.advance(1000);
+        await Bun.sleep(5);
+        open = openSends();
+      }
+      return Number(open);
     },
     async close() {
       await delivery?.halt();

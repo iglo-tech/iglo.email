@@ -1,6 +1,6 @@
 // M3.5 behavior that needs a failure, the injected clock or a sent message. The shared corpus and
 // the compiled executable are in test/contract/media.ts.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, readdirSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { campaignsFixture } from "@/test/campaigns/fixture";
@@ -12,6 +12,9 @@ import { makeFilename } from "@/media/filesystem";
 import type { JsonObject } from "@/test/json-object";
 import { readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -454,7 +457,7 @@ test("queued test sends keep their slots until they settle, and the next is refu
       return next === 200;
     },
     {
-      label: "the export slots come back",
+      label: "the test-send slots come back",
       progress: () => String(next),
       stallMs: 10_000,
       intervalMs: 5,

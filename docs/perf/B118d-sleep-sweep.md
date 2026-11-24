@@ -24,6 +24,13 @@ under "Deferred"). The counts are `grep` lines on both sides.
   `WAIT_WALL_MS`). There is no total deadline: a slow host that keeps moving is not cut off by time
   alone, and the test's own timeout still bounds a body that never ends (B118c item 1). The wait's
   own test is `test/wait.test.ts` (four cases, two mutants shown).
+- Stall windows of 10 s and 15 s (and 30 s in `import.test.ts`) would outlast a single-file run's
+  5 s default before they fail by name. The files that wait that long call `setDefaultTimeout`
+  (30 s; 40 s in `import.test.ts`), so the wait's label is reported first. `bun run test` passes
+  30 s and is unchanged.
+- The drains in `test/public/fixture.ts` and `test/tx/fixture.ts` are not `untilState` waits: they
+  advance the injected clock at most 200 steps of 1 s, and return the sends still open (0 when
+  drained). The bound is in injected time, so it is the same window on every host.
 - `waitWall` (unchanged): a wait on an injected clock or on microtasks, with `advance` for clock steps.
 - Where a check's last value is the only progress signal (webhook and retention `until` helpers),
   the value's JSON is the progress. Where no signal exists (`/health` answering after a reference
@@ -154,12 +161,14 @@ absence is asserted); **Y** event-loop yield between steps; **S** settle with no
 
 ## Deferred: state waits not converted here
 
-These still wait on a state with a sleep. Each needs its own run to verify (a Docker reference, an
-opt-in harness, or a browser pass), so none was changed without one.
+These still wait on a state with a sleep. The first bullet is the exception: both of its polls run
+in `bun run check`, so no Docker, opt-in or browser run is needed to change them. They are B118e's
+first items, with the rest of the sweep. The other bullets each need their own run to verify (a
+Docker reference, an opt-in harness, or a browser pass), so none was changed without one.
 
-- `test/serve-port.ts:220` (readiness poll of the start helper), `test/sends/production.ts:198`
-  (readiness poll), `test/bootstrap/cli.test.ts:216` (readiness poll inside `startThroughCli`,
-  raced against the exit).
+- `test/serve-port.ts:220` (readiness poll of the start helper) and `test/bootstrap/cli.test.ts:216`
+  (readiness poll inside `startThroughCli`, raced against the exit). B118e.
+- `test/sends/production.ts:198` (readiness poll, `sends:production`, Docker).
 - `test/worked-example/harness.ts:92, 181`, `test/worked-example/run.ts:267, 278, 398` (enrollment
   and mail polls of the worked example; run with the production build).
 - `test/public/browser.ts:107` (mail-link poll in a browser pass).
@@ -173,6 +182,27 @@ opt-in harness, or a browser pass), so none was changed without one.
   waits 20 ms after the message reaches the sink, and the outcome is logged from the emailer's own
   settle path. What is needed is a settled event for a test send (the `test_sends` row reaching a
   final status) that the test can wait on. The test is left as it is.
+
+## Hardening backlog (B118e)
+
+Kept as sleeps for this sweep, because the state each waits for is not visible through any public
+boundary. Each is still a timing mechanism, so each needs the signal named here before it can be
+a wait:
+
+- `test/contract/maintenance.ts:222` (100 ms before the 429 slot check): the running operation's
+  slot. Needs a public state for a running maintenance operation (a `running` flag or a status).
+- `test/events/events.test.ts:597` (50 ms before the shed request): the held singles' arrival.
+  Needs a server-side count of accepted in-flight event requests.
+- `test/media/media.test.ts:100` and `test/media/storage.test.ts:150` (10 ms before the next
+  request): an upload holding its slot. Needs a public count of open uploads.
+
+Also noted, no change: `untilState` is a stall timer, so a progress value that flips between two
+states (for example `no answer` and `status 503`) restarts the stall each time, and a stuck wait
+can run on. No caller does this today: the progress strings are statuses or counts, and they
+converge. Outside `bun test`, the test's own timeout does not bound a body. About a dozen callers
+are not tests (the `test/contract/*.ts` modules run by `bun test/contract/cli.ts`, the crash
+scripts, and the measurement scripts) and have no timeout of their own. An optional `signal` or
+`maxMs` on `untilState` would close both, when a caller needs it.
 
 ## What this does not cover
 
