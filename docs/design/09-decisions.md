@@ -1895,3 +1895,10 @@ Brief B117a, from an adopter's checks and reviews of B126, B127, B131, B134f and
 - **Decision:** the lead, workers, reviewers and every check run on `agents-workhorse-01`, an Ubuntu 26.04 Server (Linux x86-64, 12 cores, 30 GB RAM), instead of the owner's macOS workstation. Checks run natively as the non-root user, with no container: the host is Linux with `/proc` (D89) and the platform of CI's x86-64 job. The reference harness uses the host's Docker; bubblewrap works as installed. The release gate's 10 `bun run check` runs are native x86-64, and its emulated run moves from amd64 to arm64 (when the host can emulate it).
 - **Unchanged:** the gate rules in `chief-of-staff.md`, D145's test scope, the roles of D145 and D146, non-root test runs, and the harness's own Docker labels and clean-up.
 - **Considered:** keeping the `oven/bun` container for every check. Not needed: it existed only because macOS lacks `/proc` and the Linux test limits; a native run here is the CI platform itself and avoids the container's start and copy cost.
+
+## D148. arm64 is gated as a build, not a test run (owner, 2026-11-24)
+
+- **Decision:** the release gate checks arm64 only as a build: the release commit's executable is cross-compiled for `bun-linux-arm64` and, under the host's QEMU emulation, prints `--version` and answers `/health`. The emulated `bun run check` run that D147 added to the gate is dropped. The owner: only the ready-to-use build needs to work on arm64.
+- **Unchanged:** the 10 native `bun run check` runs on x86-64, every `ci.yml` and release step, e2e and the image smoke; the release workflow's native arm64 build and image smoke, which still gate publishing; D89's two platforms.
+- **Considered:** keeping the emulated `bun run check`. It costs hours under QEMU, its wall-clock timeouts were already non-blocking, and the code is architecture-independent TypeScript in one runtime; what can differ per architecture is the compiled executable, which the build check covers.
+- **Host:** QEMU user emulation is installed on `agents-workhorse-01` (`qemu-user-binfmt`, by the owner's sudo, 2026-11-24).
