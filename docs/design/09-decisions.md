@@ -1902,3 +1902,9 @@ Brief B117a, from an adopter's checks and reviews of B126, B127, B131, B134f and
 - **Unchanged:** the 10 native `bun run check` runs on x86-64, every `ci.yml` and release step, e2e and the image smoke; the release workflow's native arm64 build and image smoke, which still gate publishing; D89's two platforms.
 - **Considered:** keeping the emulated `bun run check`. It costs hours under QEMU, its wall-clock timeouts were already non-blocking, and the code is architecture-independent TypeScript in one runtime; what can differ per architecture is the compiled executable, which the build check covers.
 - **Host:** QEMU user emulation is installed on `agents-workhorse-01` (`qemu-user-binfmt`, by the owner's sudo, 2026-11-24).
+
+## D150. Opus 5.5 reviews while Gemini is out of quota (owner, 2026-11-24)
+
+- **Decision:** the single independent reviewer of each round is a fresh Claude Opus 5.5 (medium) delegate, not Gemini 4 Neon (D146). The owner switched it after the Gemini quota ran out mid-round (B138a round 2). It stays Opus until the owner says otherwise.
+- **Unchanged:** one fresh reviewer per round that did not write the code, the reviewer suffix, the round scopes and D145's test scope. The worker that wrote the code never reviews it, even on the same model.
+- **Considered:** waiting about two hours for the Gemini quota to reset. The owner chose to keep work moving.

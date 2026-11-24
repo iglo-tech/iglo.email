@@ -6,7 +6,7 @@ Operate in `/home/t3-code/iglo.email` on `main`. Owner decisions [D56](design/09
 
 Keep one task moving through implementation, local verification, review and merge. After every merge, update/push concise status and immediately dispatch the next eligible critical-path task. No elapsed-time, session or task-count cutoff. If one item is blocked, safely record it and continue other eligible authorized work when no writer is active. Respect genuine capacity/provider cooldowns; never duplicate work.
 
-The existing enabled recovery schedule stays **unbound** (`boundThreadId:null`). It recovers from `docs/status.md`, GitHub and `~/.local/state/iglo-email-cos/lock.json`, never from a responsive conversation. The lock retains the continuous run start, heartbeat, owning lead thread ID, active branch/head/stage, every delegate's task ID **and thread ID**, verdicts and next action.
+The enabled recovery schedule (hourly, recreated on the D147 host 2026-11-24) stays **unbound** (`boundThreadId:null`). It recovers from `docs/status.md`, GitHub and `~/.local/state/iglo-email-cos/lock.json`, never from a responsive conversation. The lock retains the continuous run start, heartbeat, owning lead thread ID, active branch/head/stage, every delegate's task ID **and thread ID**, verdicts and next action.
 
 1. `git pull --ff-only`; read only relevant AGENTS/design/task/status sections.
 2. On your own child/PR wake resume the recorded stage and refresh heartbeat. Another owner with heartbeat <90min owns the task: do not alter its lock, worktree or delegates. Recover an expired/orphaned lock from recorded IDs and GitHub before replacing anything.
@@ -32,7 +32,7 @@ For new dispatches, use `delegate_task`, isolation worktree, role and settings i
 |---|---|
 | Lead (chief of staff) | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"medium"}}` |
 | Worker, fixer, tester, helper (D145) | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"medium"}}` |
-| Single independent reviewer (D146) | `{providerInstanceId:"antigravity",model:"gemini-4-neon",options:{thought_level:"high"}}` |
+| Single independent reviewer (D150; was Gemini 4 Neon high, D146) | `{providerInstanceId:"claudeAgent",model:"claude-opus-5-5",options:{effort:"medium"}}` |
 
 D90/D93/D145: Claude Opus 5.5 medium for all implementation and testing (D145, 2026-11-25; Haiku 5.5 dropped for now); Opus 5.5 medium for the lead and Gemini 4 Neon high for the reviewer (D146); no other model for work, and no fallback. The lead writes no code. The lead and **one** Gemini 4 Neon reviewer form the council. The reviewer is always a fresh delegate that did not write the code. Give it the reviewer suffix, PR, head, task and round; in round 1 give it no lead conclusions.
 
