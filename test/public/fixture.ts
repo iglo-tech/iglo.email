@@ -19,6 +19,7 @@ import { createSettings } from "@/settings/store";
 import { txFixture } from "@/test/tx/fixture";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const unsetSettings = (): PublicSettings => {
   throw new Error("unset");
@@ -204,10 +205,13 @@ export async function publicFixture() {
     mailTo: (address: string) => f.sink.messages.filter((m) => m.to.includes(address)),
     async drain() {
       // The outbox also polls on the clock; a wake during its previous batch waits for that.
-      for (let i = 0; i < 200 && (mail.queued() > 0 || (await pending(f))); i++) {
-        f.clock.advance(1000);
-        await Bun.sleep(5);
-      }
+      await untilState(
+        async () => {
+          f.clock.advance(1000);
+          return mail.queued() === 0 && !(await pending(f));
+        },
+        { label: "public outbox drained", progress: () => String(mail.queued()), intervalMs: 5 },
+      ).catch(() => undefined);
     },
     async close() {
       await signups.stop();

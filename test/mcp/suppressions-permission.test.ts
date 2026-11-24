@@ -9,6 +9,7 @@ import { admin, startMailbox, startProduction } from "@/test/worked-example/harn
 import type { Mailbox, Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 let production: Production;
 let mailbox: Mailbox;
@@ -133,12 +134,18 @@ async function wiped(addresses: Array<string>): Promise<void> {
   expect(
     (await api(`/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" })).status,
   ).toBe(200);
-  for (let i = 0; i < 300; i++) {
-    if ((await api(`/api/campaigns/${campaign.id}`)).body.data.status === "finished") {
-      break;
-    }
-    await Bun.sleep(100);
-  }
+  let campaignStatus = "";
+  await untilState(
+    async () =>
+      (campaignStatus = (await api(`/api/campaigns/${campaign.id}`)).body.data.status) ===
+      "finished",
+    {
+      label: "campaign finished",
+      progress: () => campaignStatus,
+      stallMs: 15_000,
+      intervalMs: 100,
+    },
+  );
   for (const subscriber of subscribers) {
     const response = await fetch(
       `${production.origin}/subscription/${campaign.uuid}/wipe/${subscriber.uuid}?confirm=true`,
