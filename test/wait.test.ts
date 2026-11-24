@@ -49,10 +49,7 @@ test("progress that stops fails by name, with the state the caller describes", a
     progress: () => "rows: 3 sending",
     stallMs: 100,
     describe: () => "3 rows still sending",
-  }).then(
-    () => "resolved",
-    (failure: unknown) => String(failure),
-  );
+  }).then(() => "resolved", String);
   expect(error).toContain("rows settle: no progress for 100 ms (rows: 3 sending)");
   expect(error).toContain("3 rows still sending");
 });

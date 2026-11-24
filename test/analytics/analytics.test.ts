@@ -427,12 +427,10 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
     f.clock.advance(ms);
     await Bun.sleep(0);
   };
-  // The rows are written by the loop after a clock step; the wait names the count it is after.
-  const until = (expected: number) =>
-    waitWall(async () => (await lists()) === expected, { label: `dashboard lists ${expected}` });
+  // The rows are written by the loop after a clock step; each wait names the count it is after.
   try {
     // Nothing stored yet: the first tick fills the rows without waiting for the interval.
-    await until(0);
+    await waitWall(async () => (await lists()) === 0, { label: "dashboard lists 0" });
     await f.list("one");
     expect(await lists()).toBe(0);
     await tick(60_000); // 03:05:05.
@@ -441,7 +439,7 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
     await f.clock.whenSleeping();
     expect(await lists()).toBe(0);
     await tick(55 * 60_000); // 04:00:05 passed the cron minute.
-    await until(1);
+    await waitWall(async () => (await lists()) === 1, { label: "dashboard lists 1" });
     const { data: raw } = asBody<{ data: string }>(
       f.db.query("SELECT data FROM analytics_summaries WHERE name = 'list_stats'").get(),
     );
