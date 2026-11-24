@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { ensureProductionBuild } from "@/test/production-build";
-import { portZeroRootUrl, readyOnPortZero } from "@/test/serve-port";
+import { portZeroRootUrl, readyOnPortZero, startStderr } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -84,7 +84,14 @@ export async function startServer(executable: string, dataDir: string) {
       stderr: "pipe",
     },
   );
-  const { port } = await readyOnPortZero(child, 30_000);
+  // A start that exits fails with its stderr alone, as written: callers compare it with the
+  // server's own refusal, such as the data-directory lock's.
+  const { port } = await readyOnPortZero(child, 30_000).catch((error: unknown) => {
+    const stderr = startStderr(error);
+    throw stderr !== undefined && child.exitCode !== null
+      ? new Error(stderr, { cause: error })
+      : error;
+  });
   const origin = `http://127.0.0.1:${port}`;
   return {
     origin,

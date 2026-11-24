@@ -304,11 +304,19 @@ export async function reportedPort(child: PortReporter, stallMs = 15_000): Promi
 /** The root URL of a test start on port 0: it is set before the bind, so it names no port (D144). */
 export const portZeroRootUrl = "http://127.0.0.1";
 
+/** The stderr a failed `readyOnPortZero` start wrote, as written, or undefined when none was read. */
+export function startStderr(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("startStderr" in error)) {
+    return undefined;
+  }
+  return typeof error.startStderr === "string" ? error.startStderr : undefined;
+}
+
 /**
  * Waits for a child started with `--port 0 --root-url <url>` (D144) to name its port and answer
  * /health on it, and returns the port. Each wait is a stall window of `stallMs` on the child's CPU
  * time. A start that fails is killed and reaped before its error is thrown, with the child's stderr
- * when it is still unread.
+ * in its message when it is still unread; `startStderr` gives that stderr as written.
  */
 export async function readyOnPortZero(
   child: Child,
@@ -325,13 +333,15 @@ export async function readyOnPortZero(
     const stream = child.stderr;
     const stderr =
       typeof stream === "object" && stream !== null && !stream.locked
-        ? (await new Response(stream).text()).trim()
+        ? await new Response(stream).text()
         : "";
-    if (!stderr) {
+    if (!stderr.trim()) {
       throw error;
     }
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`${reason}: ${stderr}`, { cause: error });
+    throw Object.assign(new Error(`${reason}: ${stderr.trim()}`, { cause: error }), {
+      startStderr: stderr,
+    });
   }
 }
 
