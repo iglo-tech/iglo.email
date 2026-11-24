@@ -446,4 +446,27 @@ export function createEventStore(
   };
 }
 export type EventStore = ReturnType<typeof createEventStore>;
+
+/**
+ * B118h (05-sequences.md#events-tab): the event an enrollment's exit is shown on, among all of the
+ * subscriber's events, or null when none has the exit's name and receive time. The events module
+ * owns the choice; the sequences module reads it through this reader and holds its statement.
+ */
+export function createExitShown(db: Database) {
+  const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
+  return {
+    shown(
+      subscriberId: bigint,
+      name: string,
+      receivedAt: string,
+      triggerId: bigint | null,
+    ): bigint | null {
+      const row = q.get("event-exit-shown").get(subscriberId, name, receivedAt, triggerId) as {
+        id: bigint;
+      } | null;
+      return row?.id ?? null;
+    },
+    close: () => q.close(),
+  };
+}
 type Subscriber = ReturnType<SubscriberStore["upsertForEvent"]>;

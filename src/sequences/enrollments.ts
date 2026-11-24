@@ -13,6 +13,7 @@ import type { Condition, Scalar } from "@/conditions/types";
 import { prepareNamedQueries } from "@/db/queries";
 import { must } from "@/invariant";
 import type { ExitThenTrigger, RecordedEvent } from "@/events/store";
+import { createExitShown } from "@/events/store";
 import type { SubscriberEffects } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 import sql from "@/sequences/enrollments.sql" with { type: "text" };
@@ -169,6 +170,7 @@ const triggerFits = (trigger: TriggerEvent | null, subscriberId: bigint, event: 
   trigger === null || (trigger.subscriber_id === subscriberId && trigger.name === event);
 export function createEnrollments(db: Database, clock: Clock) {
   const q = prepareNamedQueries(db, [{ name: "sequences/enrollments", sql }]);
+  const exitShown = createExitShown(db);
   const byId = (id: bigint) => q.get("enrollment-by-id").get(id) as EnrollmentRow | null;
   let due = noop;
 
@@ -564,6 +566,8 @@ export function createEnrollments(db: Database, clock: Clock) {
      * B127: the enrollments one page of a subscriber's events started or exited, by event ID. An event
      * started an enrollment it triggered, and exited one whose `exit_on` it names, at the time it was
      * received (the `at` given here, which an exit records as its finish).
+     * B118h: an exit is shown on one event only, the one that would have ended the enrollment
+     * (05-sequences.md#events-tab), so an exit whose event is on another page is not shown here.
      */
     eventLinks(
       subscriberId: bigint,
@@ -596,10 +600,17 @@ export function createEnrollments(db: Database, clock: Clock) {
         if (row.trigger_event_id !== null) {
           links.get(row.trigger_event_id)?.started.push(link);
         }
-        for (const event of events) {
-          if (row.exit_reason === `event:${event.name}` && row.finished_at === event.receivedAt) {
-            links.get(event.id)?.exited.push(link);
-          }
+        // B118h: an exit is shown on one event, the one that would have ended the enrollment (the events
+        // module chooses it among all of the subscriber's events). The page holds it only when that event is on it.
+        const matched = events.find(
+          (event) =>
+            row.exit_reason === `event:${event.name}` && row.finished_at === event.receivedAt,
+        );
+        const shown = matched
+          ? exitShown.shown(subscriberId, matched.name, matched.receivedAt, row.trigger_event_id)
+          : null;
+        if (shown !== null) {
+          links.get(shown)?.exited.push(link);
         }
       }
       return links;
@@ -784,6 +795,7 @@ export function createEnrollments(db: Database, clock: Clock) {
         s.total.finalize();
       }
       listStatements.clear();
+      exitShown.close();
       q.close();
     },
   };

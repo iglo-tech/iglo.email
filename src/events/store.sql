@@ -19,6 +19,14 @@ SELECT e.id, e.subscriber_id, e.name, e.data, e.occurred_at, e.created_at, e.ide
 -- name: event-latest-named
 -- The newest event of one name for a subscriber: the step preview's trigger (D105).
 SELECT id, subscriber_id, name, data, occurred_at, created_at, idempotency_key FROM events WHERE subscriber_id = ? AND name = ? ORDER BY occurred_at DESC, id DESC LIMIT 1;
+-- name: event-exit-shown
+-- B118h (05-sequences.md#events-tab): the event an enrollment's exit is shown on, among the subscriber's
+-- events with the exit's name and receive time: the lowest ID, or, when the enrollment's trigger is one
+-- of them, the lowest after the trigger (an event exits only enrollments it did not start).
+SELECT id FROM events
+  WHERE subscriber_id = ?1 AND name = ?2 AND created_at = ?3
+    AND id > COALESCE((SELECT id FROM events WHERE id = ?4 AND subscriber_id = ?1 AND name = ?2 AND created_at = ?3), 0)
+  ORDER BY id LIMIT 1;
 -- name: events-count
 SELECT count(*) AS n FROM events WHERE subscriber_id = ?;
 -- name: events-purge
