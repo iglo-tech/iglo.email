@@ -52,7 +52,7 @@ Owner goal 2026-11-09: Playwright e2e that makes 1.0.0 ready. Plan: [13-e2e-cove
   B118 also (B117c r1): the OpenAPI absent-ID probe accepts any 2xx (commented for "a delete of nothing"), but production also answers 200 for a missing ID on blocklist, bounces and activity; pin the expected answer per endpoint against upstream so a regression is caught.
   B118 also (B117a r2): reordering `app.from_email` entries can promote an already-stored entry the new rule refuses to first place (the default sender); check the entry that becomes first, or accept and record it.
   B118 also (B119 r2): the perf note and test comment say a large Blob's bytes live in a memfd `external` does not see; true for the `File` from `formData()`, but the Blob `formFile` builds is counted by `external`; correct the wording.
-  B117f merged (#204), B118b merged (#203), B118c merged (#206), B118d merged (#207), B118e merged (#208), B118f merged (#209), B118g merged (#210). B118h merged (#211). Next: v1.5.0 release gate. Hardening backlog (not release-blocking: outside the check): 18 sleeps in Docker, browser or opt-in harness scripts, and 4 kept sleeps on states nothing exposes (`docs/perf/B118d-sleep-sweep.md`); runner ~9 ms/message cost (B101 r1) to measure; CLI `--port 0` reporting the bound port; B118f stack test has no SIGKILL fallback after SIGTERM; the B118f fixture logger skips the log buffer (not for `/api/logs` proofs); B127 perf script times `claim`, not the outbox's `claimBatch`; briefs ask for junit files the `ci.yml` job does not write (align the brief template). B118c took the test items B118b deferred (see #203 body: expectRow/wired fold, 2FA/archive-preview branding, bare-router 404, delivered-test-send settle, B101/B110/B114/B127 r3/B130 r3 items, B117c absent-ID pin, `Bun.sleep` sweep).
+  B117f merged (#204), B118b merged (#203), B118c merged (#206), B118d merged (#207), B118e merged (#208), B118f merged (#209), B118g merged (#210). B118h merged (#211). Next: v1.5.0 release gate. Pre-v1.5.0 audit (2026-11-25): see the Hardening backlog section.
   B118c also (B118a r2): `query-limits` deadline test needs both exports started within 1 s (restore a status check that names that case); release retry's final error omits the child's port-in-use message and attempt count; a child started at the budget's end can escape the kill (few ms); the budget test adds a fixed 9 s.
   5. (B119 merged #196) B119 ([brief](briefs/B118.md#b119-media-buffer-reachable-after-gc-under-load), D141 reserved) media buffer reachable after GC under load: find the holder, fix or accept with evidence.
   Adopter 2026-11-20: bootstrap admin variables removed on its side; preview `context.trigger: null` accepted as intended; nothing from its reports open on its side.
@@ -285,28 +285,44 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 
 ## Hardening backlog
 
-- B114: `invalidSettingsReadEnd` searches the whole reference log; record the log size before the write and search only after it (optional hardening, B114 review).
+Audited 2026-11-25 before v1.5.0 (owner rule: nothing stays backlog). Fixed and removed:
+- B114 log scoping (#210);
+- campaign test-send links (D117, #168);
+- `notify_emails` validation (#198);
+- the B110 compiled stack test (#209);
+- the consent-skip reason (D131, #175);
+- the B101 `max_conns` note (#206) and shutdown test name (#209);
+- root-url wording (#198);
+- step preview 403-before-400 (#198);
+- the backup SIGKILL watch (#187);
+- the `reference:smoke` PID race (#202);
+- the scheduler and tracked-links watches (#203).
 
-- Campaign test sends link the real campaign and subscriber UUIDs (and one-click headers when `privacy.unsubscribe_header` is on), so clicking Unsubscribe in a campaign test mail unsubscribes that real subscriber and fires the webhook (B112 review). Predates B112; check against pinned listmonk before deciding.
+Open, in [B118i/B118j](briefs/B118i.md):
+- `release verify` port race: the CLI binds port 0 (D144); a retry does not clear it;
+- `cli.test.ts` fixed 3 s SIGKILL in `shutDown`;
+- B108's two `Bun.sleep(50)` in `test-send-trace.test.ts`;
+- the stack test's SIGKILL fallback;
+- the B127 perf script timing `claim` instead of `claimBatch`;
+- `plain-executable.test.ts:277` absolute `/health` bound.
 
-- Settings: `app.notify_emails` is saved without address validation (B110 review); invalid entries are skipped at send time with an attention line.
-- B110 tests: the "unexpected error keeps its stack" case checks the logger directly, not a handler on the compiled server.
+Open, needing captured runs before v1.5.0 (an unexplained intermittent failure blocks the tag):
+- the unattributed `toBe` (B112 worker run);
+- the unattributed test-step error (B117b worker, B117e r2);
+- `contract:settings:reference` failing once without a visible cause (B126 r2, after #166);
+- B101's media held-send check, not restored until its 1-in-6 failure is explained.
 
-- B108 tests: the two record-failure 500 tests use `Bun.sleep(50)` to show nothing was sent (AGENTS: no sleeping; wait on the sink/clock instead) and would not catch a single leaked in-flight slot.
-
-- Campaign consent skip is journaled `skipped` with no reason or log line and is not visible in the product (B103 fault injection).
-- Media: under parallel load one extra campaign attachment buffer stays reachable after GC; holder unidentified (product cache keeps only the newest in isolation; B103).
-
-- B101 r1: a server can see up to 2× `max_conns` (real + test pool), document in D109/operations; media cache test should assert re-reads directly and restore the held-send check once the 1-in-6 failure is explained; "delivered test send logs nothing" tests do not await settlement; shutdown test name; runner ~9 ms/message product cost.
-- Watch: `release verify > passes on a tag that matches and on a dry run` failed once in 6 extra runs (B101 review; passes in check).
-
-- Root-url message prints control characters of a path raw; `host:00080` and `a.b:/c` get generic wording (B98 r3, operator's own env).
-
-- Step preview/test: a body both invalid and revoked mid-upload answers 400 rather than 403 (B97 r2; nothing read or sent).
-
-- New safe exotic-response differences go here by PR link; actual safety/auth/data defects never become backlog merely by relabelling.
+New safe exotic-response differences are backlog under D57, by PR link; actual safety, auth or data defects never become backlog by relabelling.
 
 ## Accepted trade-offs
+
+- Media: under parallel load one extra campaign attachment buffer (at most one batch, 10 MiB or less) stays reachable after GC, with the holder unidentified ([D141](design/09-decisions.md), #196). The bound is measured, and a fix without the holder would be a guess (lead, 2026-11-25).
+- "Delivered test send logs nothing" waits 20 ms after the sink receives the message (`test/messaging/test-send-log.test.ts`). A delivered test send logs nothing by design (D109), and no settled signal is observable through a public boundary (B118d). A regression would have to log after that window, which needs a code change, not timing (lead, 2026-11-25).
+- Runner cost of about 9 ms per message (`docs/perf/B101-test-pool.md`): the measured product render cost of the largest allowed message (8 tracked links of 7 KB, the 64 KB template cap), not a defect (lead, 2026-11-25).
+- Harness and kept sleeps (`docs/perf/B118d-sleep-sweep.md`): 16 sleeps in Docker, browser and opt-in harness scripts are each the poll interval of a loop that waits for an observable state with a named deadline, and none asserts a duration. 4 kept sleeps wait for a state nothing exposes, with the reasons recorded there (lead, 2026-11-25).
+- The B118f stack fixture's logger skips the in-app log buffer. Unexpected-error stacks go only to stderr (`src/app.ts`), and the buffer takes only safe attention messages, so no `/api/logs` proof needs it (lead, 2026-11-25).
+- Compiled-server readiness is a stall window on the child's CPU time (#210), not event-driven. No wall budget decides a start that is still computing, and the mutation test shows it (lead, 2026-11-25).
+- `withProduction` stops 9 s before the test deadline (8 s kill grace plus 1 s). The margin is by design. A "lifetime" error in a gate run counts as a failure (lead, 2026-11-25).
 
 - Send-rate cap and receipt latency (lead, B120, 2026-11-21): the cap holds at grant and SMTP hand-off (B120 trace: exactly 200 ms apart, at most 5 per rolling second); receipts at the server include each connection's latency, so two receipts one interval apart can fall in one second. Inherent to SMTP; operations.md tells operators to set the cap slightly below SES's maximum send rate.
 
