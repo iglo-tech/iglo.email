@@ -106,6 +106,33 @@ test("an enrollment started by an event of the same batch is exited by the next 
   expect(byId(second!.event_id).exited.map((link) => link.enrollment_id)).toEqual(startedBy);
 });
 
+// The trigger and the exit's event share the batch's time but not a name. The first stop came before
+// the enrollment existed, so the exit is shown on the second stop, the first after the trigger.
+test("an exit is shown after its enrollment's trigger, whatever the trigger's name", async () => {
+  const f = await open();
+  const template = await f.template("<p>Hi</p>", "Waiting");
+  await f.sequence({
+    name: "Late start path",
+    trigger: { event: "three_start" },
+    exit_on: ["three_stop"],
+    steps: [tx(template, { wait: "P1D" })],
+  });
+  const batch = await f.json("/api/subscriber-events/batch", "POST", {
+    events: [named("three_stop"), named("three_start"), named("three_stop")],
+  });
+  expect(batch.status).toBe(200);
+  const [before, start, stop] = asBody<Array<BatchResult>>(batch.body.data.results);
+  const started = start!.enrollments.started.map((e) => e.id);
+  expect(started).toHaveLength(1);
+  expect(stop!.enrollments.ended.map((e) => e.id)).toEqual(started);
+
+  const rows = await tab(f, start!.subscriber_id);
+  const byId = (id: number) => rows.find((row) => row.id === id)!;
+  expect(byId(before!.event_id).exited).toEqual([]);
+  expect(byId(start!.event_id).started.map((link) => link.enrollment_id)).toEqual(started);
+  expect(byId(stop!.event_id).exited.map((link) => link.enrollment_id)).toEqual(started);
+});
+
 // The exit belongs to the first event of its name in the batch, which is on the second page here.
 // The second event of the name, on this page, is not shown the exit; the page that holds the
 // first event shows it.

@@ -12,7 +12,7 @@ import type { Param } from "@/conditions/json";
 import type { Condition, Scalar } from "@/conditions/types";
 import { prepareNamedQueries } from "@/db/queries";
 import { must } from "@/invariant";
-import type { ExitThenTrigger, RecordedEvent } from "@/events/store";
+import type { ExitThenTrigger, ExitToShow, RecordedEvent } from "@/events/store";
 import { createExitShown } from "@/events/store";
 import type { SubscriberEffects } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
@@ -591,6 +591,10 @@ export function createEnrollments(db: Database, clock: Clock) {
         finished_at: string | null;
         sequence_name: string | null;
       }>;
+      // B118h: an exit is shown on one event, the one that would have ended the enrollment. The events
+      // module chooses it among all of the subscriber's events, in one read for the page; an exit whose
+      // event is not on the page can only be shown on another page, so it is not asked for here.
+      const pending: Array<{ link: EventLink; exit: ExitToShow }> = [];
       for (const row of rows) {
         const link = {
           enrollment_id: numberID(row.id),
@@ -600,19 +604,31 @@ export function createEnrollments(db: Database, clock: Clock) {
         if (row.trigger_event_id !== null) {
           links.get(row.trigger_event_id)?.started.push(link);
         }
-        // B118h: an exit is shown on one event, the one that would have ended the enrollment (the events
-        // module chooses it among all of the subscriber's events). The page holds it only when that event is on it.
         const matched = events.find(
           (event) =>
             row.exit_reason === `event:${event.name}` && row.finished_at === event.receivedAt,
         );
-        const shown = matched
-          ? exitShown.shown(subscriberId, matched.name, matched.receivedAt, row.trigger_event_id)
-          : null;
-        if (shown !== null) {
-          links.get(shown)?.exited.push(link);
+        if (matched) {
+          pending.push({
+            link,
+            exit: {
+              name: matched.name,
+              receivedAt: matched.receivedAt,
+              triggerId: row.trigger_event_id,
+            },
+          });
         }
       }
+      const shown = exitShown.shownOn(
+        subscriberId,
+        pending.map((item) => item.exit),
+      );
+      pending.forEach((item, index) => {
+        const eventId = shown[index];
+        if (eventId !== null && eventId !== undefined) {
+          links.get(eventId)?.exited.push(item.link);
+        }
+      });
       return links;
     },
     /** The steps of an enrollment's sequence, kept ones first in order, for its timeline. */

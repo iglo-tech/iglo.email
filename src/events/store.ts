@@ -447,24 +447,37 @@ export function createEventStore(
 }
 export type EventStore = ReturnType<typeof createEventStore>;
 
+/** An exit to place: the event that exited it (its name and receive time) and its enrollment's trigger. */
+export type ExitToShow = { name: string; receivedAt: string; triggerId: bigint | null };
+
 /**
- * B118h (05-sequences.md#events-tab): the event an enrollment's exit is shown on, among all of the
- * subscriber's events, or null when none has the exit's name and receive time. The events module
- * owns the choice; the sequences module reads it through this reader and holds its statement.
+ * B118h (05-sequences.md#events-tab): the event each exit of one page is shown on, among all of the
+ * subscriber's events (not only the page's), or null when none has the exit's name and receive time.
+ * The events module owns the choice; the sequences module reads it through this reader, once per page,
+ * and holds no events SQL of its own.
  */
 export function createExitShown(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "events/store", sql }]);
   return {
-    shown(
-      subscriberId: bigint,
-      name: string,
-      receivedAt: string,
-      triggerId: bigint | null,
-    ): bigint | null {
-      const row = q.get("event-exit-shown").get(subscriberId, name, receivedAt, triggerId) as {
-        id: bigint;
-      } | null;
-      return row?.id ?? null;
+    shownOn(subscriberId: bigint, exits: Array<ExitToShow>): Array<bigint | null> {
+      const shown: Array<bigint | null> = exits.map(() => null);
+      if (exits.length === 0) {
+        return shown;
+      }
+      const rows = q.get("event-exits-shown").all(
+        subscriberId,
+        JSON.stringify(
+          exits.map((exit) => ({
+            name: exit.name,
+            at: exit.receivedAt,
+            trigger: exit.triggerId?.toString() ?? null,
+          })),
+        ),
+      ) as Array<{ idx: bigint; id: bigint | null }>;
+      for (const row of rows) {
+        shown[Number(row.idx)] = row.id;
+      }
+      return shown;
     },
     close: () => q.close(),
   };
