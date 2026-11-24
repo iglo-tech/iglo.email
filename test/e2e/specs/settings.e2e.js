@@ -29,8 +29,11 @@ async function settings(page) {
   return res.body.data;
 }
 
-// Saving applies at once; the button comes back when the request is done.
+// Saving applies at once; the button comes back when the request is done. Oat stacks the toasts while
+// the page is not hovered, so only the newest one shows its text. Clearing the toasts first makes the
+// save's own toast the only one `getByText` can match.
 async function save(page, status = 200) {
+  await page.evaluate(() => window.ot.toast.clear());
   const response = page.waitForResponse(
     (r) => new URL(r.url()).pathname === "/api/settings" && r.request().method() === "PUT",
   );
