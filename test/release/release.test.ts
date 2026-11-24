@@ -3,7 +3,6 @@ import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
-import { healthWhenReady, startOnFreePort } from "@/test/serve-port";
 import { version } from "@/../package.json";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -84,34 +83,14 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
     expect(result.stderr).toContain("Reported version");
   });
 
+  // The fake exits without a port line: the start fails at once, by name, not at a stall.
   test("fails on an executable that reports the version but does not serve", async () => {
     const fake = join(temporaryDirectory, "fake");
     await writeFile(fake, `#!/bin/sh\nprintf '%s\\n' '${version}'\n`);
     await chmod(fake, 0o755);
     const result = await run(script("verify", fake));
     expect(result.code).not.toBe(0);
-    expect(result.stderr).toContain("Server exited");
-  });
-
-  // The executable binds the port it names (D144), so a port that another server holds cannot stop
-  // the start. The plain holder answers /health exactly as iglo.email does; the start still
-  // succeeds, because the answer that counts is the one from the process that named its port.
-  test("passes while a plain HTTP server holds a fixed port", async () => {
-    const holder = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch: () => new Response('{"data":true}\n'),
-    });
-    try {
-      const result = await run(script("verify", executable), {
-        GITHUB_REF_TYPE: "branch",
-        GITHUB_REF_NAME: "main",
-      });
-      expect(result.stderr).toBe("");
-      expect(result.code).toBe(0);
-    } finally {
-      await holder.stop(true);
-    }
+    expect(result.stderr).toContain("Server exited before it reported its port");
   });
 
   // A port in use is no longer a race between two starts, since the child chooses its port (D144):
@@ -155,36 +134,53 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
     expect(result.stderr).toContain("port 1");
   });
 
-  test("passes while another iglo.email server holds a fixed port", async () => {
-    const directory = join(temporaryDirectory, "holder");
-    await Bun.write(join(directory, ".keep"), "");
-    const holder = await startOnFreePort(async (port) => {
-      const child = Bun.spawn([executable, "serve", "--port", String(port)], {
-        cwd: directory,
-        env: { PATH: "" },
-        stdout: "ignore",
-        stderr: "pipe",
-      });
-      try {
-        await healthWhenReady(child, port);
-        return { child, port };
-      } catch (error) {
-        child.kill("SIGKILL");
-        await child.exited;
-        throw error;
-      }
+  // The child binds its port before it names it (D144), so an answer on the named port from a
+  // process that is not the child means the child named a port it does not hold. A plain server
+  // here answers /health as iglo.email does; the fake names its port and stays alive. Mutation:
+  // the script's check that the child listens on the named port removed, and the checks run against
+  // the plain server instead, which fails on another message.
+  test("fails when another process answers on the port the server names", async () => {
+    const holder = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response('{"data":true}\n'),
     });
     try {
-      const result = await run(script("verify", executable), {
+      const fake = join(temporaryDirectory, "names-held-port");
+      await writeFile(
+        fake,
+        `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nprintf '%s\\n' 'listening on port ${holder.port}'\nexec /bin/sleep 30\n`,
+      );
+      await chmod(fake, 0o755);
+      const result = await run(script("verify", fake), {
         GITHUB_REF_TYPE: "branch",
         GITHUB_REF_NAME: "main",
       });
-      expect(result.stderr).toBe("");
-      expect(result.code).toBe(0);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain(
+        `Server named port ${holder.port}, but does not listen on it`,
+      );
     } finally {
-      holder.child.kill("SIGTERM");
-      await holder.child.exited;
+      await holder.stop(true);
     }
+  });
+
+  // A child that stays alive and never names its port must not hold `verify` until the job's own
+  // timeout. The fake uses no CPU, so the wait ends at its ten-second stall. Mutation: the port
+  // read without a bound, and the test fails at its own timeout instead.
+  test("fails by name when the server does not report its port", async () => {
+    const fake = join(temporaryDirectory, "never-names-port");
+    await writeFile(
+      fake,
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nexec /bin/sleep 120\n`,
+    );
+    await chmod(fake, 0o755);
+    const result = await run(script("verify", fake), {
+      GITHUB_REF_TYPE: "branch",
+      GITHUB_REF_NAME: "main",
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("Server did not report its port within 10 s");
   });
 });
 

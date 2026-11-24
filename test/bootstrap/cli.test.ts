@@ -7,6 +7,7 @@ import {
   test as bunTest,
 } from "bun:test";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { closeSync, constants, openSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
 import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -270,6 +271,52 @@ async function startThroughCli(dataDir: string) {
     throw error;
   }
   return { child, run };
+}
+
+/**
+ * The TCP port `pid` listens on, or undefined while it listens on none. For a start whose port line
+ * cannot be read. Linux reads /proc; macOS, the owner's workstation, asks lsof.
+ */
+function listeningPort(pid: number): number | undefined {
+  if (process.platform === "darwin") {
+    const listed = Bun.spawnSync({
+      cmd: ["/usr/sbin/lsof", "-nP", "-a", "-p", String(pid), "-iTCP", "-sTCP:LISTEN", "-Fn"],
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const port = /^n.*:(\d+)$/m.exec(listed.stdout.toString())?.[1];
+    return port === undefined ? undefined : Number(port);
+  }
+  const sockets = new Set<string>();
+  try {
+    for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+      try {
+        const inode = /^socket:\[(\d+)\]$/.exec(readlinkSync(`/proc/${pid}/fd/${fd}`))?.[1];
+        if (inode) {
+          sockets.add(inode);
+        }
+      } catch {
+        // A descriptor that closed after the listing is skipped.
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    let text = "";
+    try {
+      text = readFileSync(table, "utf-8");
+    } catch {
+      // A table this host does not have (no IPv6) lists no sockets.
+    }
+    for (const line of text.split("\n").slice(1)) {
+      const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
+      if (state === "0A" && inode && sockets.has(inode) && local) {
+        return Number.parseInt(local.slice(local.lastIndexOf(":") + 1), 16);
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -1207,6 +1254,46 @@ describe("a port of 0 (D144)", () => {
     }));
     expect(await shutDown(child, "SIGTERM")).toBe(0);
     expect(await outputOf(child).text).toBe("");
+  });
+
+  // The port line is CLI output, and a stdout with no reader is the caller's choice: the server
+  // serves on, writes no stack trace, and still exits 0 on SIGTERM. The pipe's read end is closed
+  // before the start, so the write fails every time. Mutation: the line written through
+  // `process.stdout` with no error handling, and the uncaught EPIPE fails the test on stderr.
+  test("a stdout with no reader does not stop the server or change its exit", async () => {
+    const fifo = join(temporaryDirectory, "port-zero-no-reader.fifo");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+    const reader = openSync(fifo, constants.O_RDONLY | constants.O_NONBLOCK);
+    const writer = openSync(fifo, constants.O_WRONLY);
+    closeSync(reader);
+    const child = Bun.spawn(
+      [
+        executable,
+        "--port",
+        "0",
+        "--root-url",
+        root,
+        "--data-dir",
+        join(temporaryDirectory, "port-zero-no-reader"),
+      ],
+      { cwd: temporaryDirectory, env: { PATH: "" }, stdout: writer, stderr: "pipe" },
+    );
+    closeSync(writer);
+    try {
+      // The port line is lost, so the bound port is read from the process's listening socket.
+      let port: number | undefined;
+      await untilState(() => (port = listeningPort(child.pid)) !== undefined, {
+        label: "Server bound a port",
+        progress: () => cpuProgress(child.pid),
+        stallMs: 15_000,
+        intervalMs: 25,
+      });
+      expect((await healthWhenReady(child, port!)).status).toBe(200);
+      expect(await stopChild(child, "SIGTERM", 7000)).toBe(0);
+      expect(await new Response(child.stderr).text()).toBe("");
+    } finally {
+      await stopChild(child, "SIGKILL");
+    }
   });
 
   test("the help says that port 0 binds a port the OS chooses", async () => {

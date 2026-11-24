@@ -5,11 +5,13 @@ import { join } from "node:path";
 import { startSchemaFixture, tables } from "@/test/schema/fixture";
 import { readJson } from "@/test/read-body";
 
+// No per-request time limit: `migrate` runs every migration, and a loaded host can take longer than
+// any fixed bound without being stuck. The fixture serves from this process, so a hang is a hang of
+// the test itself, and the test's own timeout names it.
 async function call(origin: string, action: string) {
   const response = await fetch(origin, {
     method: "POST",
     body: JSON.stringify({ action }),
-    signal: AbortSignal.timeout(3000),
   });
   return {
     status: response.status,

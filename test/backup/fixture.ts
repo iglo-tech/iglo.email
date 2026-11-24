@@ -5,9 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { ensureProductionBuild } from "@/test/production-build";
-import { listensOn, startOnFreePort } from "@/test/serve-port";
+import { portZeroRootUrl, readyOnPortZero } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
-import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 // Generated for these tests; see test/backup/fixtures.md.
@@ -59,50 +58,34 @@ export async function runBackup(executable: string, args: Array<string>) {
 export type Server = Awaited<ReturnType<typeof startServer>>;
 
 /** The server on a data directory, answering /health, or an error with its stderr. */
-export function startServer(executable: string, dataDir: string) {
-  return startOnFreePort((port) => launchServer(executable, dataDir, port));
-}
-
-async function launchServer(executable: string, dataDir: string, port: number) {
+export async function startServer(executable: string, dataDir: string) {
+  // Port 0 (D144): the server names the port the OS gave it. A start that fails is killed and
+  // reaped before its error, with its stderr, is thrown.
   const child = Bun.spawn(
-    [executable, "serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
+    [
+      executable,
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--root-url",
+      portZeroRootUrl,
+      "--data-dir",
+      dataDir,
+    ],
     {
       env: {
         PATH: "",
         IGLO_EMAIL_ADMIN_USER: admin.user,
         IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
       },
-      stdout: "ignore",
+      stdout: "pipe",
       stderr: "pipe",
     },
   );
+  const { port } = await readyOnPortZero(child, 30_000);
   const origin = `http://127.0.0.1:${port}`;
-  let observed = "starting";
-  try {
-    await untilState(
-      async () => {
-        if (child.exitCode !== null) {
-          throw new Error(await new Response(child.stderr).text());
-        }
-        const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1000) }).catch(
-          () => null,
-        );
-        observed = up ? `status ${up.status}` : "no answer";
-        return up?.ok === true && listensOn(child.pid, port);
-      },
-      {
-        label: "The server did not start",
-        progress: () => observed,
-        stallMs: 30_000,
-        intervalMs: 25,
-      },
-    );
-  } catch (error) {
-    child.kill("SIGKILL");
-    // Reaped before the failure is reported: the process must not outlive its start.
-    await child.exited;
-    throw error;
-  }
   return {
     origin,
     health: `${origin}/health`,

@@ -9,7 +9,7 @@ import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
-import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
+import { portZeroRootUrl, readyOnPortZero, stopChild } from "@/test/serve-port";
 import { readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
 
@@ -50,9 +50,10 @@ afterAll(async () => {
   }
 });
 
-/** The executable with a clean environment. */
-function start(port: number, dataDir: string) {
-  return Bun.spawn([executable, "--port", String(port), "--data-dir", dataDir], {
+/** The executable with a clean environment, on port 0 (D144): it names the port the OS gave it. */
+function start(dataDir: string) {
+  const args = ["--port", "0", "--root-url", portZeroRootUrl, "--data-dir", dataDir];
+  return Bun.spawn([executable, ...args], {
     cwd: temporaryDirectory,
     env: {
       PATH: "",
@@ -68,17 +69,9 @@ function start(port: number, dataDir: string) {
 
 /** A started process, healthy on its port. */
 async function up(dataDir: string) {
-  return startOnFreePort(async (port) => {
-    const child = start(port, dataDir);
-    try {
-      await healthWhenReady(child, port, 30_000);
-    } catch (error) {
-      child.kill("SIGKILL");
-      await child.exited;
-      throw error;
-    }
-    return { child, port };
-  });
+  const child = start(dataDir);
+  const { port } = await readyOnPortZero(child, 30_000);
+  return { child, port };
 }
 
 /** An API call as the API user. */

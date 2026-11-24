@@ -1,5 +1,6 @@
 // Process startup and shutdown are adapted from listmonk's cmd/main.go.
 import type { Database } from "bun:sqlite";
+import { writeSync } from "node:fs";
 import { createApp, createErrorLogger } from "@/app";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
@@ -115,6 +116,20 @@ import { registerOpenApiRoutes } from "@/openapi/routes";
 import { registerMcpRoutes } from "@/mcp/routes";
 
 const BOUNCE_WEBHOOK_PER_MINUTE = 6000;
+
+/**
+ * Writes the one line that names a port of 0 once it is bound (D144). It is written synchronously
+ * to the stdout descriptor, so it is out before any loop starts. A stdout that no one reads (a
+ * closed pipe) is the caller's choice: the write fails, and the server serves on, with no error
+ * output and no change to its exit code.
+ */
+function reportPort(port: number | undefined): void {
+  try {
+    writeSync(1, `listening on port ${port}\n`);
+  } catch {
+    // No reader for stdout: the line is lost, and nothing else depends on it.
+  }
+}
 
 /** `inspect` sees the composed router before anything listens; a test may throw to stop there. */
 export async function main(inspect?: (router: Router) => void): Promise<void> {
@@ -876,7 +891,7 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     serverRef.server = server;
     // A port of 0 is known only now, so the one line that names it comes right after the bind (D144).
     if (bootstrap.config.port === 0) {
-      process.stdout.write(`listening on port ${server.port}\n`);
+      reportPort(server.port);
     }
     const listening = server;
     await new Promise<void>((resolve, reject) => {

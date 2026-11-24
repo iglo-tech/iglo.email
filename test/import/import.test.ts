@@ -13,7 +13,7 @@ import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
-import { listensOn, startOnFreePort } from "@/test/serve-port";
+import { portZeroRootUrl, readyOnPortZero } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
 
@@ -49,10 +49,8 @@ function temporary() {
   directories.push(directory);
   return directory;
 }
+/** The server on port 0 (D144): it names the port the OS gave it, and is ready on that port. */
 async function serve(dataDir: string) {
-  return startOnFreePort((port) => launch(dataDir, port));
-}
-async function launch(dataDir: string, port: number) {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -61,7 +59,9 @@ async function launch(dataDir: string, port: number) {
       "--host",
       "127.0.0.1",
       "--port",
-      String(port),
+      "0",
+      "--root-url",
+      portZeroRootUrl,
       "--data-dir",
       dataDir,
     ],
@@ -72,33 +72,13 @@ async function launch(dataDir: string, port: number) {
         IGLO_EMAIL_ADMIN_USER: admin.user,
         IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
       },
-      stdout: "ignore",
+      stdout: "pipe",
       stderr: "pipe",
     },
   );
   children.push(child);
-  const origin = `http://127.0.0.1:${port}`;
-  let observed = "starting";
-  // A start that failed (the port in use, for one) reports why on stderr, and is retried.
-  await untilState(
-    async () => {
-      if (child.exitCode !== null) {
-        throw new Error(await new Response(child.stderr).text());
-      }
-      const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
-        () => null,
-      );
-      observed = up ? `status ${up.status}` : "no answer";
-      return up?.ok === true && listensOn(child.pid, port);
-    },
-    {
-      label: "Server did not start",
-      progress: () => observed,
-      stallMs: 15_000,
-      intervalMs: 25,
-    },
-  );
-  return { child, origin };
+  const { port } = await readyOnPortZero(child);
+  return { child, origin: `http://127.0.0.1:${port}` };
 }
 // The import status and the JSON envelope the routes answer with: the fields the tests assert, not a full schema.
 type ImportStatus = { status: string; name: string; imported: number; total: number };

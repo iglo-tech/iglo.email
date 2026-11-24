@@ -11,7 +11,7 @@ import { settingsView } from "@/admin/views/settings";
 import { render } from "@/jsx/render";
 import { buildDocument } from "@/openapi/document";
 import { ensureProductionBuild } from "@/test/production-build";
-import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
+import { portZeroRootUrl, readyOnPortZero, stopChild } from "@/test/serve-port";
 import { adminLogin } from "@/test/contract/owned";
 import { TestClock } from "@/test/server/fixture";
 import { txFixture } from "@/test/tx/fixture";
@@ -59,34 +59,33 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
   const executable = join(directory, "iglo.email");
   copyFileSync(join(repository, "dist", "iglo.email"), executable);
   chmodSync(executable, 0o755);
-  // Ready when this child answers /health and listens on the port: another server can hold it.
-  const { child, port } = await startOnFreePort(async (listenPort) => {
-    const started = Bun.spawn(
-      [
-        executable,
-        "serve",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        String(listenPort),
-        "--data-dir",
-        dataDir,
-      ],
-      {
-        cwd: directory,
-        env: {
-          PATH: "",
-          IGLO_EMAIL_ADMIN_USER: admin.user,
-          IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
-        },
-        stdout: "ignore",
-        stderr: "pipe",
+  // Port 0 (D144): ready once this child names its port and answers /health on it.
+  const child = Bun.spawn(
+    [
+      executable,
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--root-url",
+      portZeroRootUrl,
+      "--data-dir",
+      dataDir,
+    ],
+    {
+      cwd: directory,
+      env: {
+        PATH: "",
+        IGLO_EMAIL_ADMIN_USER: admin.user,
+        IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
       },
-    );
-    cleanups.push(() => stopChild(started));
-    await healthWhenReady(started, listenPort, 10_000);
-    return { child: started, port: listenPort };
-  });
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  cleanups.push(() => stopChild(child));
+  const { port } = await readyOnPortZero(child, 10_000);
   const origin = `http://127.0.0.1:${port}`;
 
   const session = await adminLogin(origin, admin);

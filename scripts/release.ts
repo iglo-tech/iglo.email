@@ -1,7 +1,7 @@
 // Release steps for .github/workflows/release.yml, run against a built executable.
 import { createHash } from "node:crypto";
 import { must } from "@/invariant";
-import { captureOutput, listensOn } from "@/test/serve-port";
+import { listensOn, reportedPort } from "@/test/serve-port";
 import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -54,7 +54,9 @@ async function startExecutable(
     stderr: "pipe",
   });
   try {
-    const port = await captureOutput(child).port;
+    // A child that never names its port fails by name: a stall of ten seconds without CPU time, or
+    // its exit, ends the wait, so `verify` does not wait for the job's own timeout.
+    const port = await reportedPort(child, 10_000);
     const origin = `http://127.0.0.1:${port}`;
     return { child, origin, health: await healthWhenReady(child, port) };
   } catch (error) {
@@ -71,9 +73,10 @@ async function startExecutable(
 }
 
 /**
- * Resolves with the first /health answer on `port` that comes from this child: the child must also
- * listen on the port. A child that names a port it does not listen on fails here, rather than
- * being checked on some other port.
+ * Resolves with the first /health answer on `port`, which must come from this child. The child has
+ * bound the port before it named it (D144), so an answer on that port while the child does not
+ * listen on it is another process's: the start fails at once, rather than the checks going on
+ * against that process.
  */
 async function healthWhenReady(child: Bun.Subprocess, port: number): Promise<Response> {
   const origin = `http://127.0.0.1:${port}`;
@@ -82,14 +85,20 @@ async function healthWhenReady(child: Bun.Subprocess, port: number): Promise<Res
     if (child.exitCode !== null) {
       throw new Error(`Server exited with ${child.exitCode}`);
     }
+    let response: Response | undefined;
     try {
-      const response = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) });
+      response = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) });
+    } catch {
+      // A refused or unfinished request: the child is still starting.
+    }
+    if (response) {
       if (listensOn(child.pid, port)) {
         return response;
       }
       await response.body?.cancel();
-    } catch {
-      // A refused or unfinished request: the child is still starting.
+      throw new Error(
+        `Server named port ${port}, but does not listen on it: another process answered there`,
+      );
     }
     // This delay is only for bounded process readiness.
     await Bun.sleep(25);
