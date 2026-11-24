@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createTranslation } from "@/i18n/i18n";
 import { startFixture } from "@/test/server/fixture";
-import { adminLogin, withProduction } from "@/test/contract/owned";
+import { adminLogin, lifetimeWithinTest, withProduction } from "@/test/contract/owned";
 import { rawRequest } from "@/test/server/raw-request";
 
 let directory = "";
@@ -28,20 +28,27 @@ afterAll(async () => {
 });
 
 test("compiled executable includes the vendored editor theme MIT notice", async () => {
-  await withProduction(executable, new AbortController().signal, async (origin) => {
-    const response = await fetch(
-      `${origin}/admin/static/licenses/fsegurai-codemirror-themes-MIT.txt`,
-    );
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
-    const notice = await response.text();
-    expect(notice).toContain("Copyright (c) 2025 fsegurai");
-    expect(notice).toContain("Permission is hereby granted, free of charge");
-    expect(notice).toContain(
-      "The above copyright notice and this permission notice shall be included",
-    );
-    expect(notice).toContain('THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND');
-  });
+  const started = Date.now();
+  await withProduction(
+    executable,
+    new AbortController().signal,
+    async (origin) => {
+      const response = await fetch(
+        `${origin}/admin/static/licenses/fsegurai-codemirror-themes-MIT.txt`,
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      const notice = await response.text();
+      expect(notice).toContain("Copyright (c) 2025 fsegurai");
+      expect(notice).toContain("Permission is hereby granted, free of charge");
+      expect(notice).toContain(
+        "The above copyright notice and this permission notice shall be included",
+      );
+      expect(notice).toContain('THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND');
+    },
+    undefined,
+    lifetimeWithinTest(started),
+  );
 });
 
 test.each([
@@ -52,21 +59,28 @@ test.each([
 ])(
   "compiled asset lookup accepts canonical spelling %s",
   async (path) => {
-    await withProduction(executable, new AbortController().signal, async (origin) => {
-      const response = await fetch(origin + path);
-      expect(response.status).toBe(200);
-      expect(response.headers.get("content-type")).toBe(
-        path.endsWith("woff2") ? "font/woff2" : "text/css; charset=utf-8",
-      );
-      if (path.endsWith("woff2")) {
-        expect(new TextDecoder().decode((await response.arrayBuffer()).slice(0, 4))).toBe("wOF2");
-      } else {
-        expect(await response.text()).toContain("box-sizing");
-      }
-      const head = await fetch(origin + path, { method: "HEAD" });
-      expect(head.status).toBe(200);
-      expect(await head.text()).toBe("");
-    });
+    const started = Date.now();
+    await withProduction(
+      executable,
+      new AbortController().signal,
+      async (origin) => {
+        const response = await fetch(origin + path);
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe(
+          path.endsWith("woff2") ? "font/woff2" : "text/css; charset=utf-8",
+        );
+        if (path.endsWith("woff2")) {
+          expect(new TextDecoder().decode((await response.arrayBuffer()).slice(0, 4))).toBe("wOF2");
+        } else {
+          expect(await response.text()).toContain("box-sizing");
+        }
+        const head = await fetch(origin + path, { method: "HEAD" });
+        expect(head.status).toBe(200);
+        expect(await head.text()).toBe("");
+      },
+      undefined,
+      lifetimeWithinTest(started),
+    );
   },
   30_000,
 );
@@ -74,89 +88,103 @@ test.each([
 test.each(["OPTIONS", "POST", "HEAD"])(
   "embedded assets handle %s with the declared methods",
   async (method) => {
-    await withProduction(executable, new AbortController().signal, async (origin) => {
-      for (const path of ["/public/static/style.css", "/admin/static/oat.min.css"]) {
-        const response = await fetch(origin + path, { method });
-        if (method === "OPTIONS") {
-          expect(response.status).toBe(204);
-          expect(response.headers.get("allow")).toBe("OPTIONS, GET, HEAD");
-          expect(await response.text()).toBe("");
-        } else if (method === "POST") {
-          expect(response.status).toBe(405);
-          expect(response.headers.get("allow")).toBe("OPTIONS, GET, HEAD");
-        } else {
-          const get = await fetch(origin + path);
-          const body = await get.arrayBuffer();
-          expect(response.status).toBe(200);
-          expect(response.headers.get("content-type")).toBe(get.headers.get("content-type"));
-          expect(response.headers.get("cache-control")).toBe(get.headers.get("cache-control"));
-          expect(response.headers.get("content-length")).toBe(String(body.byteLength));
-          expect(await response.text()).toBe("");
+    const started = Date.now();
+    await withProduction(
+      executable,
+      new AbortController().signal,
+      async (origin) => {
+        for (const path of ["/public/static/style.css", "/admin/static/oat.min.css"]) {
+          const response = await fetch(origin + path, { method });
+          if (method === "OPTIONS") {
+            expect(response.status).toBe(204);
+            expect(response.headers.get("allow")).toBe("OPTIONS, GET, HEAD");
+            expect(await response.text()).toBe("");
+          } else if (method === "POST") {
+            expect(response.status).toBe(405);
+            expect(response.headers.get("allow")).toBe("OPTIONS, GET, HEAD");
+          } else {
+            const get = await fetch(origin + path);
+            const body = await get.arrayBuffer();
+            expect(response.status).toBe(200);
+            expect(response.headers.get("content-type")).toBe(get.headers.get("content-type"));
+            expect(response.headers.get("cache-control")).toBe(get.headers.get("cache-control"));
+            expect(response.headers.get("content-length")).toBe(String(body.byteLength));
+            expect(await response.text()).toBe("");
+          }
         }
-      }
-    });
+      },
+      undefined,
+      lifetimeWithinTest(started),
+    );
   },
   30_000,
 );
 
 test("compiled production serves the public message page and asset boundaries", async () => {
-  await withProduction(executable, new AbortController().signal, async (origin) => {
-    for (const [method, path] of [
-      ["POST", "/health"],
-      ["GET", "/missing-public-page"],
-    ] as const) {
-      const page = await rawRequest(origin, path, { method });
-      expect(page.status).toBe(404);
-      expect(page.contentType).toBe("text/html; charset=UTF-8");
-      expect(page.body).toMatch(/<!DOCTYPE html>/i);
-      // B121 (D119): the 404 is the branded public shell, with the site's name (the default here).
-      // B126 (D123): titled "Page not found", with no footer and no product credit.
-      expect(page.body).toContain("<title>Page not found - Mailing list</title>");
-      expect(page.body).toContain("<h2>Page not found</h2>");
-      expect(page.body).toMatch(/href="\/public\/static\/style\.css\?v=[a-z0-9]+"/);
-      expect(page.body).toMatch(/href="\/public\/custom\.css\?v=[a-z0-9]+"/);
-      // B129 (D127): with no logo set, the automatic header shows the site name.
-      expect(page.body).toContain('<span class="site-name">Mailing list</span>');
-      expect(page.body).not.toMatch(/<footer|Powered by|listmonk/);
-    }
-    expect(await rawRequest(origin, "/missing-public-page", { method: "HEAD" })).toEqual({
-      status: 404,
-      contentType: "text/html; charset=UTF-8",
-      body: "",
-    });
-    for (const path of ["/public/static/style.css", "/admin/static/oat.min.css"]) {
-      const asset = await rawRequest(origin, path);
-      expect(asset.status).toBe(200);
-      expect(asset.contentType).toBe("text/css; charset=utf-8");
-      expect(asset.body.length).toBeGreaterThan(100);
-      expect(await rawRequest(origin, path, { method: "HEAD" })).toEqual({
-        status: 200,
-        contentType: "text/css; charset=utf-8",
+  const started = Date.now();
+  await withProduction(
+    executable,
+    new AbortController().signal,
+    async (origin) => {
+      for (const [method, path] of [
+        ["POST", "/health"],
+        ["GET", "/missing-public-page"],
+      ] as const) {
+        const page = await rawRequest(origin, path, { method });
+        expect(page.status).toBe(404);
+        expect(page.contentType).toBe("text/html; charset=UTF-8");
+        expect(page.body).toMatch(/<!DOCTYPE html>/i);
+        // B121 (D119): the 404 is the branded public shell, with the site's name (the default here).
+        // B126 (D123): titled "Page not found", with no footer and no product credit.
+        expect(page.body).toContain("<title>Page not found - Mailing list</title>");
+        expect(page.body).toContain("<h2>Page not found</h2>");
+        expect(page.body).toMatch(/href="\/public\/static\/style\.css\?v=[a-z0-9]+"/);
+        expect(page.body).toMatch(/href="\/public\/custom\.css\?v=[a-z0-9]+"/);
+        // B129 (D127): with no logo set, the automatic header shows the site name.
+        expect(page.body).toContain('<span class="site-name">Mailing list</span>');
+        expect(page.body).not.toMatch(/<footer|Powered by|listmonk/);
+      }
+      expect(await rawRequest(origin, "/missing-public-page", { method: "HEAD" })).toEqual({
+        status: 404,
+        contentType: "text/html; charset=UTF-8",
         body: "",
       });
-      expect(await rawRequest(origin, path, { method: "POST" })).toEqual({
-        status: 405,
-        contentType: "application/json",
-        body: '{"message":"Method Not Allowed","code":"method_not_allowed"}\n',
-      });
-    }
-    for (const path of [
-      "/public/static/no-such-file.css",
-      "/public/static/",
-      "/admin/static/no-such-file.css",
-    ]) {
-      expect(await rawRequest(origin, path)).toEqual({
-        status: 404,
-        contentType: "text/plain; charset=utf-8",
-        body: "404 page not found\n",
-      });
-    }
-    // D18: Bun removes encoded dot segments before the router sees the target.
-    const traversal = await rawRequest(origin, "/public/static/%2e%2e/style.css");
-    expect(traversal.status).toBe(404);
-    expect(traversal.contentType).toBe("text/html; charset=UTF-8");
-    expect(traversal.body).toContain("<h2>Page not found</h2>");
-  });
+      for (const path of ["/public/static/style.css", "/admin/static/oat.min.css"]) {
+        const asset = await rawRequest(origin, path);
+        expect(asset.status).toBe(200);
+        expect(asset.contentType).toBe("text/css; charset=utf-8");
+        expect(asset.body.length).toBeGreaterThan(100);
+        expect(await rawRequest(origin, path, { method: "HEAD" })).toEqual({
+          status: 200,
+          contentType: "text/css; charset=utf-8",
+          body: "",
+        });
+        expect(await rawRequest(origin, path, { method: "POST" })).toEqual({
+          status: 405,
+          contentType: "application/json",
+          body: '{"message":"Method Not Allowed","code":"method_not_allowed"}\n',
+        });
+      }
+      for (const path of [
+        "/public/static/no-such-file.css",
+        "/public/static/",
+        "/admin/static/no-such-file.css",
+      ]) {
+        expect(await rawRequest(origin, path)).toEqual({
+          status: 404,
+          contentType: "text/plain; charset=utf-8",
+          body: "404 page not found\n",
+        });
+      }
+      // D18: Bun removes encoded dot segments before the router sees the target.
+      const traversal = await rawRequest(origin, "/public/static/%2e%2e/style.css");
+      expect(traversal.status).toBe(404);
+      expect(traversal.contentType).toBe("text/html; charset=UTF-8");
+      expect(traversal.body).toContain("<h2>Page not found</h2>");
+    },
+    undefined,
+    lifetimeWithinTest(started),
+  );
 }, 30_000);
 
 // Request-local translations are escaped in the heading (B126: the heading is `public.pageNotFound`).
@@ -182,6 +210,7 @@ test("public fallback uses and escapes the injected translation instance", async
 // Through the compiled server, which wires every route, as an operator's instance does.
 const admin = { user: "branding-admin", password: "branding-admin-password" };
 test("admin and API paths keep their own answers; only other paths get the public 404", async () => {
+  const started = Date.now();
   await withProduction(
     executable,
     new AbortController().signal,
@@ -212,12 +241,14 @@ test("admin and API paths keep their own answers; only other paths get the publi
       expect(html).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
     },
     admin,
+    lifetimeWithinTest(started),
   );
 });
 
 // B121 review (lead decision): sign-in, two-factor, password reset and the archive preview are
 // branded like the public pages. The sign-in page shows the site's logo.
 test("the sign-in, forgot-password and reset pages show the site's logo", async () => {
+  const started = Date.now();
   const logo = "https://brand.example.test/logo.png";
   await withProduction(
     executable,
@@ -238,5 +269,6 @@ test("the sign-in, forgot-password and reset pages show the site's logo", async 
       }
     },
     admin,
+    lifetimeWithinTest(started),
   );
 });

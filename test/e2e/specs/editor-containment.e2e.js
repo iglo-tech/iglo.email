@@ -880,14 +880,31 @@ test.describe("remote images load on request", () => {
       await signIn(page);
       const c = await campaign(page, `<p><img src="${remote}/beside.gif" alt="held"> two</p>`);
       await open(page, c.id);
-      // Right next to the image: just past its right edge, before " two".
-      const box = await page.locator(`${EDITOR} img`).boundingBox();
-      await page.mouse.click(box.x + box.width + 2, box.y + box.height / 2);
+      // The space between the image and "two" is the first character of the text after the image.
+      // A click in its left quarter puts the caret before the space, whatever the font, so X lands
+      // between the image and the space. (A fixed offset from the image's edge, as before, landed
+      // past the middle of the space on macOS: the caret went after it and X was stored after it.)
+      const space = await page.evaluate(() => {
+        const text = document.querySelector(
+          'richtext-editor [contenteditable="true"] img',
+        )?.nextSibling;
+        if (!text || text.nodeType !== Node.TEXT_NODE) {
+          throw new Error("No text after the image");
+        }
+        const range = document.createRange();
+        range.setStart(text, 0);
+        range.setEnd(text, 1);
+        const rect = range.getBoundingClientRect();
+        return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+      });
+      const click = { x: space.left + space.width * 0.25, y: space.top + space.height / 2 };
+      test
+        .info()
+        .annotations.push({ type: "click", description: JSON.stringify({ space, click }) });
+      await page.mouse.click(click.x, click.y);
       await page.keyboard.type("X");
       const body = await saveBody(page, c.id);
-      // The caret goes to the image's edge or past the space after it, depending on the font (on
-      // macOS, after it: `&nbsp;X`). The check is that X lands between the image and "two".
-      expect(body).toMatch(/<img[^>]*alt="held"[^>]*>(&nbsp;| )?X(&nbsp;| )?two/);
+      expect(body).toMatch(/<img[^>]*alt="held"[^>]*>X(&nbsp;| )two/);
     });
 
     test("one Backspace after a click on a linked banner with whitespace in the link removes image and link (B15)", async ({

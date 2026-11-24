@@ -755,9 +755,9 @@ test("tracked links personalized per subscriber do not accumulate across batches
     }
   }
   const last = heap();
-  // 50 messages after the first measurement, 8 distinct links of 7 KB each: about 2.2 MB of URLs. A cache
-  // that kept them across batches grew by 2.4 MB in total in the mutation run (PR comment); the correct run
-  // grows by about 0.5 MB. The bound is 1 MiB, between the two.
+  // 50 messages after the first measurement, each with 8 links of about 7 KB: about 2.8 MB of URLs
+  // (50 × 8 × 7 KB). A cache that kept them across batches grew the heap by about 3.2 MB in the
+  // mutation run (PR #206 mutation table). The bound is 1 MiB, far below that growth.
   expect(last - first).toBeLessThan(1024 * 1024);
   fx.control.hold = false;
   for (const push of fx.pushes) {

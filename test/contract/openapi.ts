@@ -1709,7 +1709,9 @@ export async function runOpenApiContract(target: {
     // Three answer an absent ID with an invalid_fields refusal that their messages name, and that
     // not_found would not describe: a delete that checks the last active Super Admin before
     // the lookup, a delete refused for "non-existent or default" (one message for both), and a
-    // default set of a template that is not a campaign's. Their status and message stay listmonk's.
+    // default set of a template that is not a campaign's. The first two keep listmonk's status and
+    // message. The default set answers 400 where upstream answers 200 with the template list: a
+    // marked difference (src/openapi/differences.ts, "Template default target").
     const refusedAbsent = new Set([
       "DELETE /api/users/{id}",
       "DELETE /api/templates/{id}",

@@ -9,7 +9,6 @@ import {
 import { AsyncLocalStorage } from "node:async_hooks";
 import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { healthWhenReady, restartOnPort, startOnFreePort, stopChild } from "@/test/serve-port";
@@ -936,30 +935,21 @@ describe("compiled executable", () => {
     }
   }, 12_000);
 
-  // B118c item 2: runCli has no fixed kill timer. A CLI that runs past 3 s lives until its budget
-  // ends at 9 s. The sleep is the thing under test: the server must still run at 4 s. Mutation:
-  // restore a 3 s timer in runCli; the server is then killed before the check at 4 s.
-  test("a CLI that runs past 3 s is killed by its budget, not by a fixed timer", async () => {
-    const probe = createServer();
-    await new Promise<void>((done) => {
-      probe.listen(0, "127.0.0.1", () => done());
-    });
-    const address: AddressInfo | string | null = probe.address();
-    if (address === null || typeof address === "string") {
-      throw new Error("No probe port was assigned");
-    }
-    const port = address.port;
-    await new Promise<void>((done) => {
-      probe.close(() => done());
-    });
-    const run = runCli([
-      "--port",
-      String(port),
-      "--data-dir",
-      join(temporaryDirectory, "past-3s"),
-    ]).then(() => "exited", String);
+  // B118c item 2: start has no fixed kill timer. A server that runs past 3 s lives until its budget
+  // ends at 9 s. The sleep is the thing under test: the server must still run at 4 s. The port is
+  // not chosen by the test alone: the CLI rejects port 0 and reports no bound port, so the test
+  // takes the release script's approach (scripts/release.ts). A start that finds its port in use
+  // is retried on another port (startOnPort). Mutation: a fixed 3 s SIGKILL timer in start; the
+  // server is then gone before the check at 4 s.
+  test("a server that runs past 3 s is killed by its budget, not by a fixed timer", async () => {
+    const { child } = await startOnPort((listenPort) => ({
+      args: ["--port", String(listenPort), "--data-dir", join(temporaryDirectory, "past-3s")],
+    }));
     await Bun.sleep(4000);
-    expect(await Promise.race([run, Promise.resolve("running")])).toBe("running");
-    expect(await run).toContain("did not exit before its budget ended");
+    expect(child.exitCode).toBeNull();
+    expect(child.signalCode).toBeNull();
+    // The budget, not a timer of the test, ends the server: SIGKILL at 9 s.
+    await child.exited;
+    expect(child.signalCode).toBe("SIGKILL");
   }, 12_000);
 });

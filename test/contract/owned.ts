@@ -18,6 +18,19 @@ async function stop(child: GroupChild, closed: Promise<number>): Promise<number>
   }
 }
 
+/** The 8 s grace `stop` gives a child before SIGKILL, and 1 s more. */
+const stopBudgetMs = 9000;
+
+/**
+ * The lifetime of a `withProduction` call inside a bun test (`bun run test` gives each test 30 s).
+ * It ends before the test's own deadline, counted from `testStart` (the test body's `Date.now()`),
+ * less the stop budget, so a child that outlives its run is stopped by that run and not after bun
+ * has timed the test out. Its late abort would surface as an error that no test owns (B118c item 1).
+ */
+export function lifetimeWithinTest(testStart: number, testTimeoutMs = 30_000): number {
+  return Math.max(1, testStart + testTimeoutMs - stopBudgetMs - Date.now());
+}
+
 export async function withProduction<T>(
   executable: string,
   signal: AbortSignal,
@@ -28,14 +41,18 @@ export async function withProduction<T>(
     dataDir: string,
   ) => Promise<T>,
   admin?: { user: string; password: string },
-  // The lifetime ends before a 30 s test timeout (`bun run test`), with room for the 8 s SIGKILL
-  // in `stop`. Equal lifetimes let the child outlive a timed-out test, and its late abort surfaces
-  // as an error that no test owns (B118c item 1).
-  timeoutMs = 20_000,
+  // The lifetime of the run. A bun test passes `lifetimeWithinTest`; scripts keep the default.
+  timeoutMs = 30_000,
   environment: Record<string, string> = {},
 ): Promise<T> {
-  const lifetime = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
   const directory = await mkdtemp(join(tmpdir(), "iglo-contract-production-"));
+  // A run that outlives its lifetime is cancelled with an error that names the lifetime.
+  const expiry = new AbortController();
+  const expire = setTimeout(
+    () => expiry.abort(new Error(`Compiled production run exceeded its ${timeoutMs} ms lifetime`)),
+    timeoutMs,
+  );
+  const lifetime = AbortSignal.any([signal, expiry.signal]);
   let child: GroupChild | undefined;
   let closed: Promise<number> | undefined;
   let completed = false;
@@ -164,6 +181,7 @@ export async function withProduction<T>(
         }
       }
     } finally {
+      clearTimeout(expire);
       await rm(directory, { recursive: true, force: true });
     }
   }
