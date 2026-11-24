@@ -16,6 +16,7 @@ import type { SnsTunnel } from "@/test/bounces/sns-tunnel";
 import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 import { readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { instanceClient } from "@/test/settings/instance-client";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(30_000);
@@ -90,10 +91,18 @@ async function api<T = unknown>(port: number, method: string, path: string, body
   return { status: response.status, data: (await readJson<{ data: T }>(response)).data };
 }
 
-/** Saves `changes` over the current settings, as the admin form does: a full save, not a partial one. */
+/**
+ * Saves `changes` over the current instance settings, as the instance Settings page does: a full
+ * save, not a partial one. B139: SMTP and bounce processing are instance keys.
+ */
 async function changeSettings(port: number, changes: Record<string, unknown>) {
-  const current = (await api<Record<string, unknown>>(port, "GET", "/api/settings")).data;
-  return api(port, "PUT", "/api/settings", { ...current, ...changes });
+  const instance = await instanceClient(`http://127.0.0.1:${port}`, {
+    user: adminUser,
+    password: adminPassword,
+  });
+  const current = await instance.read();
+  const response = await instance.call("/api/instance/settings", "PUT", { ...current, ...changes });
+  return { status: response.status };
 }
 
 /** Polls until `read` gives a value, or fails after a bounded number of tries. */

@@ -41,8 +41,9 @@ import { createFilesystem } from "@/media/filesystem";
 import { createEmbeds } from "@/media/embed";
 import { registerMediaRoutes, uploadPathCheck } from "@/media/routes";
 import { createMediaStore } from "@/media/store";
-import { createSettings } from "@/settings/store";
+import { createFixtureSettings } from "@/test/settings/instance-fixture";
 import { registerSettingsRoutes } from "@/settings/routes";
+import { registerFixtureInstanceSettingsRoutes } from "@/test/settings/instance-fixture";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
 import { startWebhookDelivery } from "@/webhooks/delivery";
@@ -168,7 +169,7 @@ export async function campaignsFixture(
   const unsubscribed: Array<unknown> = [];
   const media = createMediaStore(db, clock);
   // Media settings are the real ones, so that tests reach them through the settings API.
-  const stored = createSettings(db, clock, root, roles);
+  const stored = createFixtureSettings(db, clock, root);
   const mediaSettings = () => {
     const current = stored.read();
     return {
@@ -205,6 +206,7 @@ export async function campaignsFixture(
   const runnerWake: { current?: () => void } = {};
   const router = createRouter();
   registerSettingsRoutes(router, stored, auth, undefined, uploadPathCheck(directory, media));
+  registerFixtureInstanceSettingsRoutes(router, stored.instance, auth);
   registerMediaRoutes(router, { store: media, files, auth, settings: mediaSettings });
   registerUserRoutes(router, users, roles, auth, fixturePageSite);
   registerListRoutes(router, listStore, roles, auth);

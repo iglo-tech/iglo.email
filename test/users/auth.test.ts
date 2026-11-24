@@ -120,7 +120,7 @@ test("settings capture new session lifetimes without reviving retained sessions"
   fixtures.push(f);
   const old = await login(f, f.admin.user, f.admin.password);
   const change = (value: string) =>
-    call(f, "/api/settings/security.session_duration", {
+    call(f, "/api/instance/settings/security.session_duration", {
       method: "PUT",
       session: old,
       body: value,
@@ -142,7 +142,7 @@ test("settings capture new session lifetimes without reviving retained sessions"
   for (const value of ["0s", "1ms", "invalid", "999999999999999999d"]) {
     expect((await change(value)).status).toBe(400);
     expect(
-      (await (await call(f, "/api/settings", { session: old })).json()).data[
+      (await (await call(f, "/api/instance/settings", { session: old })).json()).data[
         "security.session_duration"
       ],
     ).toBe("8d");
@@ -171,7 +171,7 @@ test("legacy and malformed session records retain their safe expiry behavior", a
   f.arrangeSession(future.cookie, "future-created");
   expect(
     (
-      await call(f, "/api/settings/security.session_duration", {
+      await call(f, "/api/instance/settings/security.session_duration", {
         method: "PUT",
         session: admin,
         body: "8d",
@@ -195,7 +195,7 @@ test("fixture owner reopen preserves expired and legacy session boundaries throu
   f.arrangeSession(legacy.cookie, "legacy");
   expect(
     (
-      await call(f, "/api/settings/security.session_duration", {
+      await call(f, "/api/instance/settings/security.session_duration", {
         method: "PUT",
         session: admin,
         body: "2s",
@@ -213,7 +213,7 @@ test("fixture owner reopen preserves expired and legacy session boundaries throu
   expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
   expect(
     (
-      await call(f, "/api/settings/security.session_duration", {
+      await call(f, "/api/instance/settings/security.session_duration", {
         method: "PUT",
         session: admin,
         body: "8d",
@@ -221,10 +221,12 @@ test("fixture owner reopen preserves expired and legacy session boundaries throu
     ).status,
   ).toBe(200);
   expect((await call(f, "/api/profile", { session: expired })).status).toBe(403);
-  const snapshot = (await (await call(f, "/api/settings", { session: admin })).json()).data;
+  const snapshot = (await (await call(f, "/api/instance/settings", { session: admin })).json())
+    .data;
   snapshot["security.session_duration"] = "9d";
   expect(
-    (await call(f, "/api/settings", { method: "PUT", session: admin, body: snapshot })).status,
+    (await call(f, "/api/instance/settings", { method: "PUT", session: admin, body: snapshot }))
+      .status,
   ).toBe(200);
   const fresh = await login(f, f.admin.user, f.admin.password);
   for (const header of fresh.headers) {
@@ -247,7 +249,7 @@ test("settings body held across session expiry rejects after another principal e
   const admin = await login(f, f.admin.user, f.admin.password);
   expect(
     (
-      await call(f, "/api/settings/security.session_duration", {
+      await call(f, "/api/instance/settings/security.session_duration", {
         method: "PUT",
         session: admin,
         body: "2s",
@@ -284,7 +286,7 @@ test("settings body held across session expiry rejects after another principal e
   await call(f, "/fixture/clock", { method: "POST", body: 2000 });
   expect(
     (
-      await call(f, "/api/settings/security.session_duration", {
+      await call(f, "/api/instance/settings/security.session_duration", {
         method: "PUT",
         session: admin,
         body: "8d",
@@ -335,7 +337,7 @@ for (const [kind, revoked, full] of [
       : `Authorization: token ${name}:${user.password}\r\n`;
     expect(
       (
-        await call(f, "/api/settings/bounce.sendgrid_key", {
+        await call(f, "/api/instance/settings/bounce.sendgrid_key", {
           method: "PUT",
           session: admin,
           body: "synthetic-secret",
@@ -408,7 +410,7 @@ test("an in-flight login captures the duration in force at session creation", as
   expect((await call(f, "/fixture/login-entered")).status).toBe(200);
   expect(
     (
-      await call(f, "/api/settings/security.session_duration", {
+      await call(f, "/api/instance/settings/security.session_duration", {
         method: "PUT",
         session: admin,
         body: "3s",
@@ -890,7 +892,7 @@ test("TOTP accepts the independent SHA-1 vector and enforces challenge lifetime,
   const valid = await challenge();
   expect(
     (
-      await call(f, "/api/settings/security.session_duration", {
+      await call(f, "/api/instance/settings/security.session_duration", {
         method: "PUT",
         session: first,
         body: "3s",

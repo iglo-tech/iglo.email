@@ -8,9 +8,9 @@
 // With SCHEDULER_CRASH_AT=seed it only seeds the data and the production SMTP setting, then
 // exits, so the real production executable can run on the same data directory.
 import { createRealClock } from "@/clock";
-import { createListReferences } from "@/lists/references";
-import { createRoles } from "@/roles/roles";
-import { createSettings } from "@/settings/store";
+import { dirname } from "node:path";
+import { openInstanceDatabase } from "@/projects/instance";
+import { createInstanceSettings } from "@/settings/instance";
 import { offsetClock, seed, startRuntime } from "@/test/scheduler/runtime";
 import type { Wrap } from "@/test/scheduler/runtime";
 import { asBody } from "@/test/read-body";
@@ -65,9 +65,9 @@ if (process.env.SCHEDULER_CRASH_SEED === "1") {
   ]);
 }
 if (seedOnly) {
-  const lists = createListReferences(live.db);
-  const roles = createRoles(live.db, lists);
-  const settings = createSettings(live.db, createRealClock(), "http://scheduler.test", roles);
+  // B139 (D154): SMTP is an instance key, stored in instance.db two levels above the project.
+  const instanceDb = openInstanceDatabase(dirname(dirname(dataDir)), createRealClock());
+  const settings = createInstanceSettings(instanceDb, createRealClock());
   settings.update((current) => ({
     ...current,
     smtp: [
@@ -86,8 +86,7 @@ if (seedOnly) {
     ],
   }));
   settings.close();
-  roles.close();
-  lists.close();
+  instanceDb.close();
   await live.close();
   process.exit(0);
 }

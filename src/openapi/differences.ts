@@ -745,15 +745,21 @@ export const differences: Array<Difference> = [
     applies: [],
   },
   {
+    area: "Settings split (B139, D154)",
+    summary:
+      "A project host's `GET` and `PUT /api/settings` read and write its project keys only (14-projects section 4): the brand, consent, content, public pages and the read-only `app.root_url`. The instance keys (SMTP, `messaging.max_send_rate`, the `ses.api_*` keys, bounce processing and its providers, `security.trusted_proxies`, `security.session_duration`, `security.oidc`, `webhooks.block_private_addresses`, maintenance, slow-query caching, `upload.provider` and `upload.s3.*`, the admin appearance and the campaign pacing keys) are stored once for every project and change only through the instance host's `/api/instance/settings`, with the instance session; they are not in this document. A `PUT /api/settings` that names any other key, an instance key or a key that is no setting, is a 400 that names it, with nothing written; upstream ignores an unknown key and stores every key in one table.",
+    applies: ["/api/settings"],
+  },
+  {
     area: "Inert bounce provider settings (B35, D89)",
     summary:
-      "`bounce.sendgrid_enabled`, `bounce.sendgrid_key`, `bounce.postmark`, `bounce.forwardemail`, `bounce.lettermint`, `bounce.azure` and `bounce.mailboxes` are accepted and stored by the settings API for listmonk API compatibility; no effect; SES is the only provider (D89). The admin UI Bounces tab shows only Amazon SES.",
-    applies: ["/api/settings"],
+      "`bounce.sendgrid_enabled`, `bounce.sendgrid_key`, `bounce.postmark`, `bounce.forwardemail`, `bounce.lettermint`, `bounce.azure` and `bounce.mailboxes` are accepted and stored by the instance settings API (B139) for listmonk API compatibility; no effect; SES is the only provider (D89). The instance Settings page's Bounces tab shows only Amazon SES.",
+    applies: [],
   },
   {
     area: "Inert admin settings (B40, D89)",
     summary:
-      "`upload.s3.*`, `messengers`, `app.lang`, and the SMTP `max_msg_retries` and `msg_retry_delay` are accepted and stored by the settings API for listmonk API compatibility; no effect; no admin control (D89).",
+      "`upload.s3.*`, `messengers`, `app.lang`, and the SMTP `max_msg_retries` and `msg_retry_delay` are accepted and stored by the settings API for listmonk API compatibility (`app.lang` by a project's, the others by the instance's, B139); no effect; no admin control (D89).",
     applies: ["/api/settings"],
   },
   {

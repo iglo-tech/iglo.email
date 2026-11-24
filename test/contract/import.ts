@@ -8,6 +8,7 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
 import { startReceiver } from "@/test/webhooks/receiver";
+import { routedFetch } from "@/test/contract/settings-split";
 
 const IDLE = { name: "", total: 0, imported: 0, status: "none" };
 
@@ -72,7 +73,7 @@ export async function runImportContract(target: {
     headers: Record<string, string> = { authorization },
   ) => {
     const form = body instanceof FormData;
-    const response = await fetch(`${target.baseUrl}${path}`, {
+    const response = await routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       headers: {
         ...headers,

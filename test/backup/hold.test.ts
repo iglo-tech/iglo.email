@@ -23,6 +23,7 @@ import { HttpError } from "@/server/response";
 import { startSink } from "@/test/tx/sink";
 import { asBody, readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { instanceClient } from "@/test/settings/instance-client";
 
 const refused = async (response: Response) => {
   expect(response.status).toBe(503);
@@ -143,26 +144,10 @@ async function stack() {
   server = await startServer(executable, dataDir);
   const authorization = await provisionAuthorization(server.origin);
   const client = apiClient(server.origin, authorization);
-  const settings = await data<Record<string, any>>(await client("/api/settings"));
-  await data(
-    await client(
-      "/api/settings/smtp",
-      put([
-        {
-          ...settings.smtp[0],
-          enabled: true,
-          host: "127.0.0.1",
-          port: sink.port,
-          auth_protocol: "none",
-          username: "",
-          password: "",
-          tls_type: "none",
-          email_headers: [],
-        },
-      ]),
-    ),
-  );
-  await data(await client("/api/settings/webhooks.block_private_addresses", put(false)));
+  // B139: SMTP and the private-target block are instance keys, changed with the instance session.
+  const instance = await instanceClient(server.origin, admin);
+  await instance.useSink(sink.port, { username: "", password: "", email_headers: [] });
+  await instance.put("webhooks.block_private_addresses", false);
   await data(
     await client(
       "/api/webhooks",
@@ -581,7 +566,10 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   // The settings API can neither see nor clear a hold.
   const settings = await data<Record<string, any>>(await held("/api/settings"));
   expect(JSON.stringify(settings)).not.toContain("restore.hold");
-  await data(await held("/api/settings", put({ ...settings, "restore.hold": null })));
+  // B139 (D154): a key that is no project setting is a 400 that names it, and nothing is written.
+  const clearing = await held("/api/settings", put({ ...settings, "restore.hold": null }));
+  expect(clearing.status).toBe(400);
+  expect(await clearing.text()).toContain("restore.hold");
 
   await Bun.sleep(QUIET_MS);
   expect(sink!.messages.length).toBe(before);

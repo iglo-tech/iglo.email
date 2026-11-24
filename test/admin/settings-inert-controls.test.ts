@@ -1,5 +1,7 @@
 // B40 (D89): the admin settings page has no control for a key nothing reads, and saving the page
-// keeps those values. Public boundaries only: the rendered page and the settings API.
+// keeps those values. Public boundaries only: the rendered page and the settings API. B139 (D154):
+// the inert S3, messenger and SMTP keys are instance keys, on the instance page and API; `app.lang`
+// stays a project key.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { admin, api, get, login } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
@@ -14,11 +16,12 @@ beforeAll(async () => {
 });
 afterAll(() => f.close());
 
-async function settings(): Promise<Record<string, any>> {
-  const res = await get(f, "/api/settings", cookie);
+async function settings(path = "/api/settings"): Promise<Record<string, any>> {
+  const res = await get(f, path, cookie);
   expect(res.status).toBe(200);
   return (await readJson<{ data: Record<string, any> }>(res)).data;
 }
+const instance = "/api/instance/settings";
 
 // The page sends each masked secret back empty, which the API reads as "keep" (settings.js onSubmit).
 function unmasked(value: unknown): unknown {
@@ -35,7 +38,8 @@ function unmasked(value: unknown): unknown {
 }
 
 test("1. the settings page shows no control for a key nothing reads, and no unavailable card", async () => {
-  const html = await (await get(f, "/admin/settings", cookie)).text();
+  const project = await (await get(f, "/admin/settings", cookie)).text();
+  const html = project + (await (await get(f, "/admin/instance/settings", cookie)).text());
 
   const removed = [
     "upload.s3.",
@@ -51,19 +55,21 @@ test("1. the settings page shows no control for a key nothing reads, and no unav
   expect(removed.filter((name) => html.includes(name))).toEqual([]);
 
   // upload.provider stays, read-only: the media routes refuse uploads unless it is "filesystem".
+  // B139: on the instance page, since it is an instance key.
+  expect(project).not.toContain('name="upload.provider"');
   expect(html).toMatch(/<input[^>]*name="upload\.provider"[^>]*readonly/);
 });
 
 test("2. a save from the settings page keeps the values of the keys that have no control", async () => {
-  await api(f, cookie, "/api/settings/upload.s3.bucket", "PUT", "b40-bucket");
-  await api(f, cookie, "/api/settings/upload.s3.aws_default_region", "PUT", "eu-west-1");
-  await api(f, cookie, "/api/settings/upload.s3.aws_secret_access_key", "PUT", "b40-secret");
+  await api(f, cookie, `${instance}/upload.s3.bucket`, "PUT", "b40-bucket");
+  await api(f, cookie, `${instance}/upload.s3.aws_default_region`, "PUT", "eu-west-1");
+  await api(f, cookie, `${instance}/upload.s3.aws_secret_access_key`, "PUT", "b40-secret");
   await api(f, cookie, "/api/settings/app.lang", "PUT", "de");
-  const messengers = await api(f, cookie, "/api/settings/messengers", "PUT", [
+  const messengers = await api(f, cookie, `${instance}/messengers`, "PUT", [
     { name: "postback", root_url: "http://messenger.test", enabled: true, password: "m-secret" },
   ]);
   expect(messengers.status).toBe(200);
-  const smtp = asBody<Array<Record<string, unknown>>>((await settings())["smtp"]);
+  const smtp = asBody<Array<Record<string, unknown>>>((await settings(instance))["smtp"]);
   expect(smtp.length).toBeGreaterThan(0);
   smtp[0]!["max_msg_retries"] = 7;
   smtp[0]!["msg_retry_delay"] = "3s";
@@ -89,20 +95,22 @@ test("2. a save from the settings page keeps the values of the keys that have no
     tls_type: "STARTTLS",
     tls_skip_verify: false,
   });
-  expect((await api(f, cookie, "/api/settings/smtp", "PUT", smtp)).status).toBe(200);
+  expect((await api(f, cookie, `${instance}/smtp`, "PUT", smtp)).status).toBe(200);
 
-  const before = await settings();
+  const before = { ...(await settings()), ...(await settings(instance)) };
   expect(before["upload.s3.bucket"]).toBe("b40-bucket");
   expect(before["app.lang"]).toBe("de");
   const added = asBody<Array<Record<string, unknown>>>(before["smtp"]).at(-1)!;
   expect(added["host"]).toBe("smtp.b40-added.test");
   expect(typeof added["uuid"] === "string" && added["uuid"].length > 0).toBe(true);
 
-  // The page's own request: the whole object it read, with the shown fields edited (none here).
-  const saved = await api(f, cookie, "/api/settings", "PUT", unmasked(before));
+  // Each page's own request: the whole object it read, with the shown fields edited (none here).
+  const saved = await api(f, cookie, "/api/settings", "PUT", unmasked(await settings()));
   expect(saved.status).toBe(200);
+  const savedInstance = await api(f, cookie, instance, "PUT", unmasked(await settings(instance)));
+  expect(savedInstance.status).toBe(200);
 
-  const after = await settings();
+  const after = { ...(await settings()), ...(await settings(instance)) };
   for (const key of [
     "upload.provider",
     "upload.s3.url",

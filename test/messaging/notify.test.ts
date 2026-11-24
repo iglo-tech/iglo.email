@@ -28,7 +28,7 @@ import { createMediaStore } from "@/media/store";
 import { createFilesystem } from "@/media/filesystem";
 import { createAttachments } from "@/media/attachments";
 import { createEmbeds } from "@/media/embed";
-import { createSettings } from "@/settings/store";
+import { createFixtureSettings } from "@/test/settings/instance-fixture";
 import { createEmailer } from "@/messaging/email";
 import { createSends } from "@/messaging/sends";
 import { registerSendRoutes } from "@/messaging/routes";
@@ -39,6 +39,7 @@ import { createRouter } from "@/server/server";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { createTestSends } from "@/messaging/test-sends";
 import { registerSettingsRoutes } from "@/settings/routes";
+import { registerFixtureInstanceSettingsRoutes } from "@/test/settings/instance-fixture";
 import { registerImportRoutes } from "@/subscribers/import/routes";
 import { createImporter } from "@/subscribers/import/importer";
 import { createAdminNotifier } from "@/messaging/notify";
@@ -61,7 +62,7 @@ const root = "http://fixture.test";
 interface Fixture {
   db: ReturnType<typeof openDatabase>;
   clock: TestClock;
-  settings: ReturnType<typeof createSettings>;
+  settings: ReturnType<typeof createFixtureSettings>;
   campaignStore: ReturnType<typeof createCampaignStore>;
   runnerStore: ReturnType<typeof createRunnerStore>;
   importer: ReturnType<typeof createImporter>;
@@ -134,7 +135,7 @@ async function createNotifyFixture(
     reject: options.sinkReject,
   });
 
-  const settingsStore = createSettings(db, clock, root, roles);
+  const settingsStore = createFixtureSettings(db, clock, root);
   if (options.notifyEmails !== undefined) {
     // Written as the row is stored: the settings API refuses an invalid address on save (B117a, D136),
     // and these fixtures test what a send does with one that an older build stored.
@@ -329,6 +330,7 @@ async function createNotifyFixture(
   });
 
   registerSettingsRoutes(router, settingsStore, auth, undefined, () => true);
+  registerFixtureInstanceSettingsRoutes(router, settingsStore.instance, auth);
   registerImportRoutes(router, { importer, roles, auth });
 
   const sessionHeaders = { cookie: `session=${session.id}`, "x-csrf-token": session.csrf };
@@ -951,7 +953,7 @@ describe("B38 admin notification mails", () => {
 
     // Round-trip valid addresses through the settings API
     const res1 = await f.json("/api/settings", "PUT", {
-      ...f.settings.read(),
+      ...f.settings.readProject(),
       "app.notify_emails": ["ops@example.com", "alerts@example.com"],
     });
     expect(res1.status).toBe(200);
@@ -1131,7 +1133,7 @@ describe("B38 admin notification mails", () => {
 
     // Add address
     await f.json("/api/settings", "PUT", {
-      ...f.settings.read(),
+      ...f.settings.readProject(),
       "app.notify_emails": ["admin1@example.com", "admin2@example.com"],
     });
 

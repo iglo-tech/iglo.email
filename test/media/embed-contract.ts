@@ -11,6 +11,7 @@ import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { imagePng } from "@/test/media/images";
 import { untilState } from "@/test/wait";
+import { settingsRouter } from "@/test/contract/settings-split";
 
 const repository = resolve(import.meta.dir, "../..");
 const fixtures = await readFile(resolve(repository, "test/users/fixtures.md"), "utf-8");
@@ -115,9 +116,11 @@ try {
     async (origin) => {
       const credentials = await provisionApiUser(origin, admin);
       const authorization = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
+      // B139 (D154): each settings call reaches its side, the instance keys with the admin's session.
+      const routed = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
       const call = async (path: string, method = "GET", body?: unknown) => {
         const form = body instanceof FormData;
-        const response = await fetch(`${origin}${path}`, {
+        const response = await routed(`${origin}${path}`, {
           method,
           headers: {
             authorization,

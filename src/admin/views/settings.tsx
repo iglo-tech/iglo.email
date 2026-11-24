@@ -6,10 +6,12 @@
 // tab that is not even showing.
 import { Icon } from "@/admin/layout/icon";
 import type { AdminView } from "@/admin/page";
+import type { JSONValue } from "@/admin/layout/shell";
 import { Alert } from "@/admin/views/parts";
 import type { Translation } from "@/i18n/i18n";
 import type { Child } from "@/jsx/render";
 import { assetVersion } from "@/server/asset-manifest";
+import type { SettingsSide } from "@/settings/keys";
 
 const smtpPresets = [
   ["gmail", "Gmail"],
@@ -225,7 +227,8 @@ function General({ t, canUpload }: { t: Translation; canUpload: boolean }) {
   );
 }
 
-function Performance({ t }: { t: Translation }) {
+function Performance({ t, side }: { t: Translation; side: SettingsSide }) {
+  const instance = side === "instance";
   const windowOff = "!form['app.message_sliding_window']";
   const cacheOff = "!form['app.cache_slow_queries']";
   return (
@@ -235,110 +238,122 @@ function Performance({ t }: { t: Translation }) {
         data-keywords="performance concurrency message rate batch size errors threshold throughput sending speed workers"
       >
         <legend>{t.T("globals.terms.performance")}</legend>
-        <NumberField
-          model="form['app.concurrency']"
-          name="app.concurrency"
-          label={t.T("globals.fields.concurrency")}
-          hint={t.T("settings.performance.concurrencyHelp")}
-          min="1"
-          max="10000"
-          placeholder="5"
-        />
-        <NumberField
-          model="form['app.message_rate']"
-          name="app.message_rate"
-          label={t.T("settings.performance.messageRate")}
-          hint={t.T("settings.performance.messageRateHelp")}
-          min="1"
-          max="100000"
-          placeholder="5"
-        />
-        <NumberField
-          model="form['app.batch_size']"
-          name="app.batch_size"
-          label={t.T("globals.fields.batchSize")}
-          hint={t.T("settings.performance.batchSizeHelp")}
-          min="1"
-          max="100000"
-          placeholder="1000"
-        />
-        <NumberField
-          model="form['app.max_send_errors']"
-          name="app.max_send_errors"
-          label={t.T("settings.performance.maxErrThreshold")}
-          hint={t.T("settings.performance.maxErrThresholdHelp")}
-          min="0"
-          max="100000"
-          placeholder="1999"
-        />
-        <NumberField
-          model="form['messaging.max_send_rate']"
-          name="messaging.max_send_rate"
-          label={t.T("settings.performance.maxSendRate")}
-          hint={t.T("settings.performance.maxSendRateHelp")}
-          min="0"
-          max="10000"
-          placeholder="14"
-        />
+        {instance ? (
+          <>
+            <NumberField
+              model="form['app.concurrency']"
+              name="app.concurrency"
+              label={t.T("globals.fields.concurrency")}
+              hint={t.T("settings.performance.concurrencyHelp")}
+              min="1"
+              max="10000"
+              placeholder="5"
+            />
+            <NumberField
+              model="form['app.message_rate']"
+              name="app.message_rate"
+              label={t.T("settings.performance.messageRate")}
+              hint={t.T("settings.performance.messageRateHelp")}
+              min="1"
+              max="100000"
+              placeholder="5"
+            />
+            <NumberField
+              model="form['app.batch_size']"
+              name="app.batch_size"
+              label={t.T("globals.fields.batchSize")}
+              hint={t.T("settings.performance.batchSizeHelp")}
+              min="1"
+              max="100000"
+              placeholder="1000"
+            />
+          </>
+        ) : (
+          <NumberField
+            model="form['app.max_send_errors']"
+            name="app.max_send_errors"
+            label={t.T("settings.performance.maxErrThreshold")}
+            hint={t.T("settings.performance.maxErrThresholdHelp")}
+            min="0"
+            max="100000"
+            placeholder="1999"
+          />
+        )}
+        {instance ? (
+          <NumberField
+            model="form['messaging.max_send_rate']"
+            name="messaging.max_send_rate"
+            label={t.T("settings.performance.maxSendRate")}
+            hint={t.T("settings.performance.maxSendRateHelp")}
+            min="0"
+            max="10000"
+            placeholder="14"
+          />
+        ) : null}
       </fieldset>
-      <fieldset
-        class="card"
-        data-keywords="sliding window rate limit throttle duration cap sending"
-      >
-        <legend>{t.T("settings.performance.slidingWindow")}</legend>
-        <Switch
-          model="form['app.message_sliding_window']"
-          label={t.T("globals.buttons.enable")}
-          hint={t.T("settings.performance.slidingWindowHelp")}
-        />
-        <NumberField
-          model="form['app.message_sliding_window_rate']"
-          label={t.T("settings.performance.slidingWindowRate")}
-          hint={t.T("settings.performance.slidingWindowRateHelp")}
-          min="1"
-          max="10000000"
-          placeholder="25"
-          disabled={windowOff}
-        />
-        <TextField
-          model="form['app.message_sliding_window_duration']"
-          label={t.T("globals.fields.duration")}
-          hint={t.T("settings.performance.slidingWindowDurationHelp")}
-          maxlength="10"
-          placeholder="1h"
-          disabled={windowOff}
-        />
-      </fieldset>
-      <fieldset
-        class="card"
-        data-keywords="marketing frequency cap minimum interval sends subscriber"
-      >
-        <legend>{t.T("settings.marketing.title")}</legend>
-        <TextField
-          model="form['marketing.min_interval']"
-          name="marketing.min_interval"
-          label={t.T("settings.marketing.minInterval")}
-          hint={t.T("settings.marketing.minIntervalHelp")}
-          placeholder="P7D"
-        />
-      </fieldset>
-      <fieldset
-        class="card"
-        data-keywords="cache slow queries dashboard cron interval materialized stats"
-      >
-        <legend>{t.T("settings.performance.cacheSlowQueries")}</legend>
-        <Switch
-          model="form['app.cache_slow_queries']"
-          label={t.T("globals.buttons.enable")}
-          hint={t.T("settings.performance.cacheSlowQueriesHelp")}
-        />
-        <TextField
-          model="form['app.cache_slow_queries_interval']"
-          label={t.T("settings.maintenance.cron")}
-          placeholder="0 3 * * *"
-          disabled={cacheOff}
-        />
-      </fieldset>
+      {instance ? (
+        <fieldset
+          class="card"
+          data-keywords="sliding window rate limit throttle duration cap sending"
+        >
+          <legend>{t.T("settings.performance.slidingWindow")}</legend>
+          <Switch
+            model="form['app.message_sliding_window']"
+            label={t.T("globals.buttons.enable")}
+            hint={t.T("settings.performance.slidingWindowHelp")}
+          />
+          <NumberField
+            model="form['app.message_sliding_window_rate']"
+            label={t.T("settings.performance.slidingWindowRate")}
+            hint={t.T("settings.performance.slidingWindowRateHelp")}
+            min="1"
+            max="10000000"
+            placeholder="25"
+            disabled={windowOff}
+          />
+          <TextField
+            model="form['app.message_sliding_window_duration']"
+            label={t.T("globals.fields.duration")}
+            hint={t.T("settings.performance.slidingWindowDurationHelp")}
+            maxlength="10"
+            placeholder="1h"
+            disabled={windowOff}
+          />
+        </fieldset>
+      ) : (
+        <fieldset
+          class="card"
+          data-keywords="marketing frequency cap minimum interval sends subscriber"
+        >
+          <legend>{t.T("settings.marketing.title")}</legend>
+          <TextField
+            model="form['marketing.min_interval']"
+            name="marketing.min_interval"
+            label={t.T("settings.marketing.minInterval")}
+            hint={t.T("settings.marketing.minIntervalHelp")}
+            placeholder="P7D"
+          />
+        </fieldset>
+      )}
+      {instance ? (
+        <fieldset
+          class="card"
+          data-keywords="cache slow queries dashboard cron interval materialized stats"
+        >
+          <legend>{t.T("settings.performance.cacheSlowQueries")}</legend>
+          <Switch
+            model="form['app.cache_slow_queries']"
+            label={t.T("globals.buttons.enable")}
+            hint={t.T("settings.performance.cacheSlowQueriesHelp")}
+          />
+          <TextField
+            model="form['app.cache_slow_queries_interval']"
+            label={t.T("settings.maintenance.cron")}
+            placeholder="0 3 * * *"
+            disabled={cacheOff}
+          />
+        </fieldset>
+      ) : null}
     </div>
   );
 }
@@ -446,18 +461,49 @@ const budget = (key: string, label: string) => (
     max="1000000"
   />
 );
-function Security({ t }: { t: Translation }) {
+function Security({ t, side }: { t: Translation; side: SettingsSide }) {
+  if (side === "instance") {
+    return (
+      <div class="settings-items">
+        <fieldset class="card" data-keywords="login session duration expiry timeout">
+          <legend>{t.T("globals.buttons.login")}</legend>
+          <TextField
+            model="form['security.session_duration']"
+            label={t.T("globals.fields.sessionDuration")}
+            placeholder="7d"
+          />
+        </fieldset>
+        <fieldset
+          class="card"
+          data-keywords="trusted proxies proxy forwarded x-forwarded-for client ip"
+        >
+          <legend>{t.T("settings.security.trustedProxies")}</legend>
+          <label data-field="">
+            <textarea
+              rows="3"
+              name="security.trusted_proxies"
+              placeholder="127.0.0.1"
+              x-model="form['security.trusted_proxies']"
+            ></textarea>
+            <Hint>{t.T("settings.security.trustedProxiesHelp")}</Hint>
+          </label>
+        </fieldset>
+        <fieldset
+          class="card"
+          data-keywords="webhook private addresses block ssrf internal network"
+        >
+          <legend>{t.T("settings.security.webhooks")}</legend>
+          <Switch
+            model="form['webhooks.block_private_addresses']"
+            label={t.T("settings.security.blockPrivateAddresses")}
+            hint={t.T("settings.security.blockPrivateAddressesHelp")}
+          />
+        </fieldset>
+      </div>
+    );
+  }
   return (
     <div class="settings-items">
-      <fieldset class="card" data-keywords="login session duration expiry timeout">
-        <legend>{t.T("globals.buttons.login")}</legend>
-        <TextField
-          model="form['security.session_duration']"
-          label={t.T("globals.fields.sessionDuration")}
-          placeholder="7d"
-        />
-      </fieldset>
-      <hr />
       <fieldset
         class="card"
         data-keywords="trusted urls cors cross-origin api access allowed hosts"
@@ -474,21 +520,6 @@ function Security({ t }: { t: Translation }) {
       </fieldset>
       <fieldset
         class="card"
-        data-keywords="trusted proxies proxy forwarded x-forwarded-for client ip"
-      >
-        <legend>{t.T("settings.security.trustedProxies")}</legend>
-        <label data-field="">
-          <textarea
-            rows="3"
-            name="security.trusted_proxies"
-            placeholder="127.0.0.1"
-            x-model="form['security.trusted_proxies']"
-          ></textarea>
-          <Hint>{t.T("settings.security.trustedProxiesHelp")}</Hint>
-        </label>
-      </fieldset>
-      <fieldset
-        class="card"
         data-keywords="public rate limit subscribe opt-in unsubscribe privacy budget"
       >
         <legend>{t.T("settings.security.publicRateLimit")}</legend>
@@ -497,14 +528,6 @@ function Security({ t }: { t: Translation }) {
         {budget("optin", t.T("lists.optin"))}
         {budget("unsubscribe", t.T("globals.buttons.unsubscribe"))}
         {budget("privacy", t.T("globals.terms.privacy"))}
-      </fieldset>
-      <fieldset class="card" data-keywords="webhook private addresses block ssrf internal network">
-        <legend>{t.T("settings.security.webhooks")}</legend>
-        <Switch
-          model="form['webhooks.block_private_addresses']"
-          label={t.T("settings.security.blockPrivateAddresses")}
-          hint={t.T("settings.security.blockPrivateAddressesHelp")}
-        />
       </fieldset>
       <fieldset
         class="card"
@@ -568,7 +591,20 @@ function Security({ t }: { t: Translation }) {
   );
 }
 
-function Media({ t }: { t: Translation }) {
+function Media({ t, side }: { t: Translation; side: SettingsSide }) {
+  if (side === "instance") {
+    return (
+      <div class="settings-items">
+        <fieldset class="card" data-keywords="upload media storage provider">
+          <legend>{t.T("settings.media.title")}</legend>
+          <label data-field="">
+            {t.T("globals.fields.provider")}
+            <input name="upload.provider" readonly x-model="form['upload.provider']" />
+          </label>
+        </fieldset>
+      </div>
+    );
+  }
   return (
     <div class="settings-items">
       <fieldset
@@ -585,10 +621,6 @@ function Media({ t }: { t: Translation }) {
         data-keywords="filesystem local upload path uri directory disk provider"
       >
         <legend>filesystem</legend>
-        <label data-field="">
-          {t.T("globals.fields.provider")}
-          <input name="upload.provider" readonly x-model="form['upload.provider']" />
-        </label>
         <TextField
           model="form['upload.filesystem.upload_path']"
           label={t.T("settings.media.upload.path")}
@@ -613,8 +645,8 @@ function SmtpTest({ t }: { t: Translation }) {
     <template x-if="smtpTestItem === n">
       <fieldset class="card mb-8 mt-8">
         <p>
-          <strong>{t.T("settings.general.fromEmail")}</strong>:{" "}
-          <span x-text="form['app.from_email'].split('\n')[0]"></span>
+          <strong>{t.T("settings.general.fromEmail")}</strong>: the default address of the primary
+          project
         </p>
         <fieldset class="group">
           <legend>{t.T("settings.smtp.toEmail")}</legend>
@@ -884,7 +916,50 @@ function Smtp({ t, canManage }: { t: Translation; canManage: boolean }) {
 }
 
 const provider = (model: string, label: string) => <Switch model={model} label={label} />;
-function Bounces({ t }: { t: Translation }) {
+function Bounces({ t, side }: { t: Translation; side: SettingsSide }) {
+  if (side === "project") {
+    return (
+      <div class="settings-items">
+        <p class="text-light">
+          Bounce processing is switched on in the instance settings; these actions apply to the
+          subscribers of this project.
+        </p>
+        {(["soft", "hard", "complaint"] as const).map((type) => (
+          <template x-if={`form['bounce.actions'] && form['bounce.actions'].${type}`}>
+            <fieldset
+              class="card"
+              data-keywords={`bounce ${type} action count threshold unsubscribe blocklist delete`}
+            >
+              <legend>{t.T(`bounces.${type}`)}</legend>
+              <div class="row">
+                <div class="col-6">
+                  <NumberField
+                    model={`form['bounce.actions'].${type}.count`}
+                    label={t.T("settings.bounces.count")}
+                    hint={t.T("settings.bounces.countHelp")}
+                    min="1"
+                    max="1000"
+                    placeholder="3"
+                  />
+                </div>
+                <div class="col-6">
+                  <div data-field="">
+                    <label>{t.T("globals.fields.action")}</label>
+                    <select x-model={`form['bounce.actions'].${type}.action`}>
+                      <option value="none">{t.T("globals.terms.none")}</option>
+                      <option value="unsubscribe">{t.T("globals.buttons.unsubscribe")}</option>
+                      <option value="blocklist">{t.T("globals.terms.blocklist")}</option>
+                      <option value="delete">{t.T("globals.buttons.delete")}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+          </template>
+        ))}
+      </div>
+    );
+  }
   return (
     <div class="settings-items">
       <label
@@ -896,40 +971,6 @@ function Bounces({ t }: { t: Translation }) {
       </label>
       <template x-if="form['bounce.enabled']">
         <div class="settings-items">
-          {(["soft", "hard", "complaint"] as const).map((type) => (
-            <template x-if={`form['bounce.actions'] && form['bounce.actions'].${type}`}>
-              <fieldset
-                class="card"
-                data-keywords={`bounce ${type} action count threshold unsubscribe blocklist delete`}
-              >
-                <legend>{t.T(`bounces.${type}`)}</legend>
-                <div class="row">
-                  <div class="col-6">
-                    <NumberField
-                      model={`form['bounce.actions'].${type}.count`}
-                      label={t.T("settings.bounces.count")}
-                      hint={t.T("settings.bounces.countHelp")}
-                      min="1"
-                      max="1000"
-                      placeholder="3"
-                    />
-                  </div>
-                  <div class="col-6">
-                    <div data-field="">
-                      <label>{t.T("globals.fields.action")}</label>
-                      <select x-model={`form['bounce.actions'].${type}.action`}>
-                        <option value="none">{t.T("globals.terms.none")}</option>
-                        <option value="unsubscribe">{t.T("globals.buttons.unsubscribe")}</option>
-                        <option value="blocklist">{t.T("globals.terms.blocklist")}</option>
-                        <option value="delete">{t.T("globals.buttons.delete")}</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </fieldset>
-            </template>
-          ))}
-          <hr />
           <label data-field="" data-keywords="bounce webhook notifications endpoint enable">
             <input type="checkbox" role="switch" x-model="form['bounce.webhooks_enabled']" />{" "}
             {t.T("settings.bounces.enableWebhooks")}
@@ -954,6 +995,42 @@ function Bounces({ t }: { t: Translation }) {
           </template>
         </div>
       </template>
+    </div>
+  );
+}
+
+/** The SES account's API access (B139, D154): stored and masked; no sender reads it yet. */
+function Ses() {
+  return (
+    <div class="settings-items">
+      <fieldset class="card" data-keywords="ses amazon aws api access key secret region account">
+        <legend>Amazon SES API</legend>
+        <p class="text-light">
+          API access to the SES account. Set all three or none. A saved secret stays masked; leave
+          it as it is to keep it.
+        </p>
+        <TextField
+          model="form['ses.api_region']"
+          name="ses.api_region"
+          label="Region"
+          placeholder="eu-west-1"
+          maxlength="40"
+        />
+        <TextField
+          model="form['ses.api_access_key_id']"
+          name="ses.api_access_key_id"
+          label="Access key ID"
+          placeholder="AKIA…"
+          maxlength="128"
+        />
+        <TextField
+          model="form['ses.api_secret_access_key']"
+          name="ses.api_secret_access_key"
+          label="Secret access key"
+          type="password"
+          maxlength="128"
+        />
+      </fieldset>
     </div>
   );
 }
@@ -1005,24 +1082,16 @@ function Brand({ t }: { t: Translation }) {
     </fieldset>
   );
 }
-function Appearance({ t }: { t: Translation }) {
+function Appearance({ t, side }: { t: Translation; side: SettingsSide }) {
   const css = t.T("settings.appearance.customCSS");
   const js = t.T("settings.appearance.customJS");
   return (
     <div class="settings-items">
-      <div role="alert" data-testid="appearance-warning">
-        {t.T("settings.appearance.warning")}
-      </div>
-      <ot-tabs class="settings-subtabs">
-        <div role="tablist">
-          <button type="button" role="tab">
-            {t.T("globals.terms.admin")}
-          </button>
-          <button type="button" role="tab">
-            {t.T("globals.terms.public")}
-          </button>
-        </div>
-        <div role="tabpanel">
+      {side === "instance" ? (
+        <>
+          <div role="alert" data-testid="appearance-warning">
+            {t.T("settings.appearance.warning")}
+          </div>
           <p class="text-light">{t.T("settings.appearance.adminHelp")}</p>
           {editor("admin.custom_css", "css", css, "appearance admin custom css style theme ui")}
           {editor(
@@ -1031,8 +1100,9 @@ function Appearance({ t }: { t: Translation }) {
             js,
             "appearance admin custom javascript js script ui",
           )}
-        </div>
-        <div role="tabpanel">
+        </>
+      ) : (
+        <>
           <p class="text-light">{t.T("settings.appearance.publicHelp")}</p>
           <Brand t={t} />
           {editor(
@@ -1047,36 +1117,57 @@ function Appearance({ t }: { t: Translation }) {
             js,
             "appearance public custom javascript js script subscription page",
           )}
-        </div>
-      </ot-tabs>
+        </>
+      )}
     </div>
   );
 }
 
-export const settingsView: AdminView = ({ context, can }) => {
-  const t = context.app.i18n;
-  const canManage = can("settings:manage");
-  const tabs = [
-    // A logo or favicon upload is a media write and then a settings save, so both permissions are
-    // needed; without the media one the file would land in the library and never be used (N5).
-    [
-      "general",
-      t.T("globals.terms.general"),
-      <General t={t} canUpload={can("settings:manage") && can("media:manage")} />,
-    ],
-    ["performance", t.T("globals.terms.performance"), <Performance t={t} />],
-    ["privacy", t.T("globals.terms.privacy"), <Privacy t={t} />],
-    ["security", t.T("globals.terms.security"), <Security t={t} />],
-    ["media", t.T("settings.media.title"), <Media t={t} />],
-    ["smtp", t.T("settings.smtp.name"), <Smtp t={t} canManage={canManage} />],
-    ["bounces", t.T("globals.terms.bounces"), <Bounces t={t} />],
-    ["appearance", t.T("globals.terms.appearance"), <Appearance t={t} />],
-  ] as const;
+export interface SettingsPage {
+  readonly title: string;
+  readonly script: string;
+  readonly config: Readonly<Record<string, JSONValue>>;
+  readonly translationKeys: ReadonlyArray<string>;
+  readonly body: Child;
+}
+
+/**
+ * One side's Settings page (B139, D154): a project's shows its project keys with a link to the
+ * instance settings; the instance's shows the instance keys. A tab with no key on a side is left out.
+ */
+export function settingsPage(
+  t: Translation,
+  side: SettingsSide,
+  options: { canManage: boolean; canUpload: boolean; instanceSettingsUrl?: string },
+): SettingsPage {
+  const { canManage } = options;
+  const project = side === "project";
+  const tabs: Array<readonly [string, string, Child]> = project
+    ? [
+        // A logo or favicon upload is a media write and then a settings save, so both permissions
+        // are needed; without the media one the file would land in the library and never be used.
+        ["general", t.T("globals.terms.general"), <General t={t} canUpload={options.canUpload} />],
+        ["performance", t.T("globals.terms.performance"), <Performance t={t} side={side} />],
+        ["privacy", t.T("globals.terms.privacy"), <Privacy t={t} />],
+        ["security", t.T("globals.terms.security"), <Security t={t} side={side} />],
+        ["media", t.T("settings.media.title"), <Media t={t} side={side} />],
+        ["bounces", t.T("globals.terms.bounces"), <Bounces t={t} side={side} />],
+        ["appearance", t.T("globals.terms.appearance"), <Appearance t={t} side={side} />],
+      ]
+    : [
+        ["performance", t.T("globals.terms.performance"), <Performance t={t} side={side} />],
+        ["security", t.T("globals.terms.security"), <Security t={t} side={side} />],
+        ["media", t.T("settings.media.title"), <Media t={t} side={side} />],
+        ["smtp", t.T("settings.smtp.name"), <Smtp t={t} canManage={canManage} />],
+        ["bounces", t.T("globals.terms.bounces"), <Bounces t={t} side={side} />],
+        ["ses", "Amazon SES", <Ses />],
+        ["appearance", t.T("globals.terms.appearance"), <Appearance t={t} side={side} />],
+      ];
+  const title = project ? t.T("globals.terms.settings") : "Instance settings";
   return {
-    title: t.T("globals.terms.settings"),
-    pageId: "settings.all",
+    title,
     script: "settings",
-    config: { can_manage: canManage },
+    config: { can_manage: canManage, settings_side: side },
     translationKeys: [
       "campaigns.testSent",
       "globals.fields.customHeaders",
@@ -1093,11 +1184,21 @@ export const settingsView: AdminView = ({ context, can }) => {
           class="settings"
           novalidate
           x-data="settingsView"
+          data-testid={`settings-${side}`}
           {...{ "x-on:submit.prevent": "onSubmit" }}
         >
           <header class="row page-header">
             <div class="col-4">
-              <h1 class="page-title">{t.T("globals.terms.settings")}</h1>
+              <h1 class="page-title">{title}</h1>
+              {options.instanceSettingsUrl ? (
+                <a
+                  href={options.instanceSettingsUrl}
+                  class="text-light"
+                  data-testid="instance-settings-link"
+                >
+                  Instance settings
+                </a>
+              ) : null}
             </div>
             <div class="col-8 hstack justify-end buttons">
               <div class="search-form settings-search">
@@ -1164,4 +1265,16 @@ export const settingsView: AdminView = ({ context, can }) => {
       </>
     ),
   };
+}
+
+export const settingsView: AdminView = ({ context, can, site }) => {
+  const options: Parameters<typeof settingsPage>[2] = {
+    canManage: can("settings:manage"),
+    canUpload: can("settings:manage") && can("media:manage"),
+  };
+  if (site.instanceUrl) {
+    options.instanceSettingsUrl = `${site.instanceUrl.replace(/\/+$/, "")}/admin/instance/settings`;
+  }
+  const page = settingsPage(context.app.i18n, "project", options);
+  return { ...page, pageId: "settings.all", translationKeys: [...page.translationKeys] };
 };

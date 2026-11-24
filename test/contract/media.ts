@@ -7,6 +7,7 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import { imagePng, imagePngSize, imageGif, imageJpeg } from "@/test/media/images";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 const check = (condition: unknown, label: string) => {
   if (!condition) {
@@ -36,7 +37,7 @@ export async function runMediaContract(target: {
     headers: Record<string, string> = { authorization },
   ) => {
     const form = body instanceof FormData;
-    const response = await fetch(`${target.baseUrl}${path}`, {
+    const response = await routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       headers: {
         ...headers,

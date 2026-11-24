@@ -69,22 +69,43 @@ process.exitCode = await withStack(async ({ origin }) => {
         `[...document.querySelectorAll(".settings-sidebar [role=tab]")].map((t) => t.innerText)`,
       ),
     );
-    for (const name of ["performance", "privacy", "security", "media", "smtp", "bounces"]) {
-      browser("eval", `document.querySelector("#${name}").click()`);
-      if (shots) {
-        browser("screenshot", `${shots}/settings-${name}.png`);
+    see("instance settings link", text("[data-testid=instance-settings-link]"));
+    const tabs = (prefix: string, names: Array<string>) => {
+      for (const name of names) {
+        browser("eval", `document.querySelector("#${name}").click()`);
+        if (shots) {
+          browser("screenshot", `${shots}/${prefix}-${name}.png`);
+        }
+        see(
+          `${prefix} ${name}`,
+          text(".settings-tabs > [role=tabpanel]:not([hidden])").slice(0, 160),
+        );
       }
-      see(name, text(".settings-tabs > [role=tabpanel]:not([hidden])").slice(0, 160));
-    }
+    };
+    tabs("settings", ["performance", "privacy", "security", "media", "bounces", "appearance"]);
+
+    // B139 (D154): the instance keys, on the instance Settings page with the instance login.
+    visit("/admin/instance/login?next=%2Fadmin%2Finstance%2Fsettings", "instance-login");
+    browser("fill", "#username", admin.user);
+    browser("fill", "#password", admin.password);
+    browser("click", "button[type=submit]");
+    settle();
+    see("instance settings heading", text(".page-title"));
+    see(
+      "instance settings tabs",
+      value(
+        `[...document.querySelectorAll(".settings-sidebar [role=tab]")].map((t) => t.innerText)`,
+      ),
+    );
+    tabs("instance", ["performance", "security", "media", "smtp", "ses"]);
     browser(
       "eval",
       `document.querySelector("#bounces").click(); [...document.querySelectorAll("input[type=checkbox]")].find((i) => i.closest("label")?.innerText.includes("Enable bounce processing")).click()`,
     );
-    browser("eval", `document.querySelector("#appearance").click()`);
-    if (shots) {
-      browser("screenshot", `${shots}/settings-appearance.png`);
-    }
-    see("appearance", text(".settings-tabs > [role=tabpanel]:not([hidden])").slice(0, 200));
+    see("instance bounces", text(".settings-tabs > [role=tabpanel]:not([hidden])").slice(0, 200));
+    tabs("instance", ["appearance"]);
+    see("nothing ran", safe());
+    visit("/admin/settings", "settings-again");
 
     visit("/admin/users", "users");
     see("users heading", text(".page-title"));

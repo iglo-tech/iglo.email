@@ -151,8 +151,16 @@ export async function runSettingsBinding(target: {
   check((await get())["app.site_name"] === "folded", "long-s-projection");
   const sharpS: Record<string, unknown> = { ...original, "app.ßite_name": "ignored" };
   delete sharpS["app.site_name"];
-  check((await put("sharp-s", JSON.stringify(sharpS))).status === 200, "sharp-s");
-  check((await get())["app.site_name"] === "", "sharp-s-projection");
+  const sharp = await put("sharp-s", JSON.stringify(sharpS));
+  if (target.mode === "normal") {
+    // Deliberate difference (B139, D154): a name that binds no setting is a 400 that names it,
+    // with nothing written; upstream ignores it and zeroes the missing site name.
+    check(sharp.status === 400 && (await sharp.text()).includes("app.ßite_name"), "sharp-s");
+    check((await get())["app.site_name"] === "folded", "sharp-s-projection");
+  } else {
+    check(sharp.status === 200, "sharp-s");
+    check((await get())["app.site_name"] === "", "sharp-s-projection");
+  }
   const addMembers = (members: string) =>
     JSON.stringify(original).slice(0, -1) + "," + members + "}";
   for (const [label, members, field, expected] of [
@@ -214,8 +222,12 @@ export async function runSettingsBinding(target: {
     );
     check(JSON.stringify(await get()) === JSON.stringify(before), "bad-json-or-number-no-write");
   }
+  // Deliberate difference (B139, D154): iglo.email refuses a key that is no setting, naming it.
+  const metadata = await put("unused-large-metadata", addMembers('"unknown":{"x":1e999}'));
   check(
-    (await put("unused-large-metadata", addMembers('"unknown":{"x":1e999}'))).status === 200,
+    target.mode === "normal"
+      ? metadata.status === 400 && (await metadata.text()).includes("unknown")
+      : metadata.status === 200,
     "unused-large-metadata",
   );
   for (const [label, type, body, message] of [

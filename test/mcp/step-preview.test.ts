@@ -8,6 +8,7 @@ import { startProduction, startMailbox, admin } from "@/test/worked-example/harn
 import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { asBody } from "@/test/read-body";
+import { instanceClient } from "@/test/settings/instance-client";
 
 describe("D105 step preview and test send through MCP", () => {
   let production: Production;
@@ -24,26 +25,10 @@ describe("D105 step preview and test send through MCP", () => {
     adminAuth = `token ${creds.user}:${creds.token}`;
     adminHeaders = { authorization: adminAuth, "content-type": "application/json" };
     // Mail goes to the loopback sink only (AGENTS.md: tests never use a real SMTP server).
-    const settings = (
-      await (await fetch(`${production.origin}/api/settings`, { headers: adminHeaders })).json()
-    ).data;
-    await fetch(`${production.origin}/api/settings/smtp`, {
-      method: "PUT",
-      headers: adminHeaders,
-      body: JSON.stringify([
-        {
-          ...settings.smtp[0],
-          enabled: true,
-          host: "127.0.0.1",
-          port: mailbox.port,
-          auth_protocol: "none",
-          username: "",
-          password: "",
-          tls_type: "none",
-          email_headers: [],
-        },
-      ]),
-    });
+    // B139: SMTP is an instance key, changed with the instance session.
+    await (
+      await instanceClient(production.origin, admin)
+    ).useSink(mailbox.port, { username: "", password: "", email_headers: [] });
   }, 60_000);
 
   afterAll(async () => {

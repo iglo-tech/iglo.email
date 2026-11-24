@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { asBody, readJson } from "@/test/read-body";
+import { settingsRouter } from "@/test/contract/settings-split";
 
 const repository = resolve(import.meta.dir, "../..");
 const session = `m25-${randomBytes(6).toString("hex")}`;
@@ -46,8 +47,10 @@ const passed = await withProduction(
   async (origin) => {
     const credentials = await provisionApiUser(origin, admin);
     const authorization = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
+    // B139 (D154): each settings call reaches its side, the instance keys with the admin's session.
+    const routed = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
     const api = async (path: string, method = "GET", body?: unknown) => {
-      const response = await fetch(`${origin}${path}`, {
+      const response = await routed(`${origin}${path}`, {
         method,
         headers: {
           authorization,

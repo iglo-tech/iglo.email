@@ -7,7 +7,7 @@ import { join, resolve } from "node:path";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createTranslation } from "@/i18n/i18n";
-import { settingsView } from "@/admin/views/settings";
+import { settingsPage } from "@/admin/views/settings";
 import { render } from "@/jsx/render";
 import { buildDocument } from "@/openapi/document";
 import { ensureProductionBuild } from "@/test/production-build";
@@ -111,15 +111,14 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
   // PUT round-trip succeeds
   expect((await api("/api/settings", "PUT", body.data)).status).toBe(200);
 
-  // An old client sends bounce.mailgun in a full PUT: 200, the key is not stored or returned.
-  expect(
-    (
-      await api("/api/settings", "PUT", {
-        ...body.data,
-        "bounce.mailgun": { enabled: true, key: "x" },
-      })
-    ).status,
-  ).toBe(200);
+  // An old client sends bounce.mailgun in a full PUT: B139 (D154) refuses a key that is no project
+  // setting with a 400 that names it, and nothing is stored or returned.
+  const refused = await api("/api/settings", "PUT", {
+    ...body.data,
+    "bounce.mailgun": { enabled: true, key: "x" },
+  });
+  expect(refused.status).toBe(400);
+  expect(await refused.text()).toContain("bounce.mailgun");
   const getAfterPut = await api("/api/settings");
   expect(getAfterPut.status).toBe(200);
   const bodyAfterPut = await readJson<{ data: Record<string, unknown> }>(getAfterPut);
@@ -191,33 +190,8 @@ test("3. Existing source='mailgun' bounce row still shows in GET /api/bounces an
 
 test("5. Admin settings page Bounces tab shows only SES (no Mailgun, no inert providers, no mailbox editor)", async () => {
   const i18n = createTranslation();
-  const page = await settingsView({
-    context: asBody<never>({
-      app: { i18n, logger: { error() {} } },
-      url: new URL("http://fixture.test/admin/settings"),
-      request: new Request("http://fixture.test/admin/settings"),
-      params: {},
-      peerAddress: "127.0.0.1",
-    }),
-    identity: asBody<never>({ id: 1, username: "admin", type: "human" }),
-    site: {
-      siteName: "Test Site",
-      faviconUrl: "",
-      rootUrl: "http://fixture.test",
-      cacheSlowQueries: false,
-      disableTracking: false,
-      individualTracking: false,
-      fromEmails: [],
-      messengers: [],
-      publicSubscription: false,
-      trustedUrls: [],
-      captcha: { provider: "", key: "" },
-      customCss: "",
-      customJs: "",
-    },
-    can: () => true,
-    listScope: () => ({ all: true, ids: [] }),
-  });
+  // B139 (D154): bounce processing and its providers are instance keys, on the instance page.
+  const page = settingsPage(i18n, "instance", { canManage: true, canUpload: false });
 
   const html = render(page.body);
 

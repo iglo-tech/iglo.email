@@ -19,6 +19,7 @@ import {
   requestAdmin,
   settledMail,
   signIn,
+  signInInstance,
   test,
   unique,
 } from "../helpers.js";
@@ -391,6 +392,11 @@ test("a restored snapshot sends nothing until an operator releases it", async ({
   try {
     const held = await context.newPage();
     await signInAt(held, restored.origin, peer());
+    // B139 (D154): SMTP is an instance key, in instance.db, which a project's backup does not hold;
+    // the restored instance is pointed at the stack's sink through its instance settings.
+    const { smtp } = await ok(page, "/api/settings");
+    await signInInstance(held, restored.origin);
+    expect((await api(held, "/api/settings/smtp", "PUT", smtp)).status).toBe(200);
 
     // The admin shell shows the hold and its reason on every page.
     await expect(held.getByTestId("restore-hold")).toContainText(

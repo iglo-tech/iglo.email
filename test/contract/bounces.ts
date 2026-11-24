@@ -8,6 +8,7 @@ import { startSink } from "@/test/tx/sink";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 /** A page of bounces as GET /api/bounces returns it, read as the shape the checks use. */
 type BounceList = {
@@ -38,7 +39,7 @@ export async function runBouncesContract(target: {
     body?: unknown,
     headers: Record<string, string> = { authorization },
   ) => {
-    const response = await fetch(`${target.baseUrl}${path}`, {
+    const response = await routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       headers: {
         ...headers,

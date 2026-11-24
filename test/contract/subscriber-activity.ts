@@ -5,6 +5,7 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 /** A subscriber data export, read as the parts the checks use. */
 type Exported = {
@@ -35,7 +36,7 @@ export async function runSubscriberActivity(target: {
   const resources: Array<{ path: string; id: number }> = [];
   let cleanupFailures = 0;
   const request = (path: string, method = "GET", body?: unknown, authorization = basic) =>
-    fetch(`${target.baseUrl}${path}`, {
+    routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       redirect: "manual",
       headers: {

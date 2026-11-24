@@ -601,10 +601,10 @@ test("a password change from a project's profile reaches the instance and the ot
 });
 
 test("a password reset by email in one project reaches the instance and the other projects", async () => {
-  const session = await logIn(port, A, admin);
-  const headers = sessionHeaders(session);
+  // B139 (D154): SMTP is an instance key, set once with the instance session for every project.
+  const operator = (await instanceLogin(port, PRIMARY, admin)).session!;
   const settings = await readJson<{ data: Record<string, unknown> }>(
-    await request(port, A, "/api/settings", { headers }),
+    await instanceCall(port, PRIMARY, operator, "GET", "/api/instance/settings"),
   );
   const smtp = {
     enabled: true,
@@ -626,10 +626,9 @@ test("a password reset by email in one project reaches the instance and the othe
     email_headers: [],
     exclude_from_default: false,
   };
-  const saved = await request(port, A, "/api/settings", {
-    method: "PUT",
-    headers,
-    body: JSON.stringify({ ...settings.data, smtp: [smtp] }),
+  const saved = await instanceCall(port, PRIMARY, operator, "PUT", "/api/instance/settings", {
+    ...settings.data,
+    smtp: [smtp],
   });
   expect(saved.status).toBe(200);
   // The copy's email is the project's own field.

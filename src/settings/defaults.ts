@@ -40,6 +40,11 @@ export const defaults = {
   "marketing.min_interval": "P7D",
   // Native: account-wide maximum send rate (messages/s, 0 = no cap).
   "messaging.max_send_rate": 14,
+  // Native (B139, D154): the SES account's API access, an instance key. Validated, the secret masked,
+  // stored; no sender reads them yet (B145, B142). Empty is none.
+  "ses.api_region": "",
+  "ses.api_access_key_id": "",
+  "ses.api_secret_access_key": "",
   // Native: refuse webhook targets outside public unicast, checked after DNS resolution. On by
   // default (D122). Migration 24 turns a stored false on once, and an operator's later false is kept.
   "webhooks.block_private_addresses": true,

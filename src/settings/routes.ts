@@ -1,14 +1,185 @@
 // Settings endpoints adapted from listmonk cmd/settings.go and cmd/handlers.go at 6fcd95f.
+// B139 (14-projects section 4, D154): a project host serves its project keys on /api/settings; the
+// instance host serves the instance keys on /api/instance/settings (src/admin/instance/routes.tsx).
+// Both take the same bodies with the same rules; a key of the other side, or no key, is a 400 that
+// names it, with nothing written. Each request writes one database.
 import { refuseWhileHeld } from "@/settings/hold";
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
 import { readBodyBytes } from "@/users/input";
 import type { Authentication } from "@/users/auth";
 import type { SettingsStore } from "@/settings/store";
-import { bindFull, bindKey, hasField, masked, shapes } from "@/settings/validate";
+import { isSettingKey, settingSides } from "@/settings/keys";
+import type { SettingsSide } from "@/settings/keys";
+import { bindFull, bindKey, bodyFields, hasField, masked, shapes } from "@/settings/validate";
 import type { Settings } from "@/settings/validate";
 import { decodeJsonBytes, orderedJson } from "@/settings/json";
 import { xmlSettings, xmlValue } from "@/settings/xml";
+
+const bodyMedia = new Set([
+  "application/json",
+  "application/xml",
+  "text/xml",
+  "application/x-www-form-urlencoded",
+  "multipart/form-data",
+]);
+
+/** The native keys a listmonk client's full write leaves out; a full write without one keeps it. */
+const nativeKeys: Record<SettingsSide, ReadonlyArray<string>> = {
+  project: ["marketing.min_interval", "security.public_rate_limit"],
+  instance: [
+    "messaging.max_send_rate",
+    "bounce.ses_topic_arns",
+    "webhooks.block_private_addresses",
+    "security.trusted_proxies",
+    "ses.api_region",
+    "ses.api_access_key_id",
+    "ses.api_secret_access_key",
+  ],
+};
+
+const refusal = (side: SettingsSide, key: string) =>
+  new HttpError(
+    400,
+    side === "project"
+      ? `Not a project setting: ${key}. Instance settings are changed on the instance host.`
+      : `Not an instance setting: ${key}. Project settings are changed on the project's host.`,
+  );
+
+/** Whether `key` is one of `side`'s keys. */
+export function onSide(key: string, side: SettingsSide): boolean {
+  return isSettingKey(key) && settingSides[key] === side;
+}
+
+/** A body's media type, without its parameters. */
+const mediaOf = (request: Request) =>
+  request.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
+
+/** A full-write body as listmonk decodes it: JSON, XML, or a form that binds nothing. */
+async function decodeFull(request: Request, bytes: Buffer): Promise<{ value: unknown }> {
+  const contentType = request.headers.get("content-type") ?? "";
+  const media = mediaOf(request);
+  try {
+    if (!bytes.length) {
+      return { value: {} };
+    }
+    if (media === "application/json") {
+      return { value: orderedJson(decodeJsonBytes(bytes)) };
+    }
+    if (media === "application/xml" || media === "text/xml") {
+      return { value: xmlSettings(bytes, shapes) };
+    }
+    if (media === "application/x-www-form-urlencoded") {
+      const form = bytes.toString("utf-8");
+      if (/%(?![0-9a-fA-F]{2})/.test(form) || form.includes(";")) {
+        throw new Error("form");
+      }
+      return { value: {} };
+    }
+    if (media === "multipart/form-data") {
+      await new Request("http://fixture.invalid", {
+        method: "POST",
+        headers: { "content-type": contentType },
+        body: Uint8Array.from(bytes),
+      }).formData();
+      return { value: {} };
+    }
+    throw new HttpError(415);
+  } catch {
+    if (bytes.length && !bodyMedia.has(media)) {
+      throw new HttpError(415);
+    }
+    throw new HttpError(400);
+  }
+}
+
+/** A one-key body: JSON or XML. */
+function decodeKey(request: Request, bytes: Buffer): { value: unknown } {
+  const media = mediaOf(request);
+  if (bytes.length && !bodyMedia.has(media)) {
+    throw new HttpError(415);
+  }
+  try {
+    if (media === "application/xml" || media === "text/xml") {
+      return { value: orderedJson(xmlValue(bytes)) };
+    }
+    if (media === "application/json") {
+      return { value: orderedJson(decodeJsonBytes(bytes)) };
+    }
+    throw new Error("invalid raw value");
+  } catch {
+    throw new HttpError(400);
+  }
+}
+
+/** One side's settings API: what the project routes below and the instance routes both serve. */
+export interface SettingsApi {
+  readonly side: SettingsSide;
+  /** This side's keys (the project's with `app.root_url`). */
+  read(): Settings;
+  /** Writes this side's keys `build` returns; the current value holds at least this side's keys. */
+  update(build: (current: Settings) => Settings): void;
+  /** `app.root_url` for the full write's binding. */
+  rootUrl(): string;
+  /** Another owner's rule on a change; throws inside the settings transaction to refuse it. */
+  check?: (next: Settings, current: Settings) => void;
+}
+
+export function settingsHandlers(api: SettingsApi) {
+  const { side } = api;
+  return {
+    get: () => ok(masked(api.read())),
+    /** `PUT …/settings`: the whole side replaced, as listmonk replaces the whole object. */
+    async putAll(request: Request, revalidate: () => void): Promise<Response> {
+      const { value: body } = await decodeFull(request, await readBodyBytes(request));
+      // A caller who may no longer write learns nothing about the body: 403 before any 400.
+      revalidate();
+      for (const [name, key] of bodyFields(body)) {
+        // The read-only root URL comes back from a project's GET, so a project write ignores it.
+        const ignored = side === "project" && name.toLowerCase() === "app.root_url";
+        if (!ignored && !(key && onSide(key, side))) {
+          throw refusal(side, name);
+        }
+      }
+      api.update((current) => {
+        const bound = bindFull(body, api.rootUrl());
+        const next: Settings = {};
+        for (const key of Object.keys(settingSides)) {
+          if (onSide(key, side)) {
+            next[key] = bound[key];
+          }
+        }
+        // listmonk clients replace the full object without these native keys; keep them.
+        for (const native of nativeKeys[side]) {
+          if (!hasField(body, native)) {
+            next[native] = current[native];
+          }
+        }
+        if (side === "project") {
+          next["app.root_url"] = current["app.root_url"];
+        }
+        api.check?.(next, current);
+        return next;
+      });
+      return ok(true);
+    },
+    /** `PUT …/settings/:key`: one key of this side. */
+    async putKey(request: Request, key: string, revalidate: () => void): Promise<Response> {
+      const { value: body } = decodeKey(request, await readBodyBytes(request));
+      revalidate();
+      // The read-only root URL stays the 400 it always was (D14), from bindKey.
+      if (!onSide(key, side) && !(side === "project" && key === "app.root_url")) {
+        throw refusal(side, key);
+      }
+      api.update((current) => {
+        const next = bindKey(current, key, body);
+        api.check?.(next, current);
+        return next;
+      });
+      return ok(true);
+    },
+  };
+}
 
 export function registerSettingsRoutes(
   router: Router,
@@ -18,119 +189,28 @@ export function registerSettingsRoutes(
   /** Another owner's rule on a change; throws inside the settings transaction to refuse it. */
   check: (next: Settings, current: Settings) => void = () => {},
 ): void {
-  router.route(
-    "GET",
-    "/api/settings",
-    () => ok(masked(settings.read())),
-    auth.middleware("settings:get"),
-  );
+  const handlers = settingsHandlers({
+    side: "project",
+    read: () => settings.readProject(),
+    update: (build) => settings.update(build),
+    rootUrl: () => String(settings.read()["app.root_url"]),
+    check,
+  });
+  router.route("GET", "/api/settings", handlers.get, auth.middleware("settings:get"));
   router.route(
     "PUT",
     "/api/settings",
-    async (context) => {
-      const bytes = await readBodyBytes(context.request);
-      const contentType = context.request.headers.get("content-type") ?? "";
-      const media = contentType.split(";", 1)[0]?.trim();
-      let body: unknown;
-      try {
-        if (!bytes.length) {
-          body = {};
-        } else if (media === "application/json") {
-          body = orderedJson(decodeJsonBytes(bytes));
-        } else if (media === "application/xml" || media === "text/xml") {
-          body = xmlSettings(bytes, shapes);
-        } else if (media === "application/x-www-form-urlencoded") {
-          const form = bytes.toString("utf-8");
-          if (/%(?![0-9a-fA-F]{2})/.test(form) || form.includes(";")) {
-            throw new Error("form");
-          }
-          body = {};
-        } else if (media === "multipart/form-data") {
-          await new Request("http://fixture.invalid", {
-            method: "POST",
-            headers: { "content-type": contentType },
-            body: Uint8Array.from(bytes),
-          }).formData();
-          body = {};
-        } else {
-          throw new HttpError(415);
-        }
-      } catch {
-        if (
-          bytes.length &&
-          ![
-            "application/json",
-            "application/xml",
-            "text/xml",
-            "application/x-www-form-urlencoded",
-            "multipart/form-data",
-          ].includes(media ?? "")
-        ) {
-          throw new HttpError(415);
-        }
-        throw new HttpError(400);
-      }
-      auth.revalidate(context, "settings:manage");
-      settings.update((current) => {
-        const next = bindFull(body, current["app.root_url"]);
-        // listmonk clients replace the full object without these native keys; keep them.
-        for (const native of [
-          "marketing.min_interval",
-          "messaging.max_send_rate",
-          "bounce.ses_topic_arns",
-          "webhooks.block_private_addresses",
-          "security.trusted_proxies",
-          "security.public_rate_limit",
-        ]) {
-          if (!hasField(body, native)) {
-            next[native] = current[native];
-          }
-        }
-        check(next, current);
-        return next;
-      });
-      return ok(true);
-    },
+    (context) =>
+      handlers.putAll(context.request, () => auth.revalidate(context, "settings:manage")),
     auth.middleware("settings:manage"),
   );
   router.route(
     "PUT",
     "/api/settings/:key",
-    async (context) => {
-      const bytes = await readBodyBytes(context.request);
-      const media = context.request.headers.get("content-type")?.split(";", 1)[0]?.trim();
-      if (
-        bytes.length &&
-        ![
-          "application/json",
-          "application/xml",
-          "text/xml",
-          "application/x-www-form-urlencoded",
-          "multipart/form-data",
-        ].includes(media ?? "")
-      ) {
-        throw new HttpError(415);
-      }
-      let body: unknown;
-      try {
-        if (media === "application/xml" || media === "text/xml") {
-          body = orderedJson(xmlValue(bytes));
-        } else if (media === "application/json") {
-          body = orderedJson(decodeJsonBytes(bytes));
-        } else {
-          throw new Error("invalid raw value");
-        }
-      } catch {
-        throw new HttpError(400);
-      }
-      auth.revalidate(context, "settings:manage");
-      settings.update((current) => {
-        const next = bindKey(current, context.params.key ?? "", body);
-        check(next, current);
-        return next;
-      });
-      return ok(true);
-    },
+    (context) =>
+      handlers.putKey(context.request, context.params.key ?? "", () =>
+        auth.revalidate(context, "settings:manage"),
+      ),
     auth.middleware("settings:manage"),
   );
   router.route(

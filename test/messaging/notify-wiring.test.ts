@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import {
+  admin,
   apiClient,
   buildExecutable,
   provisionAuthorization,
@@ -12,8 +13,9 @@ import {
   temporaryDirectory,
 } from "@/test/backup/fixture";
 import { startSink } from "@/test/tx/sink";
-import { asBody, readJson } from "@/test/read-body";
+import { readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { instanceClient } from "@/test/settings/instance-client";
 
 setDefaultTimeout(120_000);
 
@@ -61,14 +63,8 @@ test("the admin notification carries the app.logo_url the server saved", async (
 
     // The seeded SMTP server points at the sink, without TLS or login. Its masked password is sent
     // back empty, which the API keeps (or, with auth none, drops).
-    const seeded = (await readJson<{ data: Record<string, any> }>(await call("/api/settings")))
-      .data;
-    const smtp = asBody<Array<Record<string, unknown>>>(seeded.smtp).map((item, index) =>
-      index === 0
-        ? { ...item, host: "127.0.0.1", port: sink.port, tls_type: "none", auth_protocol: "none" }
-        : item,
-    );
-    expect((await call("/api/settings/smtp", "PUT", smtp)).status).toBe(200);
+    // B139: SMTP is an instance key, changed with the instance session.
+    await (await instanceClient(server.origin, admin)).useSink(sink.port);
     expect((await call("/api/settings/app.notify_emails", "PUT", ["ops@example.com"])).status).toBe(
       200,
     );

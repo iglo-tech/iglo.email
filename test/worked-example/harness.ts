@@ -10,6 +10,7 @@ import { provisionApiUser } from "@/test/contract/owned";
 import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { startSink } from "@/test/tx/sink";
 import { asBody } from "@/test/read-body";
+import { settingsRouter } from "@/test/contract/settings-split";
 
 export const admin = { user: "worked-admin", password: "worked-example-admin-password" };
 
@@ -195,8 +196,11 @@ export type Mailbox = Awaited<ReturnType<typeof startMailbox>>;
 export async function apiClient(origin: string) {
   const credentials = await provisionApiUser(origin, admin);
   const authorization = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
+  // B139 (D154): a settings call reaches its side; the instance keys go to the instance settings with
+  // the admin's session (test/contract/settings-split.ts).
+  const routed = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
   const call = async (path: string, method = "GET", body?: unknown) => {
-    const response = await fetch(`${origin}${path}`, {
+    const response = await routed(`${origin}${path}`, {
       method,
       headers: {
         authorization,

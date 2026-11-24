@@ -12,7 +12,8 @@ import { cloneJson, int64, Members } from "@/settings/json";
 import { validTopicArn } from "@/bounces/ses";
 import { parseProxy } from "@/server/client-address";
 import { HttpError } from "@/server/response";
-import type { Roles } from "@/roles/roles";
+import { settingSides } from "@/settings/keys";
+import type { SettingKey } from "@/settings/keys";
 
 export type Settings = Record<string, any>;
 
@@ -21,6 +22,15 @@ export type Settings = Record<string, any>;
 const systemFontNames = new Set(["system-sans", "system-serif", "system-mono"]);
 const brandHeaders = new Set(["auto", "logo", "name", "logo_and_name"]);
 const googleFamily = /^[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*$/;
+// The SES API keys (B139, D154): an AWS region name, a long-term IAM access key ID, and a secret of
+// printable characters without spaces (AWS issues 40 of them).
+const sesRegion = /^[a-z]{2}(?:-[a-z]+)+-[0-9]{1,2}$/;
+const sesKeyId = /^AKIA[A-Z0-9]{16}$/;
+const sesSecretFormat = /^[!-~]{16,128}$/;
+// D154: a role ID names a role of one project, and OIDC is not built (D89), so the instance checks
+// an OIDC role ID's shape only: a positive whole number. Upstream also checks that the role exists.
+const roleId = (id: number | null, _type: "user" | "list") =>
+  id !== null && Number.isSafeInteger(id) && id > 0;
 const fail = (message = "Invalid data."): never => {
   throw new HttpError(400, message);
 };
@@ -166,6 +176,16 @@ export function hasField(value: unknown, key: string): boolean {
     return false;
   }
   return entries(value).some(([name]) => foldField(name) === foldField(key));
+}
+/**
+ * Each top-level name of a decoded settings object and the declared key it binds to, with Go field
+ * folding; undefined for a name that binds to none.
+ */
+export function bodyFields(value: unknown): Array<[string, string | undefined]> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+  return entries(value).map(([name]) => [name, lookup(shapes, name)]);
 }
 function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
   if (value === null) {
@@ -327,13 +347,13 @@ function refuseDuplicateUUIDs(items: Array<Settings>, label: string) {
     seen.add(uuid);
   }
 }
-export function normalize(next: Settings, current: Settings, roles: Roles, now: number): Settings {
+/** Checks and normalizes a project-key save (B139): `next` and `current` hold project keys. */
+export function normalizeProject(next: Settings, current: Settings, now: number): Settings {
   for (const key of arrays) {
-    next[key] ??= [];
+    if (settingSides[key as SettingKey] === "project") {
+      next[key] ??= [];
+    }
   }
-  refuseDuplicateUUIDs(next.smtp, "SMTP servers");
-  refuseDuplicateUUIDs(next["bounce.mailboxes"], "bounce mailboxes");
-  refuseDuplicateUUIDs(next.messengers, "messengers");
   const addresses: Array<string> = [];
   if (next["app.from_email"].length > 250) {
     return fail("omax 250 `from` addresses are allowed");
@@ -421,6 +441,72 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   if (!brandHeaders.has(next["appearance.brand.header"])) {
     return fail("brand header must be auto, logo, name or logo_and_name");
   }
+  // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
+  // A stored rule an older build accepted must not block saving anything else: only new or changed rules are checked.
+  const storedRules = (current["bounce.actions"] ?? {}) as Settings;
+  for (const [name, rule] of Object.entries<Settings>(next["bounce.actions"] ?? {})) {
+    if (
+      Object.hasOwn(storedRules, name) &&
+      JSON.stringify(storedRules[name]) === JSON.stringify(rule)
+    ) {
+      continue;
+    }
+    if (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > 1000) {
+      return fail("Bounce action count must be between 1 and 1000.");
+    }
+    if (!["none", "unsubscribe", "blocklist", "delete"].includes(rule.action)) {
+      return fail("Bounce action must be none, unsubscribe, blocklist or delete.");
+    }
+  }
+  if (!next["security.captcha"]?.hcaptcha?.secret) {
+    if (!next["security.captcha"]?.hcaptcha) {
+      return fail();
+    }
+    next["security.captcha"].hcaptcha.secret = current["security.captcha"].hcaptcha.secret;
+  }
+  next["marketing.min_interval"] = trimSpace(next["marketing.min_interval"] ?? "");
+  if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined) {
+    return fail("Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.");
+  }
+  for (const key of ["privacy.domain_blocklist", "privacy.domain_allowlist"]) {
+    next[key] = next[key].map((d: string) => simpleLower(trimSpace(d ?? ""))).filter(Boolean);
+  }
+  next["upload.extensions"] = next["upload.extensions"].map((v: string) =>
+    simpleLower(trimSpace(v ?? "").replace(/^\./, "")),
+  );
+  next["security.trusted_urls"] = next["security.trusted_urls"]
+    .map((v: string) => trimSpace(v ?? ""))
+    .filter(Boolean);
+  // B117a (D136): an entry already stored is not checked again, as an address is not (see app.from_email).
+  const storedTrusted = new Set<string>(current["security.trusted_urls"] ?? []);
+  for (const url of next["security.trusted_urls"]) {
+    if (url !== "*" && !storedTrusted.has(url) && !validTrustedURL(url)) {
+      return fail(`Invalid data: invalid trusted URL: ${url}`);
+    }
+  }
+  for (const budget of Object.values(next["security.public_rate_limit"] ?? {})) {
+    if (
+      typeof budget !== "number" ||
+      !Number.isSafeInteger(budget) ||
+      budget < 1 ||
+      budget > 1_000_000
+    ) {
+      return fail("Invalid security.public_rate_limit: use whole requests per minute.");
+    }
+  }
+  next["app.root_url"] = current["app.root_url"];
+  return next;
+}
+/** Checks and normalizes an instance-key save (B139): `next` and `current` hold instance keys. */
+export function normalizeInstance(next: Settings, current: Settings, now: number): Settings {
+  for (const key of arrays) {
+    if (settingSides[key as SettingKey] === "instance") {
+      next[key] ??= [];
+    }
+  }
+  refuseDuplicateUUIDs(next.smtp, "SMTP servers");
+  refuseDuplicateUUIDs(next["bounce.mailboxes"], "bounce mailboxes");
+  refuseDuplicateUUIDs(next.messengers, "messengers");
   const names = new Set(["email"]);
   let hasDefault = false;
   for (const server of next.smtp) {
@@ -515,23 +601,6 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     item.name = name;
     names.add(name);
   }
-  // The admin form offers these (listmonk's own UI); the API takes nothing outside them.
-  // A stored rule an older build accepted must not block saving anything else: only new or changed rules are checked.
-  const storedRules = (current["bounce.actions"] ?? {}) as Settings;
-  for (const [name, rule] of Object.entries<Settings>(next["bounce.actions"] ?? {})) {
-    if (
-      Object.hasOwn(storedRules, name) &&
-      JSON.stringify(storedRules[name]) === JSON.stringify(rule)
-    ) {
-      continue;
-    }
-    if (!Number.isInteger(rule.count) || rule.count < 1 || rule.count > 1000) {
-      return fail("Bounce action count must be between 1 and 1000.");
-    }
-    if (!["none", "unsubscribe", "blocklist", "delete"].includes(rule.action)) {
-      return fail("Bounce action must be none, unsubscribe, blocklist or delete.");
-    }
-  }
   for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
     if (!next[key]) {
       next[key] = current[key];
@@ -551,16 +620,6 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
       next[key][field] = current[key][field];
     }
   }
-  if (!next["security.captcha"]?.hcaptcha?.secret) {
-    if (!next["security.captcha"]?.hcaptcha) {
-      return fail();
-    }
-    next["security.captcha"].hcaptcha.secret = current["security.captcha"].hcaptcha.secret;
-  }
-  next["marketing.min_interval"] = trimSpace(next["marketing.min_interval"] ?? "");
-  if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined) {
-    return fail("Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.");
-  }
   const sendRate = next["messaging.max_send_rate"];
   if (
     typeof sendRate !== "number" ||
@@ -570,21 +629,32 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   ) {
     return fail("Invalid messaging.max_send_rate: use an integer between 0 and 10000.");
   }
-  for (const key of ["privacy.domain_blocklist", "privacy.domain_allowlist"]) {
-    next[key] = next[key].map((d: string) => simpleLower(trimSpace(d ?? ""))).filter(Boolean);
+  // B139 (D154): the SES account's API keys, stored and masked, not read by any sender yet. All three
+  // are set or none is; an empty secret keeps the stored one, and an empty key ID clears the secret.
+  next["ses.api_region"] = trimSpace(next["ses.api_region"] ?? "");
+  next["ses.api_access_key_id"] = trimSpace(next["ses.api_access_key_id"] ?? "");
+  if (!next["ses.api_access_key_id"]) {
+    next["ses.api_secret_access_key"] = "";
+  } else if (!next["ses.api_secret_access_key"]) {
+    next["ses.api_secret_access_key"] = current["ses.api_secret_access_key"] ?? "";
   }
-  next["upload.extensions"] = next["upload.extensions"].map((v: string) =>
-    simpleLower(trimSpace(v ?? "").replace(/^\./, "")),
-  );
-  next["security.trusted_urls"] = next["security.trusted_urls"]
-    .map((v: string) => trimSpace(v ?? ""))
-    .filter(Boolean);
-  // B117a (D136): an entry already stored is not checked again, as an address is not (see app.from_email).
-  const storedTrusted = new Set<string>(current["security.trusted_urls"] ?? []);
-  for (const url of next["security.trusted_urls"]) {
-    if (url !== "*" && !storedTrusted.has(url) && !validTrustedURL(url)) {
-      return fail(`Invalid data: invalid trusted URL: ${url}`);
-    }
+  if (next["ses.api_region"] && !sesRegion.test(next["ses.api_region"])) {
+    return fail("Invalid ses.api_region: use an AWS region such as eu-west-1.");
+  }
+  if (next["ses.api_access_key_id"] && !sesKeyId.test(next["ses.api_access_key_id"])) {
+    return fail(
+      "Invalid ses.api_access_key_id: use an IAM access key ID, AKIA and 16 letters or digits.",
+    );
+  }
+  const sesSecret = next["ses.api_secret_access_key"];
+  if (typeof sesSecret !== "string" || (sesSecret && !sesSecretFormat.test(sesSecret))) {
+    return fail("Invalid ses.api_secret_access_key: use the secret access key AWS gave.");
+  }
+  const sesSet = [next["ses.api_region"], next["ses.api_access_key_id"], sesSecret].filter(Boolean);
+  if (sesSet.length !== 0 && sesSet.length !== 3) {
+    return fail(
+      "Invalid SES API settings: set the region, the access key ID and the secret access key together.",
+    );
   }
   next["security.trusted_proxies"] = next["security.trusted_proxies"]
     .map((v: string) => trimSpace(v ?? ""))
@@ -605,16 +675,6 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
       return fail(`Invalid data: invalid SNS topic ARN: ${arn}`);
     }
   }
-  for (const budget of Object.values(next["security.public_rate_limit"] ?? {})) {
-    if (
-      typeof budget !== "number" ||
-      !Number.isSafeInteger(budget) ||
-      budget < 1 ||
-      budget > 1_000_000
-    ) {
-      return fail("Invalid security.public_rate_limit: use whole requests per minute.");
-    }
-  }
   const oidc = next["security.oidc"];
   if (!oidc) {
     return fail();
@@ -622,15 +682,13 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   if (oidc.roles === null) {
     oidc.roles = current["security.oidc"].roles;
   }
-  const exists = (id: number | null, type: "user" | "list") =>
-    id !== null && Number.isSafeInteger(id) && id > 0 && roles.hasRole(BigInt(id), type);
   if (
     (oidc.auto_create_users || oidc.default_user_role_id !== null) &&
-    !exists(oidc.default_user_role_id, "user")
+    !roleId(oidc.default_user_role_id, "user")
   ) {
     return fail(`OIDC default user role ID ${oidc.default_user_role_id ?? 0} does not exist`);
   }
-  if (oidc.default_list_role_id !== null && !exists(oidc.default_list_role_id, "list")) {
+  if (oidc.default_list_role_id !== null && !roleId(oidc.default_list_role_id, "list")) {
     return fail(`OIDC default list role ID ${oidc.default_list_role_id} does not exist`);
   }
   for (let i = 0; i < oidc.roles.length; i++) {
@@ -641,12 +699,12 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     if (!mapping.match) {
       return fail(`OIDC role mapping ${i + 1}: match is required`);
     }
-    if (mapping.user_role_id !== null && !exists(mapping.user_role_id, "user")) {
+    if (mapping.user_role_id !== null && !roleId(mapping.user_role_id, "user")) {
       return fail(
         `OIDC role mapping ${i + 1}: user role ID ${mapping.user_role_id} does not exist`,
       );
     }
-    if (mapping.list_role_id !== null && !exists(mapping.list_role_id, "list")) {
+    if (mapping.list_role_id !== null && !roleId(mapping.list_role_id, "list")) {
       return fail(
         `OIDC role mapping ${i + 1}: list role ID ${mapping.list_role_id} does not exist`,
       );
@@ -685,14 +743,15 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
   if (expiry && changed("upload.s3.expiry") && !(goDuration(expiry) > 0)) {
     return fail("Invalid upload.s3.expiry: use a Go duration, such as 167h, or leave it empty.");
   }
-  next["app.root_url"] = current["app.root_url"];
   next["app.check_updates"] = false;
   return next;
 }
 const mask = (value: string | undefined) => "•".repeat(Array.from(value ?? "").length);
+/** One side's settings with every secret masked; a key the object does not hold is skipped. */
 export function masked(settings: Settings): Settings {
   const out = cloneJson(settings);
-  for (const key of ["smtp", "messengers", "bounce.mailboxes"]) {
+  const has = (key: string) => Object.hasOwn(out, key);
+  for (const key of ["smtp", "messengers", "bounce.mailboxes"].filter(has)) {
     for (const item of out[key]) {
       if (item.password) {
         item.password = mask(item.password);
@@ -702,7 +761,11 @@ export function masked(settings: Settings): Settings {
       }
     }
   }
-  for (const key of ["upload.s3.aws_secret_access_key", "bounce.sendgrid_key"]) {
+  for (const key of [
+    "upload.s3.aws_secret_access_key",
+    "bounce.sendgrid_key",
+    "ses.api_secret_access_key",
+  ]) {
     if (out[key]) {
       out[key] = mask(out[key]);
     }
@@ -714,10 +777,14 @@ export function masked(settings: Settings): Settings {
     ["bounce.lettermint", "key"],
     ["security.oidc", "client_secret"],
   ] as const) {
-    out[key][field] = mask(out[key][field]);
+    if (has(key)) {
+      out[key][field] = mask(out[key][field]);
+    }
   }
-  out["security.captcha"].hcaptcha.secret = mask(out["security.captcha"].hcaptcha.secret);
-  for (const mapping of out["security.oidc"].roles ?? []) {
+  if (has("security.captcha")) {
+    out["security.captcha"].hcaptcha.secret = mask(out["security.captcha"].hcaptcha.secret);
+  }
+  for (const mapping of (has("security.oidc") && out["security.oidc"].roles) || []) {
     if (mapping.user_role_id === null) {
       delete mapping.user_role_id;
     }
@@ -725,7 +792,7 @@ export function masked(settings: Settings): Settings {
       delete mapping.list_role_id;
     }
   }
-  if (!out["upload.s3.aws_secret_access_key"]) {
+  if (has("upload.s3.aws_secret_access_key") && !out["upload.s3.aws_secret_access_key"]) {
     delete out["upload.s3.aws_secret_access_key"];
   }
   return out;

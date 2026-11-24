@@ -16,6 +16,7 @@ import {
   startInstance,
 } from "@/test/projects/fixture";
 import type { Credentials, Session } from "@/test/projects/fixture";
+import { instanceCall, instanceLogin } from "@/test/projects/admin-fixture";
 import { asBody } from "@/test/read-body";
 import { startSink } from "@/test/tx/sink";
 import { untilState } from "@/test/wait";
@@ -256,8 +257,13 @@ test("A's mail carries A's hostname in its links and Message-ID", async () => {
     (await api(port, A, key(A), "GET", "/api/settings")).text,
   );
   expect(current.data["app.root_url"]).toBe(`http://${A}`);
-  const saved = await api(port, A, key(A), "PUT", "/api/settings", {
-    ...current.data,
+  // B139 (D154): SMTP is an instance key, changed with the instance session for every project.
+  const operator = (await instanceLogin(port, PRIMARY, admin)).session!;
+  const shared = parse<{ data: Record<string, unknown> }>(
+    await (await instanceCall(port, PRIMARY, operator, "GET", "/api/instance/settings")).text(),
+  );
+  const saved = await instanceCall(port, PRIMARY, operator, "PUT", "/api/instance/settings", {
+    ...shared.data,
     smtp: [smtp],
   });
   expect(saved.status).toBe(200);

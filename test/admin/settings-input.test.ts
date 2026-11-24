@@ -7,6 +7,7 @@ import type { Fixture } from "@/test/admin/support";
 import { openDatabase } from "@/db/connection";
 import { startUserFixture } from "@/test/users/fixture";
 import { readJson } from "@/test/read-body";
+import { instanceKeys } from "@/settings/keys";
 
 let f: Fixture;
 let cookie = "";
@@ -42,15 +43,24 @@ function smtpServer(overrides: Record<string, unknown>) {
   };
 }
 
-async function settings(): Promise<Record<string, any>> {
-  const res = await get(f, "/api/settings", cookie);
+async function settings(path = "/api/settings"): Promise<Record<string, any>> {
+  const res = await get(f, path, cookie);
   expect(res.status).toBe(200);
   return (await readJson<{ data: Record<string, any> }>(res)).data;
 }
+/** B139 (D154): both sides, each read from its own settings API. */
+const both = async () => ({ ...(await settings()), ...(await settings(instance)) });
+const instance = "/api/instance/settings";
 
-/** A single-key write: its status and, when refused, its message. */
+/** A single-key write to its side's API: its status and, when refused, its message. */
 async function put(key: string, value: unknown) {
-  const res = await api(f, cookie, `/api/settings/${key}`, "PUT", value);
+  const res = await api(
+    f,
+    cookie,
+    `${instanceKeys.has(key) ? instance : "/api/settings"}/${key}`,
+    "PUT",
+    value,
+  );
   const message =
     res.status === 400 ? (await readJson<{ message: string }>(res)).message : undefined;
   return { status: res.status, message };
@@ -100,7 +110,7 @@ test("the sliding window duration must be longer than one second when the window
   const turnedOn = await put("app.message_sliding_window", true);
   expect(turnedOn.status).toBe(400);
   expect(turnedOn.message).toContain("app.message_sliding_window_duration");
-  expect((await settings())["app.message_sliding_window"]).toBe(false);
+  expect((await both())["app.message_sliding_window"]).toBe(false);
   expect(await put("app.message_sliding_window_duration", "2s")).toEqual({
     status: 200,
     message: undefined,
@@ -114,7 +124,7 @@ test("the sliding window duration must be longer than one second when the window
     const refused = await put("app.message_sliding_window_duration", value);
     expect({ value, status: refused.status }).toEqual({ value, status: 400 });
   }
-  expect((await settings())["app.message_sliding_window_duration"]).toBe("2s");
+  expect((await both())["app.message_sliding_window_duration"]).toBe("2s");
   await put("app.message_sliding_window", false);
   await put("app.message_sliding_window_duration", "1h");
 });
@@ -144,9 +154,9 @@ test("the S3 expiry is a duration when it is set, and an empty one keeps the def
 });
 
 test("an SMTP idle timeout is 1 s to 5 min, and the retry delay is a duration", async () => {
-  const stored = await settings();
+  const stored = await settings(instance);
   const save = (overrides: Record<string, unknown>) =>
-    api(f, cookie, "/api/settings", "PUT", { ...stored, smtp: [smtpServer(overrides)] });
+    api(f, cookie, instance, "PUT", { ...stored, smtp: [smtpServer(overrides)] });
   for (const overrides of [
     { idle_timeout: "1ms" },
     { idle_timeout: "5m1s" },

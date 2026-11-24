@@ -16,8 +16,14 @@ import type { HandoffTokens } from "@/users/handoff";
 import { readBody } from "@/users/input";
 import type { InstanceAuth, InstanceSession } from "@/users/instance-auth";
 import { validPassword } from "@/users/password";
+import { settingsPage } from "@/admin/views/settings";
+import type { Translation } from "@/i18n/i18n";
+import { settingsHandlers } from "@/settings/routes";
+import type { InstanceSettingsStore } from "@/settings/instance";
+import type { NavigationLink } from "@/admin/layout/shell";
 
 export const ACCOUNT_PATH = "/admin/instance/account";
+export const SETTINGS_PATH = "/admin/instance/settings";
 const LOGIN_PATH = "/admin/instance/login";
 
 export interface InstanceRouteDeps {
@@ -27,6 +33,41 @@ export interface InstanceRouteDeps {
   readonly rootUrl: string;
   /** A served project's root URL by slug, or undefined for a slug no project has. */
   readonly projectRootUrl: (slug: string) => string | undefined;
+  /** The instance keys (B139, D154): `/api/instance/settings` and the instance Settings page. */
+  readonly settings: InstanceSettingsStore;
+  /** The login limit's client address, with security.trusted_proxies; the peer without it. */
+  readonly clientAddress?: (context: RequestContext) => string;
+  /** The primary project's SMTP test, or undefined without a primary project. */
+  readonly smtpTest: () => ((body: unknown, revalidate: () => void) => Promise<void>) | undefined;
+}
+
+/** The instance Settings page (B139, D154): the instance keys, in the instance layout. */
+export function instanceSettingsPage(i18n: Translation, rootUrl: string): string {
+  const view = settingsPage(i18n, "instance", { canManage: true, canUpload: false });
+  return renderAdminShell({
+    title: view.title,
+    siteName: "iglo.email",
+    assetVersion,
+    i18n,
+    script: view.script,
+    translationKeys: view.translationKeys,
+    config: { ...view.config, root_url: rootUrl, csrf_cookie: "instance_csrf" },
+    navigation: instanceNavigation(SETTINGS_PATH),
+    children: view.body,
+  });
+}
+
+/** The instance pages' sidebar, with `current` marked. */
+function instanceNavigation(current: string): ReadonlyArray<NavigationLink> {
+  return [
+    { label: "Account", href: ACCOUNT_PATH, current: current === ACCOUNT_PATH, icon: "user" },
+    {
+      label: "Instance settings",
+      href: SETTINGS_PATH,
+      current: current === SETTINGS_PATH,
+      icon: "settings",
+    },
+  ];
 }
 
 const htmlHeaders = { "Content-Type": "text/html; charset=UTF-8", "Cache-Control": "no-store" };
@@ -243,8 +284,9 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
 
   const getLogin: Handler = (context) =>
     loginPage(context, loginNext(context.url.searchParams.get("next")));
+  const peer = (context: RequestContext) => deps.clientAddress?.(context) ?? context.peerAddress;
   const postLogin: Handler = async (context) => {
-    auth.limit(context.peerAddress);
+    auth.limit(peer(context));
     auth.checkOrigin(context.request);
     const fields = await formFields(context);
     if (!auth.nonceValid(context.request, fields.get("nonce") ?? "")) {
@@ -289,7 +331,7 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
     return twofaPage(context, token, loginNext(context.url.searchParams.get("next")));
   };
   const postTwofa: Handler = async (context) => {
-    auth.limit(context.peerAddress);
+    auth.limit(peer(context));
     auth.checkOrigin(context.request);
     const fields = await formFields(context);
     if (!auth.nonceValid(context.request, fields.get("nonce") ?? "")) {
@@ -326,7 +368,7 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
         "globals.fields.password",
       ],
       config: { root_url: deps.rootUrl },
-      navigation: [{ label: "Account", href: ACCOUNT_PATH, current: true, icon: "user" }],
+      navigation: instanceNavigation(ACCOUNT_PATH),
       children: (
         <section class="user-profile" x-data="instanceAccount">
           <header class="page-header">
@@ -468,6 +510,17 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
     return new Response(html, { headers: htmlHeaders });
   });
 
+  const settingsView = page(
+    (context) =>
+      new Response(instanceSettingsPage(context.app.i18n, deps.rootUrl), { headers: htmlHeaders }),
+  );
+  const settings = settingsHandlers({
+    side: "instance",
+    read: () => deps.settings.read(),
+    update: (build) => deps.settings.update(build),
+    rootUrl: () => deps.rootUrl,
+  });
+
   const open = page((context) => {
     const slug = context.params.slug ?? "";
     const base = deps.projectRootUrl(slug);
@@ -501,6 +554,7 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
   router.route("GET", `${LOGIN_PATH}/twofa`, getTwofa);
   router.route("POST", `${LOGIN_PATH}/twofa`, postTwofa);
   router.route("GET", ACCOUNT_PATH, account);
+  router.route("GET", SETTINGS_PATH, settingsView);
   router.route("GET", "/admin/instance/open/:slug", open);
 
   router.route(
@@ -569,6 +623,49 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
       const value = await jsonFields(context.request);
       await auth.disableTotp(session, value.get("password") ?? "");
       return ok(true);
+    }),
+  );
+  // The instance keys (B139, D154): the same bodies and rules as a project's /api/settings.
+  router.route(
+    "GET",
+    "/api/instance/settings",
+    api(() => settings.get()),
+  );
+  router.route(
+    "PUT",
+    "/api/instance/settings",
+    api((context) => settings.putAll(context.request, () => auth.authorize(context.request))),
+  );
+  router.route(
+    "PUT",
+    "/api/instance/settings/:key",
+    api((context) =>
+      settings.putKey(context.request, context.params.key ?? "", () =>
+        auth.authorize(context.request),
+      ),
+    ),
+  );
+  // The instance Settings page's test: the primary project's sender, from address and brand.
+  router.route(
+    "POST",
+    "/api/instance/settings/smtp/test",
+    api(async (context) => {
+      const body = await readBody(context.request);
+      let value: unknown;
+      try {
+        value = JSON.parse(body);
+      } catch {
+        throw new HttpError(400, "Invalid data.");
+      }
+      const test = deps.smtpTest();
+      if (!test) {
+        throw new HttpError(
+          409,
+          "The SMTP test sends through the primary project, and there is none.",
+        );
+      }
+      await test(value, () => auth.authorize(context.request));
+      return ok([]);
     }),
   );
   // Any other instance page is the plain 404 an unclaimed host answers.

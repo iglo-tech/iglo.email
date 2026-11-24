@@ -10,6 +10,7 @@ import type { Mailbox, Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { instanceClient } from "@/test/settings/instance-client";
 
 // A 15 s stall fails by name before this timeout, not after a single-file run's 5 s default.
 setDefaultTimeout(30_000);
@@ -27,31 +28,10 @@ beforeAll(async () => {
   const creds = await provisionApiUser(production.origin, admin);
   adminAuth = `token ${creds.user}:${creds.token}`;
   // Mail goes to the loopback sink only (AGENTS.md: tests never use a real SMTP server).
-  const settings = (
-    await (
-      await fetch(`${production.origin}/api/settings`, {
-        headers: { authorization: adminAuth },
-      })
-    ).json()
-  ).data;
-  const smtp = await fetch(`${production.origin}/api/settings/smtp`, {
-    method: "PUT",
-    headers: { authorization: adminAuth, "content-type": "application/json" },
-    body: JSON.stringify([
-      {
-        ...settings.smtp[0],
-        enabled: true,
-        host: "127.0.0.1",
-        port: mailbox.port,
-        auth_protocol: "none",
-        username: "",
-        password: "",
-        tls_type: "none",
-        email_headers: [],
-      },
-    ]),
-  });
-  expect(smtp.status).toBe(200);
+  // B139: SMTP is an instance key, changed with the instance session.
+  await (
+    await instanceClient(production.origin, admin)
+  ).useSink(mailbox.port, { username: "", password: "", email_headers: [] });
 }, 60_000);
 
 afterAll(async () => {

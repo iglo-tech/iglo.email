@@ -1,5 +1,5 @@
 // B51: a new SMTP server, bounce mailbox or messenger never inherits another item's password or
-// DKIM key. Public boundaries only: GET and PUT /api/settings through the admin session.
+// DKIM key. Public boundaries only: GET and PUT /api/instance/settings (B139: instance keys) through the admin session.
 // Each test starts a fresh fixture: the first save of a seeded item assigns it a uuid, so a later
 // test would no longer see the uuid-less state it exercises.
 import { afterEach, beforeEach, expect, test } from "bun:test";
@@ -7,7 +7,9 @@ import { generateKeyPairSync } from "node:crypto";
 import { admin, api, get, login } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
+import { join } from "node:path";
 import { openDatabase } from "@/db/connection";
+import { INSTANCE_DATABASE } from "@/projects/layout";
 import { writeStoredValue } from "@/settings/stored";
 import { asBody, readJson } from "@/test/read-body";
 
@@ -27,7 +29,7 @@ type Settings = {
   [key: string]: any;
 };
 async function read(): Promise<Settings> {
-  const res = await get(f, "/api/settings", cookie);
+  const res = await get(f, "/api/instance/settings", cookie);
   expect(res.status).toBe(200);
   return (await readJson<{ data: Settings }>(res)).data;
 }
@@ -52,7 +54,7 @@ function unmaskedValue(value: unknown): unknown {
   return value;
 }
 
-const save = (body: unknown) => api(f, cookie, "/api/settings", "PUT", body);
+const save = (body: unknown) => api(f, cookie, "/api/instance/settings", "PUT", body);
 
 test("1. a new SMTP server with a blank password stores none, not the seeded server's", async () => {
   const body = unmasked(await read());
@@ -145,7 +147,7 @@ async function storeUuidlessDkimServer(): Promise<void> {
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
   const template = unmasked((await read()).smtp[0]);
-  const db = openDatabase(f.persisted.dataDir);
+  const db = openDatabase(join(f.persisted.dataDir, "instance"), INSTANCE_DATABASE);
   try {
     writeStoredValue(db, "smtp", [
       {
@@ -276,7 +278,7 @@ test("7. a seeded SMTP server has a uuid before its first save, and that save ke
 // items below are uuid-less too, so a lookup that matches "" to "" would hand them these secrets.
 test("8. new SMTP, bounce and messenger items with blank passwords take none from uuid-less rows", async () => {
   const seeded = unmasked(await read());
-  const db = openDatabase(f.persisted.dataDir);
+  const db = openDatabase(join(f.persisted.dataDir, "instance"), INSTANCE_DATABASE);
   try {
     writeStoredValue(db, "smtp", [
       {

@@ -35,6 +35,11 @@ import type { NewProject, ProjectRecord, Registry } from "@/projects/registry";
 import type { Router } from "@/server/router";
 import { ok } from "@/server/response";
 import { defaults } from "@/settings/defaults";
+import { sessionDuration } from "@/settings/duration";
+import { createInstanceSettings, instanceLoginSettings } from "@/settings/instance";
+import type { InstanceSettingsStore } from "@/settings/instance";
+import { createClientAddress } from "@/server/client-address";
+import { defaultAuthPolicy } from "@/users/auth";
 import { createAdminAccountStore } from "@/users/account";
 import type { AdminAccountStore } from "@/users/account";
 import { initialAdmin } from "@/users/bootstrap";
@@ -128,6 +133,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   let registry: Registry | undefined;
   let budgets: InstanceBudgets | undefined;
   let account: AdminAccountStore | undefined;
+  let settings: InstanceSettingsStore | undefined;
   /** Wired projects in registration order (slug order at start). */
   const entries: Array<Entry> = [];
   /** The routing table: hostname to project, and the primary for every other host. */
@@ -179,6 +185,8 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       {
         clock,
         budgets: must(budgets, "budgets"),
+        settings: must(settings, "instance settings").reader,
+        instanceRootUrl: config.rootUrl,
         listen: config.listen,
         admin: {
           account: admin.account,
@@ -204,11 +212,13 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     entries.length = 0;
     registry?.close();
     account?.close();
+    settings?.close();
     db.close(true);
   };
 
   try {
     registry = createRegistry(db, clock);
+    settings = createInstanceSettings(db, clock);
     const directories = existsSync(resolve(root, PROJECTS))
       ? readdirSync(resolve(root, PROJECTS), { withFileTypes: true })
           .filter((entry) => entry.isDirectory())
@@ -255,17 +265,39 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     const entry = entries.find((item) => item.record.slug === slug);
     return entry ? options(entry.record).rootUrl : undefined;
   };
+  const instanceSettings = must(settings, "instance settings");
+  const instanceLogger = createSourceLogger("instance");
   const instanceAuth = await createInstanceAuth({
     account: must(account, "admin account"),
     clock,
     rootUrl: config.rootUrl,
     change: (credentials, keepSession) => changes.change(null, credentials, keepSession),
+    // The instance session lasts security.session_duration, an instance key (B139, D154).
+    policy: {
+      ...defaultAuthPolicy,
+      get sessionDurationMs() {
+        return sessionDuration(
+          instanceLoginSettings(instanceSettings.read()).sessionDuration,
+          clock.now().getTime(),
+        );
+      },
+    },
   });
   const instanceRouter = createInstanceRouter({
     auth: instanceAuth,
     tokens,
     rootUrl: config.rootUrl.replace(/\/+$/, ""),
     projectRootUrl: rootUrlOf,
+    settings: instanceSettings,
+    // The login limit's address honours security.trusted_proxies, as a project's login does.
+    clientAddress: createClientAddress(
+      () => instanceLoginSettings(instanceSettings.read()).trustedProxies,
+      instanceLogger,
+    ),
+    smtpTest: () => {
+      const project = primary?.project;
+      return project && ((body, revalidate) => project.smtpTest(body, revalidate));
+    },
   });
   const instanceApp = createApp({
     bootstrap: {
@@ -277,7 +309,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     },
     clock,
     db,
-    logger: createSourceLogger("instance"),
+    logger: instanceLogger,
     i18n: createTranslation(),
   });
 

@@ -1,9 +1,9 @@
 // Compiled test-only caller: reads settings through their owner and sends to the owned fixture.
 import { openDatabase } from "@/db/connection";
 import { createRealClock } from "@/clock";
-import { createListReferences } from "@/lists/references";
-import { createRoles } from "@/roles/roles";
-import { createSettings } from "@/settings/store";
+import { dirname } from "node:path";
+import { INSTANCE_DATABASE } from "@/projects/layout";
+import { createInstanceSettings } from "@/settings/instance";
 import { createEmailer } from "@/messaging/email";
 
 const directory = process.env.M21_DATA_DIR,
@@ -12,16 +12,12 @@ if (!directory || !subject || !subject.startsWith("m08")) {
   throw new Error("Missing synthetic fixture inputs");
 }
 const clock = createRealClock();
-const db = openDatabase(directory);
-const lists = createListReferences(db);
-const roles = createRoles(db, lists);
-const settings = createSettings(db, clock, "https://example.test", roles);
+// B139 (D154): SMTP is an instance key, read from instance.db two levels above the project.
+const db = openDatabase(dirname(dirname(directory)), INSTANCE_DATABASE);
+const settings = createInstanceSettings(db, clock);
 const emailer = createEmailer({
   clock,
-  settings: () => {
-    const current = settings.read();
-    return { smtp: current.smtp, rootUrl: current["app.root_url"] };
-  },
+  settings: () => ({ smtp: settings.read().smtp, rootUrl: "https://example.test" }),
 });
 try {
   const outcome = await emailer.push({
@@ -37,7 +33,5 @@ try {
 } finally {
   await emailer.close();
   settings.close();
-  roles.close();
-  lists.close();
   db.close(true);
 }

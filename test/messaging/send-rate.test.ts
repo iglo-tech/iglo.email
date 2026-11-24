@@ -35,9 +35,10 @@ import { createAttachments } from "@/media/attachments";
 import { createEmbeds } from "@/media/embed";
 import { createFilesystem } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
-import { createSettings } from "@/settings/store";
+import { createFixtureSettings } from "@/test/settings/instance-fixture";
 import { createSMTPTest } from "@/messaging/test";
 import { registerSettingsRoutes } from "@/settings/routes";
+import { registerFixtureInstanceSettingsRoutes } from "@/test/settings/instance-fixture";
 import { registerCampaignRoutes } from "@/campaigns/routes";
 import { createCampaignStore } from "@/campaigns/store";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
@@ -117,7 +118,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   const templates = createTemplateStore(db, clock, renderer, templateRefs);
   templates.initialize();
 
-  const settingsStore = createSettings(db, clock, root, roles);
+  const settingsStore = createFixtureSettings(db, clock, root);
   // Set SMTP to point to loopback sink:
   settingsStore.update((s) => {
     s.smtp = [
@@ -226,6 +227,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   // serves every request, as src/main.ts builds it, so its 4-in-flight cap is shared.
   const smtpTest = createSMTPTest(settingsStore, emailer, app.i18n, renderer);
   registerSettingsRoutes(router, settingsStore, auth, smtpTest);
+  registerFixtureInstanceSettingsRoutes(router, settingsStore.instance, auth);
   registerListRoutes(router, listStore, roles, auth);
   registerSubscriberRoutes(router, subscribers, roles, auth);
   registerTemplateRoutes(router, templates, renderer, auth, fixturePageSite);
@@ -975,7 +977,7 @@ describe("B37: send rate cap", () => {
       await h.drive(() => h.sink.messages.length >= 10, 50);
 
       // Lower rate to 2/s
-      await h.json("/api/settings/messaging.max_send_rate", "PUT", 2);
+      await h.json("/api/instance/settings/messaging.max_send_rate", "PUT", 2);
 
       // Advance by 1 second: at 2/s, only 2 more messages should arrive
       const countBefore = h.sink.messages.length;
@@ -984,7 +986,7 @@ describe("B37: send rate cap", () => {
       expect(h.sink.messages.length).toBe(countBefore + 2);
 
       // Now raise rate back to 10/s: delivery speeds back up
-      await h.json("/api/settings/messaging.max_send_rate", "PUT", 10);
+      await h.json("/api/instance/settings/messaging.max_send_rate", "PUT", 10);
       const countBeforeRaise = h.sink.messages.length;
       await h.advance(1000);
       await h.drive(() => h.sink.messages.length >= countBeforeRaise + 10, 50);
@@ -1033,7 +1035,7 @@ describe("B37: send rate cap", () => {
 
       // Raise rate to 10/s (interval 100ms). Since 100ms has elapsed since first send,
       // message 2 should be granted immediately on wake without waiting until t=1000
-      await h.json("/api/settings/messaging.max_send_rate", "PUT", 10);
+      await h.json("/api/instance/settings/messaging.max_send_rate", "PUT", 10);
 
       await h.drive(() => h.sink.messages.length === 2, 10);
       await p2;
@@ -1183,27 +1185,27 @@ describe("B37: send rate cap", () => {
     const h = await createRateHarness();
     try {
       // GET shows default 14
-      const getRes = await h.json("/api/settings");
+      const getRes = await h.json("/api/instance/settings");
       expect(getRes.status).toBe(200);
       expect(getRes.body.data["messaging.max_send_rate"]).toBe(14);
 
       // PUT negative gives 400
-      const negRes = await h.json("/api/settings/messaging.max_send_rate", "PUT", -1);
+      const negRes = await h.json("/api/instance/settings/messaging.max_send_rate", "PUT", -1);
       expect(negRes.status).toBe(400);
 
       // PUT non-integer gives 400
-      const floatRes = await h.json("/api/settings/messaging.max_send_rate", "PUT", 2.5);
+      const floatRes = await h.json("/api/instance/settings/messaging.max_send_rate", "PUT", 2.5);
       expect(floatRes.status).toBe(400);
 
       // PUT too large (> 10000) gives 400
-      const bigRes = await h.json("/api/settings/messaging.max_send_rate", "PUT", 10_001);
+      const bigRes = await h.json("/api/instance/settings/messaging.max_send_rate", "PUT", 10_001);
       expect(bigRes.status).toBe(400);
 
       // PUT valid 25 succeeds
-      const putRes = await h.json("/api/settings/messaging.max_send_rate", "PUT", 25);
+      const putRes = await h.json("/api/instance/settings/messaging.max_send_rate", "PUT", 25);
       expect(putRes.status).toBe(200);
 
-      const checkRes = await h.json("/api/settings");
+      const checkRes = await h.json("/api/instance/settings");
       expect(checkRes.body.data["messaging.max_send_rate"]).toBe(25);
 
       // Full listmonk-style PUT without the key keeps it
@@ -1211,10 +1213,10 @@ describe("B37: send rate cap", () => {
       const withoutKey = { ...current };
       delete withoutKey["messaging.max_send_rate"];
 
-      const fullPutRes = await h.json("/api/settings", "PUT", withoutKey);
+      const fullPutRes = await h.json("/api/instance/settings", "PUT", withoutKey);
       expect(fullPutRes.status).toBe(200);
 
-      const afterFull = await h.json("/api/settings");
+      const afterFull = await h.json("/api/instance/settings");
       expect(afterFull.body.data["messaging.max_send_rate"]).toBe(25);
     } finally {
       await h.close();

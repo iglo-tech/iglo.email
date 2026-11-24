@@ -1,17 +1,20 @@
-// B125 (D122, lead decisions): the upgrade turns a stored false on, once. Through the migrations and
-// the settings store on a real SQLite file, reopened as a restart does, on the injected clock. The
-// notice at each start is tested in test/bootstrap/private-target-upgrade.test.ts and
-// test/webhooks/webhooks.test.ts.
+// B125 (D122) turned a stored false on once, in the install's one settings table. B139 (D154):
+// `webhooks.block_private_addresses` is an instance key, so a project database holds no copy of it:
+// migration 33 removes it with every other instance key, whatever an earlier schema stored, and the
+// project's settings read the instance's value. Through the migrations and the stores on real SQLite
+// files, reopened as a restart does, on the injected clock.
 import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
-import { createListReferences } from "@/lists/references";
-import { createRoles } from "@/roles/roles";
+import { defaults } from "@/settings/defaults";
+import { instanceKeys } from "@/settings/keys";
 import { createSettings } from "@/settings/store";
+import { createTestInstanceSettings } from "@/test/settings/instance-fixture";
 import { TestClock } from "@/test/server/fixture";
+import { asBody } from "@/test/read-body";
 
 const key = "webhooks.block_private_addresses";
 const directories: Array<string> = [];
@@ -21,64 +24,45 @@ afterEach(() => {
   }
 });
 
-/** One data directory; `connect` opens it again, as a restart does. */
-function directory() {
-  const path = mkdtempSync(join(tmpdir(), "b125-upgrade-"));
-  directories.push(path);
-  const clock = new TestClock();
-  const connect = () => {
-    const db = openDatabase(path);
-    const reopen = () =>
-      createSettings(db, clock, "https://example.test", createRoles(db, createListReferences(db)));
-    return { db, reopen };
-  };
-  return { path, clock, connect };
-}
-
 /** A database as an earlier release left it: schema 23, every default seeded, this key false. */
 function earlierRelease() {
-  const { path, clock, connect } = directory();
-  const first = connect();
-  runMigrations(first.db, path, clock, productionMigrations.slice(0, 23));
-  first.reopen();
-  first.db.run("UPDATE settings SET value = 'false' WHERE key = ?", [key]);
-  return { path, clock, connect, db: first.db };
+  const path = mkdtempSync(join(tmpdir(), "b139-upgrade-"));
+  directories.push(path);
+  const clock = new TestClock();
+  const db = openDatabase(path);
+  runMigrations(db, path, clock, productionMigrations.slice(0, 23));
+  for (const [name, value] of Object.entries(defaults)) {
+    db.run("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING", [
+      name,
+      JSON.stringify(value),
+    ]);
+  }
+  db.run("UPDATE settings SET value = 'false' WHERE key = ?", [key]);
+  return { path, clock, db };
 }
 
-test("an upgrade from an earlier release turns a stored false on, once", () => {
-  const { path, clock, connect, db } = earlierRelease();
+const storedKeys = (db: ReturnType<typeof openDatabase>) =>
+  asBody<Array<{ key: string }>>(db.query("SELECT key FROM settings").all()).map((row) => row.key);
+
+test("the migrations leave a project database no instance key, and restore.hold stays", () => {
+  const { path, clock, db } = earlierRelease();
+  db.run(`INSERT INTO settings (key, value) VALUES ('restore.hold', '{"since":"2026-01-01"}')`);
+  expect(storedKeys(db).filter((name) => instanceKeys.has(name)).length).toBeGreaterThan(0);
   runMigrations(db, path, clock, productionMigrations);
-  db.close();
-  const again = connect();
-  expect(again.reopen().read()[key]).toBe(true);
-  // A later start runs the migrations again, and changes nothing.
-  runMigrations(again.db, path, clock, productionMigrations);
-  expect(again.reopen().read()[key]).toBe(true);
+  expect(storedKeys(db).filter((name) => instanceKeys.has(name))).toEqual([]);
+  expect(storedKeys(db)).toContain("restore.hold");
+  expect(storedKeys(db)).toContain("app.site_name");
 });
 
-test("a later operator's false survives a restart, and the migration does not run again", () => {
-  const { path, clock, connect, db } = earlierRelease();
+test("a project reads the instance's value, not the one an earlier schema stored", () => {
+  const { path, clock, db } = earlierRelease();
   runMigrations(db, path, clock, productionMigrations);
-  db.close();
-  const after = connect();
-  after.reopen().update((current) => ({ ...current, [key]: false }));
-  after.db.close();
-  // A restart: the migrations find schema 24 and change nothing.
-  const restarted = connect();
-  runMigrations(restarted.db, path, clock, productionMigrations);
-  expect(restarted.reopen().read()[key]).toBe(false);
-});
-
-test("an earlier release's stored true is not changed by the upgrade", () => {
-  const { path, clock, connect, db } = earlierRelease();
-  db.run("UPDATE settings SET value = 'true' WHERE key = ?", [key]);
-  runMigrations(db, path, clock, productionMigrations);
-  expect(connect().reopen().read()[key]).toBe(true);
-});
-
-test("a fresh install stores true", () => {
-  const { path, clock, connect } = directory();
-  const first = connect();
-  runMigrations(first.db, path, clock, productionMigrations);
-  expect(first.reopen().read()[key]).toBe(true);
+  const instance = createTestInstanceSettings(clock);
+  const project = createSettings(db, clock, "https://example.test", instance.reader);
+  expect(project.read()[key]).toBe(true);
+  // Opening the project store again seeds project keys only.
+  createSettings(db, clock, "https://example.test", instance.reader);
+  expect(storedKeys(db).filter((name) => instanceKeys.has(name))).toEqual([]);
+  instance.update((current) => ({ ...current, [key]: false }));
+  expect(project.read()[key]).toBe(false);
 });

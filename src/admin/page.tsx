@@ -38,6 +38,8 @@ export interface AdminSite {
   /** appearance.admin.*: what /admin/custom.css and /admin/custom.js answer. */
   readonly customCss: string;
   readonly customJs: string;
+  /** The instance host's root URL, for the Settings page's link to the instance settings (B139). */
+  readonly instanceUrl?: string;
 }
 export interface AdminPage {
   readonly title: string;

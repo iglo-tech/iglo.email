@@ -1,7 +1,7 @@
 // Production-only: the document is native. Every documented operation runs on the compiled
 // executable through real HTTP, and each answer is checked against the document it was served.
 import { Database } from "bun:sqlite";
-import { createHmac, generateKeyPairSync } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { join } from "node:path";
 import { validate } from "@/test/openapi/schema";
 import type { Document, Schema } from "@/test/openapi/schema";
@@ -10,6 +10,7 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 import { startReceiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 const cookie = (response: Response, name: string) =>
   response.headers
@@ -140,35 +141,41 @@ export async function runOpenApiContract(target: {
   });
   const basic = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
 
-  const send = async (
-    method: string,
-    path: string,
-    { query = "", body, raw, headers = {}, auth = basic }: Options = {},
-  ): Promise<Reply> => {
-    const response = await fetch(`${target.baseUrl}${path}${query}`, {
-      method,
-      redirect: "manual",
-      headers: {
-        ...(auth === null ? {} : { authorization: auth }),
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
-        ...headers,
-      },
-      ...(body === undefined
-        ? raw === undefined
-          ? {}
-          : { body: raw }
-        : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    const text = await response.text();
-    const type = response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
-    return {
-      status: response.status,
-      body: type === "application/json" ? JSON.parse(text) : null,
-      text,
-      type,
+  const sendWith =
+    (fetcher: (url: string, init: RequestInit) => Promise<Response>) =>
+    async (
+      method: string,
+      path: string,
+      { query = "", body, raw, headers = {}, auth = basic }: Options = {},
+    ): Promise<Reply> => {
+      const response = await fetcher(`${target.baseUrl}${path}${query}`, {
+        method,
+        redirect: "manual",
+        headers: {
+          ...(auth === null ? {} : { authorization: auth }),
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+          ...headers,
+        },
+        ...(body === undefined
+          ? raw === undefined
+            ? {}
+            : { body: raw }
+          : { body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const text = await response.text();
+      const type = response.headers.get("content-type")?.split(";", 1)[0]?.trim() ?? "";
+      return {
+        status: response.status,
+        body: type === "application/json" ? JSON.parse(text) : null,
+        text,
+        type,
+      };
     };
-  };
+  const send = sendWith((url, init) => fetch(url, init));
+  // B139 (D154): the setup's instance keys (SMTP, bounce processing, the private-target block) go to
+  // the instance settings with the admin's session; `send` stays the documented project API.
+  const configure = sendWith(routedFetch(target));
 
   /** An API user with these permissions and per-list grants. */
   const credential = async (
@@ -322,10 +329,10 @@ export async function runOpenApiContract(target: {
 
   try {
     // Mail reaches the sink, and tracked links and bounces are on.
-    const settings = (await send("GET", "/api/settings")).body.data;
+    const settings = (await configure("GET", "/api/settings")).body.data;
     check(
       (
-        await send("PUT", "/api/settings/smtp", {
+        await configure("PUT", "/api/settings/smtp", {
           body: [
             {
               ...settings.smtp[0],
@@ -346,10 +353,10 @@ export async function runOpenApiContract(target: {
     await send("PUT", "/api/settings/app.from_email", {
       body: ["Fixture <noreply@fixture.test>"],
     });
-    await send("PUT", "/api/settings/bounce.enabled", { body: true });
-    await send("PUT", "/api/settings/bounce.webhooks_enabled", { body: true });
+    await configure("PUT", "/api/settings/bounce.enabled", { body: true });
+    await configure("PUT", "/api/settings/bounce.webhooks_enabled", { body: true });
     // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
-    await send("PUT", "/api/settings/webhooks.block_private_addresses", { body: false });
+    await configure("PUT", "/api/settings/webhooks.block_private_addresses", { body: false });
     await send("PUT", "/api/settings/privacy.individual_tracking", {
       body: true,
     });
@@ -704,7 +711,7 @@ export async function runOpenApiContract(target: {
         },
       ],
     });
-    await send("PUT", "/api/settings/smtp", smtpAt(refusing.port));
+    await configure("PUT", "/api/settings/smtp", smtpAt(refusing.port));
     const failing = await op("POST /api/tx", {
       body: {
         subscriber_email: subscriber.email,
@@ -719,7 +726,7 @@ export async function runOpenApiContract(target: {
         (sendStatus = (await send("GET", `/api/sends/${failedId}`)).body.data.status) === "failed",
       { label: "failed-send-wait", progress: () => sendStatus, stallMs: 10_000 },
     );
-    await send("PUT", "/api/settings/smtp", smtpAt(sink.port));
+    await configure("PUT", "/api/settings/smtp", smtpAt(sink.port));
     await op("POST /api/sends/{id}/resend", { params: { id: failedId } });
 
     // Events.
@@ -1365,58 +1372,34 @@ export async function runOpenApiContract(target: {
         email: "smtp-test@fixture.test",
       },
     });
-    // A configured instance: fields that exist only once set come back, with the secrets masked.
+    // A configured project: a secret that exists once set comes back masked. B139 (D154): the
+    // project's secret is the hCaptcha one; SMTP, DKIM, S3, the bounce providers and their secrets are
+    // instance keys, served on the instance host outside this document.
     const current = (await op("GET /api/settings")).body.data;
-    const added = { ...current["bounce.mailboxes"][0] };
-    delete added.uuid;
     await op("PUT /api/settings", {
       body: {
         ...current,
-        smtp: [
-          {
-            ...current.smtp[0],
-            dkim: {
-              domain_name: "fixture.test",
-              key_selector: "s1",
-              private_key: generateKeyPairSync("rsa", {
-                modulusLength: 2048,
-              }).privateKey.export({
-                type: "pkcs8",
-                format: "pem",
-              }),
-            },
-          },
-        ],
-        "upload.s3.aws_secret_access_key": "s3-secret",
-        "bounce.sendgrid_key": "sendgrid-secret",
-        "bounce.mailboxes": [
-          { ...current["bounce.mailboxes"][0], password: "" },
-          { ...added, password: "mailbox-secret" },
-        ],
+        "security.captcha": {
+          ...current["security.captcha"],
+          hcaptcha: { ...current["security.captcha"].hcaptcha, secret: "hcaptcha-secret" },
+        },
       },
     });
     const configured = (await op("GET /api/settings")).body.data;
-    check(
-      /^•+$/.test(configured.smtp[0].dkim.private_key) &&
-        /^•+$/.test(configured["upload.s3.aws_secret_access_key"]) &&
-        /^•+$/.test(configured["bounce.sendgrid_key"]),
-      "settings-masked",
-    );
-    // A client leaves the masked key out of its save by blanking it.
+    check(/^•+$/.test(configured["security.captcha"].hcaptcha.secret), "settings-masked");
+    // A client leaves the masked secret out of its save by blanking it.
     await op("PUT /api/settings", {
       body: {
         ...configured,
-        smtp: [
-          {
-            ...configured.smtp[0],
-            dkim: { ...configured.smtp[0].dkim, private_key: "" },
-          },
-        ],
+        "security.captcha": {
+          ...configured["security.captcha"],
+          hcaptcha: { ...configured["security.captcha"].hcaptcha, secret: "" },
+        },
       },
     });
     check(
-      (await op("GET /api/settings")).body.data.smtp[0].dkim.domain_name === "fixture.test",
-      "settings-dkim-kept",
+      /^•+$/.test((await op("GET /api/settings")).body.data["security.captcha"].hcaptcha.secret),
+      "settings-secret-kept",
     );
     await op("GET /api/logs");
 

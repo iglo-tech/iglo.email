@@ -9,6 +9,7 @@ import type { Production, Mailbox } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { asBody } from "@/test/read-body";
 import { version } from "@/../package.json";
+import { instanceClient } from "@/test/settings/instance-client";
 
 /** A list page as a tool reply or an API body returns it, read as the shape the assertions use. */
 type Page<R = { id: number }> = { data: { results: Array<R> } };
@@ -43,25 +44,10 @@ describe("B34 MCP endpoint tests", () => {
     };
 
     // Configure SMTP to our loopback test sink (Mailpit / sink)
-    const settingsRes = await fetch(`${production.origin}/api/settings`, { headers: adminHeaders });
-    const settings = (await settingsRes.json()).data;
-    await fetch(`${production.origin}/api/settings/smtp`, {
-      method: "PUT",
-      headers: adminHeaders,
-      body: JSON.stringify([
-        {
-          ...settings.smtp[0],
-          enabled: true,
-          host: "127.0.0.1",
-          port: mailbox.port,
-          auth_protocol: "none",
-          username: "",
-          password: "",
-          tls_type: "none",
-          email_headers: [],
-        },
-      ]),
-    });
+    // B139: SMTP is an instance key, changed with the instance session.
+    await (
+      await instanceClient(production.origin, admin)
+    ).useSink(mailbox.port, { username: "", password: "", email_headers: [] });
   }, 60_000);
 
   afterAll(async () => {

@@ -18,6 +18,7 @@ import {
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import { readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { settingsRouter } from "@/test/contract/settings-split";
 
 const admin = { user: "crash-admin", password: "crash-admin-password" };
 const executable = resolve(import.meta.dir, "../../dist/iglo.email");
@@ -113,8 +114,10 @@ try {
   await start(0);
   const { user, token } = await provisionApiUser(origin, admin);
   const authorization = `Basic ${btoa(`${user}:${token}`)}`;
+  // B139 (D154): each settings call reaches its side, the instance keys with the admin's session.
+  const routed = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
   const api = async (path: string, method = "GET", body?: unknown) => {
-    const response = await fetch(`${origin}${path}`, {
+    const response = await routed(`${origin}${path}`, {
       method,
       headers: { authorization, "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),

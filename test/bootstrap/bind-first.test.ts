@@ -77,8 +77,6 @@ async function seeded(receiverUrl: string): Promise<string> {
          'running', ?, ?, ?)`,
       [CAMPAIGN, past, past, past],
     );
-    // The receiver is on loopback, which the default refuses (D122): this operator stored false.
-    db.run("UPDATE settings SET value = 'false' WHERE key = 'webhooks.block_private_addresses'");
     db.run("INSERT INTO webhooks (id, url, secret, events) VALUES (1, ?, 'secret', '[]')", [
       receiverUrl,
     ]);
@@ -90,6 +88,16 @@ async function seeded(receiverUrl: string): Promise<string> {
     );
   } finally {
     db.close(true);
+  }
+  // The receiver is on loopback, which the default refuses (D122): this operator stored false.
+  // B139: the key is an instance key, stored in instance.db.
+  const instance = new Database(join(dataDir, "instance.db"), { readwrite: true, strict: true });
+  try {
+    instance.run(
+      "UPDATE settings SET value = 'false' WHERE key = 'webhooks.block_private_addresses'",
+    );
+  } finally {
+    instance.close(true);
   }
   return dataDir;
 }

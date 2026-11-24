@@ -2,6 +2,7 @@
 import { createConnection } from "node:net";
 import type { Credentials } from "@/test/contract/types";
 import { readJson } from "@/test/read-body";
+import { settingsRouter } from "@/test/contract/settings-split";
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -17,8 +18,10 @@ export async function runSettingsLive(target: {
 }) {
   const base = target.baseUrl;
   const adminAuth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
+  // B139 (D154): each settings call reaches its side, the instance keys with the admin's session.
+  const routed = settingsRouter({ mode: "normal", baseUrl: base }, undefined, target.admin);
   const request = (path: string, method = "GET", body?: unknown, auth = adminAuth) =>
-    fetch(base + path, {
+    routed(base + path, {
       method,
       headers: {
         Authorization: auth,

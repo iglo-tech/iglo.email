@@ -14,9 +14,9 @@ import type { SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
 import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings as toPublicSettings } from "@/public/settings";
-import { createSettings } from "@/settings/store";
-import type { SettingsStore } from "@/settings/store";
+import { createFixtureSettings } from "@/test/settings/instance-fixture";
 import { registerSettingsRoutes } from "@/settings/routes";
+import { registerFixtureInstanceSettingsRoutes } from "@/test/settings/instance-fixture";
 import type { Middleware } from "@/server/context";
 import { createListReferences } from "@/lists/references";
 import { createListStore } from "@/lists/store";
@@ -153,7 +153,7 @@ export async function txFixture(
     },
   });
   let bounces: ReturnType<typeof createBounceStore> | undefined;
-  let settingsStore: SettingsStore | undefined;
+  let settingsStore: ReturnType<typeof createFixtureSettings> | undefined;
   const lists = createListReferences(db),
     counts = createListCounts(db),
     campaigns = createCampaignListReferences(db),
@@ -283,7 +283,7 @@ export async function txFixture(
   // The one settings source, as in src/main.ts: the bounce routes read the store, so a `bounce.*`
   // write through the API or `setBounce` reaches them at once.
   if (webhooks) {
-    settingsStore = createSettings(db, clock, "http://fixture.test", roles);
+    settingsStore = createFixtureSettings(db, clock, "http://fixture.test");
     // Fresh fixtures run with bounces on. A migrated database keeps the rules it was given.
     settingsStore.update((current) => ({
       ...current,
@@ -413,6 +413,7 @@ export async function txFixture(
   });
   if (webhooks) {
     registerSettingsRoutes(router, settingsStore!, auth);
+    registerFixtureInstanceSettingsRoutes(router, settingsStore!.instance, auth);
     const getPublicSettings = () => ({
       ...toPublicSettings(settingsStore!.read()),
       fromEmail: "Fixture <noreply@fixture.test>",
