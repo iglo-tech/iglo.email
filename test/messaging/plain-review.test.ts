@@ -10,7 +10,7 @@ const text = (html: string) => plainText(html, createMessageBudget());
 const SIZE = 64 * 1024;
 const ROUNDS = 5;
 const STEP_BOUND = 8;
-/** A capped shape's median at 1 MiB must sit under 1/CAP_SHARE of the linear case's median at 1 MiB. */
+/** A capped shape's median at 256 KiB must sit under 1/CAP_SHARE of the worst linear case's median at that size. */
 const CAP_SHARE = 8;
 const median = (values: Array<number>) =>
   [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
@@ -278,40 +278,63 @@ for (const kind of Object.keys(implied)) {
 // loaded host (B137). It is the only shape here that stays under the cap at every size, so its cost is
 // real work at each size, and it is the one growth check. The capped shapes stop at the cap in a few
 // milliseconds, where a ratio of two such times measured 13x and 19x under load and says nothing about
-// linear work, so they are timed once each, at 1 MiB, against this shape. It catches quadratic work on the
-// output, such as joining the output parts every 64 writes.
+// linear work, so they are compared with this shape at one size, 256 KiB, and not with each other. It
+// catches quadratic work on the output, such as joining the output parts every 64 writes.
 const worstStrayEnds = (size: number) =>
   "<span>".repeat(1023) + "x</q>".repeat(Math.floor(size / 5));
+/** The size the capped shapes are compared at: a conversion that runs past the cap is quadratic there. */
+const CAP_SIZE = 4 * SIZE;
+/** One conversion's wall time, in milliseconds. */
+const timed = async (html: string) => {
+  const started = performance.now();
+  await text(html);
+  return performance.now() - started;
+};
 /**
- * Linear growth and the cap's stop, timed in the same rounds. The worst linear case is timed at 64 KiB,
- * 256 KiB and 1 MiB (1x, 4x and 16x): linear work gives about 4x for each 4x step and quadratic work about
- * 16x, so a bound of 8x per step sits a factor of 2 from each. Each capped shape at 1 MiB (the nested kinds
- * and the implied ends) stops at the cap, so it costs a few milliseconds at any size: its median must sit
- * under 1/CAP_SHARE of the linear case's median at 1 MiB. A conversion that goes on past the cap takes
- * seconds per shape at that size and fails here. Within a round every input runs in turn, so host load
- * that slows one slows the others in that round too, and each input's time is the median over the rounds.
+ * Linear growth and the cap's stop, in the same rounds. The worst linear case is timed at 64 KiB, 256 KiB
+ * and 1 MiB (1x, 4x and 16x): linear work gives about 4x for each 4x step and quadratic work about 16x, so a
+ * bound of 8x per step sits a factor of 2 from each. Each capped shape (the nested kinds and the implied
+ * ends) at 256 KiB stops at the cap and costs a few milliseconds, while a conversion that goes on past the
+ * cap takes hundreds of milliseconds per shape there. Its median over the rounds must sit under 1/CAP_SHARE
+ * of the worst linear case's median at the same size. Before the rounds, the linear reference is timed and
+ * each capped shape runs once: a single sample at or above half the reference fails at once, so a regression
+ * fails at the first slow shape and does not run every round. Within a round every input runs in turn, so
+ * host load that slows one slows the others in that round too, and each input's time is the median over the
+ * rounds.
  */
-test(`the worst linear case has each 4x step of input under ${STEP_BOUND}x, and each capped shape at 1 MiB stops (under 1/${CAP_SHARE} of it)`, async () => {
+test(`the worst linear case has each 4x step of input under ${STEP_BOUND}x, and each capped shape at 256 KiB stops (under 1/${CAP_SHARE} of it)`, async () => {
   const capped = [
     ...asBody<Array<keyof typeof nested>>(Object.keys(nested)).map((kind) => ({
       name: `nested ${kind}`,
-      html: nestedHtml(kind, MIB),
+      html: nestedHtml(kind, CAP_SIZE),
     })),
-    ...Object.keys(implied).map((kind) => ({ name: kind, html: impliedHtml(kind, MIB) })),
+    ...Object.keys(implied).map((kind) => ({ name: kind, html: impliedHtml(kind, CAP_SIZE) })),
   ];
+  // The single-sample bound is looser than 1/CAP_SHARE on purpose: a correct shape's single sample reached
+  // 8.7 ms against a 12.3 ms bound on a loaded host, so that bound would flake. Half the reference still
+  // fails the cost-only regression at once (736 ms per shape at 256 KiB).
+  const reference: Array<number> = [];
+  for (let round = 0; round < ROUNDS; round++) {
+    reference.push(await timed(worstStrayEnds(CAP_SIZE)));
+  }
+  const grossLimit = median(reference) / 2;
+  for (const c of capped) {
+    expect({ shape: c.name, slow: (await timed(c.html)) >= grossLimit }).toEqual({
+      shape: c.name,
+      slow: false,
+    });
+  }
   const inputs = [SIZE, 4 * SIZE, 16 * SIZE].map(worstStrayEnds).concat(capped.map((c) => c.html));
   const samples = inputs.map((): Array<number> => []);
   for (let round = 0; round < ROUNDS; round++) {
     for (const [i, input] of inputs.entries()) {
-      const started = performance.now();
-      await text(input);
-      samples[i]!.push(performance.now() - started);
+      samples[i]!.push(await timed(input));
     }
   }
   const [one, four, sixteen, ...cappedTimes] = samples.map((times) => median(times));
   expect(four! / one!).toBeLessThan(STEP_BOUND);
   expect(sixteen! / four!).toBeLessThan(STEP_BOUND);
-  const limit = sixteen! / CAP_SHARE;
+  const limit = four! / CAP_SHARE;
   expect(capped.flatMap((c, i) => (cappedTimes[i]! >= limit ? [c.name] : []))).toEqual([]);
 }, 30_000);
 
