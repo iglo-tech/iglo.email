@@ -1927,3 +1927,9 @@ Brief B117a, from an adopter's checks and reviews of B126, B127, B131, B134f and
   - *A primary only when the operator asks for one.* A fresh install would then serve nothing until an instance page exists (B143).
   - *Stderr without a prefix while there is one project.* Brief and spec ask for the prefix on every line.
 - **Left for later:** the send rate limiter is still per project until the dispatcher (B141).
+
+## D152. B140 before B139 (lead, 2026-11-24)
+
+- **Decision:** the one-admin task (B140) runs before the settings split (B139). [14-projects](14-projects.md) section 4 puts the instance settings API and page behind an instance session and CSRF, and section 5 (B140) is what creates that session. B139 first would ship an instance API nobody can reach, or a stand-in login to be thrown away.
+- **Unchanged:** both tasks' content; B141 still follows B139, and B142 now depends on B140 through B139.
+- **Considered:** B139 with its instance routes stubbed until B140. Two PRs would then touch the instance routes for one result.
