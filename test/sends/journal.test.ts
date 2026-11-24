@@ -20,7 +20,8 @@ import { createUserStore } from "@/users/store";
 import { createEmailer } from "@/messaging/email";
 import type { Message } from "@/messaging/email";
 import { startOutbox } from "@/messaging/outbox";
-import { createServer } from "node:net";
+import { createConnection, createServer } from "node:net";
+import { dlopen, FFIType, ptr } from "bun:ffi";
 import { createHash } from "node:crypto";
 import { createSends } from "@/messaging/sends";
 import { registerSendRoutes } from "@/messaging/routes";
@@ -293,19 +294,96 @@ test("an unknown child may be explicitly resent while both ancestors stay unchan
   }
 });
 
-test("actual TCP refusal retries only at injected-clock deadlines and stops after five attempts", async () => {
-  const listener = createServer();
-  await new Promise<void>((resolve) => {
-    listener.listen(0, "127.0.0.1", resolve);
-  });
-  const address = listener.address();
-  if (!address || typeof address === "string") {
-    throw new Error("missing listener");
+/**
+ * A loopback TCP port that refuses connections. On Linux, where the suite runs (D89), it refuses by
+ * construction: a socket bound to the port that never listens. Linux answers a connection to a port
+ * with no listener with a reset, and the bound socket (without SO_REUSEADDR or SO_REUSEPORT) keeps
+ * any other process from binding the port while it is held. Node and Bun bind a TCP socket only to
+ * listen or connect, so it is made through libc.
+ *
+ * macOS silently drops a connection to a bound socket that does not listen, so there the port is
+ * one that was free a moment ago and nothing holds it; the caller's check then fails by name if
+ * something else has taken it.
+ */
+async function refusingPort(): Promise<{ port: number; close(): void }> {
+  if (process.platform === "darwin") {
+    const listener = createServer();
+    await new Promise<void>((resolve) => {
+      listener.listen(0, "127.0.0.1", resolve);
+    });
+    const address = listener.address();
+    if (!address || typeof address === "string") {
+      throw new Error("missing listener");
+    }
+    await new Promise<void>((resolve, reject) => {
+      listener.close((error) => (error ? reject(error) : resolve()));
+    });
+    return { port: address.port, close() {} };
   }
-  const port = address.port;
-  await new Promise<void>((resolve, reject) => {
-    listener.close((error) => (error ? reject(error) : resolve()));
+  const libc = dlopen("libc.so.6", {
+    socket: { args: [FFIType.i32, FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+    bind: { args: [FFIType.i32, FFIType.ptr, FFIType.u32], returns: FFIType.i32 },
+    getsockname: { args: [FFIType.i32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    close: { args: [FFIType.i32], returns: FFIType.i32 },
   });
+  // AF_INET is 2 and SOCK_STREAM 1.
+  const fd = libc.symbols.socket(2, 1, 0);
+  if (fd < 0) {
+    libc.close();
+    throw new Error("Cannot create a TCP socket");
+  }
+  // struct sockaddr_in for 127.0.0.1, port 0: a 16-bit family, then the port and the address in
+  // network order.
+  const address = new Uint8Array(16);
+  address.set([2, 0]);
+  address.set([127, 0, 0, 1], 4);
+  const length = new Uint32Array([16]);
+  if (
+    libc.symbols.bind(fd, ptr(address), 16) !== 0 ||
+    libc.symbols.getsockname(fd, ptr(address), ptr(length)) !== 0
+  ) {
+    libc.symbols.close(fd);
+    libc.close();
+    throw new Error("Cannot bind a loopback TCP socket");
+  }
+  return {
+    port: (address[2]! << 8) | address[3]!,
+    close() {
+      libc.symbols.close(fd);
+      libc.close();
+    },
+  };
+}
+
+/**
+ * Resolves with the error code a direct connection to loopback `port` ends with. A loopback refusal
+ * is immediate, so a connection with no answer for two seconds is reported, not waited on.
+ */
+function connectionResult(port: number): Promise<string> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    socket.setTimeout(2000, () => {
+      socket.destroy();
+      resolve("no answer within 2 s");
+    });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve("connected");
+    });
+    socket.once("error", (error: NodeJS.ErrnoException) => resolve(error.code ?? String(error)));
+  });
+}
+
+test("actual TCP refusal retries only at injected-clock deadlines and stops after five attempts", async () => {
+  const held = await refusingPort();
+  const port = held.port;
+  // The retries below are for a refused connection: anything else answering here is a broken setup,
+  // not a send result, so it fails by name before the sends start.
+  const direct = await connectionResult(port);
+  if (direct !== "ECONNREFUSED") {
+    held.close();
+    throw new Error(`Port ${port} does not refuse connections: ${direct}`);
+  }
   const f = await fixture();
   const emailer = createEmailer({
     clock: f.clock,
@@ -363,6 +441,7 @@ test("actual TCP refusal retries only at injected-clock deadlines and stops afte
   } finally {
     await emailer.close();
     f.close();
+    held.close();
   }
 });
 
