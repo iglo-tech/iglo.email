@@ -3,8 +3,8 @@ import { asBody } from "@/test/read-body";
 import type { Mode } from "@/test/contract/types";
 import { upstreamSetting } from "@/test/reference/upstream-db";
 
-// Go's time.ParseDuration grammar: "0", or signed runs of number and unit (ns, us, µs, μs, ms, s, m, h).
-const GO_DURATION = /^(?:[-+]?(?:(?:\d+\.?\d*|\.\d+)(?:ns|us|µs|μs|ms|s|m|h))+|0)$/;
+// Go's time.ParseDuration grammar: "0", or signed runs of number and unit (ns, us, \u00b5s, \u03bcs, ms, s, m, h).
+const GO_DURATION = /^(?:[-+]?(?:(?:\d+\.?\d*|\.\d+)(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h))+|0)$/;
 
 // The build string that every listmonk process logs first, in init() (cmd/main.go:109, log flag
 // file:line). A settings reload execs a new process, so this line marks it in the reference log.
@@ -18,7 +18,7 @@ const RELOAD_TIMEOUT_MS = 20_000;
  * the HTTP projection, so the failure names the write that left it behind (B118k).
  */
 export async function assertReloadable(label: string): Promise<void> {
-  const items = await upstreamSetting("smtp");
+  const items = await upstreamSetting("smtp", label);
   if (!Array.isArray(items)) {
     throw new Error(`FAIL settings-reload-${label} (smtp is not a list)`);
   }

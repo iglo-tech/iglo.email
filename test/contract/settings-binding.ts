@@ -132,7 +132,7 @@ export async function runSettingsBinding(target: {
     "omitted-pointer-role",
   );
   for (const [label, body] of [
-    ["bom-scalar", xml("<AppBatchSize>﻿42﻿</AppBatchSize>")],
+    ["bom-scalar", xml("<AppBatchSize>\ufeff42\ufeff</AppBatchSize>")],
     ["unsupported-map", xml("<BounceActions><x><Count>1</Count></x></BounceActions>")],
     ["incomplete", xml("").slice(0, -8)],
     ["unknown-entity", xml("<AppSiteName>&bad;</AppSiteName>")],
@@ -170,7 +170,7 @@ export async function runSettingsBinding(target: {
     ],
     [
       "nested-kelvin",
-      '"security.captcha":{"hcaptcha":{"Key":"kelvin"}}',
+      '"security.captcha":{"hcaptcha":{"\u212aey":"kelvin"}}',
       "security.captcha.hcaptcha.key",
       "kelvin",
     ],

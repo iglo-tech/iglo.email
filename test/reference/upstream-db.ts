@@ -4,15 +4,17 @@ import { command } from "@/test/reference/command";
 // `settings` table (listmonk queries/misc.sql at 6fcd95f) holds each key as JSON. The
 // container is this run's, named by REFERENCE_DB_CONTAINER; `docker exec` reaches Postgres
 // over its local socket, so no password leaves the harness. The key is a fixed literal.
-export async function upstreamSetting(key: string): Promise<unknown> {
+// `label` is the case that reads the setting. Every failure names it, so a database error is
+// reported against the write it checks, as settings-reload-<label>.
+export async function upstreamSetting(key: string, label: string): Promise<unknown> {
   const container = process.env.REFERENCE_DB_CONTAINER;
   const user = process.env.REFERENCE_DB_USER;
   const database = process.env.REFERENCE_DB_NAME;
   if (!container || !user || !database) {
-    throw new Error("FAIL reference-db-unavailable");
+    throw new Error(`FAIL settings-reload-${label} (db-unavailable)`);
   }
   if (!/^[a-z_.]+$/.test(key)) {
-    throw new Error("FAIL reference-db-key");
+    throw new Error(`FAIL settings-reload-${label} (db-key)`);
   }
   const result = await command(
     [
@@ -34,11 +36,11 @@ export async function upstreamSetting(key: string): Promise<unknown> {
     { timeout: 15_000 },
   );
   if (result.code !== 0) {
-    throw new Error("FAIL reference-db-read");
+    throw new Error(`FAIL settings-reload-${label} (db-read)`);
   }
   const text = result.stdout.trim();
   if (text === "") {
-    throw new Error("FAIL reference-db-missing");
+    throw new Error(`FAIL settings-reload-${label} (db-missing)`);
   }
   return JSON.parse(text) as unknown;
 }
