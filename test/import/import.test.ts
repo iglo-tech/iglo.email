@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
 import { listensOn, startOnFreePort } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const subscribe = (lists: number) => ({ mode: "subscribe", delim: ",", lists: [lists] });
 const running = async (dataDir: string) => {
@@ -14,9 +15,13 @@ const running = async (dataDir: string) => {
   const c = await client(origin);
   const lists = await c.list("lifecycle");
   expect((await c.post(subscribe(lists), rows("life", 30_000))).status).toBe(200);
-  for (let current = await c.status(); current.imported < 100; current = await c.status()) {
-    await Bun.sleep(1);
-  }
+  let imported = 0;
+  await untilState(async () => (imported = (await c.status()).imported) >= 100, {
+    label: "100 rows imported",
+    progress: () => String(imported),
+    stallMs: 10_000,
+    intervalMs: 1,
+  });
   return { child, c };
 };
 
@@ -60,19 +65,27 @@ async function launch(dataDir: string, port: number) {
   );
   children.push(child);
   const origin = `http://127.0.0.1:${port}`;
-  for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(25)) {
-    // A start that failed (the port in use, for one) reports why on stderr, and is retried.
-    if (child.exitCode !== null) {
-      throw new Error(await new Response(child.stderr).text());
-    }
-    const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
-      () => null,
-    );
-    if (up?.ok && listensOn(child.pid, port)) {
-      return { child, origin };
-    }
-  }
-  throw new Error("Server did not start");
+  let observed = "starting";
+  // A start that failed (the port in use, for one) reports why on stderr, and is retried.
+  await untilState(
+    async () => {
+      if (child.exitCode !== null) {
+        throw new Error(await new Response(child.stderr).text());
+      }
+      const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
+        () => null,
+      );
+      observed = up ? `status ${up.status}` : "no answer";
+      return up?.ok === true && listensOn(child.pid, port);
+    },
+    {
+      label: "Server did not start",
+      progress: () => observed,
+      stallMs: 15_000,
+      intervalMs: 25,
+    },
+  );
+  return { child, origin };
 }
 // The import status and the JSON envelope the routes answer with: the fields the tests assert, not a full schema.
 type ImportStatus = { status: string; name: string; imported: number; total: number };
@@ -108,13 +121,24 @@ async function client(origin: string, credentials?: { user: string; token: strin
     return response.body.data;
   };
   const settled = async () => {
-    for (const deadline = Date.now() + 30_000; Date.now() < deadline; await Bun.sleep(10)) {
-      const current = await status();
-      if (current.status === "finished" || current.status === "failed") {
-        return current;
-      }
+    let current: ImportStatus | undefined;
+    // The counts move while the import works: a stall, not a total, ends the wait.
+    await untilState(
+      async () => {
+        current = await status();
+        return current.status === "finished" || current.status === "failed";
+      },
+      {
+        label: "Import did not settle",
+        progress: () => JSON.stringify(current ?? null),
+        stallMs: 30_000,
+        intervalMs: 10,
+      },
+    );
+    if (!current) {
+      throw new Error("Import did not settle");
     }
-    throw new Error("Import did not settle");
+    return current;
   };
   const run = async (params: unknown, content: BlobPart, name?: string) => {
     const started = await post(params, content, name);
@@ -179,9 +203,10 @@ describe("one server", () => {
   const set = (value: Array<string>) =>
     c.call("/api/settings/privacy.domain_blocklist", "PUT", value);
   const gone = async () => {
-    for (let i = 0; i < 400 && leftovers().length; i++) {
-      await Bun.sleep(5);
-    }
+    await untilState(() => leftovers().length === 0, {
+      label: "temporary files removed",
+      progress: () => String(leftovers().length),
+    }).catch(() => undefined);
     expect(leftovers()).toEqual([]);
   };
   beforeAll(async () => {
@@ -514,18 +539,22 @@ describe("one server", () => {
         `--x\r\nContent-Disposition: form-data; name="file"; filename="a.csv"\r\n\r\nemail\n`,
       ),
     );
-    await Bun.sleep(100);
+    // The upload's temporary file appears once the first request has started streaming.
+    await untilState(() => leftovers().length === 1, {
+      label: "upload temporary file",
+      progress: () => String(leftovers().length),
+    }).catch(() => undefined);
     expect(leftovers()).toHaveLength(1);
     const second = await c.post<{ message: string }>(subscribe(), "email\n");
     expect(second.status).toBe(400);
     expect(second.body!.message).toContain("already running");
     abort.abort();
     await first;
-    for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20)) {
-      if (!leftovers().length) {
-        break;
-      }
-    }
+    await untilState(() => leftovers().length === 0, {
+      label: "aborted upload removed",
+      progress: () => String(leftovers().length),
+      intervalMs: 20,
+    }).catch(() => undefined);
     expect(leftovers()).toEqual([]);
     expect((await c.run(subscribe(), "email\nafter-abort@example.test\n")).imported).toBe(1);
   });
@@ -546,9 +575,13 @@ describe("one server", () => {
   test("a stop lands between batches: the count and the rows agree", async () => {
     const before = await c.subscribers();
     expect((await c.post(subscribe(), rows("between", 20_000))).status).toBe(200);
-    for (let current = await c.status(); current.imported < 300; current = await c.status()) {
-      await Bun.sleep(1);
-    }
+    let imported = 0;
+    await untilState(async () => (imported = (await c.status()).imported) >= 300, {
+      label: "300 rows imported",
+      progress: () => String(imported),
+      stallMs: 10_000,
+      intervalMs: 1,
+    });
     await c.call("/api/import/subscribers", "DELETE");
     const done = await c.settled();
     expect(done.status).toBe("finished");
