@@ -16,14 +16,17 @@ sleeps that are the thing under test, with a reason. The count is `grep -rn "Bun
 
 Net: 98 fewer lines from `main` at 5fa94ac1. More calls were converted than that, because the new
 `untilState` calls replaced several loops with one call each. The B118d head was recorded as 154
-lines in 75 files; measured on merged `main` it is 156 in 77. That two-line, two-file difference
-is not traced here: it is in the merged head, not in the B118e change.
+lines in 75 files; measured on merged `main` it is 156 in 77. The cause is traced (B118g): the
+round-2 fix (`fc9386aa`) put a count loop back into `drain()` in `test/public/fixture.ts` and
+`test/tx/fixture.ts`, and each loop has a `Bun.sleep(5)` (one yield per step, the drain row under
+"Kept sleeps"). `git grep -c` per file between `57422541` (the round-1 count) and `d5bef8d5` differs
+in exactly those two files, by one line each.
 
 B118e converts the two readiness polls that run in `bun run check` (`test/serve-port.ts` and
 `test/bootstrap/cli.test.ts`), which were 2 of the 20 deferred state waits. The 154 remaining lines
 are the kept sleeps (the table below; some rows group several lines), the 18 deferred state waits
 (under "Deferred"), and a few lines the table does not name; B118e did not reconcile those few
-line by line. The counts are `git grep` lines on each side.
+line by line. The two drain sleeps are two of those lines. The counts are `git grep` lines on each side.
 
 ## Helpers
 
@@ -45,8 +48,10 @@ line by line. The counts are `git grep` lines on each side.
   bound is in injected time, so it is the same window on every host.
 - `waitWall` (unchanged): a wait on an injected clock or on microtasks, with `advance` for clock steps.
 - Where a check's last value is the only progress signal (webhook and retention `until` helpers),
-  the value's JSON is the progress. Where no signal exists (`/health` answering after a reference
-  restart, a process's readiness), the stall window is the limit and the table says so.
+  the value's JSON is the progress. A child process's readiness uses its CPU time as the progress
+  (`cpuProgress` in `test/serve-port.ts`, B118g): a start that is still computing keeps its window
+  open, and one that hangs without CPU fails at the stall. Where no signal exists (`/health` answering
+  after a reference restart), the stall window is the limit and the table says so.
 
 Where a wait had a `.catch(() => undefined)`, the caller's `check`/`expect` still names the miss:
 the helper only stops waiting, it no longer asserts. One wait (the MCP campaign finish) had no
@@ -170,16 +175,18 @@ absence is asserted); **Y** event-loop yield between steps; **S** settle with no
 | test/bootstrap/cli.test.ts (readiness poll, startThroughCli) | — | converted in B118e (`untilState`, see "Deferred") |
 | test/reference/smoke.ts:429 | K | the 35 s stop budget of the reference runner, in real time |
 | test/serve-port.ts:220 | — | converted in B118e (`healthWhenReady`, `untilState`, see "Deferred") |
+| test/public/fixture.ts:216, test/tx/fixture.ts:612 | Y | one yield (5 ms) per `drain()` step, so the outbox and SMTP I/O run between steps; the drain is bounded at 200 steps in injected time, and a settling send also takes this real time (B118g) |
 
 ## Deferred: state waits not converted here
 
 These still wait on a state with a sleep. The first bullet's two polls ran in `bun run check`, so no
 Docker, opt-in or browser run was needed to change them: B118e converted both (`healthWhenReady` in
 `test/serve-port.ts`, and the readiness wait in `startThroughCli`, `test/bootstrap/cli.test.ts`).
-Readiness has no progress signal, so each uses `untilState` with a constant progress and a stall
-window equal to its old budget: it fails by name with the last observation, and the bound is the
-same 15 s (or the caller's timeout). The other bullets each need their own run to verify (a Docker
-reference, an opt-in harness, or a browser pass), so B118e did not change them. They stay deferred.
+B118g made each a stall window on the child's CPU time (`cpuProgress`): it fails by name with the
+last observation after 15 s with no CPU time used, and a start that is still computing is not cut
+off by its total time. Before B118g the progress was a constant, so the 15 s was a total bound. The
+other bullets each need their own run to verify (a Docker reference, an opt-in harness, or a browser
+pass), so B118e did not change them. They stay deferred.
 
 - `test/sends/production.ts:198` (readiness poll, `sends:production`, Docker).
 - `test/worked-example/harness.ts:92, 181`, `test/worked-example/run.ts:267, 278, 398` (enrollment
@@ -248,3 +255,22 @@ pass, 0 fail, 12 files.
   B127 r3 items, the B101 shutdown name and runner per-message cost) is not done in this PR. Each
   is listed in the PR body with its reason, including a product question the manual-cancel item
   raised.
+
+## B118g: counts and mutation evidence
+
+- `Bun.sleep` lines (`grep -rn "Bun.sleep" test`, which includes untracked files): 155 in 78 files at
+  the B118g head, from 154 in 77. The one new line is the child program's own sleep in
+  `test/serve-port.test.ts` (the "idle" start that must not be ready; kind K). No other sleep was
+  added or removed by B118g; the readiness waits are now `cpuProgress` stall windows.
+- Each mutant was applied, run and reverted; none is committed.
+
+| Changed code | Mutation | Result |
+|---|---|---|
+| `test/serve-port.ts` `healthWhenReady` (before the change: progress constant `"starting"`) | a busy child that is still computing for 2.5 s, with a 1 s window | `test/serve-port.test.ts` "still working past the stall window": fails with `Server ready: no progress for 1000 ms (starting); no answer`; passes with CPU progress |
+| `test/contract/settings-reference-fetch.ts` `invalidSettingsReadEnd` | search from byte 0 (`upstreamLogHas(…, 0)`) instead of the size before the write | `test/contract/settings-reference-fetch.test.ts` "an exit line from before the write": `Expected: "unexpected"`, `Received: "exited"` |
+| `src/sequences/store.ts` `update` (mutant: clears `exit_condition` of condition exits after the step write) | a step edit rewrites the stored exit text | `test/scheduler/operator-views.test.ts` "a step condition edited after its exit": fails on the stored `exit_condition` (`Expected - 5`, `Received + 1`) |
+
+Not mutated, with the reason in the PR body: the manual-cancel `exit_condition` item (closed as
+unreachable, PR #208 review), the duplicate exit on two same-named events (a product change, not a
+test change), and the 30-day e2e, which is removed from the browser spec: the retention test already
+runs the pass on the injected clock and checks `subject_missing: "retention"`.

@@ -205,8 +205,10 @@ export async function publicFixture() {
     /**
      * Advances the injected clock a second per step, at most 200 steps, while mail is queued or a
      * send is open. The bound is in injected time, so every host sees the same window: a send that
-     * never settles uses all 200 steps. Fails by name unless exactly `expectOpen` (default 0) mail
-     * or sends are still open at the end, so a send left open cannot pass a no-mail check.
+     * never settles uses all 200 steps. A send that settles also takes real time: each step yields
+     * 5 ms so the outbox and SMTP I/O can run, so a settling drain is bounded by its steps and by
+     * that real time. Fails by name unless exactly `expectOpen` (default 0) mail or sends are still
+     * open at the end, so a send left open cannot pass a no-mail check.
      */
     async drain(expectOpen = 0) {
       // The outbox also polls on the clock; a wake during its previous batch waits for that.

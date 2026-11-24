@@ -346,8 +346,13 @@ test("a cap-held wait names the cap and when it frees the step, on the subscribe
 });
 
 // B127 r2: the sends whose sent time is missing or whose subject the thirty-day retention dropped say
-// so. The pass cannot run in a test, so the payload of a finished send is cleared as the pass clears
-// it; the address and the status stay, and the send log must read the same as after a real pass.
+// so. This spec runs on the real clock, so the retention pass cannot reach its thirty-day state here.
+// The payload of a finished send is cleared instead, as the pass clears it.
+// test/retention/retention.test.ts:350-356 asserts that the pass changes nothing else (a `toEqual` of
+// the public row with only `subject: null` and `subject_missing: "retention"` changed), so this
+// stand-in matches the pass's output. Running the pass itself through the injected clock (brief item
+// 1b) needs a src/ change: the compiled executable has no clock hook. The address and the status stay,
+// and the send log must read the same as after a real pass.
 test("a sent send past the thirty-day retention says its subject is no longer kept", async ({
   page,
 }) => {
