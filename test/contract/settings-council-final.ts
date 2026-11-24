@@ -1,7 +1,7 @@
 // Public round-3 regressions for pinned listmonk/Go/cron; D48 is explicitly paired.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
-import { assertReloadable, settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { acceptedWrite, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
 
@@ -17,7 +17,6 @@ export async function runSettingsCouncilFinal(target: {
   credentials: Credentials;
 }) {
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const reference = target.mode === "reference";
   const request = (body?: string | Uint8Array, path = "/api/settings") =>
     settingsFetch(
       target.baseUrl + path,
@@ -48,8 +47,11 @@ export async function runSettingsCouncilFinal(target: {
   ]) {
     const out = candidate();
     out["app.from_email"] = [address];
-    check((await request(JSON.stringify(out))).status === 200, `${label}-status`);
-    await assertReloadable(reference, `${label}-status`);
+    check(
+      (await acceptedWrite(target, `${label}-status`, () => request(JSON.stringify(out))))
+        .status === 200,
+      `${label}-status`,
+    );
     check((await read())["app.from_email"][0] === address, `${label}-stored`);
   }
   const beforeAlias = await read();
@@ -110,21 +112,23 @@ export async function runSettingsCouncilFinal(target: {
       ...bytes,
       ...encoder.encode(text.slice(index + "ROUND_THREE_UTF8".length)),
     ]);
-    check((await request(body)).status === 200, `${label}-status`);
-    await assertReloadable(reference, `${label}-status`);
+    check(
+      (await acceptedWrite(target, `${label}-status`, () => request(body))).status === 200,
+      `${label}-status`,
+    );
     check((await read())["app.site_name"] === expected, `${label}-stored`);
     const keyBody = Uint8Array.from([34, ...bytes, 34]);
     const beforeKey = await read();
     // D44 binds a typed candidate; upstream forwards RawMessage bytes to PG.
     const referenceRawFailure = target.mode === "reference" && label !== "valid-rune";
     check(
-      (await request(keyBody, "/api/settings/app.site_name")).status ===
-        (referenceRawFailure ? 500 : 200),
+      (
+        await acceptedWrite(target, `${label}-key-status`, () =>
+          request(keyBody, "/api/settings/app.site_name"),
+        )
+      ).status === (referenceRawFailure ? 500 : 200),
       `${label}-key-status`,
     );
-    if (!referenceRawFailure) {
-      await assertReloadable(reference, `${label}-key-status`);
-    }
     const afterKey = await read();
     if (referenceRawFailure) {
       check(JSON.stringify(afterKey) === JSON.stringify(beforeKey), `${label}-D44-key-no-write`);
@@ -153,12 +157,9 @@ export async function runSettingsCouncilFinal(target: {
       ',{"enabled":true,"name":"second","host":"retained.example","port":25,"max_conns":1,' +
       '"idle_timeout":"15s","wait_timeout":"5s"}],' +
       '"smtp":[{}],"smtp":[{},{}]}';
-    const response = await request(body);
+    const response = await acceptedWrite(target, `D48-${firstEnabled}`, () => request(body));
     const allowed = firstEnabled || target.mode === "reference";
     check(response.status === (allowed ? 200 : 400), `D48-${firstEnabled}-status`);
-    if (allowed) {
-      await assertReloadable(reference, `D48-${firstEnabled}`);
-    }
     const after = await read();
     if (!allowed) {
       check(
@@ -182,6 +183,9 @@ export async function runSettingsCouncilFinal(target: {
       );
     }
   }
-  check((await request(JSON.stringify(candidate()))).status === 200, "restore");
-  await assertReloadable(reference, "restore");
+  check(
+    (await acceptedWrite(target, "restore", () => request(JSON.stringify(candidate())))).status ===
+      200,
+    "restore",
+  );
 }

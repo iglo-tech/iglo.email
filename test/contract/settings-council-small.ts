@@ -3,7 +3,7 @@ import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
-import { assertReloadable, settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { acceptedWrite, settingsFetch } from "@/test/contract/settings-reference-fetch";
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -17,7 +17,6 @@ export async function runSettingsCouncilSmall(target: {
   credentials: Credentials;
 }) {
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const reference = target.mode === "reference";
   const request = (path = "/api/settings", method = "GET", value?: unknown) =>
     settingsFetch(
       target.baseUrl + path,
@@ -50,17 +49,26 @@ export async function runSettingsCouncilSmall(target: {
   check(JSON.stringify(await read()) === JSON.stringify(original), "reversed-template-no-write");
   const templated = candidate();
   templated["app.from_email"] = ["valid@example.invalid", "{{ .Subscriber.Email }}"];
-  check((await request("/api/settings", "PUT", templated)).status === 200, "ordered-template");
-  await assertReloadable(reference, "ordered-template");
+  check(
+    (
+      await acceptedWrite(target, "ordered-template", () =>
+        request("/api/settings", "PUT", templated),
+      )
+    ).status === 200,
+    "ordered-template",
+  );
 
   const supplementary = candidate();
   const primary = { ...supplementary.smtp[0], name: "🚀", enabled: true };
   supplementary.smtp = [primary, { ...primary, name: "--", enabled: false, uuid: "" }];
   check(
-    (await request("/api/settings", "PUT", supplementary)).status === 200,
+    (
+      await acceptedWrite(target, "supplementary-name-no-false-collision", () =>
+        request("/api/settings", "PUT", supplementary),
+      )
+    ).status === 200,
     "supplementary-name-no-false-collision",
   );
-  await assertReloadable(reference, "supplementary-name-no-false-collision");
   check(
     JSON.stringify(
       asBody<{ smtp: Array<{ name: string }> }>(await read()).smtp.map((server) => server.name),
@@ -79,8 +87,11 @@ export async function runSettingsCouncilSmall(target: {
     ["X-Test", "kept"],
   ]);
   maps.smtp[0].email_headers = [headers];
-  check((await request("/api/settings", "PUT", maps)).status === 200, "full-map-write");
-  await assertReloadable(reference, "full-map-write");
+  check(
+    (await acceptedWrite(target, "full-map-write", () => request("/api/settings", "PUT", maps)))
+      .status === 200,
+    "full-map-write",
+  );
   const saved = await read();
   check(
     Object.hasOwn(saved["bounce.actions"], "__proto__") &&
@@ -98,10 +109,13 @@ export async function runSettingsCouncilSmall(target: {
   }
   const replacement = JSON.parse('{"__proto__":{"count":9,"action":"blocklist"}}');
   check(
-    (await request("/api/settings/bounce.actions", "PUT", replacement)).status === 200,
+    (
+      await acceptedWrite(target, "key-map-write", () =>
+        request("/api/settings/bounce.actions", "PUT", replacement),
+      )
+    ).status === 200,
     "key-map-write",
   );
-  await assertReloadable(reference, "key-map-write");
   check((await read())["bounce.actions"].__proto__.count === 9, "key-map-projection");
 
   const secrets = candidate();
@@ -113,8 +127,14 @@ export async function runSettingsCouncilSmall(target: {
     { ...server, password: last },
   ];
   if (target.mode === "reference") {
-    check((await request("/api/settings", "PUT", secrets)).status === 200, "duplicate-uuid-write");
-    await assertReloadable(reference, "duplicate-uuid-write");
+    check(
+      (
+        await acceptedWrite(target, "duplicate-uuid-write", () =>
+          request("/api/settings", "PUT", secrets),
+        )
+      ).status === 200,
+      "duplicate-uuid-write",
+    );
     const masked = await read();
     check(
       masked.smtp[0].password === "•".repeat(first.length) &&
@@ -122,8 +142,14 @@ export async function runSettingsCouncilSmall(target: {
       "duplicate-uuid-initial-masks",
     );
     secrets.smtp = [{ ...server, password: "" }];
-    check((await request("/api/settings", "PUT", secrets)).status === 200, "retain-secret-write");
-    await assertReloadable(reference, "retain-secret-write");
+    check(
+      (
+        await acceptedWrite(target, "retain-secret-write", () =>
+          request("/api/settings", "PUT", secrets),
+        )
+      ).status === 200,
+      "retain-secret-write",
+    );
     check((await read()).smtp[0].password === "•".repeat(last.length), "retain-last-secret-mask");
   } else {
     // B56 deliberate difference (07-api-and-ui.md): two items sharing a uuid share a secret, so the
@@ -135,6 +161,12 @@ export async function runSettingsCouncilSmall(target: {
     );
     check(JSON.stringify(await read()) === JSON.stringify(before), "duplicate-uuid-unchanged");
   }
-  check((await request("/api/settings", "PUT", candidate())).status === 200, "restore-config");
-  await assertReloadable(reference, "restore-config");
+  check(
+    (
+      await acceptedWrite(target, "restore-config", () =>
+        request("/api/settings", "PUT", candidate()),
+      )
+    ).status === 200,
+    "restore-config",
+  );
 }

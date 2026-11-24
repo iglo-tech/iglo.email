@@ -1,7 +1,7 @@
 // Public settings boundary regressions for D46; pinned listmonk 6fcd95f.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
-import { assertReloadable } from "@/test/contract/settings-reference-fetch";
+import { acceptedWrite, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
 
@@ -18,11 +18,15 @@ export async function runSettingsNul(target: {
 }) {
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const request = (path = "/api/settings", method = "GET", body?: string) =>
-    fetch(target.baseUrl + path, {
-      method,
-      headers: { Authorization: auth, "Content-Type": "application/json" },
-      ...(body === undefined ? {} : { body }),
-    });
+    settingsFetch(
+      target.baseUrl + path,
+      {
+        method,
+        headers: { Authorization: auth, "Content-Type": "application/json" },
+        ...(body === undefined ? {} : { body }),
+      },
+      target.mode === "reference",
+    );
   async function read() {
     const response = await request();
     check(response.status === 200, "read");
@@ -75,9 +79,10 @@ export async function runSettingsNul(target: {
     JSON.stringify(out).slice(0, -1) +
     String.raw`,"app.site_name":"bad\u0000name","APP.SITE_NAME":"Final bound value",` +
     String.raw`"unconsumed_metadata":{"bad":"discarded\u0000value"}}`;
-  const response = await request("/api/settings", "PUT", body);
+  const response = await acceptedWrite(target, "final-bound-write", () =>
+    request("/api/settings", "PUT", body),
+  );
   check(response.status === 200, "final-bound-write");
-  await assertReloadable(target.mode === "reference", "final-bound-write");
   const after = await read();
   check(after["app.site_name"] === "Final bound value", "overwritten-and-ignored");
   check(after.smtp[0].name === "email-normalized--name", "normalized-value");

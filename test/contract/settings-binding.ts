@@ -1,6 +1,6 @@
 // Representative HTTP binding cases shared with the pinned reference.
 import type { Credentials, Mode } from "@/test/contract/types";
-import { assertReloadable, settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { acceptedWrite, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import { asBody } from "@/test/read-body";
 
 const check = (condition: unknown, label: string) => {
@@ -15,15 +15,22 @@ export async function runSettingsBinding(target: {
   credentials: Credentials;
 }) {
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
-  const reference = target.mode === "reference";
   const request = (path: string, init: RequestInit) =>
     settingsFetch(target.baseUrl + path, init, target.mode === "reference");
   const get = async () =>
     asBody<{ data: Record<string, any> }>(
       await (await request("/api/settings", { headers: { Authorization: auth } })).json(),
     ).data;
-  const put = (path: string, body: string, type = "application/json") =>
-    request(path, { method: "PUT", headers: { Authorization: auth, "Content-Type": type }, body });
+  // Every write goes through acceptedWrite under its case label: a reference write that upstream
+  // accepts is checked for reloadable SMTP items, and its reload is awaited before the next request.
+  const put = (label: string, body: string, type = "application/json", path = "/api/settings") =>
+    acceptedWrite(target, label, () =>
+      request(path, {
+        method: "PUT",
+        headers: { Authorization: auth, "Content-Type": type },
+        body,
+      }),
+    );
   const original = await get();
   // AppLang, UploadProvider and the SMTP pool fields stay set: upstream stores a missing one as "" and exits on the next reload
   // (app.lang panic at cmd/main.go:211, "unknown provider" fatal at cmd/init.go:852, invalid duration at cmd/init.go:747, MaxConns at cmd/init.go:777).
@@ -33,8 +40,7 @@ export async function runSettingsBinding(target: {
     ["empty-scalars", "<AppBatchSize/><EnablePublicArchive/>", 0],
     ["nel-padding", "<AppBatchSize>\u0085 42 \u0085</AppBatchSize>", 42],
   ] as const) {
-    check((await put("/api/settings", xml(contents), "application/xml")).status === 200, label);
-    await assertReloadable(reference, label);
+    check((await put(label, xml(contents), "application/xml")).status === 200, label);
     const result = await get();
     check(
       result["app.batch_size"] === expected && result["app.enable_public_archive"] === false,
@@ -44,35 +50,34 @@ export async function runSettingsBinding(target: {
   check(
     (
       await put(
-        "/api/settings",
+        "repeated-slice",
         xml("<AppNotifyEmails/><AppNotifyEmails>ops@example.test</AppNotifyEmails>"),
         "application/xml",
       )
     ).status === 200,
     "repeated-slice",
   );
-  await assertReloadable(reference, "repeated-slice");
   check(
     JSON.stringify((await get())["app.notify_emails"]) === '["","ops@example.test"]',
     "repeated-slice-projection",
   );
   check(
-    (await put("/api/settings", xml("") + "<broken", "application/xml")).status === 200,
+    (await put("unconsumed-suffix", xml("") + "<broken", "application/xml")).status === 200,
     "unconsumed-suffix",
   );
-  await assertReloadable(reference, "unconsumed-suffix");
   const suffixBytes = new Uint8Array([...new TextEncoder().encode(xml("")), 255]);
   check(
     (
-      await request("/api/settings", {
-        method: "PUT",
-        headers: { Authorization: auth, "Content-Type": "application/xml" },
-        body: suffixBytes,
-      })
+      await acceptedWrite(target, "unconsumed-invalid-utf8", () =>
+        request("/api/settings", {
+          method: "PUT",
+          headers: { Authorization: auth, "Content-Type": "application/xml" },
+          body: suffixBytes,
+        }),
+      )
     ).status === 200,
     "unconsumed-invalid-utf8",
   );
-  await assertReloadable(reference, "unconsumed-invalid-utf8");
   const badBytes = new Uint8Array([
     ...new TextEncoder().encode(base + "<AppSiteName>"),
     255,
@@ -94,27 +99,24 @@ export async function runSettingsBinding(target: {
     "consumed-invalid-utf8-no-write",
   );
   check(
-    (await put("/api/settings", "<!DOCTYPE Settings>" + xml(""), "application/xml")).status === 200,
+    (await put("doctype", "<!DOCTYPE Settings>" + xml(""), "application/xml")).status === 200,
     "doctype",
   );
-  await assertReloadable(reference, "doctype");
   check(
     (
       await put(
-        "/api/settings",
+        "declaration-metadata",
         '<?xml version="1.0" encoding="UTF-8"?>' + xml("<Unknown><Thing/></Unknown>"),
         "text/xml",
       )
     ).status === 200,
     "declaration-metadata",
   );
-  await assertReloadable(reference, "declaration-metadata");
   check(
-    (await put("/api/settings", xml("<OIDC><DefaultUserRoleID/></OIDC>"), "application/xml"))
+    (await put("empty-nullable-role", xml("<OIDC><DefaultUserRoleID/></OIDC>"), "application/xml"))
       .status === 200,
     "empty-nullable-role",
   );
-  await assertReloadable(reference, "empty-nullable-role");
   check(
     (await get())["security.oidc"].default_user_role_id === null,
     "empty-nullable-role-projection",
@@ -122,16 +124,15 @@ export async function runSettingsBinding(target: {
   check(
     (
       await put(
-        "/api/settings",
+        "omitted-pointer-role",
         xml("<OIDC><Roles><Claim>x</Claim><Match>y</Match></Roles></OIDC>"),
         "application/xml",
       )
     ).status === 200,
     "omitted-pointer-role",
   );
-  await assertReloadable(reference, "omitted-pointer-role");
   for (const [label, body] of [
-    ["bom-scalar", xml("<AppBatchSize>\ufeff42\ufeff</AppBatchSize>")],
+    ["bom-scalar", xml("<AppBatchSize>﻿42﻿</AppBatchSize>")],
     ["unsupported-map", xml("<BounceActions><x><Count>1</Count></x></BounceActions>")],
     ["incomplete", xml("").slice(0, -8)],
     ["unknown-entity", xml("<AppSiteName>&bad;</AppSiteName>")],
@@ -141,18 +142,16 @@ export async function runSettingsBinding(target: {
     ],
   ] as const) {
     const before = await get();
-    check((await put("/api/settings", body, "application/xml")).status === 400, label);
+    check((await put(label, body, "application/xml")).status === 400, label);
     check(JSON.stringify(await get()) === JSON.stringify(before), `${label}-no-write`);
   }
   const longS: Record<string, unknown> = { ...original, "app.ſite_name": "folded" };
   delete longS["app.site_name"];
-  check((await put("/api/settings", JSON.stringify(longS))).status === 200, "long-s");
-  await assertReloadable(reference, "long-s");
+  check((await put("long-s", JSON.stringify(longS))).status === 200, "long-s");
   check((await get())["app.site_name"] === "folded", "long-s-projection");
   const sharpS: Record<string, unknown> = { ...original, "app.ßite_name": "ignored" };
   delete sharpS["app.site_name"];
-  check((await put("/api/settings", JSON.stringify(sharpS))).status === 200, "sharp-s");
-  await assertReloadable(reference, "sharp-s");
+  check((await put("sharp-s", JSON.stringify(sharpS))).status === 200, "sharp-s");
   check((await get())["app.site_name"] === "", "sharp-s-projection");
   const addMembers = (members: string) =>
     JSON.stringify(original).slice(0, -1) + "," + members + "}";
@@ -171,7 +170,7 @@ export async function runSettingsBinding(target: {
     ],
     [
       "nested-kelvin",
-      '"security.captcha":{"hcaptcha":{"\u212aey":"kelvin"}}',
+      '"security.captcha":{"hcaptcha":{"Key":"kelvin"}}',
       "security.captcha.hcaptcha.key",
       "kelvin",
     ],
@@ -194,8 +193,7 @@ export async function runSettingsBinding(target: {
       [{ claim: "x", match: "y" }],
     ],
   ] as const) {
-    check((await put("/api/settings", addMembers(members))).status === 200, label);
-    await assertReloadable(reference, label);
+    check((await put(label, addMembers(members))).status === 200, label);
     let value: any = await get();
     if (label === "nested-alias" || label === "nested-kelvin") {
       value = value["security.captcha"].hcaptcha.key;
@@ -210,14 +208,16 @@ export async function runSettingsBinding(target: {
   }
   for (const members of ['"app.batch_size":1e999', '"app.batch_size":1.0', '"unknown":{"x":}']) {
     const before = await get();
-    check((await put("/api/settings", addMembers(members))).status === 400, "bad-json-or-number");
+    check(
+      (await put("bad-json-or-number", addMembers(members))).status === 400,
+      "bad-json-or-number",
+    );
     check(JSON.stringify(await get()) === JSON.stringify(before), "bad-json-or-number-no-write");
   }
   check(
-    (await put("/api/settings", addMembers('"unknown":{"x":1e999}'))).status === 200,
+    (await put("unused-large-metadata", addMembers('"unknown":{"x":1e999}'))).status === 200,
     "unused-large-metadata",
   );
-  await assertReloadable(reference, "unused-large-metadata");
   for (const [label, type, body, message] of [
     [
       "form-valid",
@@ -237,13 +237,19 @@ export async function runSettingsBinding(target: {
     ],
   ] as const) {
     const before = await get();
-    const result = await put("/api/settings", body, type);
+    const result = await put(label, body, type);
     check(result.status === 400 && (await result.json()).message === message, label);
     check(JSON.stringify(await get()) === JSON.stringify(before), `${label}-no-write`);
   }
   check(
-    (await put("/api/settings/app.site_name", "<value>hello</value>", "application/xml")).status ===
-      (target.mode === "reference" ? 500 : 400),
+    (
+      await put(
+        "key-xml-raw-invalid",
+        "<value>hello</value>",
+        "application/xml",
+        "/api/settings/app.site_name",
+      )
+    ).status === (target.mode === "reference" ? 500 : 400),
     "key-xml-raw-invalid",
   );
   for (const address of [
@@ -259,11 +265,10 @@ export async function runSettingsBinding(target: {
     "üñî@example.invalid",
   ]) {
     check(
-      (await put("/api/settings", JSON.stringify({ ...original, "app.from_email": [address] })))
+      (await put("address-valid", JSON.stringify({ ...original, "app.from_email": [address] })))
         .status === 200,
       "address-valid",
     );
-    await assertReloadable(reference, "address-valid");
     check((await get())["app.from_email"][0] === address, "address-projection");
   }
   for (const address of [
@@ -277,7 +282,7 @@ export async function runSettingsBinding(target: {
   ]) {
     const before = await get();
     check(
-      (await put("/api/settings", JSON.stringify({ ...original, "app.from_email": [address] })))
+      (await put("address-invalid", JSON.stringify({ ...original, "app.from_email": [address] })))
         .status === 400,
       "address-invalid",
     );
@@ -301,7 +306,7 @@ export async function runSettingsBinding(target: {
     check(
       (
         await put(
-          "/api/settings",
+          "cron-valid",
           JSON.stringify({
             ...original,
             "app.cache_slow_queries": true,
@@ -311,7 +316,6 @@ export async function runSettingsBinding(target: {
       ).status === 200,
       "cron-valid",
     );
-    await assertReloadable(reference, "cron-valid");
   }
   for (const cron of [
     "@every 1500ms",
@@ -326,7 +330,7 @@ export async function runSettingsBinding(target: {
     check(
       (
         await put(
-          "/api/settings",
+          "cron-invalid",
           JSON.stringify({
             ...original,
             "app.cache_slow_queries": true,
@@ -339,7 +343,7 @@ export async function runSettingsBinding(target: {
     check(JSON.stringify(await get()) === JSON.stringify(before), "cron-invalid-no-write");
   }
   const descriptor = await put(
-    "/api/settings",
+    "cron-error-envelope",
     JSON.stringify({
       ...original,
       "app.cache_slow_queries": true,
@@ -353,7 +357,7 @@ export async function runSettingsBinding(target: {
     "cron-error-envelope",
   );
   const fractional = await put(
-    "/api/settings",
+    "cron-duration-envelope",
     JSON.stringify({
       ...original,
       "app.cache_slow_queries": true,
@@ -366,6 +370,5 @@ export async function runSettingsBinding(target: {
         "Invalid data: slow query cron: delay must be a multiple of one second but was 1.5s",
     "cron-duration-envelope",
   );
-  check((await put("/api/settings", JSON.stringify(original))).status === 200, "restore");
-  await assertReloadable(reference, "restore");
+  check((await put("restore", JSON.stringify(original))).status === 200, "restore");
 }
