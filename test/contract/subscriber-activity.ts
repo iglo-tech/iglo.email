@@ -4,6 +4,7 @@
 import type { Credentials, Mode } from "@/test/contract/types";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 /** A subscriber data export, read as the parts the checks use. */
 type Exported = {
@@ -48,19 +49,19 @@ export async function runSubscriberActivity(target: {
     if (!reference) {
       return;
     }
-    // The pinned reference restarts itself to apply a setting.
+    // Kept: the pinned reference restarts itself to apply a setting, and its old process still
+    // answers /health for a moment after the write.
     await Bun.sleep(1500);
-    const deadline = Date.now() + 20_000;
-    for (;;) {
-      const up = await fetch(`${target.baseUrl}/health`, {
-        signal: AbortSignal.timeout(2000),
-      }).catch(() => null);
-      if (up?.ok) {
-        return;
-      }
-      check(Date.now() < deadline, "subscriber-activity-restart-wait");
-      await Bun.sleep(100);
-    }
+    // /health has no progress to watch, so the stall window is the wait's limit (20 s).
+    await untilState(
+      async () =>
+        (
+          await fetch(`${target.baseUrl}/health`, { signal: AbortSignal.timeout(2000) }).catch(
+            () => null,
+          )
+        )?.ok === true,
+      { label: "subscriber-activity-restart-wait", progress: () => "down", stallMs: 20_000 },
+    );
   };
   const create = async (path: string, data: unknown) => {
     const response = await request(path, "POST", data);
@@ -147,16 +148,18 @@ export async function runSubscriberActivity(target: {
       if (started.status !== 200) {
         throw new Error(`FAIL subscriber-activity-send ${await started.text()}`);
       }
-      for (
-        const deadline = Date.now() + 10_000;
-        (await (await request(`/api/campaigns/${campaign.id}`)).json()).data.status !== "finished";
-        await Bun.sleep(25)
-      ) {
-        check(Date.now() < deadline, "subscriber-activity-finished");
-      }
-      for (const deadline = Date.now() + 10_000; !mail.endsWith("\r\n.\r\n"); await Bun.sleep(25)) {
-        check(Date.now() < deadline, "subscriber-activity-mail");
-      }
+      let status = "";
+      await untilState(
+        async () =>
+          (status = (await (await request(`/api/campaigns/${campaign.id}`)).json()).data.status) ===
+          "finished",
+        { label: "subscriber-activity-finished", progress: () => status, stallMs: 10_000 },
+      );
+      await untilState(() => mail.endsWith("\r\n.\r\n"), {
+        label: "subscriber-activity-mail",
+        progress: () => String(mail.length),
+        stallMs: 10_000,
+      });
       return /\/link\/([0-9a-f-]{36})\//.exec(mail.replaceAll("=\r\n", ""))?.[1];
     } finally {
       sink.stop(true);

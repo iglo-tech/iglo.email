@@ -28,6 +28,7 @@ import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
+import { must } from "@/invariant";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { registerUserRoutes } from "@/users/routes";
@@ -145,18 +146,6 @@ export interface Project {
   stop(): Array<unknown>;
   /** Closes every store and the database. main() calls it last, after the lock is still held. */
   close(): Promise<void>;
-}
-
-/**
- * A store that the composition assigns during wiring and that a route, loop or shutdown step reads
- * later. The check runs where the read happens, as the non-null assertion did; an unset store is a
- * wiring bug.
- */
-function wired<T>(value: T | undefined, name: string): T {
-  if (value === undefined) {
-    throw new Error(`main: ${name} is not wired`);
-  }
-  return value;
 }
 
 /**
@@ -279,7 +268,7 @@ export async function createProject(
     enrollments = createEnrollments(db, clock);
     webhooks = createWebhookStore(db, clock);
     const webhookEffects = createWebhookEffects(webhooks, () =>
-      wired(subscriberStore, "subscriberStore"),
+      must(subscriberStore, "subscriberStore"),
     );
     const anonymizeSends = createSendAnonymizer(db);
     const unlinkedSends = createUnlinkedSends(db);
@@ -287,7 +276,7 @@ export async function createProject(
       ...enrollments.subscriberEffects,
       ...webhookEffects.subscriberEffects,
       deleting(deleted: Array<{ id: bigint; email: string }>, wipe?: boolean) {
-        wired(bounces, "bounces").deleteForSends(unlinkedSends(deleted.map(({ email }) => email)));
+        must(bounces, "bounces").deleteForSends(unlinkedSends(deleted.map(({ email }) => email)));
         anonymizeSends(deleted);
         webhookEffects.deleting(deleted, wipe);
       },
@@ -323,7 +312,7 @@ export async function createProject(
       {
         ...liveCounts,
         all: () =>
-          (wired(settings, "settings").read()["app.cache_slow_queries"]
+          (must(settings, "settings").read()["app.cache_slow_queries"]
             ? cachedSummaries.listCounts()
             : null) ?? liveCounts.all(),
       },
@@ -333,7 +322,7 @@ export async function createProject(
     const logs = createLogBuffer(clock);
     const logger = createErrorLogger(logs);
     const clientAddress = createClientAddress(
-      () => wired(settings, "settings").read()["security.trusted_proxies"],
+      () => must(settings, "settings").read()["security.trusted_proxies"],
       logger,
     );
     const auth = await createAuthentication(users, roles, clock, config.rootUrl, {
@@ -341,7 +330,7 @@ export async function createProject(
       clientAddress,
       get sessionDurationMs() {
         return sessionDuration(
-          wired(settings, "settings").read()["security.session_duration"],
+          must(settings, "settings").read()["security.session_duration"],
           clock.now().getTime(),
         );
       },
@@ -362,10 +351,10 @@ export async function createProject(
     // B125: every personal public page, whichever route family serves it (src/public/headers.ts).
     router.use(personalPageHeaders);
     registerTemplateRoutes(router, templates, renderer, auth, () =>
-      publicSettings(wired(settings, "settings").read()),
+      publicSettings(must(settings, "settings").read()),
     );
     registerUserRoutes(router, users, roles, auth, () =>
-      publicSettings(wired(settings, "settings").read()),
+      publicSettings(must(settings, "settings").read()),
     );
     registerListRoutes(router, listStore, roles, auth);
     registerSubscriberRoutes(
@@ -374,38 +363,38 @@ export async function createProject(
       roles,
       auth,
       () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           "privacy.domain_allowlist": current["privacy.domain_allowlist"],
           "privacy.domain_blocklist": current["privacy.domain_blocklist"],
         };
       },
       {
-        afterAdminWrite: (row, listIds) => wired(mail, "mail").afterAdminWrite(row, listIds),
+        afterAdminWrite: (row, listIds) => must(mail, "mail").afterAdminWrite(row, listIds),
         send: (row) => {
-          wired(mail, "mail").optin(row);
+          must(mail, "mail").optin(row);
         },
       },
       {
         events: (id, page, perPage) =>
           linkEvents(
-            wired(events, "events").page(id, page, perPage),
+            must(events, "events").page(id, page, perPage),
             id,
-            wired(enrollments, "enrollments"),
-            wired(sequences, "sequences"),
+            must(enrollments, "enrollments"),
+            must(sequences, "sequences"),
           ),
         enrollments: (id, page, perPage) =>
-          wired(enrollments, "enrollments").list({ subscriberId: id, page, perPage }, (rows) =>
+          must(enrollments, "enrollments").list({ subscriberId: id, page, perPage }, (rows) =>
             listedWithHolds(
               rows,
-              (sequenceId) => wired(enrollments, "enrollments").steps(sequenceId),
-              wired(sends, "sends").capFreeAt,
+              (sequenceId) => must(enrollments, "enrollments").steps(sequenceId),
+              must(sends, "sends").capFreeAt,
               clock.now(),
             ),
           ),
         // The subscriber's sends tab: the subscriber's own read checks the caller's list scope first (B117d).
         sends: (id, page, perPage) =>
-          wired(sends, "sends").list({
+          must(sends, "sends").list({
             subscriberId: id,
             page,
             perPage,
@@ -413,10 +402,9 @@ export async function createProject(
           }),
       },
       {
-        activity: (id) => wired(subscriberTracking, "subscriberTracking").activity(id),
-        clearActivity: (id, type) =>
-          wired(subscriberTracking, "subscriberTracking").clear(id, type),
-        exportSections: (row) => wired(mail, "mail").exportSections(row),
+        activity: (id) => must(subscriberTracking, "subscriberTracking").activity(id),
+        clearActivity: (id, type) => must(subscriberTracking, "subscriberTracking").clear(id, type),
+        exportSections: (row) => must(mail, "mail").exportSections(row),
       },
     );
     registerSubscriberQueryRoutes(router, subscriberQuery, subscriberStore, roles, auth);
@@ -433,7 +421,7 @@ export async function createProject(
       store: subscriberStore,
       touchLists,
       domainPolicy: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           allow: current["privacy.domain_allowlist"],
           block: current["privacy.domain_blocklist"],
@@ -445,7 +433,7 @@ export async function createProject(
     registerImportRoutes(router, { importer, roles, auth });
     const limiter = createSendRateLimiter({
       clock,
-      rate: () => wired(settings, "settings").read()["messaging.max_send_rate"],
+      rate: () => must(settings, "settings").read()["messaging.max_send_rate"],
     });
     settings.onUpdate((next, current) => {
       if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
@@ -456,18 +444,18 @@ export async function createProject(
       clock,
       limiter,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return { smtp: current.smtp, rootUrl: current["app.root_url"] };
       },
       copyAllowed: (address) =>
-        !addressBlocklisted(wired(subscriberStore, "subscriberStore"), address),
+        !addressBlocklisted(must(subscriberStore, "subscriberStore"), address),
       // Past every loop's and route's own check: nothing reaches SMTP from a held install (D67).
       refuse: () => refuseWhileHeld(db),
     });
     mediaStore = createMediaStore(db, clock);
     const media = mediaStore;
     const files = createFilesystem(config.dataDir, () => {
-      const current = wired(settings, "settings").read();
+      const current = must(settings, "settings").read();
       return {
         uploadPath: current["upload.filesystem.upload_path"],
         uploadUri: current["upload.filesystem.upload_uri"],
@@ -483,8 +471,8 @@ export async function createProject(
       createSMTPTest(settings, emailer, app.i18n, renderer),
       uploadPathCheck(config.dataDir, media),
     );
-    const marketing = () => marketingSettings(wired(settings, "settings").read());
-    const pages = () => publicSettings(wired(settings, "settings").read());
+    const marketing = () => marketingSettings(must(settings, "settings").read());
+    const pages = () => publicSettings(must(settings, "settings").read());
     const limit = (name: keyof ReturnType<typeof publicSettings>["rateLimits"]) =>
       rateLimited(
         clock,
@@ -510,7 +498,7 @@ export async function createProject(
       db,
       clock,
       subscribers: subscriberStore,
-      rootUrl: () => wired(settings, "settings").read()["app.root_url"],
+      rootUrl: () => must(settings, "settings").read()["app.root_url"],
       ended: webhookEffects.sendEnded,
       marketingPolicy: createMarketingPolicy({
         subscribers: subscriberStore,
@@ -518,15 +506,15 @@ export async function createProject(
         settings: marketing,
         campaignDeliveries: runnerStore,
       }),
-      stepLabels: (ids) => wired(sequences, "sequences").stepLabels(ids),
-      templateNames: (ids) => wired(templates, "templates").names(ids),
+      stepLabels: (ids) => must(sequences, "sequences").stepLabels(ids),
+      templateNames: (ids) => must(templates, "templates").names(ids),
     });
     notifier = createAdminNotifier({
       sends,
       renderer,
       logger: app.logger,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           notifyEmails: current["app.notify_emails"],
           fromEmail: current["app.from_email"][0] ?? "",
@@ -556,7 +544,7 @@ export async function createProject(
       renderer,
       lists,
       policy: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           // listmonk getDefaultFromEmail: the first configured address.
           fromEmail: current["app.from_email"][0] ?? "",
@@ -573,7 +561,7 @@ export async function createProject(
     const privacy = createPrivacy({
       db,
       subscribers: subscriberStore,
-      mail: () => wired(mail, "mail"),
+      mail: () => must(mail, "mail"),
       page: pages,
     });
     registerUnsubscribeRoutes(router, {
@@ -593,7 +581,7 @@ export async function createProject(
       files,
       auth,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           provider: current["upload.provider"],
           extensions: current["upload.extensions"],
@@ -602,13 +590,13 @@ export async function createProject(
       },
     });
     campaignStore = createCampaignStore(db, clock, {
-      templateExists: (id) => wired(templates, "templates").get(id) !== null,
-      defaultTemplate: () => wired(templates, "templates").getDefault()?.id ?? null,
-      listName: (id) => wired(lists, "lists").name(id),
+      templateExists: (id) => must(templates, "templates").get(id) !== null,
+      defaultTemplate: () => must(templates, "templates").getDefault()?.id ?? null,
+      listName: (id) => must(lists, "lists").name(id),
       mediaFilename: (id) => media.filename(id),
     });
     const campaignSettings = () => {
-      const current = wired(settings, "settings").read();
+      const current = must(settings, "settings").read();
       return {
         // listmonk getDefaultFromEmail: the first configured address.
         fromEmail: current["app.from_email"][0] ?? "",
@@ -667,11 +655,11 @@ export async function createProject(
     });
     const campaignsByUuid = campaignStore;
     bounces = createBounceStore(db, clock, {
-      subscribers: () => wired(subscriberStore, "subscriberStore"),
-      sendTarget: (uuid) => wired(sends, "sends").bounceTarget(uuid),
+      subscribers: () => must(subscriberStore, "subscriberStore"),
+      sendTarget: (uuid) => must(sends, "sends").bounceTarget(uuid),
       campaignID: (uuid) => campaignsByUuid.byUuid(uuid)?.id ?? null,
       recorded: webhookEffects.bounceRecorded,
-      actions: () => wired(settings, "settings").read()["bounce.actions"],
+      actions: () => must(settings, "settings").read()["bounce.actions"],
       testSend: (messageId) => testSends.find(messageId),
     });
     registerBounceRoutes(router, {
@@ -684,7 +672,7 @@ export async function createProject(
       roles,
       auth,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           enabled: current["bounce.enabled"],
           webhooksEnabled: current["bounce.webhooks_enabled"],
@@ -733,7 +721,7 @@ export async function createProject(
       attachments,
       embedImages,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         const campaign = campaignSettings();
         return {
           batchSize: current["app.batch_size"],
@@ -755,7 +743,7 @@ export async function createProject(
     });
     events = createEventStore(db, subscriberStore, {
       emailAllowed: (email) => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return allowedDomain(
           email,
           current["privacy.domain_allowlist"],
@@ -780,7 +768,7 @@ export async function createProject(
       settings: pages,
     });
     signups = createSignupMail({ db, clock, logger: app.logger, mail });
-    const captchaOptions = () => wired(settings, "settings").read()["security.captcha"];
+    const captchaOptions = () => must(settings, "settings").read()["security.captcha"];
     registerPublicRoutes(router, {
       db,
       lists,
@@ -799,7 +787,7 @@ export async function createProject(
       renderer,
       settings: pages,
       publicImages: createPublicImages(media, (name) =>
-        files.url(wired(settings, "settings").read()["app.root_url"], name),
+        files.url(must(settings, "settings").read()["app.root_url"], name),
       ),
     });
     sequences = createSequenceStore(db, clock, {
@@ -819,7 +807,7 @@ export async function createProject(
       emailer,
       tracking,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           fromEmail: current["app.from_email"][0] ?? "",
           marketing: marketing(),
@@ -857,20 +845,20 @@ export async function createProject(
       tracking,
       conditions,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           fromEmail: current["app.from_email"][0] ?? "",
           marketing: marketing(),
         };
       },
     });
-    enrollments.onDue(() => wired(scheduler, "scheduler").wake());
+    enrollments.onDue(() => must(scheduler, "scheduler").wake());
     deliveries = createWebhookDelivery({
       db,
       clock,
       logger: app.logger,
       webhooks,
-      blockPrivate: () => wired(settings, "settings").read()["webhooks.block_private_addresses"],
+      blockPrivate: () => must(settings, "settings").read()["webhooks.block_private_addresses"],
     });
     registerAnalyticsRoutes(router, {
       reader: analyticsReader,
@@ -879,7 +867,7 @@ export async function createProject(
       roles,
       auth,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           individualTracking: current["privacy.individual_tracking"],
           cacheSlowQueries: current["app.cache_slow_queries"],
@@ -894,14 +882,14 @@ export async function createProject(
       auth,
       clock,
       keepOpen: (request) => serverRef.server?.timeout(request, 0),
-      individualTracking: () => wired(settings, "settings").read()["privacy.individual_tracking"],
+      individualTracking: () => must(settings, "settings").read()["privacy.individual_tracking"],
     });
     registerAdminRoutes(router, {
       auth,
       roles,
       renderer,
       logger: app.logger,
-      send: (message) => wired(emailer, "emailer").push(message, { priority: "outbox" }),
+      send: (message) => must(emailer, "emailer").push(message, { priority: "outbox" }),
       site: () => {
         const current = pages();
         return {
@@ -909,16 +897,16 @@ export async function createProject(
           faviconUrl: current.faviconUrl,
           rootUrl: current.rootUrl,
           googleFonts: googleFontUrl(current.font) !== "",
-          cacheSlowQueries: wired(settings, "settings").read()["app.cache_slow_queries"],
-          disableTracking: wired(settings, "settings").read()["privacy.disable_tracking"],
-          individualTracking: wired(settings, "settings").read()["privacy.individual_tracking"],
-          fromEmails: wired(settings, "settings").read()["app.from_email"],
+          cacheSlowQueries: must(settings, "settings").read()["app.cache_slow_queries"],
+          disableTracking: must(settings, "settings").read()["privacy.disable_tracking"],
+          individualTracking: must(settings, "settings").read()["privacy.individual_tracking"],
+          fromEmails: must(settings, "settings").read()["app.from_email"],
           messengers: campaignSettings().messengers,
           publicSubscription: current.subscriptionPage,
           trustedUrls: current.trustedUrls,
           captcha: current.captcha,
-          customCss: wired(settings, "settings").read()["appearance.admin.custom_css"],
-          customJs: wired(settings, "settings").read()["appearance.admin.custom_js"],
+          customCss: must(settings, "settings").read()["appearance.admin.custom_css"],
+          customJs: must(settings, "settings").read()["appearance.admin.custom_js"],
         };
       },
       settings: pages,
@@ -933,7 +921,7 @@ export async function createProject(
       logger: app.logger,
       summaries,
       settings: () => {
-        const current = wired(settings, "settings").read();
+        const current = must(settings, "settings").read();
         return {
           enabled: current["app.cache_slow_queries"],
           interval: current["app.cache_slow_queries_interval"],
@@ -954,46 +942,46 @@ export async function createProject(
         // between them. Each start recovers its in-flight rows (sends, runner leases, webhook
         // deliveries) before the first request is handled, and a request handled earlier could
         // claim a row that recovery then marks interrupted.
-        void wired(outbox, "outbox").done.catch(() => fail(new Error("Outbox failed")));
-        void wired(signups, "signups").done.catch(() => fail(new Error("Opt-in mail failed")));
-        void wired(deliveries, "deliveries").done.catch(() =>
+        void must(outbox, "outbox").done.catch(() => fail(new Error("Outbox failed")));
+        void must(signups, "signups").done.catch(() => fail(new Error("Opt-in mail failed")));
+        void must(deliveries, "deliveries").done.catch(() =>
           fail(new Error("Webhook delivery failed")),
         );
-        void wired(purge, "purge").done.catch(() => fail(new Error("Retention failed")));
-        void wired(scheduler, "scheduler").done.catch(() =>
+        void must(purge, "purge").done.catch(() => fail(new Error("Retention failed")));
+        void must(scheduler, "scheduler").done.catch(() =>
           fail(new Error("Sequence scheduler failed")),
         );
-        void wired(runner, "runner").done.catch(() => fail(new Error("Campaign runner failed")));
-        void wired(summaryRefresh, "summaryRefresh").done.catch(() =>
+        void must(runner, "runner").done.catch(() => fail(new Error("Campaign runner failed")));
+        void must(summaryRefresh, "summaryRefresh").done.catch(() =>
           fail(new Error("Summary refresh failed")),
         );
         try {
-          wired(outbox, "outbox").start();
-          wired(runner, "runner").start();
-          wired(signups, "signups").start();
-          wired(purge, "purge").start();
-          wired(scheduler, "scheduler").start();
-          wired(deliveries, "deliveries").start();
-          wired(summaryRefresh, "summaryRefresh").start();
+          must(outbox, "outbox").start();
+          must(runner, "runner").start();
+          must(signups, "signups").start();
+          must(purge, "purge").start();
+          must(scheduler, "scheduler").start();
+          must(deliveries, "deliveries").start();
+          must(summaryRefresh, "summaryRefresh").start();
         } catch (error) {
           fail(error);
         }
       },
       stop() {
         // An import stops at its next batch and uploads end, so nothing new reaches the writer.
-        const importStop = wired(importer, "importer").close();
-        const maintenanceStop = wired(maintenance, "maintenance").close();
+        const importStop = must(importer, "importer").close();
+        const maintenanceStop = must(maintenance, "maintenance").close();
         // Stop campaign and sequence claims first. The campaign batch in flight finishes or
         // is abandoned by the emailer's drain deadline; its unsent rest returns to the cursor.
-        const runnerStop = wired(runner, "runner").stop();
-        const schedulerStop = wired(scheduler, "scheduler").stop();
-        const outboxStop = wired(outbox, "outbox").stop();
-        const purgeStop = wired(purge, "purge").stop();
-        const signupStop = wired(signups, "signups").stop();
-        const deliveryStop = wired(deliveries, "deliveries").stop();
-        const summaryStop = wired(summaryRefresh, "summaryRefresh").stop();
-        const readerClose = wired(analyticsReader, "analyticsReader").close();
-        const messagingClose = wired(emailer, "emailer").close();
+        const runnerStop = must(runner, "runner").stop();
+        const schedulerStop = must(scheduler, "scheduler").stop();
+        const outboxStop = must(outbox, "outbox").stop();
+        const purgeStop = must(purge, "purge").stop();
+        const signupStop = must(signups, "signups").stop();
+        const deliveryStop = must(deliveries, "deliveries").stop();
+        const summaryStop = must(summaryRefresh, "summaryRefresh").stop();
+        const readerClose = must(analyticsReader, "analyticsReader").close();
+        const messagingClose = must(emailer, "emailer").close();
         return [
           importStop,
           maintenanceStop,

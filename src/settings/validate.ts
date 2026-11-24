@@ -339,14 +339,17 @@ export function normalize(next: Settings, current: Settings, roles: Roles, now: 
     return fail("omax 250 `from` addresses are allowed");
   }
   // B117a (D136): an address already stored is not checked again, so an entry an older build saved does
-  // not block a save of anything else. A new or changed entry is checked as before.
+  // not block a save of anything else. A new or changed entry is checked as before. B117f (D136 item 2): the
+  // default (first) address is the sender, so a stored one that a save moves into first place is checked too.
   const storedFrom = new Set<string>(current["app.from_email"] ?? []);
+  const storedDefault = current["app.from_email"]?.[0];
   for (const raw of next["app.from_email"]) {
     const value = trimSpace(raw ?? "");
     if (!value) {
       continue;
     }
-    const stored = storedFrom.has(value);
+    const isDefault = addresses.length === 0;
+    const stored = storedFrom.has(value) && (!isDefault || value === storedDefault);
     if (!stored && Array.from(value).length > 2000) {
       return fail("`from` address cannot exceed 2000 characters");
     }

@@ -165,3 +165,68 @@ test("a waiting enrollment whose deleted step was transactional ends when leavin
   expect(sent(f, "marketing")).toBe(1);
   expect(sent(f, "transactional")).toBe(0);
 });
+
+/**
+ * The all-lists option, as its public form posts it (`blocklist=true`), through the same link as
+ * `leaveNews`. It unsubscribes from every list, so the exit rule for a waiting enrollment applies to it too.
+ */
+async function leaveAllLists(f: SchedulerFixture, subscriber: number) {
+  const uuid = asBody<string>((await f.json(`/api/subscribers/${subscriber}`)).body.data.uuid);
+  const marketingSends = asBody<{ results: Array<{ uuid: string }> }>(
+    (await f.json(`/api/sends?subscriber_id=${subscriber}&kind=marketing`)).body.data,
+  ).results;
+  const option = await f.request(
+    `/m/${must(marketingSends[0], "marketing send").uuid}/unsubscribe/${uuid}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "List-Unsubscribe=One-Click&blocklist=true",
+    },
+  );
+  expect(option.status).toBe(200);
+  expect(await option.text()).toContain("You have unsubscribed successfully.");
+}
+
+// B130 r3: the deleted-step exit rule through the all-lists option. The deleted step was transactional and
+// the next active step is marketing, so the all-lists option ends the enrollment as it does for one list.
+// Mutation: the exit rule skipped for the all-lists option leaves the enrollment active, and the state check fails.
+test("the all-lists option ends a waiting enrollment whose next step after a deleted transactional step is marketing", async () => {
+  const f = await open();
+  const news = await f.list("News");
+  const template = await f.template("<p>Hi {{ subscriber.name }}</p>", "Hello");
+  await marketingMail(f, news, template);
+  const seq = await f.sequence({
+    name: "Receipt, then an offer, all lists",
+    list_id: news,
+    trigger: { event: "order_paid" },
+    steps: [
+      { wait: "P1D", kind: "transactional", template_id: template },
+      { wait: "P2D", kind: "marketing", template_id: template },
+    ],
+  });
+  const first = await f.json("/api/subscriber-events", "POST", {
+    subscriber: { email: address, name: "Ada", grant_lists: [news] },
+    name: "order_paid",
+  });
+  expect(first.status).toBe(200);
+  const subscriber = asBody<number>(first.body.data.subscriber_id);
+  await f.until(() => sent(f, "marketing") === 1, "the marketing mail of the order");
+  expect((await states(f, subscriber))[seq.id]).toBe("active:null");
+
+  const [, b] = seq.steps as Array<{ id: number }>;
+  const edited = await f.json(`/api/sequences/${seq.id}`, "PUT", {
+    name: "Receipt, then an offer, all lists",
+    list_id: news,
+    status: "active",
+    trigger: { event: "order_paid" },
+    reentry: "always",
+    steps: [{ id: b!.id, wait: "P2D", kind: "marketing", template_id: template }],
+  });
+  expect(edited.status).toBe(200);
+
+  await leaveAllLists(f, subscriber);
+  expect((await states(f, subscriber))[seq.id]).toBe("exited:unsubscribed");
+  await f.pass(3 * day);
+  expect(sent(f, "marketing")).toBe(1);
+  expect(sent(f, "transactional")).toBe(0);
+});

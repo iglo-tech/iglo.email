@@ -6,6 +6,7 @@ import { join } from "node:path";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { imagePng, imagePngSize, imageGif, imageJpeg } from "@/test/media/images";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const check = (condition: unknown, label: string) => {
   if (!condition) {
@@ -67,16 +68,23 @@ export async function runMediaContract(target: {
   const setting = async (key: string, value: unknown) => {
     check((await call(`/api/settings/${key}`, "PUT", value)).status === 200, `setting-${key}`);
     if (reference) {
+      // Kept: the old process answers /health for a moment after the write, before it reloads.
       await Bun.sleep(1200);
-      for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(100)) {
-        try {
-          if ((await fetch(`${target.baseUrl}/health`)).ok) {
-            break;
+      let reloading = "down";
+      // The reload has no progress signal beyond /health; the stall window is its limit (15 s).
+      await untilState(
+        async () => {
+          try {
+            const health = await fetch(`${target.baseUrl}/health`);
+            reloading = `status ${health.status}`;
+            return health.ok;
+          } catch {
+            reloading = "unreachable";
+            return false;
           }
-        } catch {
-          /* Still reloading. */
-        }
-      }
+        },
+        { label: "media settings reload", progress: () => reloading, stallMs: 15_000 },
+      ).catch(() => undefined);
     }
   };
   /** A served file, by the path of its URL: the host differs between root URL and test target. */

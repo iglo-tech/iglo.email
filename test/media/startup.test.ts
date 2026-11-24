@@ -1,9 +1,12 @@
 // What the server does with an upload directory it finds at startup.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { listensOn, startOnFreePort } from "@/test/serve-port";
+import { portZeroRootUrl, readyOnPortZero } from "@/test/serve-port";
+
+// A 15 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const repository = resolve(import.meta.dir, "../..");
 const directories: Array<string> = [];
@@ -17,7 +20,12 @@ function temporary() {
   directories.push(directory);
   return directory;
 }
-function serve(dataDir: string, port: number) {
+/**
+ * Started and stopped: the startup work is done by the first healthy answer. The server runs on
+ * port 0 (D144) and names its port. A start that exits or stalls (15 s without CPU time) fails with
+ * its stderr; a start that is ready is stopped, and its stderr is returned.
+ */
+async function bootOnce(dataDir: string) {
   const child = Bun.spawn(
     [
       process.execPath,
@@ -26,7 +34,9 @@ function serve(dataDir: string, port: number) {
       "--host",
       "127.0.0.1",
       "--port",
-      String(port),
+      "0",
+      "--root-url",
+      portZeroRootUrl,
       "--data-dir",
       dataDir,
     ],
@@ -37,40 +47,13 @@ function serve(dataDir: string, port: number) {
         IGLO_EMAIL_ADMIN_USER: "fixture-admin",
         IGLO_EMAIL_ADMIN_PASSWORD: "fixture-admin-password",
       },
-      stdout: "ignore",
+      stdout: "pipe",
       stderr: "pipe",
     },
   );
-  return { child, origin: `http://127.0.0.1:${port}` };
-}
-/** Started and stopped: the startup work is done by the first healthy answer. */
-async function bootOnce(dataDir: string) {
-  return startOnFreePort((port) => bootAt(dataDir, port));
-}
-
-async function bootAt(dataDir: string, port: number) {
-  const { child, origin } = serve(dataDir, port);
-  try {
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline) {
-      if (child.exitCode !== null) {
-        break;
-      }
-      const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
-        () => null,
-      );
-      if (up?.ok && listensOn(child.pid, port)) {
-        break;
-      }
-      await Bun.sleep(25);
-    }
-    if (child.exitCode !== null) {
-      throw new Error(await new Response(child.stderr).text());
-    }
-  } finally {
-    child.kill();
-    await child.exited;
-  }
+  await readyOnPortZero(child);
+  child.kill();
+  await child.exited;
   return new Response(child.stderr).text();
 }
 

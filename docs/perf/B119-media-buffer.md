@@ -21,8 +21,12 @@ upload:
 - `arrayBuffers` counts native ArrayBuffers only.
 - `external` counts typed arrays made in JavaScript (a request body, `Buffer.concat`) and native
   ArrayBuffers.
-- Neither counts the store that Bun gives a large Blob or File on Linux. That store is a memfd file,
-  outside the heap and outside both counters. The guard reads it from `/proc/self/fd`.
+- The `File` that `formData()` returns is not counted by `external`. Once the body is parsed, the 8 MiB
+  it holds leave `external` (a separate probe on macOS: −8 MiB against the same body still alive). On
+  Linux those bytes sit in a memfd file (Bun's store for a large File), outside the heap and outside both
+  counters. The guard reads memfd files from `/proc/self/fd`.
+- The `Blob` that `formFile` builds from the body (`new Blob([body])` in `src/media/routes.ts`) is
+  counted by `external`, as the table below shows.
 
 Measured with one forced GC after each step (macOS):
 
@@ -30,14 +34,15 @@ Measured with one forced GC after each step (macOS):
 | --- | --- | --- |
 | `new Uint8Array(8 MiB)` | 0 | 8.02 |
 | `Buffer.concat(chunks)` | 0 | 8.02 (+8) |
+| `new Blob([body])` (the copy `formFile` builds) | 0 | 16.02 (+8) |
 | `Response.arrayBuffer()` | 8 | 8.02 |
 | `fs.readFile` | 8 | 8 |
 
 An upload body is a JavaScript `Uint8Array` (`Buffer.concat` in `src/media/routes.ts`), so
 `arrayBuffers` cannot see it. The first upload probes in this investigation used `arrayBuffers` and
-reported 0; they are not evidence and are not reported below. The Blob and File parsed from the body
-sit in the memfd store, which `external` does not count either. So `external` sees the body copies and
-the `arrayBuffer()` copy, and it does not see a File's store. Section 1 shows both counters in use.
+reported 0; they are not evidence and are not reported below. So `external` sees the body copies, the
+`Blob` that `formFile` builds and the `arrayBuffer()` copy, and it does not see the memfd store of the
+`File` that `formData()` returns. Section 1 shows both counters in use.
 
 ## 1. Uploads over HTTP: no body is retained
 

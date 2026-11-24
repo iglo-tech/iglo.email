@@ -5,6 +5,7 @@ import { spawnGroup, stopGroup } from "@/test/reference/command";
 import type { GroupChild } from "@/test/reference/command";
 import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
   if (child.exitCode === null && child.signalCode === null) {
@@ -18,6 +19,19 @@ async function stop(child: GroupChild, closed: Promise<number>): Promise<number>
   }
 }
 
+/** The 8 s grace `stop` gives a child before SIGKILL, and 1 s more. */
+const stopBudgetMs = 9000;
+
+/**
+ * The lifetime of a `withProduction` call inside a bun test (`bun run test` gives each test 30 s).
+ * It ends before the test's own deadline, counted from `testStart` (the test body's `Date.now()`),
+ * less the stop budget, so a child that outlives its run is stopped by that run and not after bun
+ * has timed the test out. Its late abort would surface as an error that no test owns (B118c item 1).
+ */
+export function lifetimeWithinTest(testStart: number, testTimeoutMs = 30_000): number {
+  return Math.max(1, testStart + testTimeoutMs - stopBudgetMs - Date.now());
+}
+
 export async function withProduction<T>(
   executable: string,
   signal: AbortSignal,
@@ -28,11 +42,18 @@ export async function withProduction<T>(
     dataDir: string,
   ) => Promise<T>,
   admin?: { user: string; password: string },
+  // The lifetime of the run. A bun test passes `lifetimeWithinTest`; scripts keep the default.
   timeoutMs = 30_000,
   environment: Record<string, string> = {},
 ): Promise<T> {
-  const lifetime = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
   const directory = await mkdtemp(join(tmpdir(), "iglo-contract-production-"));
+  // A run that outlives its lifetime is cancelled with an error that names the lifetime.
+  const expiry = new AbortController();
+  const expire = setTimeout(
+    () => expiry.abort(new Error(`Compiled production run exceeded its ${timeoutMs} ms lifetime`)),
+    timeoutMs,
+  );
+  const lifetime = AbortSignal.any([signal, expiry.signal]);
   let child: GroupChild | undefined;
   let closed: Promise<number> | undefined;
   let completed = false;
@@ -81,36 +102,44 @@ export async function withProduction<T>(
       });
       // Attach a rejection handler immediately, even if readiness fails first.
       void closed.catch(() => {});
-      const deadline = Date.now() + 5000;
-      let ready = false;
-      while (Date.now() < deadline) {
-        lifetime.throwIfAborted();
-        if (child.exitCode !== null || child.signalCode !== null) {
-          await stderrDrained(child);
-          throw new Error(`Compiled production process exited before readiness: ${errors}`);
-        }
-        try {
-          const response = await fetch(`${origin}/health`, {
-            headers: { Connection: "close" },
-            signal: AbortSignal.any([lifetime, AbortSignal.timeout(500)]),
-          });
-          if (
-            response.status === 200 &&
-            (await response.text()) === '{"data":true}\n' &&
-            child.pid !== undefined &&
-            listensOn(child.pid, listenPort)
-          ) {
-            ready = true;
-            break;
-          }
-        } catch {
+      // Readiness is the health answer from this very process. The wait fails by name when what it
+      // last saw stops changing for 5 s (the readiness budget), and says what that was.
+      let observed = "starting";
+      const running = child;
+      await untilState(
+        async () => {
           lifetime.throwIfAborted();
-        }
-        await Bun.sleep(25);
-      }
-      if (!ready) {
-        throw new Error("Compiled production process readiness timed out");
-      }
+          if (running.exitCode !== null || running.signalCode !== null) {
+            await stderrDrained(running);
+            throw new Error(`Compiled production process exited before readiness: ${errors}`);
+          }
+          try {
+            const response = await fetch(`${origin}/health`, {
+              headers: { Connection: "close" },
+              signal: AbortSignal.any([lifetime, AbortSignal.timeout(500)]),
+            });
+            const listening = running.pid !== undefined && listensOn(running.pid, listenPort);
+            observed = `status ${response.status}, ${listening ? "listening" : "not listening"}`;
+            if (
+              response.status === 200 &&
+              (await response.text()) === '{"data":true}\n' &&
+              listening
+            ) {
+              return true;
+            }
+          } catch {
+            lifetime.throwIfAborted();
+            observed = "no answer";
+          }
+          return false;
+        },
+        {
+          label: "Compiled production process readiness",
+          progress: () => observed,
+          stallMs: 5000,
+          intervalMs: 25,
+        },
+      );
     };
     // A start that fails leaves no process running: the child it spawned is stopped first.
     const launch = async (listenPort: number) => {
@@ -161,6 +190,7 @@ export async function withProduction<T>(
         }
       }
     } finally {
+      clearTimeout(expire);
       await rm(directory, { recursive: true, force: true });
     }
   }

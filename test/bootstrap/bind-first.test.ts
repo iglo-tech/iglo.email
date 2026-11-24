@@ -15,6 +15,7 @@ import {
   startServer,
   temporaryDirectory,
 } from "@/test/backup/fixture";
+import { untilState } from "@/test/wait";
 
 setDefaultTimeout(60_000);
 
@@ -202,10 +203,12 @@ test("a normal start after a failed bind serves /health and runs its loops", asy
   expect(health.ok).toBe(true);
 
   // The loops start after the bind; the queued send and the due delivery are claimed at once.
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline && (state(dataDir).send.status === "queued" || hook.hits === 0)) {
-    await Bun.sleep(50);
-  }
+  await untilState(() => state(dataDir).send.status !== "queued" && hook.hits > 0, {
+    label: "loops claimed the queued send and the due delivery",
+    progress: () => `${state(dataDir).send.status}|${hook.hits}`,
+    stallMs: 20_000,
+    intervalMs: 50,
+  }).catch(() => undefined);
   expect(state(dataDir).send.status).not.toBe("queued");
   expect(hook.hits).toBeGreaterThan(0);
   await server.stop();

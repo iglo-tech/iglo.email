@@ -61,6 +61,11 @@ interface Delivery {
   to: string;
   /** The message carried the campaign's media attachment as a named part. */
   attached: boolean;
+  /**
+   * The message carries `X-Listmonk-Campaign`, which only campaign mail has. Double opt-in
+   * confirmations do not, so they are counted apart (B118c item 5).
+   */
+  campaign: boolean;
   /** MAIL FROM time and the accepting reply time (performance.now()). */
   mail: number;
   accepted: number;
@@ -83,7 +88,8 @@ async function startSink() {
     socket.setEncoding("latin1");
     let buffer = "";
     let data = false;
-    let current: { to: string; mail: number; attached: boolean } | null = null;
+    let inHeaders = false;
+    let current: { to: string; mail: number; attached: boolean; campaign: boolean } | null = null;
     socket.write("220 sink.test ESMTP\r\n");
     socket.on("close", () => {
       if (current) {
@@ -100,6 +106,13 @@ async function startSink() {
         if (data) {
           if (/filename="?crash-note\.txt"?/i.test(line)) {
             current!.attached = true;
+          }
+          if (inHeaders) {
+            if (line === "") {
+              inHeaders = false;
+            } else if (/^X-Listmonk-Campaign:/i.test(line)) {
+              current!.campaign = true;
+            }
           }
           if (line !== ".") {
             continue;
@@ -119,7 +132,7 @@ async function startSink() {
         if (verb === "EHLO") {
           socket.write("250-sink.test\r\n250 8BITMIME\r\n");
         } else if (verb === "MAIL") {
-          current = { to: "", mail: performance.now(), attached: false };
+          current = { to: "", mail: performance.now(), attached: false, campaign: false };
           peak = Math.max(peak, ++open);
           socket.write("250 ok\r\n");
         } else if (verb === "RCPT") {
@@ -127,6 +140,7 @@ async function startSink() {
           socket.write("250 ok\r\n");
         } else if (verb === "DATA") {
           data = true;
+          inHeaders = true;
           socket.write("354 go\r\n");
         } else if (verb === "QUIT") {
           socket.end("221 bye\r\n");
@@ -359,7 +373,12 @@ async function limits() {
   const concurrency = 5,
     rate = 10,
     windowRate = 2500,
-    windowMs = 60_000;
+    windowMs = 60_000,
+    // The account-wide cap (D92, since B37) applies to campaigns too. Set explicitly to the
+    // default these runs have always had, so they stay comparable. With the cap off (0) the most
+    // messages in any one second reaches 70+, a peak above the per-second bound below; the
+    // sustained rate is about 50 msg/s. See docs/perf/M3.2-runner.md.
+    maxSendRate = 14;
   await withRun("limits", async (directory, sink) => {
     const before = free();
     const app = await server(directory);
@@ -371,6 +390,7 @@ async function limits() {
         "app.message_sliding_window": true,
         "app.message_sliding_window_duration": "1m",
         "app.message_sliding_window_rate": windowRate,
+        "messaging.max_send_rate": maxSendRate,
       });
       const single = (await api("/api/lists", "POST", { name: "single", type: "public" })).body.data
         .id;
@@ -411,10 +431,19 @@ async function limits() {
       );
       const elapsed = (performance.now() - started) / 1000;
       const c = await campaignOf(api, id);
-      const to = sink.delivered.map((d) => d.to);
+      // Campaign mail is what carries the header. The 20 unconfirmed double opt-in subscribers get
+      // their confirmation instead: they must be exactly those 20, and no campaign mail goes to them.
+      const campaignMail = sink.delivered.filter((d) => d.campaign);
+      const confirmations = sink.delivered.filter((d) => !d.campaign).map((d) => d.to);
+      assert.equal(confirmations.length, 20, `confirmations ${confirmations.length}`);
+      assert.ok(
+        confirmations.every((t) => /^unconfirmed\d{5}@/.test(t)),
+        `non-campaign mail to ${confirmations.filter((t) => !/^unconfirmed\d{5}@/.test(t))}`,
+      );
+      const to = campaignMail.map((d) => d.to);
       const unique = new Set(to);
       const eligible = to.every((t) => /^(s|both)\d{5}@/.test(t));
-      const mails = sink.delivered.map((d) => d.mail).sort((a, b) => a - b);
+      const mails = campaignMail.map((d) => d.mail).sort((a, b) => a - b);
       let perSecond = 0;
       for (let i = 0, j = 0; i < mails.length; i++) {
         while (mails[j]! < mails[i]! - 1000 + 1e-9) {
@@ -451,10 +480,11 @@ async function limits() {
       }
       const entry = {
         scenario: "limits-10k",
-        settings: { concurrency, rate, windowRate, window: "1m", batch: 1000 },
+        settings: { concurrency, rate, windowRate, window: "1m", batch: 1000, maxSendRate },
         seedSeconds: +seedSeconds.toFixed(1),
         eligible: 10_000,
         delivered: to.length,
+        confirmations: confirmations.length,
         unique: unique.size,
         onlyEligible: eligible,
         campaign: { status: c.status, sent: c.sent, to_send: c.to_send },

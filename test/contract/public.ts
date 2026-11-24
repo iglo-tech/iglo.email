@@ -12,6 +12,7 @@ import { altchaPayload, solveAltcha } from "@/test/public/altcha-solver";
 import type { AltchaChallenge } from "@/test/public/altcha-solver";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const uuidText = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const dummy = "00000000-0000-0000-0000-000000000000";
@@ -108,14 +109,16 @@ export async function runPublicContract(target: {
     return found.messages;
   };
   const received = async (address: string, count = 1) => {
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      const found = await mails(address);
-      if (found.length >= count || Date.now() > deadline) {
-        return found;
-      }
-      await Bun.sleep(25);
-    }
+    let found: Array<{ ID: string; Subject: string }> = [];
+    // An address that does not get count mails returns what is there; the caller's check names it.
+    await untilState(
+      async () => {
+        found = await mails(address);
+        return found.length >= count;
+      },
+      { label: `mail to ${address}`, progress: () => String(found.length), stallMs: 10_000 },
+    ).catch(() => undefined);
+    return found;
   };
   const message = async (id: string) =>
     asBody<{
@@ -239,13 +242,13 @@ export async function runPublicContract(target: {
         .status === 200,
       "paired-start",
     );
-    for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
-      const current = (await call(`/api/campaigns/${created.body.data.id}`)).body.data.status;
-      if (current === "finished") {
-        break;
-      }
-      check(Date.now() < deadline, "paired-finish");
-    }
+    let current = "";
+    await untilState(
+      async () =>
+        (current = (await call(`/api/campaigns/${created.body.data.id}`)).body.data.status) ===
+        "finished",
+      { label: "paired-finish", progress: () => current, stallMs: 10_000 },
+    );
     return asBody<string>(created.body.data.uuid);
   };
   const setSetting = async (key: string, value: unknown) => {
@@ -253,19 +256,25 @@ export async function runPublicContract(target: {
     check(response.status === 200, `setting-${key}`);
     // Upstream reloads asynchronously after a settings write.
     if (reference) {
+      // Kept: the old process answers /health for a moment after the write, before it reloads.
       await Bun.sleep(1200);
-      for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(100)) {
-        try {
-          const health = await fetch(`${target.baseUrl}/health`, {
-            signal: AbortSignal.timeout(1000),
-          });
-          if (health.ok) {
-            break;
+      let reloading = "down";
+      // The reload has no progress signal beyond /health; the stall window is its limit (15 s).
+      await untilState(
+        async () => {
+          try {
+            const health = await fetch(`${target.baseUrl}/health`, {
+              signal: AbortSignal.timeout(1000),
+            });
+            reloading = `status ${health.status}`;
+            return health.ok;
+          } catch {
+            reloading = "unreachable";
+            return false;
           }
-        } catch {
-          /* Still reloading. */
-        }
-      }
+        },
+        { label: "settings reload", progress: () => reloading, stallMs: 15_000 },
+      ).catch(() => undefined);
     }
   };
   const originals = new Map<string, unknown>();
@@ -901,6 +910,16 @@ export async function runPublicContract(target: {
         (await status(mia.id, single.id)) === "confirmed",
       "dummy-unsub-unconfirmed",
     );
+    // B117f (D137, deliberate difference, 07): the placeholder link ends pending double opt-ins only. Upstream ends
+    // every unconfirmed membership, so its unconfirmed single opt-in list is ended there and kept here.
+    const nia = await createSubscriber("nia", [single.id, double.id]);
+    await received(nia.email);
+    check((await post(`/subscription/${dummy}/${nia.uuid}`)).status === 200, "dummy-post-d137");
+    check(
+      (await status(nia.id, double.id)) === "unsubscribed" &&
+        (await status(nia.id, single.id)) === (reference ? "unsubscribed" : "unconfirmed"),
+      "dummy-keeps-single-unconfirmed-d137",
+    );
     // Forged UUIDs.
     check((await visit(`/subscription/${dummy}/${missing}`)).status === 404, "prefs-forged");
     check((await post(`/subscription/${dummy}/${missing}`)).status === 404, "prefs-forged-post");
@@ -1132,13 +1151,12 @@ export async function runPublicContract(target: {
       ).status === 200,
       "campaign-start",
     );
-    for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
-      const current = (await call(`/api/campaigns/${campaign.id}`)).body.data.status;
-      if (current === "finished") {
-        break;
-      }
-      check(Date.now() < deadline, "campaign-finish");
-    }
+    let finishing = "";
+    await untilState(
+      async () =>
+        (finishing = (await call(`/api/campaigns/${campaign.id}`)).body.data.status) === "finished",
+      { label: "campaign-finish", progress: () => finishing, stallMs: 10_000 },
+    );
     const [readerMail] = (await received(reader.email)).filter(
       (m) => m.Subject === `${marker} subject`,
     );

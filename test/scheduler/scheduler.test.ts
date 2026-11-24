@@ -857,7 +857,8 @@ test("enrollments whose condition keeps failing do not starve healthy due work",
     trigger: { event: "signup" },
     steps: [tx(template, { wait: "PT1H", condition: always })],
   });
-  const backlog = 1000;
+  // Two and a half scheduler batches (100 each) of failing enrollments ahead of the healthy one.
+  const backlog = 250;
   for (let i = 0; i < backlog; i++) {
     await f.event(`fail-${i}@example.test`);
   }
@@ -884,9 +885,9 @@ test("enrollments whose condition keeps failing do not starve healthy due work",
   };
   f.clock.advance(hour);
   f.scheduler.wake();
-  // The wait is for progress: every failing evaluation counts, and the 1000 of them take more than the
-  // 15 s budget on a loaded host (43 s of this test in a B137 container run). The wait fails after 15 s
-  // without a new evaluation, and the test's 60 s timeout still bounds the whole test.
+  // The wait is for progress: each failing evaluation counts, and the wait fails only after 15 s without
+  // a new evaluation. The backlog is small enough that the whole test finishes well inside its 60 s
+  // timeout on a loaded host (the 1000-event backlog took 43 s of it in a B137 container run).
   const finished = () => reachedAfter !== null || evaluations >= 3 * backlog;
   while (!finished()) {
     const seen = evaluations;

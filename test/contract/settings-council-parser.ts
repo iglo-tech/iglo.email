@@ -1,6 +1,6 @@
 // Public parser regressions: listmonk cmd/settings.go at 6fcd95f.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
-import { settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { acceptedWrite, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
@@ -44,7 +44,7 @@ export async function runSettingsCouncilParser(target: {
     if (key === "app.cache_slow_queries_interval") {
       next["app.cache_slow_queries"] = true;
     }
-    const response = await request(next);
+    const response = await acceptedWrite(target, `${label}-status`, () => request(next));
     const result = await response.json();
     check(response.status === 200 && JSON.stringify(result) === '{"data":true}', `${label}-status`);
     const after = await read();
@@ -212,11 +212,17 @@ export async function runSettingsCouncilParser(target: {
   const disabled = candidate(await read());
   disabled["app.cache_slow_queries"] = false;
   disabled["app.cache_slow_queries_interval"] = "\ufeffnot a cron";
-  check((await request(disabled)).status === 200, "cron-disabled");
+  check(
+    (await acceptedWrite(target, "cron-disabled", () => request(disabled))).status === 200,
+    "cron-disabled",
+  );
   check(
     (await read())["app.cache_slow_queries_interval"] ===
       disabled["app.cache_slow_queries_interval"],
     "cron-disabled-stored",
   );
-  check((await request(candidate(original))).status === 200, "restore");
+  check(
+    (await acceptedWrite(target, "restore", () => request(candidate(original)))).status === 200,
+    "restore",
+  );
 }

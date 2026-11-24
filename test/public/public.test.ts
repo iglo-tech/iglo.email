@@ -629,7 +629,10 @@ test("wipe anonymizes retained sends and cancels queued ones in its transaction"
   for (const send of [rows.failed!, rows.unknown!]) {
     expect((await f.json(`/api/sends/${send}/resend`, "POST", {})).status).toBe(409);
   }
-  await f.drain();
+  // The `sending` row above has no lease and never settles: the drain uses its whole window of
+  // 200 steps (200 s of injected time, the same on every host), and the drain fails unless it
+  // reports exactly that one row still open.
+  await f.drain(1);
   expect(f.sink.messages).toHaveLength(0);
 });
 

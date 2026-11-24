@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { provisionApiUser } from "@/test/contract/owned";
-import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { listensOn, portZeroRootUrl, reportedPort, stderrDrained } from "@/test/serve-port";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { faultRelay } from "@/test/messaging/fault-relay";
@@ -158,14 +158,21 @@ async function localSink() {
     },
   };
 }
+// Port 0 (D144): the process names the port the OS gave it, after the bind.
 async function production(dataDir: string) {
-  return startOnFreePort((port) => launchProduction(dataDir, port));
-}
-async function launchProduction(dataDir: string, port: number) {
-  const origin = `http://127.0.0.1:${port}`;
   const child = spawn(
     resolve("dist/iglo.email"),
-    ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
+    [
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--root-url",
+      portZeroRootUrl,
+      "--data-dir",
+      dataDir,
+    ],
     {
       env: {
         PATH: "",
@@ -180,6 +187,11 @@ async function launchProduction(dataDir: string, port: number) {
     errors = (errors + chunk.toString()).slice(-4000);
   });
   active.add(child);
+  const port = await reportedPort(child, 8000).catch(async (error: unknown) => {
+    await stderrDrained(child);
+    throw new Error(`Production did not name its port: ${String(error)}: ${errors}`);
+  });
+  const origin = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {

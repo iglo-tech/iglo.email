@@ -95,7 +95,7 @@ const filterArguments = new Map([
   ["plus", 1],
   ["minus", 1],
   ["times", 1],
-  ["divided_by", 1],
+  ["divided_by", 2],
   ["round", 1],
   ["first", 0],
   ["last", 0],
@@ -439,7 +439,7 @@ function formatDate(format: string, date: Date): string {
 }
 /** One positional argument of a filter, and what its literal value must be (D134). */
 interface ArgumentRule {
-  readonly kind: "whole" | "digits" | "number" | "format";
+  readonly kind: "whole" | "digits" | "number" | "format" | "flag";
   /** A missing argument is a fault too: the filter reads it before anything else, so it fails every value. */
   readonly required?: boolean;
 }
@@ -457,7 +457,7 @@ const argumentRules = new Map<string, ReadonlyArray<ArgumentRule>>([
   ["plus", [{ kind: "number", required: true }]],
   ["minus", [{ kind: "number", required: true }]],
   ["times", [{ kind: "number", required: true }]],
-  ["divided_by", [{ kind: "number", required: true }]],
+  ["divided_by", [{ kind: "number", required: true }, { kind: "flag" }]],
   ["date", [{ kind: "format" }]],
 ]);
 const ORDINALS = ["first", "second"];
@@ -474,6 +474,8 @@ function expectedOf(rule: ArgumentRule): string {
       return "a number";
     case "format":
       return "a date format";
+    case "flag":
+      return "true or false";
   }
 }
 
@@ -531,6 +533,9 @@ function argumentFault(
         ? `${name}: the ${where} argument cannot be zero`
         : undefined;
     }
+    case "flag":
+      // The whole-number flag of `divided_by` is a boolean: the literal `true` or `false`, never a number or text.
+      return typeof value === "boolean" ? undefined : wrong;
     case "format": {
       // A date format is text, or the number a literal writes; a nil or true literal is not a format.
       if (typeof value !== "string" && typeof value !== "number") {
@@ -565,6 +570,13 @@ function filterFault(filter: Filter): string | undefined {
   if (name === "t" && args.length % 2 !== 0) {
     return `${name}: takes its arguments in pairs, got ${args.length}`;
   }
+  // A named argument (`divided_by: 4, integer: true`) is passed on by LiquidJS but never read by the whole-number
+  // flag, so it would be ignored: refused at save instead (lead decision 2, D134).
+  const named =
+    name === "divided_by" ? args.find((argument) => Array.isArray(argument)) : undefined;
+  if (named !== undefined) {
+    return `${name}: takes no named arguments, got ${String(named[0])}`;
+  }
   for (const [index, rule] of (argumentRules.get(name) ?? []).entries()) {
     const fault = argumentFault(name, index, rule, args[index]);
     if (fault !== undefined) {
@@ -583,12 +595,26 @@ function filterFault(filter: Filter): string | undefined {
 /** An output that prints a loop object on its own (`{{ forloop }}`): a template fault whatever the data is (B135 review B1). */
 const bareLoop = /^\{\{-?\s*(?:forloop|tablerowloop)\s*-?\}\}$/;
 
-/** How a token's value is used where it stands (B117e): printed or read by a filter, a `for` tag's list or a range bound, or neither. */
-type LoopUse = "print" | "list" | "none";
+/**
+ * How a token's value is used where it stands (B117e, B117f): printed or read by a filter, a `for` tag's list or a
+ * range bound, a `for` tag's limit, offset or reversed argument, stored with `assign`, or neither.
+ */
+type LoopUse = "print" | "list" | "argument" | "assign" | "none";
 
 /** A bare loop object that a `for` tag loops over, or a range ends at (B117e): the send fails there wherever the loop runs. */
 const LOOP_LIST =
   "a loop object (forloop) cannot be a for tag's list or a range bound; loop over a list from data";
+
+/** A bare loop object that a `for` tag reads as its limit, offset or reversed argument (B117f): the send fails there. */
+const LOOP_ARGUMENT =
+  "a loop object (forloop) cannot be a for tag's limit, offset or reversed argument; use a number from data";
+
+/**
+ * A bare loop object stored with `assign` (B117f): the renderer's loop object is read through a property later, and
+ * a property it does not expose fails the send. Refusing the store is exact, where tracking each read of the name is not.
+ */
+const LOOP_ASSIGN =
+  "a loop object (forloop) cannot be stored with assign; read its properties inside the loop instead";
 
 /** The fault of a loop property the renderer does not expose (B117e), or undefined for one it does or a computed key. */
 function loopPropertyFault(property: unknown): string | undefined {
@@ -617,6 +643,12 @@ function propertyLoopFault(token: PropertyAccessToken, use: LoopUse): string | u
       }
       if (use === "list") {
         return LOOP_LIST;
+      }
+      if (use === "argument") {
+        return LOOP_ARGUMENT;
+      }
+      if (use === "assign") {
+        return LOOP_ASSIGN;
       }
     } else {
       const fault = loopPropertyFault(property);
@@ -689,27 +721,42 @@ function loopFaultIn(token: unknown, use: LoopUse): string | undefined {
  * judged here. A loop object stored with `assign` is not refused: `{% assign f = forloop %}` then `{{ f.index }}`
  * works, and only printing `f` itself fails, at send.
  */
-function loopFaultOf(value: Value, printed: boolean): string | undefined {
-  return (
-    loopFaultIn(value.initial, printed || value.filters.length > 0 ? "print" : "none") ??
-    argumentsLoopFault(value.filters)
-  );
+function loopFaultOf(value: Value, printed: boolean, assigned: boolean): string | undefined {
+  const use: LoopUse = printed || value.filters.length > 0 ? "print" : assigned ? "assign" : "none";
+  return loopFaultIn(value.initial, use) ?? argumentsLoopFault(value.filters);
+}
+
+/**
+ * Every template in source order, each before its children: the walk the save check makes. It is iterative, so a
+ * deeply nested template cannot exhaust the stack, and it visits each template once.
+ */
+function* walkTemplates(templates: ReadonlyArray<Template>): Generator<Template> {
+  const pending = [...templates].reverse();
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    yield next;
+    // Children in source order: the first one is popped next. A copy is reversed, since a tag such as `capture`
+    // returns its own template list, which the renders that follow still read in order (B117f).
+    const children = next.children ? toValueSync(next.children(false, true)) : [];
+    pending.push(...[...children].reverse());
+  }
 }
 
 function literalFault(templates: ReadonlyArray<Template>): string | undefined {
-  const pending = [...templates].reverse();
-  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+  for (const next of walkTemplates(templates)) {
     const printed = next instanceof Output ? next.token.getText() : "";
     if (bareLoop.test(printed)) {
       return LOOP_PRINT;
     }
-    // A `for` tag's first argument is its list, which the renderer loops over; its other arguments are not (B117e).
+    const isFor = "name" in next && next.name === "for";
+    const isAssign = "name" in next && next.name === "assign";
+    // A `for` tag's first argument is its list, which the renderer loops over; its other arguments are its limit,
+    // offset and reversed, which it reads too (B117f).
     let index = 0;
     for (const argument of next.arguments?.() ?? []) {
-      const list = "name" in next && next.name === "for" && index === 0;
+      const position = index;
       index += 1;
       if (argument instanceof Value) {
-        const loopFault = loopFaultOf(argument, next instanceof Output);
+        const loopFault = loopFaultOf(argument, next instanceof Output, isAssign);
         if (loopFault !== undefined) {
           return loopFault;
         }
@@ -720,15 +767,13 @@ function literalFault(templates: ReadonlyArray<Template>): string | undefined {
           }
         }
       } else {
-        const fault = loopFaultIn(argument, list ? "list" : "none");
+        const use: LoopUse = !isFor ? "none" : position === 0 ? "list" : "argument";
+        const fault = loopFaultIn(argument, use);
         if (fault !== undefined) {
           return fault;
         }
       }
     }
-    // Children in source order: the first one is popped next.
-    const children = next.children ? toValueSync(next.children(false, true)) : [];
-    pending.push(...children.reverse());
   }
   return undefined;
 }
@@ -1099,18 +1144,15 @@ export function createRenderer(clock: Clock, translation: Translation) {
     liquid.registerFilter("times", function (value: unknown, argument: unknown) {
       return arithmetic("times", value, argument, budget(this.context));
     });
-    liquid.registerFilter("divided_by", function (value: unknown, argument: unknown) {
-      // A decimal point in the dividend's text or in the divisor's makes the division a float (B135, B117e): the
-      // number literal `4.0` and text that holds one, quoted or from data. A JSON number has lost its decimal point
-      // once parsed, so data `4.0` divides as 4, and a number literal dividend is its value: `10.0 | divided_by: 4`
-      // is 2, while `'10.0' | divided_by: 4` is 2.5.
-      const written: unknown = this.token.args[0];
-      const decimal =
-        (typeof value === "string" && value.includes(".")) ||
-        (TypeGuards.isNumberToken(written) && written.getText().includes(".")) ||
-        (typeof argument === "string" && argument.includes("."));
-      return arithmetic("divided_by", value, argument, budget(this.context), decimal);
-    });
+    liquid.registerFilter(
+      "divided_by",
+      function (value: unknown, argument: unknown, whole: unknown) {
+        // Division is always a decimal, as LiquidJS's own is (lead decision 1, D134): `10 | divided_by: 4` is 2.5,
+        // whatever the operands were written as. Only the literal `true` (or a JSON true from data) as the second
+        // argument rounds down, as LiquidJS's integer argument does: `10 | divided_by: 4, true` is 2.
+        return arithmetic("divided_by", value, argument, budget(this.context), whole === true);
+      },
+    );
     liquid.registerFilter("round", function (value: unknown, digits: unknown) {
       return round(value, digits, budget(this.context), this.token.args.length > 0);
     });

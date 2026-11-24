@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "데이터 삭제됨",
     "public.dataSent": "데이터가 첨부파일로 이메일로 전송되었습니다.",
     "public.dataSentTitle": "데이터 이메일 발송됨",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "이메일 메시지 불러오기 오류.",
     "public.errorFetchingEmail": "이메일 메시지를 찾을 수 없음",
     "public.errorFetchingLists": "리스트 불러오기 오류. 다시 시도하세요.",

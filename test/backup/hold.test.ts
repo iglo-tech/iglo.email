@@ -22,6 +22,7 @@ import { createEmailer } from "@/messaging/email";
 import { HttpError } from "@/server/response";
 import { startSink } from "@/test/tx/sink";
 import { asBody, readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const refused = async (response: Response) => {
   expect(response.status).toBe(503);
@@ -83,12 +84,13 @@ const recipients = (subject: string) =>
     .filter(({ data }) => data.includes(`Subject: ${subject}`))
     .flatMap(({ to }) => to)
     .sort();
-async function until(condition: () => boolean, what: string, ms = 30_000) {
-  for (const deadline = Date.now() + ms; !condition(); await Bun.sleep(25)) {
-    if (Date.now() > deadline) {
-      throw new Error(`Timed out waiting for ${what}`);
-    }
-  }
+/** Waits for `condition`; it fails by name when `progress` (what the work moves) stops for 30 s. */
+async function until(condition: () => boolean, what: string, progress: () => string) {
+  await untilState(condition, {
+    label: `Timed out waiting for ${what}`,
+    progress,
+    stallMs: 30_000,
+  });
 }
 async function logIn(username: string, password: string) {
   const page = await fetch(`${server!.origin}/admin/login`);
@@ -222,7 +224,11 @@ test("a restored install sends nothing to someone who opted out after the backup
   const output = join(base, "backup");
   await backupTo(output);
 
-  await until(() => recipients("Once only").length === 2, "the campaign");
+  await until(
+    () => recipients("Once only").length === 2,
+    "the campaign",
+    () => recipients("Once only").join(),
+  );
   const unsubscribe = () =>
     fetch(`${server!.origin}/subscription/${scheduled.uuid}/${alice.uuid}`, {
       method: "POST",
@@ -265,7 +271,11 @@ test("a restored install sends nothing to someone who opted out after the backup
   await restart(authorization);
   const open = await fetch(server!.health);
   expect(open.headers.get(HOLD_HEADER)).toBeNull();
-  await until(() => recipients("Once only").length === 3, "the released campaign");
+  await until(
+    () => recipients("Once only").length === 3,
+    "the released campaign",
+    () => recipients("Once only").join(),
+  );
   expect(recipients("Once only")).toEqual([
     "alice@example.test",
     "bob@example.test",
@@ -402,7 +412,11 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
       json({ subscriber_id: reader.id, template_id: template.id, subject: "Before" }),
     ),
   );
-  await until(() => subjects().includes("Before"), "the send before the backup");
+  await until(
+    () => subjects().includes("Before"),
+    "the send before the backup",
+    () => subjects().join(),
+  );
   // B123 (D126): the export pairs the reader through a marketing send made before the hold. The
   // list is one the reader is not on, so the send is skipped and mails nothing.
   const unpaired = await data<{ id: number }>(
@@ -440,12 +454,20 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   let leaverSendRow = await data<{ status: string; uuid: string }>(
     await client(`/api/sends/${leaverSendId}`),
   );
-  for (let i = 0; i < 1200 && leaverSendRow.status !== "sent"; i++) {
-    await Bun.sleep(25);
-    leaverSendRow = await data<{ status: string; uuid: string }>(
-      await client(`/api/sends/${leaverSendId}`),
-    );
-  }
+  await untilState(
+    async () => {
+      leaverSendRow = await data<{ status: string; uuid: string }>(
+        await client(`/api/sends/${leaverSendId}`),
+      );
+      return leaverSendRow.status === "sent";
+    },
+    {
+      label: "the leaver's send",
+      progress: () => leaverSendRow.status,
+      stallMs: 30_000,
+      intervalMs: 25,
+    },
+  );
   expect(leaverSendRow.status).toBe("sent");
   const leaverSendUuid = leaverSendRow.uuid;
   const running = await campaign(client, list.id, "Was running");
@@ -584,10 +606,23 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   await until(
     () => ["Queued", "Queued marketing"].every((subject) => subjects().includes(subject)),
     "the queued sends",
+    () => subjects().join(),
   );
-  await until(() => subjects().includes("Tx subject"), "the sequence step");
-  await until(() => hooks.length > 0, "the webhook");
-  await until(() => sink!.messages.some(({ to }) => to.includes("confirm@example.test")), "opt-in");
+  await until(
+    () => subjects().includes("Tx subject"),
+    "the sequence step",
+    () => subjects().join(),
+  );
+  await until(
+    () => hooks.length > 0,
+    "the webhook",
+    () => String(hooks.length),
+  );
+  await until(
+    () => sink!.messages.some(({ to }) => to.includes("confirm@example.test")),
+    "opt-in",
+    () => String(sink!.messages.length),
+  );
   expect(readdirSync(dataDir)).toContain("iglo-email.db");
 });
 

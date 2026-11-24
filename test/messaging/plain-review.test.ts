@@ -5,18 +5,15 @@ import { plainText } from "@/messaging/plain";
 import { createMessageBudget } from "@/templates/renderer";
 import { asBody } from "@/test/read-body";
 
-const time = async (n: number) => {
-  const html = nested.b(n);
-  const samples: Array<number> = [];
-  for (let run = 0; run < 3; run++) {
-    const started = performance.now();
-    await text(html);
-    samples.push(performance.now() - started);
-  }
-  return samples.sort((a, b) => a - b)[1]!;
-};
-
 const text = (html: string) => plainText(html, createMessageBudget());
+
+const SIZE = 64 * 1024;
+const ROUNDS = 5;
+const STEP_BOUND = 8;
+/** A capped shape's median at 256 KiB must sit under 1/CAP_SHARE of the worst linear case's median at that size. */
+const CAP_SHARE = 8;
+const median = (values: Array<number>) =>
+  [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
 
 // B1: character references in an href decode once. `&amp;` is the HTML form of `&`, and the URL
 // a reader follows has the parameter separator, not `amp;`.
@@ -56,23 +53,18 @@ test("a fragment with no tags at all is the text", async () => {
   expect(await text("Plain words only")).toBe("Plain words only");
 });
 
-// B3: nested links are linear. Each nesting shape finishes in a bounded real time; the bound is
-// generous, since the review measured 41.6 s for this input before the fix.
-test("70k nested links convert within a generous real-time bound", async () => {
+// B3: nested links are linear. The review measured 41.6 s for 70k nested links before the fix. These
+// inputs are past the cap, so they must have no text part; their cost is checked as a ratio below, not
+// against a wall-clock bound, since an absolute bound fails on a loaded host.
+test("70k nested links have no text part past the cap on open elements", async () => {
   const html = '<a href="x">'.repeat(70_000) + "t" + "</a>".repeat(70_000);
-  const started = performance.now();
-  const result = await text(html);
-  const elapsed = performance.now() - started;
   // Past the 1024 cap on open elements (D118 r4), the message has no text part.
-  expect(result).toBe("");
-  expect(elapsed).toBeLessThan(5000);
+  expect(await text(html)).toBe("");
 });
 
-test("70k nested blocks convert within a generous real-time bound", async () => {
+test("70k nested blocks have no text part past the cap on open elements", async () => {
   const html = "<div>".repeat(70_000) + "t" + "</div>".repeat(70_000);
-  const started = performance.now();
   expect(await text(html)).toBe("");
-  expect(performance.now() - started).toBeLessThan(5000);
 });
 
 // r4: every open element counts toward the cap, so nesting within it keeps its text.
@@ -210,8 +202,9 @@ test("data:, vbscript: and javascript: links keep their text and write no URL, h
   expect(await text('<a href="&#1;javascript:alert(1)">Go</a>')).toBe("Go");
 });
 
-// r2 B1: nesting of each kind converts within a tight real-time bound, and its cost grows with the
-// input, not with its square. The cap on pending end-tag handlers is what bounds it (D118).
+// r2 B1: nesting of each kind is bounded, and its cost grows with the input, not with its square. The
+// cap on pending end-tag handlers is what bounds it (D118): past the cap a shape stops early, so its cost
+// is bounded by the cap and it has no text part. Only the worst linear case below stays under the cap.
 const MIB = 1024 * 1024;
 const nested = {
   b: (n: number) => "<b>".repeat(n) + "t" + "</b>".repeat(n),
@@ -227,20 +220,14 @@ const bytesPerLevel: Record<keyof typeof nested, number> = {
   li: 18,
   td: 34,
 };
+/** The nested input of one kind whose HTML is about `size` bytes. */
+const nestedHtml = (kind: keyof typeof nested, size: number) =>
+  nested[kind](Math.floor(size / bytesPerLevel[kind]));
 for (const kind of asBody<Array<keyof typeof nested>>(Object.keys(nested))) {
-  test(`1 MiB of nested ${kind} is under 1 s, and past the 1024 cap it has no text part`, async () => {
-    const html = nested[kind](Math.floor(MIB / bytesPerLevel[kind]));
-    const started = performance.now();
-    expect(await text(html)).toBe("");
-    expect(performance.now() - started).toBeLessThan(1000);
+  test(`1 MiB of nested ${kind} has no text part past the 1024 cap (D118)`, async () => {
+    expect(await text(nestedHtml(kind, MIB))).toBe("");
   });
 }
-
-test("quadrupling nested <b> input costs at most about 6x: the cost is not the square", async () => {
-  const small = await time(Math.floor(MIB / 4 / 7));
-  const large = await time(Math.floor(MIB / 7));
-  expect(large / Math.max(small, 1)).toBeLessThan(6);
-});
 
 // S7: a URL cannot end the <…> early or carry a space into the text part.
 test("a URL's > and whitespace are percent-encoded in the text part", async () => {
@@ -251,8 +238,8 @@ test("a URL's > and whitespace are percent-encoded in the text part", async () =
 
 // r3 B1: implied end tags leave the rewriter's end-tag handlers pending, so the cost grows with the
 // number of implied ends, not with the stack. Each shape repeats a unit with an omitted end tag. The
-// conversion gives up once it holds more handlers than its cap (D118), so the bound is on time, and
-// past the cap the message has no text part.
+// conversion gives up once it holds more handlers than its cap (D118), and past the cap the message has
+// no text part. Each shape gets a test of that at 64 KiB.
 const implied: Record<string, { unit: string; bytes: number }> = {
   "unclosed p": { unit: "<p>x<b>y</b>", bytes: 12 },
   "unclosed li": { unit: "<li>x<b>y</b>", bytes: 13 },
@@ -261,7 +248,7 @@ const implied: Record<string, { unit: string; bytes: number }> = {
   "unclosed dd": { unit: "<dd>x<b>y</b>", bytes: 13 },
   "unclosed option": { unit: "<option>x<b>y</b>", bytes: 17 },
   // r4 (the stray end tag): each </q> searches every open element, so open spans and a stack of divs
-  // closed by a stray end tag are timed the same way as the implied ends above.
+  // closed by a stray end tag hit the same cap as the implied ends above.
   "unclosed span with stray end tags": { unit: "<span>x</q>", bytes: 11 },
   "div stack then stray end tags": { unit: "<p>x</q>", bytes: 8 },
 };
@@ -275,47 +262,91 @@ const prefix: Record<string, string> = {
   "unclosed span with stray end tags": "",
   "div stack then stray end tags": "<div>".repeat(256),
 };
+/** The implied-end input of one kind whose HTML is about `size` bytes. */
+const impliedHtml = (kind: string, size: number) =>
+  prefix[kind]! + implied[kind]!.unit.repeat(Math.floor(size / implied[kind]!.bytes));
 for (const kind of Object.keys(implied)) {
-  test(`${kind} at 256 KiB and 1 MiB: 4x the input costs at most 5x the time, and 1 MiB is under 1 s`, async () => {
-    const { unit, bytes } = implied[kind]!;
-    const build = (size: number) => prefix[kind]! + unit.repeat(Math.floor(size / bytes));
-    const time = async (size: number) => {
-      const samples: Array<number> = [];
-      for (let run = 0; run < 3; run++) {
-        const started = performance.now();
-        await text(build(size));
-        samples.push(performance.now() - started);
-      }
-      return samples.sort((a, b) => a - b)[1]!;
-    };
-    const small = await time(256 * 1024);
-    const large = await time(MIB);
-    expect(large / Math.max(small, 5)).toBeLessThanOrEqual(5);
-    expect(large).toBeLessThan(1000);
+  // The cap, without timing: with the cap disabled, each of these shapes has text at this size, so the
+  // test fails every shape then.
+  test(`${kind} at 64 KiB has no text part: the end-tag cap stops it (D118)`, async () => {
+    expect(await text(impliedHtml(kind, SIZE))).toBe("");
   });
 }
 
 // r4: the worst case the cap still allows: 1023 open elements, then stray end tags, each of which
 // searches the open elements. It was one absolute sample under 1 s, which failed at 1006-1181 ms on a
-// loaded host (B137). It is now a ratio within the run, the median of three at 64 KiB and at 1 MiB.
-// Linear work gives about 16x for 16x the input (measured 14-18x on macOS and 14-15x in the Linux
-// container); quadratic work gives 256x. The bound of 32x sits between the two.
+// loaded host (B137). It is the only shape here that stays under the cap at every size, so its cost is
+// real work at each size, and it is the one growth check. The capped shapes stop at the cap in a few
+// milliseconds, where a ratio of two such times measured 13x and 19x under load and says nothing about
+// linear work, so they are compared with this shape at one size, 256 KiB, and not with each other. It
+// catches quadratic work on the output, such as joining the output parts every 64 writes.
 const worstStrayEnds = (size: number) =>
   "<span>".repeat(1023) + "x</q>".repeat(Math.floor(size / 5));
-const worstStrayEndsTime = async (size: number) => {
-  const samples: Array<number> = [];
-  for (let run = 0; run < 3; run++) {
-    const started = performance.now();
-    await text(worstStrayEnds(size));
-    samples.push(performance.now() - started);
-  }
-  return samples.sort((a, b) => a - b)[1]!;
+/** One line break per five bytes: the "x<br>" growth step (B118b r3). */
+const lineBreaks = (size: number) => "x<br>".repeat(Math.floor(size / 5));
+/** The size the capped shapes are compared at: a conversion that runs past the cap is quadratic there. */
+const CAP_SIZE = 4 * SIZE;
+/** One conversion's wall time, in milliseconds. */
+const timed = async (html: string) => {
+  const started = performance.now();
+  await text(html);
+  return performance.now() - started;
 };
-test("the worst linear case, 1023 open spans then stray end tags, costs at most 32x for 16x the input", async () => {
-  const small = await worstStrayEndsTime(64 * 1024);
-  const large = await worstStrayEndsTime(1024 * 1024);
-  expect(large / Math.max(small, 5)).toBeLessThanOrEqual(32);
-});
+/**
+ * Linear growth and the cap's stop, in the same rounds. The worst linear case is timed at 64 KiB, 256 KiB
+ * and 1 MiB (1x, 4x and 16x): linear work gives about 4x for each 4x step and quadratic work about 16x, so a
+ * bound of 8x per step sits a factor of 2 from each. Each capped shape (the nested kinds and the implied
+ * ends) at 256 KiB stops at the cap and costs a few milliseconds, while a conversion that goes on past the
+ * cap takes hundreds of milliseconds per shape there. Its median over the rounds must sit under 1/CAP_SHARE
+ * of the worst linear case's median at the same size. Before the rounds, the linear reference is timed and
+ * each capped shape runs once: a single sample at or above half the reference fails at once, so a regression
+ * fails at the first slow shape and does not run every round. Within a round every input runs in turn, so
+ * host load that slows one slows the others in that round too, and each input's time is the median over the
+ * rounds.
+ */
+test(`the worst linear case has each 4x step of input under ${STEP_BOUND}x, and each capped shape at 256 KiB stops (under 1/${CAP_SHARE} of it)`, async () => {
+  const capped = [
+    ...asBody<Array<keyof typeof nested>>(Object.keys(nested)).map((kind) => ({
+      name: `nested ${kind}`,
+      html: nestedHtml(kind, CAP_SIZE),
+    })),
+    ...Object.keys(implied).map((kind) => ({ name: kind, html: impliedHtml(kind, CAP_SIZE) })),
+  ];
+  // The single-sample bound is looser than 1/CAP_SHARE on purpose: a correct shape's single sample reached
+  // 8.7 ms against a 12.3 ms bound on a loaded host, so that bound would flake. Half the reference still
+  // fails the cost-only regression at once (736 ms per shape at 256 KiB).
+  const reference: Array<number> = [];
+  for (let round = 0; round < ROUNDS; round++) {
+    reference.push(await timed(worstStrayEnds(CAP_SIZE)));
+  }
+  const grossLimit = median(reference) / 2;
+  for (const c of capped) {
+    expect({ shape: c.name, slow: (await timed(c.html)) >= grossLimit }).toEqual({
+      shape: c.name,
+      slow: false,
+    });
+  }
+  // B118b r3: "x<br>" gets its own 64 KiB to 256 KiB step, which a per-emit join (the join mutant) makes
+  // quadratic while the stray-end shape above does not.
+  const inputs = [SIZE, 4 * SIZE, 16 * SIZE].map(worstStrayEnds).concat(
+    [SIZE, 4 * SIZE].map(lineBreaks),
+    capped.map((c) => c.html),
+  );
+  const samples = inputs.map((): Array<number> => []);
+  for (let round = 0; round < ROUNDS; round++) {
+    for (const [i, input] of inputs.entries()) {
+      samples[i]!.push(await timed(input));
+    }
+  }
+  const [one, four, sixteen, breakOne, breakFour, ...cappedTimes] = samples.map((times) =>
+    median(times),
+  );
+  expect(four! / one!).toBeLessThan(STEP_BOUND);
+  expect(sixteen! / four!).toBeLessThan(STEP_BOUND);
+  expect(breakFour! / breakOne!).toBeLessThan(STEP_BOUND);
+  const limit = four! / CAP_SHARE;
+  expect(capped.flatMap((c, i) => (cappedTimes[i]! >= limit ? [c.name] : []))).toEqual([]);
+}, 30_000);
 
 test("a message past the implied-end cap gives no text part, and its HTML is still converted by the caller", async () => {
   expect(await text("<p>x".repeat(4000))).toBe("");

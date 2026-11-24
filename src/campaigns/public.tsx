@@ -224,6 +224,8 @@ export function registerCampaignPublicRoutes(
               );
         return save ?? unpaired(t);
       }
+      // Whether this POST changed anything: the placeholder's answer says so when nothing was pending (B117f).
+      let changed = false;
       writeTransaction(deps.db, () => {
         // Re-read inside the write: unsubscribe from the campaign's lists, or blocklist.
         const found = pairing(camp, subUuid);
@@ -234,8 +236,9 @@ export function registerCampaignPublicRoutes(
         // The placeholder campaign is the opt-in mail's link: it ends pending double opt-ins only, never an
         // active single opt-in (B117b, D137 item 3).
         if (found.campaign === null) {
-          const changed = deps.subscribers.unsubscribeDoubleOptinPending(sub.id);
-          for (const list of changed) {
+          const ended = deps.subscribers.unsubscribeDoubleOptinPending(sub.id);
+          changed = ended.length > 0;
+          for (const list of ended) {
             deps.effects.unsubscribed({
               subscriberId: sub.id,
               listId: list,
@@ -260,6 +263,10 @@ export function registerCampaignPublicRoutes(
           });
         }
       });
+      // The placeholder's POST with nothing pending ended nothing, so it does not say it unsubscribed (B117f).
+      if (camp === dummyUUID && !changed) {
+        return page(t, 200, t.T("public.emailSettings"), t.T("public.nothingToManage"));
+      }
       return page(t, 200, t.T("globals.terms.unsubscribed"), t.T("public.unsubbedInfo"));
     },
     ...limit,

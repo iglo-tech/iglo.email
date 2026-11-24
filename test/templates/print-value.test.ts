@@ -125,3 +125,19 @@ test("a loop object printed on its own is a template fault: it is refused at sav
   expect(template.body.message).toContain("forloop");
   expect(template.body.message).toContain("cannot be printed");
 });
+
+// The two save guards for a printed loop object (renderer.ts: the bare-print pattern, and the loop-property check)
+// cover different names: the pattern also knows tablerowloop, which the property check does not. So this case is
+// refused by the pattern alone, and the forloop case above by either.
+test("a tablerowloop printed on its own is refused at save as a loop object", async () => {
+  const f = await open();
+  const template = await f.json("/api/templates", "POST", {
+    name: "tablerow-print",
+    type: "tx",
+    subject: "s",
+    body: "<p>{{ tablerowloop }}</p>",
+  });
+  expect(template.status).toBe(400);
+  expect(template.body.message).toContain("tablerowloop");
+  expect(template.body.message).toContain("cannot be printed");
+});

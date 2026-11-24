@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "تم حذف البيانات",
     "public.dataSent": "تم إرسال بياناتك إلى بريدك كمرفق.",
     "public.dataSentTitle": "تم إرسال البيانات",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "خطأ في جلب الرسالة.",
     "public.errorFetchingEmail": "الرسالة غير موجودة",
     "public.errorFetchingLists": "خطأ في جلب القوائم. حاول مرة أخرى.",

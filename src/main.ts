@@ -1,4 +1,5 @@
 // Process startup and shutdown are adapted from listmonk's cmd/main.go.
+import { writeSync } from "node:fs";
 import { createRealClock } from "@/clock";
 import { holdDataDirectory } from "@/db/instance-lock";
 import { helpText, parseBootstrap, versionText } from "@/config/bootstrap";
@@ -14,6 +15,20 @@ import type { Project } from "@/projects/compose";
 
 // Process-wide budget (invariant 7): one budget for the process, however many projects it serves.
 const BOUNCE_WEBHOOK_PER_MINUTE = 6000;
+
+/**
+ * Writes the one line that names a port of 0 once it is bound (D144). It is written synchronously
+ * to the stdout descriptor, so it is out before any loop starts. A stdout that no one reads (a
+ * closed pipe) is the caller's choice: the write fails, and the server serves on, with no error
+ * output and no change to its exit code.
+ */
+function reportPort(port: number | undefined): void {
+  try {
+    writeSync(1, `listening on port ${port}\n`);
+  } catch {
+    // No reader for stdout: the line is lost, and nothing else depends on it.
+  }
+}
 
 /** `inspect` sees the composed router before anything listens; a test may throw to stop there. */
 export async function main(inspect?: (router: Router) => void): Promise<void> {
@@ -62,6 +77,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     // started, so the finally block closes the stores and releases the lock and nothing else.
     const server = startServer(composed.app, composed.router);
     composed.attach(server);
+    // A port of 0 is known only now, so the one line that names it comes right after the bind (D144).
+    if (bootstrap.config.port === 0) {
+      reportPort(server.port);
+    }
     await new Promise<void>((resolve, reject) => {
       let closing = false;
       const shutdown = (failure?: unknown) => {

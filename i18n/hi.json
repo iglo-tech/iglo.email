@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "डेटा हटाया गया",
     "public.dataSent": "आपका डेटा अटैचमेंट के रूप में आपको ई-मेल कर दिया गया है।",
     "public.dataSentTitle": "डेटा ई-मेल किया गया",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "ई-मेल संदेश प्राप्त करने में त्रुटि।",
     "public.errorFetchingEmail": "ई-मेल संदेश नहीं मिला",
     "public.errorFetchingLists": "लिस्ट्स प्राप्त करने में त्रुटि। कृपया पुनः प्रयास करें।",

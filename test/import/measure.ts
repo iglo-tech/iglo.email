@@ -18,6 +18,7 @@ import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { createWebhookStore } from "@/webhooks/store";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 const executable = resolve(process.argv[2] ?? join(repository, "dist/iglo.email"));
@@ -94,15 +95,23 @@ async function overHttp() {
         return { result, pixel: summary(gaps.pixel), page: summary(gaps.page) };
       };
       const finish = async () => {
-        while (true) {
-          const status = await json<{ status: string; imported: number }>(
-            "/api/import/subscribers",
-          );
-          if (status.status === "finished" || status.status === "failed") {
-            return status;
-          }
-          await Bun.sleep(50);
+        let latest: { status: string; imported: number } | undefined;
+        await untilState(
+          async () => {
+            latest = await json<{ status: string; imported: number }>("/api/import/subscribers");
+            return latest.status === "finished" || latest.status === "failed";
+          },
+          {
+            label: "import finish",
+            progress: () => JSON.stringify(latest ?? null),
+            stallMs: 60_000,
+            intervalMs: 50,
+          },
+        );
+        if (!latest) {
+          throw new Error("import finish: no status read");
         }
+        return latest;
       };
       const importing = async (params: unknown, content: string) => {
         const form = new FormData();
@@ -267,9 +276,12 @@ async function lockHolds() {
         listIds: [listId],
       });
       await slot.release();
-      while (importer.status().status === "importing") {
-        await Bun.sleep(20);
-      }
+      await untilState(() => importer.status().status !== "importing", {
+        label: "measured import",
+        progress: () => importer.status().status,
+        stallMs: 60_000,
+        intervalMs: 20,
+      });
       const result = importer.status();
       if (result.status !== "finished") {
         throw new Error(importer.logs());

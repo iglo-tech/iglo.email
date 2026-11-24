@@ -1,8 +1,12 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { admin, api, get, login, userWith } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { startUserFixture } from "@/test/users/fixture";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const sent = "If the account is active, you will receive a password reset email.";
 const form = { "content-type": "application/x-www-form-urlencoded" };
@@ -29,19 +33,31 @@ const reset = (link: string, password: string, password2 = password, extra = {})
   });
 /** The newest mail to the address, waited for: the handler answers before it sends. */
 async function resetLink(address: string, seen = 0): Promise<string> {
-  for (let attempt = 0; attempt < 200; attempt++) {
-    const response = await fetch(`${f.origin}/fixture/mail`);
-    const { data } = await readJson<{
-      data: Array<{ to: Array<string>; body: string }>;
-    }>(response);
-    const mails = data.filter((mail) => mail.to[0] === address);
-    if (mails.length > seen) {
+  let found = 0;
+  let link = "";
+  await untilState(
+    async () => {
+      const response = await fetch(`${f.origin}/fixture/mail`);
+      const { data } = await readJson<{
+        data: Array<{ to: Array<string>; body: string }>;
+      }>(response);
+      const mails = data.filter((mail) => mail.to[0] === address);
+      found = mails.length;
+      if (mails.length <= seen) {
+        return false;
+      }
       const href = /href="http:\/\/fixture\.test(\/admin\/reset\?[^"]+)"/.exec(mails.at(-1)!.body);
-      return href![1]!.replaceAll("&amp;", "&");
-    }
-    await Bun.sleep(5);
-  }
-  throw new Error(`No mail for ${address}`);
+      link = href![1]!.replaceAll("&amp;", "&");
+      return true;
+    },
+    {
+      label: `No mail for ${address}`,
+      progress: () => String(found),
+      stallMs: 10_000,
+      intervalMs: 5,
+    },
+  );
+  return link;
 }
 const mailCount = async () =>
   (await readJson<{ data: Array<unknown> }>(await fetch(`${f.origin}/fixture/mail`))).data.length;

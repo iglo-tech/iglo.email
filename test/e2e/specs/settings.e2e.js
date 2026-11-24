@@ -29,8 +29,11 @@ async function settings(page) {
   return res.body.data;
 }
 
-// Saving applies at once; the button comes back when the request is done.
+// Saving applies at once; the button comes back when the request is done. Oat stacks the toasts while
+// the page is not hovered, so only the newest one shows its text. Clearing the toasts first makes the
+// save's own toast the only one `getByText` can match.
 async function save(page, status = 200) {
+  await page.evaluate(() => window.ot.toast.clear());
   const response = page.waitForResponse(
     (r) => new URL(r.url()).pathname === "/api/settings" && r.request().method() === "PUT",
   );
@@ -125,6 +128,31 @@ test("validates sender defaults and offers the configured senders to a campaign"
   const options = page.locator("#campaign-from-emails option");
   await expect(options).toHaveCount(3);
   await expect(options.nth(2)).toHaveAttribute("value", templated);
+});
+
+// B117f (D136 item 1): the notification field holds one address per top-level comma, so a comma inside a quoted
+// display name stays in its address. The form splits the field before it saves; the API keeps an array.
+test("saves notification addresses whose display name holds a comma, one entry per address", async ({
+  page,
+}) => {
+  const named = '"Ops, Team" <ops@example.test>';
+  const other = "other@example.test";
+  const field = page.locator('[name="app.notify_emails"]');
+  await field.fill(`${named}, ${other}`);
+  await save(page);
+  expect((await settings(page))["app.notify_emails"]).toEqual([named, other]);
+  await page.reload();
+  await expect(field).toHaveValue(`${named}, ${other}`);
+
+  // A save with nothing changed sends the same two entries back.
+  await save(page);
+  expect((await settings(page))["app.notify_emails"]).toEqual([named, other]);
+
+  // An escaped quote inside the display name does not end it, so the comma after it is still inside.
+  const escaped = String.raw`"A \"B, C\"" <a@example.test>`;
+  await field.fill(`${escaped}, b@example.test`);
+  await save(page);
+  expect((await settings(page))["app.notify_emails"]).toEqual([escaped, "b@example.test"]);
 });
 
 test("saves edits across tabs, enables SMTP and deletes a server", async ({ page }) => {

@@ -78,6 +78,39 @@ function component() {
 
   const lines = (value) => value.split('\n').map((v) => v.trim()).filter((v) => v !== '');
 
+  // B117f (D136 item 1): the administrator field holds one address per comma. A comma inside a quoted display
+  // name, a comment or an angle address belongs to that address, so only a top-level comma separates two.
+  const addressList = (value) => {
+    const entries = [];
+    let entry = '';
+    let quoted = false;
+    let depth = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      const c = value[i];
+      if (quoted && c === '\\') {
+        entry += c + (value[i + 1] ?? '');
+        i += 1;
+        continue;
+      }
+      if (c === '"') {
+        quoted = !quoted;
+      } else if (!quoted) {
+        if (c === '<' || c === '(') {
+          depth += 1;
+        } else if ((c === '>' || c === ')') && depth > 0) {
+          depth -= 1;
+        } else if (c === ',' && depth === 0) {
+          entries.push(entry);
+          entry = '';
+          continue;
+        }
+      }
+      entry += c;
+    }
+    entries.push(entry);
+    return entries.map((v) => v.trim()).filter((v) => v !== '');
+  };
+
   // Keep search index+DOM references outside of Alpine.
   let searchIndex = [];
   let tabButtons = [];
@@ -439,7 +472,7 @@ function component() {
       });
 
       form['app.notify_emails'] = typeof form['app.notify_emails'] === 'string'
-        ? form['app.notify_emails'].split(',').map((v) => v.trim()).filter((v) => v !== '')
+        ? addressList(form['app.notify_emails'])
         : (form['app.notify_emails'] || []);
 
       try {

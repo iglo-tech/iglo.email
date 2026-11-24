@@ -130,6 +130,10 @@ export async function txFixture(
   const testClock = new TestClock();
   const clock = options.clock ?? testClock;
   const db = openDatabase(directory);
+  const openSends = () =>
+    asBody<{ n: bigint }>(
+      db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
+    ).n;
   runMigrations(db, directory, clock, productionMigrations);
   const errors: Array<unknown> = [];
   const app = createApp({
@@ -596,17 +600,24 @@ export async function txFixture(
     count: () => Number(asBody<{ n: bigint }>(db.query("SELECT count(*) AS n FROM sends").get()).n),
     settings: settingsStore,
     mailTo: (address: string) => sink.messages.filter((m) => m.to.includes(address)),
-    async drain() {
-      for (
-        let i = 0;
-        i < 200 &&
-        asBody<{ n: bigint }>(
-          db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
-        ).n > 0n;
-        i++
-      ) {
+    /**
+     * Advances the injected clock a second per step, at most 200 steps, while a send is open. The
+     * bound is in injected time, so every host sees the same window: a send that never settles uses
+     * all 200 steps. A send that settles also takes real time: each step yields 5 ms so the outbox
+     * and SMTP I/O can run, so a settling drain is bounded by its steps and by that real time.
+     * Fails by name unless exactly `expectOpen` (default 0) sends are still open.
+     */
+    async drain(expectOpen = 0) {
+      let open = Number(openSends());
+      for (let i = 0; i < 200 && open > 0; i++) {
         testClock.advance(1000);
         await Bun.sleep(5);
+        open = Number(openSends());
+      }
+      if (open !== expectOpen) {
+        throw new Error(
+          `drain: ${open} send(s) still queued or sending after 200 steps (expected ${expectOpen})`,
+        );
       }
     },
     async close() {

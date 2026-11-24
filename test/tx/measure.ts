@@ -2,6 +2,7 @@
 // "Before" is the M2.2 journal producer path (enqueue + outbox loop); "after" is POST /api/tx.
 import { createRealClock } from "@/clock";
 import { txFixture } from "@/test/tx/fixture";
+import { untilState } from "@/test/wait";
 
 const N = Number(process.env.TX_MEASURE_N ?? "200");
 const stats = (values: Array<number>) => {
@@ -15,13 +16,12 @@ const stats = (values: Array<number>) => {
 };
 const rss = () => Math.round(process.memoryUsage().rss / 1_048_576);
 async function drain(f: Awaited<ReturnType<typeof txFixture>>, count: number) {
-  const deadline = performance.now() + 120_000;
-  while (f.sink.messages.length < count && performance.now() < deadline) {
-    await Bun.sleep(1);
-  }
-  if (f.sink.messages.length < count) {
-    throw new Error("drain timeout");
-  }
+  await untilState(() => f.sink.messages.length >= count, {
+    label: "drain timeout",
+    progress: () => String(f.sink.messages.length),
+    stallMs: 120_000,
+    intervalMs: 1,
+  });
 }
 const results: Record<string, unknown> = { n: N, bun: Bun.version, rssStartMiB: rss() };
 

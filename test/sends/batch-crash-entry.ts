@@ -5,6 +5,7 @@
 //   BATCH_CRASH_MODE=run   start the outbox alone and print "ready"
 import { createRealClock } from "@/clock";
 import { seed, startRuntime } from "@/test/scheduler/runtime";
+import { untilState } from "@/test/wait";
 
 const dataDir = process.env.BATCH_CRASH_DIR!;
 const smtpPort = Number(process.env.BATCH_CRASH_SMTP_PORT);
@@ -17,13 +18,12 @@ if (process.env.BATCH_CRASH_MODE === "seed") {
     live.db
       .query<{ n: number }, []>("SELECT count(*) AS n FROM sends WHERE status = 'queued'")
       .get()!.n;
-  const deadline = Date.now() + 30_000;
-  while (queued() < count) {
-    if (Date.now() > deadline) {
-      throw new Error("seed: sends were not queued");
-    }
-    await Bun.sleep(20);
-  }
+  await untilState(() => queued() >= count, {
+    label: "seed: sends were not queued",
+    progress: () => String(queued()),
+    stallMs: 30_000,
+    intervalMs: 20,
+  });
   await live.close();
   process.exit(0);
 }

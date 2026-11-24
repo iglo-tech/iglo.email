@@ -1,5 +1,5 @@
 // B2 bounded retention through the HTTP API, the public pages and the injected clock.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { createAnalyticsStore } from "@/analytics/store";
 import type { Clock } from "@/clock";
 import { permissions } from "@/roles/roles";
@@ -11,6 +11,10 @@ import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const noop = () => {};
 const cookie = (id: string) => ({ cookie: `session=${id}` });
@@ -236,13 +240,19 @@ test("finished deliveries go after 30 days, pending ones never, and the API stay
       (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data,
     );
   const until = async (check: (rows: Array<any>) => boolean) => {
-    const deadline = Date.now() + 10_000;
-    while (!check((await list()).results)) {
-      if (Date.now() > deadline) {
-        throw new Error("Condition not reached");
-      }
-      await Bun.sleep(2);
-    }
+    let rows: Array<any> = [];
+    await untilState(
+      async () => {
+        rows = (await list()).results;
+        return check(rows);
+      },
+      {
+        label: "Condition not reached",
+        progress: () => JSON.stringify(rows),
+        stallMs: 10_000,
+        intervalMs: 2,
+      },
+    );
   };
   queue();
   await until((rows) => rows[0]?.status === "delivered");
@@ -542,10 +552,12 @@ test("a failed send can be resent until retention, and a resent one stays tracea
   f.clock.advance(day);
   const child = await f.json(`/api/sends/${kept.id}/resend`, "POST");
   expect(child.status).toBe(200);
-  const until = Date.now() + 10_000;
-  while (f.sink.messages.length < 1 && Date.now() < until) {
-    await Bun.sleep(2);
-  }
+  await untilState(() => f.sink.messages.length >= 1, {
+    label: "retention test mail",
+    progress: () => String(f.sink.messages.length),
+    stallMs: 10_000,
+    intervalMs: 2,
+  }).catch(() => undefined);
   // The copy carries its parent's links, so the parent's row answers for them.
   const mail = f.sink.messages[0]!.data.replaceAll("=\r\n", "");
   const path = new RegExp(`/m/${kept.uuid}/link/[0-9a-f-]{36}`).exec(mail)![0];

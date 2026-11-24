@@ -1,4 +1,5 @@
 import { createApp } from "@/app";
+import type { ErrorLogger } from "@/app";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,7 +98,15 @@ function wrapper(name: string): Middleware {
 }
 
 export function startFixture(
-  options: { clock?: Clock; i18n?: Translation; routePaths?: ReadonlyArray<string> } = {},
+  options: {
+    clock?: Clock;
+    i18n?: Translation;
+    routePaths?: ReadonlyArray<string>;
+    /** No public not-found: a bare router, which answers unknown pages with a bodyless 404. */
+    bare?: boolean;
+    /** The production logger, so an unexpected error reaches this process's stderr (B110). */
+    logger?: ErrorLogger;
+  } = {},
 ) {
   const errors: Array<unknown> = [];
   const clock = options.clock ?? new TestClock();
@@ -115,16 +124,18 @@ export function startFixture(
     clock,
     db,
     i18n,
-    logger: {
+    logger: options.logger ?? {
       error: (error) => errors.push(error),
       attention: (message) => errors.push(new Error(message)),
     },
   });
-  const router = options.routePaths ? new Router() : createRouter();
+  const router = options.routePaths || options.bare ? new Router() : createRouter();
   // Unmatched paths answer the branded public 404, as in production (B121).
-  router.notFound("/", (context) =>
-    publicNotFound(context.app.i18n, context.request.method, fixturePageSite()),
-  );
+  if (!options.bare) {
+    router.notFound("/", (context) =>
+      publicNotFound(context.app.i18n, context.request.method, fixturePageSite()),
+    );
+  }
   function start() {
     try {
       const server = startServer(app, router);

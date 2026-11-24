@@ -9,6 +9,7 @@ import type { Credentials } from "@/test/contract/types";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { startReceiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const cookie = (response: Response, name: string) =>
   response.headers
@@ -712,12 +713,12 @@ export async function runOpenApiContract(target: {
       },
     });
     const failedId = failing.body.data.sends[0].id;
-    for (const deadline = Date.now() + 15_000; ; await Bun.sleep(50)) {
-      if ((await send("GET", `/api/sends/${failedId}`)).body.data.status === "failed") {
-        break;
-      }
-      check(Date.now() < deadline, "failed-send-wait");
-    }
+    let sendStatus = "";
+    await untilState(
+      async () =>
+        (sendStatus = (await send("GET", `/api/sends/${failedId}`)).body.data.status) === "failed",
+      { label: "failed-send-wait", progress: () => sendStatus, stallMs: 10_000 },
+    );
     await send("PUT", "/api/settings/smtp", smtpAt(sink.port));
     await op("POST /api/sends/{id}/resend", { params: { id: failedId } });
 
@@ -940,17 +941,16 @@ export async function runOpenApiContract(target: {
         body: { sequence_id: immediate.id, subscriber_id: subscriber.id },
       })
     ).body.data;
-    for (const deadline = Date.now() + 15_000; ; await Bun.sleep(50)) {
-      const timeline = await send("GET", `/api/enrollments/${running.id}/timeline`);
-      if (
-        asBody<{ entries: Array<{ type: string }> }>(timeline.body.data).entries.some(
-          ({ type }) => type === "step",
-        )
-      ) {
-        break;
-      }
-      check(Date.now() < deadline, "sequence-step-wait");
-    }
+    let entries = 0;
+    await untilState(
+      async () => {
+        const timeline = await send("GET", `/api/enrollments/${running.id}/timeline`);
+        const { entries: rows } = asBody<{ entries: Array<{ type: string }> }>(timeline.body.data);
+        entries = rows.length;
+        return rows.some(({ type }) => type === "step");
+      },
+      { label: "sequence-step-wait", progress: () => String(entries), stallMs: 10_000 },
+    );
     await op("GET /api/enrollments/{id}/timeline", {
       params: { id: running.id },
     });
@@ -1115,12 +1115,13 @@ export async function runOpenApiContract(target: {
       body: { status: "running" },
     });
     await op("GET /api/campaigns/running/stats");
-    for (const deadline = Date.now() + 15_000; ; await Bun.sleep(50)) {
-      if ((await send("GET", `/api/campaigns/${campaign.id}`)).body.data.status === "finished") {
-        break;
-      }
-      check(Date.now() < deadline, "campaign-finish-wait");
-    }
+    let campaignStatus = "";
+    await untilState(
+      async () =>
+        (campaignStatus = (await send("GET", `/api/campaigns/${campaign.id}`)).body.data.status) ===
+        "finished",
+      { label: "campaign-finish-wait", progress: () => campaignStatus, stallMs: 10_000 },
+    );
     // A view and a click, through the real pixel and redirect.
     const db = new Database(join(target.dataDir, "iglo-email.db"), {
       readonly: true,
@@ -1249,12 +1250,13 @@ export async function runOpenApiContract(target: {
       }),
     );
     await op("POST /api/import/subscribers", { raw: csv });
-    for (const deadline = Date.now() + 10_000; ; await Bun.sleep(25)) {
-      if ((await send("GET", "/api/import/subscribers")).body.data.status !== "importing") {
-        break;
-      }
-      check(Date.now() < deadline, "import-wait");
-    }
+    let importStatus = "";
+    await untilState(
+      async () =>
+        (importStatus = (await send("GET", "/api/import/subscribers")).body.data.status) !==
+        "importing",
+      { label: "import-wait", progress: () => importStatus, stallMs: 10_000 },
+    );
     await op("GET /api/import/subscribers");
     await op("DELETE /api/import/subscribers");
 
@@ -1709,11 +1711,27 @@ export async function runOpenApiContract(target: {
     // Three answer an absent ID with an invalid_fields refusal that their messages name, and that
     // not_found would not describe: a delete that checks the last active Super Admin before
     // the lookup, a delete refused for "non-existent or default" (one message for both), and a
-    // default set of a template that is not a campaign's. Their status and message stay listmonk's.
+    // default set of a template that is not a campaign's. The first two keep listmonk's status and
+    // message. The default set answers 400 where upstream answers 200 with the template list: a
+    // marked difference (src/openapi/differences.ts, "Template default target").
     const refusedAbsent = new Set([
       "DELETE /api/users/{id}",
       "DELETE /api/templates/{id}",
       "PUT /api/templates/{id}/default",
+    ]);
+    // B117c r1: these answer 200 for a missing ID, as upstream does (checked against upstream at
+    // 6fcd95f): the three listed reads and writes, and the deletes that answer 200 for a delete of
+    // nothing. Each is pinned to its status, so a 2xx from any other endpoint fails instead of passing
+    // as "any 2xx".
+    const absentAnswers = new Map<string, number>([
+      ["PUT /api/subscribers/{id}/blocklist", 200],
+      ["GET /api/subscribers/{id}/bounces", 200],
+      ["GET /api/subscribers/{id}/activity", 200],
+      ["DELETE /api/roles/{id}", 200],
+      ["DELETE /api/lists/{id}", 200],
+      ["DELETE /api/subscribers/{id}", 200],
+      ["DELETE /api/subscribers/{id}/bounces", 200],
+      ["DELETE /api/bounces/{id}", 200],
     ]);
     const absentFailures: Array<string> = [];
     for (const { key, operation } of operations) {
@@ -1732,10 +1750,12 @@ export async function runOpenApiContract(target: {
             expect: [200, 400, 404],
           });
           const code = reply.body?.code;
+          const pinned = absentAnswers.get(key);
           check(
-            reply.status < 400 ||
-              code === "not_found" ||
-              (refusedAbsent.has(key) && code === "invalid_fields"),
+            pinned !== undefined
+              ? reply.status === pinned
+              : reply.status >= 400 &&
+                  (code === "not_found" || (refusedAbsent.has(key) && code === "invalid_fields")),
             `not-found-${key} ${reply.status} ${reply.text.slice(0, 200)}`,
           );
         } catch (error) {

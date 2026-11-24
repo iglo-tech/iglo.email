@@ -770,13 +770,6 @@ export function createSubscriberStore(
     rename(id: bigint, name: string) {
       q.get("subscriber-rename").run(name, clock.now().toISOString(), id);
     },
-    /** Adapted from unsubscribe-by-campaign with unsubAllUnconfirmed. Returns changed lists. */
-    unsubscribeUnconfirmed(id: bigint): Array<bigint> {
-      const rows = q.get("membership-unsubscribe-unconfirmed").all(clock.now().toISOString(), id);
-      const changed = (rows as Array<{ list_id: bigint }>).map((row) => row.list_id);
-      consentChanged(id, false, changed);
-      return changed;
-    },
     /**
      * A transactional link's cancel (B126, D123 item 8): ends the unconfirmed memberships of double
      * opt-in lists only. An unconfirmed single opt-in membership is active and stays. Returns changed lists.

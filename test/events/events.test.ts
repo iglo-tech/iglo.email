@@ -7,6 +7,7 @@ import { eventsFixture } from "@/test/events/fixture";
 import type { JsonObject } from "@/test/json-object";
 import type { EventsFixture } from "@/test/events/fixture";
 import { asBody, readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const fixtures: Array<EventsFixture> = [];
 afterEach(() => {
@@ -587,9 +588,12 @@ test("single-event admission is bounded and recovers after saturation", async ()
       }),
     ),
   );
-  for (let i = 0; i < 200 && held.length < MAX_SINGLES_IN_FLIGHT; i++) {
-    await Bun.sleep(5);
-  }
+  await untilState(() => held.length >= MAX_SINGLES_IN_FLIGHT, {
+    label: "singles in flight",
+    progress: () => String(held.length),
+    intervalMs: 5,
+  }).catch(() => undefined);
+  // Kept: a request sent before the held singles reach the server would not be the shed one.
   await Bun.sleep(50);
   const shed = await f.post(event({ email: "over@example.com" }));
   expect(shed.status).toBe(429);

@@ -202,11 +202,26 @@ export async function publicFixture() {
         (await f.json(`/api/subscribers/${id}`)).body.data.lists,
       ).find((item) => item.id === list)?.subscription_status,
     mailTo: (address: string) => f.sink.messages.filter((m) => m.to.includes(address)),
-    async drain() {
+    /**
+     * Advances the injected clock a second per step, at most 200 steps, while mail is queued or a
+     * send is open. The bound is in injected time, so every host sees the same window: a send that
+     * never settles uses all 200 steps. A send that settles also takes real time: each step yields
+     * 5 ms so the outbox and SMTP I/O can run, so a settling drain is bounded by its steps and by
+     * that real time. Fails by name unless exactly `expectOpen` (default 0) mail or sends are still
+     * open at the end, so a send left open cannot pass a no-mail check.
+     */
+    async drain(expectOpen = 0) {
       // The outbox also polls on the clock; a wake during its previous batch waits for that.
-      for (let i = 0; i < 200 && (mail.queued() > 0 || (await pending(f))); i++) {
+      let open = mail.queued() + openSends(f);
+      for (let i = 0; i < 200 && open > 0; i++) {
         f.clock.advance(1000);
         await Bun.sleep(5);
+        open = mail.queued() + openSends(f);
+      }
+      if (open !== expectOpen) {
+        throw new Error(
+          `drain: ${open} mail or send still queued or sending after 200 steps (expected ${expectOpen})`,
+        );
       }
     },
     async close() {
@@ -219,8 +234,10 @@ export async function publicFixture() {
     },
   };
 }
-const pending = async (f: { db: { query(sql: string): { get(): unknown } } }) =>
-  asBody<{ n: bigint }>(
-    f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
-  ).n > 0n;
+const openSends = (f: { db: { query(sql: string): { get(): unknown } } }) =>
+  Number(
+    asBody<{ n: bigint }>(
+      f.db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
+    ).n,
+  );
 export type PublicFixture = Awaited<ReturnType<typeof publicFixture>>;

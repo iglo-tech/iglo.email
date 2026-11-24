@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Daten gelöscht",
     "public.dataSent": "Deine Daten wurden dir per E-Mail als Anhang gesendet.",
     "public.dataSentTitle": "Daten gesendet",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Fehler beim Abrufen der E-Mail",
     "public.errorFetchingEmail": "E-Mail nicht gefunden",
     "public.errorFetchingLists": "Fehler beim Abrufen der Listen. Bitte probiere es nochmal.",

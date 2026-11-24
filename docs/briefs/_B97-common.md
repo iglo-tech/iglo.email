@@ -6,23 +6,13 @@ Repository https://github.com/iglo-tech/iglo.email. One worker per task, one PR,
 
 ## This host
 
-The work runs on the owner's macOS workstation (Apple silicon). Its test harness needs Linux (`/proc`; D89), so **every full check and acceptance command runs in a disposable Linux arm64 container** (OrbStack Docker, the platform of CI's arm64 job), as the non-root `bun` user (root defeats the permission-based failure tests). Lead decision 2026-11-17: on macOS, 122 of 1193 tests fail on host limits; in this container `bun run check` was 1259 pass / 0 fail on B97's head. Edit and commit in your checkout as usual; to verify, export the exact commit and run inside the container (one role at a time, foreground, Bash timeout 600000 ms):
+Since 2026-11-26 (D147) the work runs on `agents-workhorse-01`: Ubuntu 26.04 Server, Linux x86-64, 12 cores, 30 GB RAM, as the non-root user `igloczek`, checkout `/home/igloczek/Sites/iglo.email`. It is the platform of CI's x86-64 job, so **checks run natively, with no container**: `bun install --frozen-lockfile`, then `bun run check` and each acceptance command directly in your worktree (one role at a time, foreground, Bash timeout 600000 ms). Never run tests as root: the permission-based failure tests need a non-root user. To check an exact commit rather than your working tree, export it (`D=$(mktemp -d); git archive <sha> | tar -x -C "$D"`) and run there; remove the export afterwards. `/tmp` is an 8 GB tmpfs: put large exports and junit files under `$HOME` scratch directories instead.
 
-```sh
-D=$(mktemp -d); git archive HEAD | tar -x -C "$D"
-docker run --rm -u bun -e HOME=/tmp -v "$D":/work -w /work oven/bun:1.4.5 bash -lc 'bun install --frozen-lockfile >/dev/null && bun run check 2>&1 | tail -30'
-# then each acceptance command the same way, e.g. bash -lc 'bun run contract:normal'
-```
+**Reference-harness commands** (`reference:*`, `contract:*:reference`, `sends:production`, `messaging:fixture`, `messaging:tls`, anything through `reference:run`) also run natively: the user is in the `docker` group, and the harness starts its own Postgres and upstream containers. It labels and removes its own containers and volumes; touch no other Docker object (no prune).
 
-The first `bun install` in a fresh export needs to be run once as root if the `bun` user cannot write the directory: `docker run --rm -v "$D":/work -w /work oven/bun:1.4.5 bash -lc 'bun install --frozen-lockfile && chown -R 1000:1000 /work'`. Remove the export afterwards.
+`templates:compiled` uses bubblewrap, which works here as installed (AppArmor's `bwrap-userns-restrict` profile), with no sysctl change. `E2E_WORKERS=2 bun run e2e` runs natively with Playwright's Chromium (`bunx playwright install chromium` if the cached build does not match `@playwright/test`). sudo needs a password: if a step needs a system package, stop and report it.
 
-**Reference-harness commands** (`reference:*`, `contract:*:reference`, `sends:production`, `messaging:fixture`, anything through `reference:run`) need Docker for Postgres. They run in the same container as root with host networking and the Docker socket (lead probe 2026-11-17: `reference:prepare` and `reference:smoke` pass this way, upstream linux/arm64):
-
-```sh
-docker run --rm --network host -v /var/run/docker.sock:/var/run/docker.sock -v "$D":/work -w /work oven/bun:1.4.5 bash -lc 'apt-get -qq update >/dev/null && apt-get -qq install -y docker.io git >/dev/null 2>&1 && bun install --frozen-lockfile >/dev/null && bun run reference:prepare && bun run sends:production'
-```
-
-The harness labels and removes its own containers and volumes; touch no other Docker object. No other Docker use (no `bun run e2e` unless the brief says so, no prune). On macOS itself, quick focused `bun test <dir>` runs are fine while iterating. These are native features with no upstream counterpart; read upstream source only if your brief names it (fetch the pinned file from GitHub at commit 6fcd95f, never from memory).
+These are native features with no upstream counterpart; read upstream source only if your brief names it, from the pinned checkout `reference:prepare` builds, never from memory.
 
 ## Rules
 
@@ -34,14 +24,18 @@ The harness labels and removes its own containers and volumes; touch no other Do
 - Update the design docs your brief names in the same PR so code and design agree, plus the OpenAPI document (`src/openapi/*`; MCP tools are generated from it, D98) for any API change.
 - A decision record is **appended at the end** of `docs/design/09-decisions.md` (inserting it earlier split D114 in B107 and D115 in B112); check `git diff origin/main -- docs/design/09-decisions.md` shows only the appended record. It goes in as "(lead, 2026-11-17)" with the number your brief gives. State the decision, what is unchanged, considered alternatives and why.
 - Do not edit `docs/status.md`.
-- Owner rule "Local first": push only code that passed `bun run check` and the brief's acceptance on this host; never trigger CI.
-- Open a PR to `main` titled as your brief says; the body lists what changed, the acceptance summary lines, any macOS-only limits, and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Commits end with `Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>`. No CI wait, no workflow trigger, no merge.
+- Owner rule "Local first" with D145: push only code that passed the tests and checks the change can affect (changed and new test files, dependents of changed fixtures, mutants, `lint`, `typecheck`, `format:check`); never trigger CI. The full acceptance below runs once, on the head the reviewer approved, before the merge.
+- Open a PR to `main` titled as your brief says; the body lists what changed, the acceptance summary lines, any macOS-only limits, and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Commits end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No CI wait, no workflow trigger, no merge.
 - Last line: PR <URL>, head <SHA>, local checks <state>.
 
-## Acceptance (every task unless the brief adds more)
+## Acceptance (once, on the approved head; D145)
+
+It runs after the reviewer approves, not before each push. It covers only the steps the change can reach, named in the brief or by the lead at approval: a docs-only change runs `format:check`; a test-only change its own files and the static checks; the release steps only when `scripts/release*`, the build or the bootstrap changed; the `reference-linux` steps only when `test/contract`, `test/reference` or a route a contract corpus exercises changed. The paragraphs below describe the full set, which the release commit always runs.
 
 The release gate's 10-run series is for release commits only (runbook "Release gate"); in a task PR one valid `bun run check` suffices, where a run is invalid only under the runbook's foreign-load rule. Run every check in the foreground: if one would exceed the Bash timeout, split it; never let it continue in the background.
 
 Every task's acceptance includes **every `run:` step of both `ci.yml` jobs, `check` and `reference-linux`,** in order (the reference job as root with the reference recipe; B124 r2 found a shared contract red against upstream that only the reference job runs) (since B122 that is every contract script; a reviewer runs the whole job too, not a subset: B123 merged with `contract:subscribers` red because only a subset ran) (not only `bun run check`): `ui:verify`, `templates:compiled` and each `contract:*`/`messaging:fixture` step it lists (lead, 2026-11-19, after B105 left `templates:compiled` stale). Use the container image matching `package.json`'s `packageManager` Bun version.
 
 `bun install --frozen-lockfile`, `bun run check`, `bun test test/server`, `bun test test/contract`, `bun run contract:normal`, `bun run contract:roles`. Paste the summary lines in the PR.
+
+Junit capture is a local command the worker runs, not a CI artifact: `ci.yml` writes no junit file. When a brief asks for junit, run `bun test --parallel=4 --timeout=30000 --reporter=junit --reporter-outfile=<scratchpad file>` (or the same per chunk), keep the full stdout too, and name both files in the PR.

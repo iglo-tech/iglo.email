@@ -922,4 +922,10 @@ export const differences: Array<Difference> = [
       "`security.trusted_urls` refuses a port outside 1 to 65535 and a user name or password in the URL. An entry already stored is not checked again. Upstream accepts both.",
     applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
   },
+  {
+    area: "Template division (B117f, D134, lead decision 1)",
+    summary:
+      "`divided_by` is a decimal, as LiquidJS's is: `10 | divided_by: 4` is 2.5. A whole-number result is `divided_by: 4, true`, which rounds down; a `floor` filter is refused. Shopify's documented integer division gives 2 for the same expression.",
+    applies: ["/api/templates"],
+  },
 ];

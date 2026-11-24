@@ -9,6 +9,7 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { startReceiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const invalid = (response: { status: number; body: any }, label: string) => {
   check(response.status === 400, `${label}-status-${response.status}`);
@@ -62,18 +63,18 @@ export async function runMaintenanceContract(target: {
     if (!reference) {
       return;
     }
+    // Kept: the reference's old process still answers /health for a moment after the write.
     await Bun.sleep(1500);
-    const deadline = Date.now() + 20_000;
-    for (;;) {
-      const up = await fetch(`${target.baseUrl}/health`, {
-        signal: AbortSignal.timeout(2000),
-      }).catch(() => null);
-      if (up?.ok) {
-        return;
-      }
-      check(Date.now() < deadline, "restart-wait");
-      await Bun.sleep(100);
-    }
+    // /health has no progress to watch, so the stall window is the wait's limit (20 s).
+    await untilState(
+      async () =>
+        (
+          await fetch(`${target.baseUrl}/health`, { signal: AbortSignal.timeout(2000) }).catch(
+            () => null,
+          )
+        )?.ok === true,
+      { label: "restart-wait", progress: () => "down", stallMs: 20_000 },
+    );
   };
   const owned = {
     campaigns: [] as Array<number>,
@@ -216,6 +217,8 @@ export async function runMaintenanceContract(target: {
 
       // One operation at a time; the running one finishes.
       const running = del("/api/maintenance/subscribers/blocklisted");
+      // Kept: the slot is taken on the server with no observable state; this gives the first
+      // request time to take it before the second asks (the 429 is the thing under test).
       await Bun.sleep(100);
       const second = await del(`/api/maintenance/analytics/all?before_date=${future}`);
       check(second.status === 429, `busy-${second.status}`);
@@ -372,12 +375,14 @@ export async function runMaintenanceContract(target: {
       "links-start",
     );
     let mails = await mailpit.list();
-    for (const deadline = Date.now() + 10_000; Date.now() < deadline; await Bun.sleep(25)) {
-      mails = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (mails.length) {
-        break;
-      }
-    }
+    // Returns what is there when the subject never arrives; the caller's check names the miss.
+    await untilState(
+      async () => {
+        mails = (await mailpit.list()).filter((m) => m.Subject === subject);
+        return mails.length > 0;
+      },
+      { label: `mail ${subject}`, progress: () => String(mails.length), stallMs: 10_000 },
+    ).catch(() => undefined);
     check(mails.length === 1, "test-received");
     const link = /\/link\/([0-9a-f-]{36})\//.exec((await mailpit.message(mails[0]!.ID)).HTML)?.[1];
     check(link, "test-link");

@@ -1,6 +1,7 @@
 // A second invocation-owned Mailpit tests real TLS handshakes, never external endpoints.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { readFileSync, readdirSync, readlinkSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, createConnection } from "node:net";
 import { tmpdir } from "node:os";
@@ -12,24 +13,37 @@ import type { SMTPServer } from "@/messaging/email";
 import { mailpitBinaryPath } from "@/test/reference/prepare";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const reference = referenceMailpit(process.env);
 await assertOwnedMailpit(reference);
 const directory = await mkdtemp(join(tmpdir(), "m21-tls-"));
-async function port() {
-  const server = createServer();
-  await new Promise<void>((resolvePort, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolvePort);
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Missing local port");
+/**
+ * The loopback TCP ports process `pid` itself listens on, read from /proc (the pinned Mailpit is
+ * Linux-only). Mailpit started on port 0 logs the address it was given, ":0", not the port it bound,
+ * so the ports are read from the sockets the process holds: no port is chosen before Mailpit binds
+ * it, and no other process can hold a port this lists.
+ */
+function listeningPorts(pid: number): Array<number> {
+  const inodes = new Set<string>();
+  for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+    try {
+      const match = /^socket:\[(\d+)\]$/.exec(readlinkSync(`/proc/${pid}/fd/${fd}`));
+      if (match) {
+        inodes.add(match[1]!);
+      }
+    } catch {
+      // A descriptor that closed after the listing is skipped.
+    }
   }
-  await new Promise<void>((resolvePort, reject) => {
-    server.close((error) => (error ? reject(error) : resolvePort()));
-  });
-  return address.port;
+  const ports: Array<number> = [];
+  for (const line of readFileSync("/proc/net/tcp", "utf-8").split("\n").slice(1)) {
+    const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
+    if (state === "0A" && local?.startsWith("0100007F:") && inode && inodes.has(inode)) {
+      ports.push(Number.parseInt(local.slice(9), 16));
+    }
+  }
+  return ports;
 }
 try {
   const fixture = await readFile(resolve("test/messaging/tls-fixture.md"), "utf-8");
@@ -42,17 +56,15 @@ try {
   await writeFile(cert, blocks[0]!);
   await writeFile(key, blocks[1]!, { mode: 0o600 });
   for (const mode of ["STARTTLS", "TLS"] as const) {
-    const smtpPort = await port(),
-      httpPort = await port(),
-      runId = randomUUID();
+    const runId = randomUUID();
     const binary = mailpitBinaryPath();
     const child = spawn(
       binary,
       [
         "--listen",
-        `127.0.0.1:${httpPort}`,
+        "127.0.0.1:0",
         "--smtp",
-        `127.0.0.1:${smtpPort}`,
+        "127.0.0.1:0",
         "--label",
         runId,
         "--disable-version-check",
@@ -76,29 +88,51 @@ try {
       child.once("exit", () => resolveExit());
       child.once("error", () => resolveExit());
     });
-    const sink = { api: `http://127.0.0.1:${httpPort}`, host: "127.0.0.1", port: smtpPort, runId };
+    const sink = { api: "", host: "127.0.0.1", port: 0, runId };
     try {
-      let ready = false;
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && !ready) {
-        if (spawnFailure.error) {
-          throw new Error(
-            `Mailpit cannot start from ${binary}: ${spawnFailure.error.message}. Run bun run reference:prepare for this host.`,
-          );
-        }
-        if (child.exitCode !== null || child.signalCode !== null) {
-          throw new Error(`Mailpit (${mode}) exited before it was ready`);
-        }
-        try {
-          await assertOwnedMailpit(sink);
-          ready = true;
-        } catch {
-          await Bun.sleep(25);
-        }
-      }
-      if (!ready) {
-        throw new Error(`Mailpit (${mode}) was not ready within 5 s`);
-      }
+      let observed = "starting";
+      // Mailpit binds both ports itself (port 0). Ready is when this process listens on two loopback
+      // ports and the HTTP one answers as the owned sink; the other one is its SMTP port. The wait
+      // fails by name after 5 s with no change in what it saw, and says what that was.
+      await untilState(
+        async () => {
+          if (spawnFailure.error) {
+            throw new Error(
+              `Mailpit cannot start from ${binary}: ${spawnFailure.error.message}. Run bun run reference:prepare for this host.`,
+            );
+          }
+          if (child.exitCode !== null || child.signalCode !== null) {
+            throw new Error(`Mailpit (${mode}) exited before it was ready`);
+          }
+          const ports = listeningPorts(child.pid!);
+          if (ports.length !== 2) {
+            observed = `listening on ${ports.length} loopback ports`;
+            return false;
+          }
+          const owned: Array<number> = [];
+          for (const candidate of ports) {
+            try {
+              await assertOwnedMailpit({ ...sink, api: `http://127.0.0.1:${candidate}` });
+              owned.push(candidate);
+            } catch (error) {
+              observed = String(error);
+            }
+          }
+          if (owned.length !== 1) {
+            return false;
+          }
+          sink.api = `http://127.0.0.1:${owned[0]}`;
+          sink.port = ports.find((candidate) => candidate !== owned[0])!;
+          return true;
+        },
+        {
+          label: `Mailpit (${mode}) was not ready within 5 s`,
+          progress: () => observed,
+          stallMs: 5000,
+          intervalMs: 25,
+        },
+      );
+      const smtpPort = sink.port;
       const server: SMTPServer = {
         name: "",
         enabled: true,

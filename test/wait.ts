@@ -28,6 +28,54 @@ export interface WaitOptions {
   describe?: () => string | Promise<string>;
 }
 
+export interface StateWaitOptions {
+  /** Starts a failure message, so the wait is named by the test that owns it. */
+  label: string;
+  /** What moves while the work goes on, for example the rows' statuses. A change restarts the stall. */
+  progress: () => string | Promise<string>;
+  /** Real time that `progress` may stay the same before the wait fails. */
+  stallMs?: number;
+  /** Real time between checks. */
+  intervalMs?: number;
+  /** Adds the state a test is waiting on to the failure message. */
+  describe?: () => string | Promise<string>;
+}
+
+/**
+ * Resolves once `done()` is true, polling in real time. It fails by name only when `progress()` has
+ * not changed for `stallMs`: a stall, not a total limit. A slow host that keeps moving is not cut off
+ * by time alone, and the test's own timeout still bounds a body that never ends (B118c item 1).
+ * Use this for a state that another part of the system changes; use `waitWall` on an injected clock.
+ */
+export async function untilState(
+  done: () => boolean | Promise<boolean>,
+  options: StateWaitOptions,
+): Promise<void> {
+  const { label, progress, stallMs = WAIT_WALL_MS, intervalMs = 25, describe } = options;
+  let mark = await progress();
+  let movedAt = performance.now();
+  for (;;) {
+    if (await done()) {
+      return;
+    }
+    const now = await progress();
+    if (now !== mark) {
+      mark = now;
+      movedAt = performance.now();
+    } else if (performance.now() - movedAt > stallMs) {
+      const detail = describe
+        ? await Promise.resolve()
+            .then(describe)
+            .catch((error: unknown) => `state unavailable (${error})`)
+        : "";
+      throw new Error(
+        `${label}: no progress for ${stallMs} ms (${mark})` + (detail ? `; ${detail}` : ""),
+      );
+    }
+    await Bun.sleep(intervalMs);
+  }
+}
+
 /**
  * Resolves once `done()` is true. Each unmet check lets I/O and microtasks run (three zero-length
  * sleeps) and advances the clock by `step`. Rejects with the reason it stopped.

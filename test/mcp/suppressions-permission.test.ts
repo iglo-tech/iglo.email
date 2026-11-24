@@ -3,12 +3,16 @@
 // nothing else is refused over REST and MCP and removes nothing; with the permission the same call
 // removes the suppression. The suppressions come from real self-wipes of a campaign's recipients,
 // on the compiled server, with the mailbox sink for the campaign's mail.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { ensureProductionBuild } from "@/test/production-build";
 import { admin, startMailbox, startProduction } from "@/test/worked-example/harness";
 import type { Mailbox, Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
+
+// A 15 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 let production: Production;
 let mailbox: Mailbox;
@@ -133,12 +137,18 @@ async function wiped(addresses: Array<string>): Promise<void> {
   expect(
     (await api(`/api/campaigns/${campaign.id}/status`, "PUT", { status: "running" })).status,
   ).toBe(200);
-  for (let i = 0; i < 300; i++) {
-    if ((await api(`/api/campaigns/${campaign.id}`)).body.data.status === "finished") {
-      break;
-    }
-    await Bun.sleep(100);
-  }
+  let campaignStatus = "";
+  await untilState(
+    async () =>
+      (campaignStatus = (await api(`/api/campaigns/${campaign.id}`)).body.data.status) ===
+      "finished",
+    {
+      label: "campaign finished",
+      progress: () => campaignStatus,
+      stallMs: 15_000,
+      intervalMs: 100,
+    },
+  );
   for (const subscriber of subscribers) {
     const response = await fetch(
       `${production.origin}/subscription/${campaign.uuid}/wipe/${subscriber.uuid}?confirm=true`,

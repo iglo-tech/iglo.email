@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { childPids } from "@/test/host-processes";
+import { untilState } from "@/test/wait";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
 
@@ -11,13 +12,15 @@ const get = (f: QueryFixture, path: string) => f.request(path, { headers: f.sess
 /** The response, or "pending" if it has not arrived within `ms`. */
 const within = <T>(promise: Promise<T>, ms: number) =>
   Promise.race([promise, Bun.sleep(ms).then(() => "pending" as const)]);
-/** Poll a condition for up to `ms`; real child processes are involved, not the test clock. */
-async function until(condition: () => boolean, ms: number) {
-  const end = performance.now() + ms;
-  while (!condition() && performance.now() < end) {
-    await Bun.sleep(25);
-  }
-  return condition();
+/**
+ * Waits for the child processes to reach a count: real child processes are involved, not the test
+ * clock. It is false when the count stays the same for `ms` (a stall, not a total limit).
+ */
+async function until(condition: () => boolean, ms: number, progress: () => string) {
+  return untilState(condition, { label: "child processes", progress, stallMs: ms }).then(
+    () => true,
+    () => false,
+  );
 }
 
 describe("raw-query admission", () => {
@@ -75,7 +78,17 @@ describe("raw-query deadline", () => {
     const first = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     const second = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     try {
-      expect(await until(() => childPids().length === before, 15_000)).toBe(true);
+      // Both exports must start within the 1 s deadline: a second start after the kill would show
+      // the deadline's outcome without the case it names (B118a r2). Mutation: cut the child slots
+      // to one, and the second export is refused here.
+      expect([first.status, second.status]).toEqual([200, 200]);
+      expect(
+        await until(
+          () => childPids().length === before,
+          15_000,
+          () => String(childPids().length),
+        ),
+      ).toBe(true);
       expect(
         await within(
           first.text().then(
@@ -124,7 +137,13 @@ describe("large selections and unread responses", () => {
     const second = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     try {
       expect([first.status, second.status]).toEqual([200, 200]);
-      expect(await until(() => childPids().length === before, 3000)).toBe(true);
+      expect(
+        await until(
+          () => childPids().length === before,
+          3000,
+          () => String(childPids().length),
+        ),
+      ).toBe(true);
       // Child slots are free: a raw page query runs at once.
       const page = await within(f.json(`/api/subscribers?query=${q("1=1")}`), 3000);
       expect(page === "pending" ? page : [page.status, page.body.data.total]).toEqual([200, 3]);

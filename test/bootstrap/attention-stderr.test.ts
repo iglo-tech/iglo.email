@@ -8,13 +8,14 @@ import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
-import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
+import { portZeroRootUrl, readyOnPortZero, stopChild } from "@/test/serve-port";
 import { startSink } from "@/test/tx/sink";
 import type { Captured } from "@/test/tx/sink";
 import { startSnsTunnel } from "@/test/bounces/sns-tunnel";
 import type { SnsTunnel } from "@/test/bounces/sns-tunnel";
 import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(30_000);
@@ -51,8 +52,10 @@ afterAll(async () => {
 });
 
 /** The executable with a clean environment, plus `extra` (the tunnel's, for the bounce test). */
-function start(port: number, dataDir: string, extra: Record<string, string> = {}) {
-  return Bun.spawn([executable, "--port", String(port), "--data-dir", dataDir], {
+/** The executable on port 0 (D144): it names the port the OS gave it. */
+function start(dataDir: string, extra: Record<string, string> = {}) {
+  const args = ["--port", "0", "--root-url", portZeroRootUrl, "--data-dir", dataDir];
+  return Bun.spawn([executable, ...args], {
     cwd: temporaryDirectory,
     env: {
       PATH: "",
@@ -69,17 +72,9 @@ function start(port: number, dataDir: string, extra: Record<string, string> = {}
 
 async function startServer(extra: Record<string, string> = {}) {
   const dataDir = join(temporaryDirectory, crypto.randomUUID());
-  return startOnFreePort(async (port) => {
-    const child = start(port, dataDir, extra);
-    try {
-      await healthWhenReady(child, port);
-    } catch (error) {
-      child.kill("SIGKILL");
-      await child.exited;
-      throw error;
-    }
-    return { child, port, dataDir };
-  });
+  const child = start(dataDir, extra);
+  const { port } = await readyOnPortZero(child);
+  return { child, port, dataDir };
 }
 
 /** An API call as the API user. A body is sent as JSON. */
@@ -103,14 +98,18 @@ async function changeSettings(port: number, changes: Record<string, unknown>) {
 
 /** Polls until `read` gives a value, or fails after a bounded number of tries. */
 async function until<T>(read: () => Promise<T | undefined>, what: string): Promise<T> {
-  for (let i = 0; i < 400; i++) {
-    const value = await read();
-    if (value !== undefined) {
-      return value;
-    }
-    await Bun.sleep(25);
+  let value: T | undefined;
+  // The read has no progress beyond the value; a 10 s stall of "unread" fails the wait by name.
+  await untilState(async () => (value = await read()) !== undefined, {
+    label: `timed out waiting for ${what}`,
+    progress: () => (value === undefined ? "unread" : "read"),
+    stallMs: 10_000,
+    intervalMs: 25,
+  });
+  if (value === undefined) {
+    throw new Error(`timed out waiting for ${what}`);
   }
-  throw new Error(`timed out waiting for ${what}`);
+  return value;
 }
 
 /** The buffer's lines that contain `text`, read through GET /api/logs. */

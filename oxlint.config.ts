@@ -251,9 +251,11 @@ export default defineConfig({
         "typescript/no-unsafe-return": "off",
       },
     },
-    // Exception, for the lead to decide at review (no-unsafe-type-assertion). The two casts that type a parsed body
-    // for a test (readJson and asBody): the test names the shape and asserts the fields it reads, so the shape is the
-    // check, and no other file under test/ casts a parsed body.
+    // Exception, for the lead to decide at review (no-unsafe-type-assertion). test/read-body.ts is where a test types
+    // a value it already knows the shape of: readJson and asBody. asBody is the one unchecked cast all test code uses
+    // (for example the tail probe's JSON and Database patches, its 29 asBody<never> sites, and the OpenAPI split
+    // tuples). The test asserts the fields it reads, so the assertion is the check. Other files under test/ do not
+    // cast a parsed body; they call these two.
     { files: ["test/read-body.ts"], rules: { "typescript/no-unsafe-type-assertion": "off" } },
     // Exception, for the lead to decide at review (no-floating-promises). The m14 browser scripts are evaluated as an
     // expression by agent-browser, and their async IIFE is that expression's value, the promise the browser awaits.
@@ -294,13 +296,6 @@ export default defineConfig({
         "test/users/m14-browser-submit.js",
       ],
       rules: { "unicorn/prefer-top-level-await": "off" },
-    },
-    // Exception, for the lead to decide at review (no-chained-type-assertions). The tail probe wraps Database.prototype
-    // and JSON by method name, so each patch writes through a dictionary view of a built-in: no typed slot takes a
-    // dynamic key, and the chain is that one boundary.
-    {
-      files: ["test/perf/m61/tail-probe.ts"],
-      rules: { "quality/no-chained-type-assertions": "off" },
     },
     // Exceptions, for the lead to decide at review (no-instanceof). Each check is for a platform or own class where
     // the exact class is the point: a FormData body is sent as it is and anything else as JSON, so a duck check on

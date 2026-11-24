@@ -10,7 +10,8 @@ import { createServer } from "node:net";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { portZeroRootUrl, reportedPort, stderrDrained } from "@/test/serve-port";
+import { untilState } from "@/test/wait";
 
 interface Sink {
   port: number;
@@ -172,18 +173,22 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
 
     // Restart six minutes later on the injected clock, so the dead process's lease expired.
     const second = launch(dir, sink.port, { SCHEDULER_CRASH_OFFSET_MS: String(6 * 60_000) });
-    const deadline = Date.now() + 30_000;
     let after = state(dir);
-    while (
-      after.enrollments[0] !== "completed" ||
-      after.sends.some((s) => s.status === "queued" || s.status === "sending")
-    ) {
-      if (Date.now() > deadline) {
-        throw new Error(`${point}: restart did not finish`);
-      }
-      await Bun.sleep(50);
-      after = state(dir);
-    }
+    await untilState(
+      () => {
+        after = state(dir);
+        return (
+          after.enrollments[0] === "completed" &&
+          !after.sends.some((s) => s.status === "queued" || s.status === "sending")
+        );
+      },
+      {
+        label: `${point}: restart did not finish`,
+        progress: () => JSON.stringify(after),
+        stallMs: 30_000,
+        intervalMs: 50,
+      },
+    );
     await stop(second.child, second.exited);
 
     const perStep = [0, 1].map((step) => after.sends.filter((s) => s.step === step));
@@ -218,23 +223,34 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
 // The real production executable: kill it while SMTP delivery of step 0 is in flight.
 type Launched = Awaited<ReturnType<typeof launchProduction>>;
 async function production(dir: string, launched: Array<Launched>) {
-  const running = await startOnFreePort((port) => launchProduction(dir, port));
+  const running = await launchProduction(dir);
   launched.push(running);
   return running;
 }
-// Returns once this process listens on its port; a start that fails in use is retried by the caller.
-// Its stderr is kept, and printed only if the run fails: a healthy start writes nothing to read.
-async function launchProduction(dir: string, port: number) {
+// Returns once this process has bound port 0 and named the port (D144): the line comes after the
+// bind, so the process listens by then. Its stderr is kept, and printed only if the run fails: a
+// healthy start writes nothing to read.
+async function launchProduction(dir: string) {
   const child = spawn(
     resolve("dist/iglo.email"),
-    ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dir],
+    [
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--root-url",
+      portZeroRootUrl,
+      "--data-dir",
+      dir,
+    ],
     {
       env: {
         PATH: "",
         IGLO_EMAIL_ADMIN_USER: "fixture-admin",
         IGLO_EMAIL_ADMIN_PASSWORD: "fixture-admin-password",
       },
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
     },
   );
   let errors = "";
@@ -244,21 +260,15 @@ async function launchProduction(dir: string, port: number) {
   const exited = new Promise<{ code: number | null; signal: string | null }>((r) => {
     child.once("exit", (code, signal) => r({ code, signal }));
   });
-  const deadline = Date.now() + 20_000;
-  for (;;) {
-    if (child.exitCode !== null || child.signalCode !== null) {
+  try {
+    await reportedPort(child, 20_000).catch(async (error: unknown) => {
       await stderrDrained(child);
-      throw new Error(`production exited before listening: ${errors}`);
-    }
-    if (child.pid !== undefined && listensOn(child.pid, port)) {
-      break;
-    }
-    if (Date.now() > deadline) {
-      child.kill("SIGKILL");
-      await exited;
-      throw new Error(`production did not listen: ${errors}`);
-    }
-    await Bun.sleep(25);
+      throw new Error(`production did not listen: ${String(error)}: ${errors}`);
+    });
+  } catch (error) {
+    child.kill("SIGKILL");
+    await exited;
+    throw error;
   }
   return { child, exited, errors: () => errors };
 }
@@ -278,18 +288,22 @@ async function launchProduction(dir: string, port: number) {
     assert.equal((await within(first.exited, 20_000, "production kill")).signal, "SIGKILL");
     const before = state(dir);
     const second = await production(dir, launched);
-    const deadline = Date.now() + 30_000;
     let after = state(dir);
-    while (
-      after.enrollments[0] !== "completed" ||
-      after.sends.some((s) => s.status === "queued" || s.status === "sending")
-    ) {
-      if (Date.now() > deadline) {
-        throw new Error("production: restart did not finish");
-      }
-      await Bun.sleep(50);
-      after = state(dir);
-    }
+    await untilState(
+      () => {
+        after = state(dir);
+        return (
+          after.enrollments[0] === "completed" &&
+          !after.sends.some((s) => s.status === "queued" || s.status === "sending")
+        );
+      },
+      {
+        label: "production: restart did not finish",
+        progress: () => JSON.stringify(after),
+        stallMs: 30_000,
+        intervalMs: 50,
+      },
+    );
     await stop(second.child, second.exited);
     assert.deepEqual(
       after.sends.map((s) => [s.step, s.status]),

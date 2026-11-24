@@ -637,16 +637,16 @@ export function isEmptyValue(value: unknown): boolean {
  * `plus`, `minus`, `times` and `divided_by` (D134): the input and the argument, read as numbers. A nil, empty or
  * blank input or argument is empty (B135 review N6, B117e: a data value of `""` or `" "` used as the argument
  * renders empty too, as nil does). An input that is not a number is a value failure, and so is an argument that
- * is not one, or a division by zero: a literal one of these is refused at save. An integer divided by an integer
- * rounds down, unless `decimal` is set: a decimal point in the dividend's text or in the divisor's (B135 review,
- * B117e), which divides as a float. A result that is not finite is empty.
+ * is not one, or a division by zero: a literal one of these is refused at save. A division is a decimal, as
+ * LiquidJS's is (lead decision 1); `whole` makes `divided_by` round down to a whole number, as LiquidJS's integer
+ * argument does. A result that is not finite is empty.
  */
 export function arithmetic(
   operator: "plus" | "minus" | "times" | "divided_by",
   value: unknown,
   argument: unknown,
   b: FilterBudget,
-  decimal = false,
+  whole = false,
 ): number | "" {
   b.step();
   // Both operands are read before either empty one renders empty, so a text that is not a number fails whatever
@@ -676,7 +676,6 @@ export function arithmetic(
   if (right === 0) {
     throw new ValueError("divided_by cannot divide by zero");
   }
-  const whole = Number.isInteger(left) && Number.isInteger(right) && !decimal;
   return finite(whole ? Math.floor(left / right) : left / right);
 }
 

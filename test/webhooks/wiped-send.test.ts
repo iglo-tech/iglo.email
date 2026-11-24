@@ -8,6 +8,7 @@ import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hol
 import { txFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const noop = () => {};
 const message = (to: string) => ({
@@ -142,9 +143,12 @@ test("a wiped send whose lease expires in the running loop reports nothing; an u
   writeTransaction(f.db, () => f.sends.claimBatch(now, new Date(now.getTime() + 120_000), 2));
   wipe(f, gone, true);
   f.clock.advance(130_000);
-  while (f.db.query("SELECT 1 FROM sends WHERE status = 'sending'").all().length) {
-    await Bun.sleep(5);
-  }
+  const sending = () => f.db.query("SELECT 1 FROM sends WHERE status = 'sending'").all().length;
+  await untilState(() => sending() === 0, {
+    label: "sends leaving sending",
+    progress: () => String(sending()),
+    intervalMs: 5,
+  });
   // Webhook deliveries are held with everything else: release now that both rows have ended.
   releaseRestoreHold(f.db, holdRecord(f.db)!, f.clock.now().toISOString());
   f.advanceWebhooks(0);

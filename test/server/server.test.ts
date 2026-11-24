@@ -59,6 +59,20 @@ describe("shared HTTP contracts", () => {
     expect((await request(origin, "/health", { method: "POST" })).status).toBe(404);
   });
 
+  // B118b deferred: a bare router (no public not-found registered) answers an unknown page with the
+  // public 404's status and type and no body, for GET and HEAD. Mutation: give the fallback a body
+  // ("404 page not found") and the body check fails.
+  test("a bare router answers an unknown page with a bodyless HTML 404", async () => {
+    const { origin } = fixture({ routePaths: [], bare: true });
+    for (const method of ["GET", "HEAD"]) {
+      expect(await request(origin, "/no-such-page", { method })).toMatchObject({
+        status: 404,
+        contentType: "text/html; charset=UTF-8",
+        body: "",
+      });
+    }
+  });
+
   test("static paths outrank parameters and query/parameter values stay request-local", async () => {
     const { origin } = fixture();
     expect((await request(origin, "/fixture/items/special")).body).toBe('{"data":"static"}\n');

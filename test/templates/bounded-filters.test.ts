@@ -45,7 +45,7 @@ test("plus, minus, times and divided_by compute on numbers and on numeric text",
     { a: "7", f: 7.5 },
   );
   expect(sent.status).toBe("sent");
-  expect(sent.html).toContain("[7] [5] [21] [3] [3.75]");
+  expect(sent.html).toContain("[7] [5] [21] [3.5] [3.75]");
 });
 
 test("an arithmetic filter on a nil input renders empty, and on a number it does not read fails the send", async () => {
@@ -121,6 +121,20 @@ test("url_encode counts its output before it builds it, so a long encoding is re
   const sent = await render(f, body, { big });
   expect(sent.http).toBe(400);
   expect(sent.message).toContain("data.big | url_encode: Output limit");
+});
+
+// A space encodes to its three-byte %20, so 60,000 spaces are 180 KB of output per use. Five uses are 900 KB,
+// under the 1 MiB output limit, and six are 1.08 MB, over it: the filter refuses the sixth by name. The input
+// stays under the request's data limit, so the boundary is the output's.
+test("url_encode output is bounded at 1 MiB: five uses of 60,000 spaces are sent, six are refused by name", async () => {
+  const f = await open();
+  const spaces = " ".repeat(60_000);
+  const under = await render(f, "{{ data.s | url_encode }}".repeat(5), { s: spaces });
+  expect(under.status).toBe("sent");
+  expect(under.html).toContain("%20%20");
+  const over = await render(f, "{{ data.s | url_encode }}".repeat(6), { s: spaces });
+  expect(over.http).toBe(400);
+  expect(over.message).toContain("data.s | url_encode: Output limit");
 });
 
 test("a literal that is not a number is refused at save, whatever the data", async () => {

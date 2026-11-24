@@ -275,6 +275,58 @@ test("an enrollment a step condition exited keeps the condition's text, on its t
   expect(cancelledRow.exit_condition).toBeNull();
 }, 60_000);
 
+// B127 r3: a step condition edited after it exited an enrollment leaves the stored text of that exit as
+// it was. The current condition is different after the edit, so a read of it fails this test.
+test("a step condition edited after its exit leaves the exit's stored condition text as it was", async () => {
+  const f = await open();
+  const template = await f.template();
+  const condition = { attr: "plan", op: "eq", value: "subscription" };
+  const edited = { attr: "plan", op: "eq", value: "trial" };
+  const seq = await f.sequence({
+    name: "Plan gate",
+    steps: [tx(template, { wait: "PT1M", condition })],
+  });
+  const gated = await f.event("gate@example.test", "order_paid", {
+    subscriber: { email: "gate@example.test", name: "Ana", attribs: { plan: "free" } },
+  });
+  const id = gated.enrollments.started[0]!.id;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).status === "exited");
+  const [step] = seq.steps as Array<{ id: number }>;
+
+  const saved = await f.json(`/api/sequences/${seq.id}`, "PUT", {
+    name: "Plan gate",
+    status: "active",
+    trigger: { event: "order_paid" },
+    reentry: "always",
+    steps: [
+      {
+        id: step!.id,
+        wait: "PT1M",
+        kind: "transactional",
+        template_id: template,
+        condition: edited,
+      },
+    ],
+  });
+  expect(saved.status).toBe(200);
+  expect(saved.body.data.steps[0].condition).toEqual(edited);
+
+  const row = await f.enrollment(id);
+  expect(row).toMatchObject({ status: "exited", exit_reason: "condition" });
+  expect(JSON.parse(String(row.exit_condition))).toEqual(condition);
+
+  const ended = asBody<Array<{ type: string; condition?: string | null }>>(
+    (await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries,
+  ).find((entry) => entry.type === "ended");
+  expect(JSON.parse(String(ended?.condition))).toEqual(condition);
+
+  const listed = asBody<Array<{ id: number; exit_condition: string | null }>>(
+    (await f.json(`/api/subscribers/${gated.subscriber_id}/enrollments`)).body.data.results,
+  ).find((r) => r.id === id);
+  expect(listed?.exit_condition).toBe(row.exit_condition);
+}, 60_000);
+
 // B127 r2: an enrollment an event exited (exit_on) names that event on its timeline and in the
 // subscriber's Enrollments list, and the event's row names the sequence it exited.
 test("an enrollment an event exited (exit_on) names the event, and the event names the sequence", async () => {

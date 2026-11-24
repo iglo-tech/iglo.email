@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Données personnelles supprimées",
     "public.dataSent": "Vos données personnelles vous ont été envoyées par e-mail.",
     "public.dataSentTitle": "Données personnelles envoyées",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Erreur lors de la récupération de l'e-mail.",
     "public.errorFetchingEmail": "E-mail introuvable",
     "public.errorFetchingLists": "Erreur lors de la récupération des listes. Veuillez réessayer.",

@@ -122,7 +122,7 @@ docker run -d --name iglo-email --restart unless-stopped \
   -e IGLO_EMAIL_ADMIN_PASSWORD='choose-a-long-password' \
   -e IGLO_EMAIL_API_USER=provisioning \
   -e IGLO_EMAIL_API_TOKEN='a-48-character-token-of-letters-and-digits-only' \
-  ghcr.io/iglo-tech/iglo.email:1.4.1
+  ghcr.io/iglo-tech/iglo.email:1.5.0
 ```
 
 Put the variables in an env file (`--env-file`) rather than on the command line, so that they stay
@@ -184,6 +184,12 @@ tag.
 Flags win over variables. The root URL goes into every link in every email: set it to the public
 URL, with its scheme (`https://news.example.com`). It is the one setting that needs a restart.
 Everything else is in the admin UI under Settings, or `PUT /api/settings`, and applies at once.
+
+A port of 0 (`--port 0` or `IGLO_EMAIL_PORT=0`) asks the OS for a free port. Once the server is
+bound it writes one line to stdout, `listening on port <port>`, and only for port 0. A port of 0
+needs `--root-url`, because the root URL is set before the bind. The admin pages refuse a POST from
+an origin other than the root URL's, so a server on port 0 is for scripts and checks, not for an
+operator's browser: a browser must reach the server on the port the root URL names.
 
 The admin and API pairs are read only on the first start, while no users exist, and each pair is
 both or neither. The API token must be 48 letters and digits (`A-Z`, `a-z`, `0-9`), the format of a
@@ -891,6 +897,16 @@ login runs for it. A save that would give two SMTP servers, bounce mailboxes or 
 uuid is refused with 400 and changes nothing. An install that already holds duplicate uuids (only
 hand-made API calls could store them) gets 400 on every API settings save (`PUT /api/settings` or a
 per-key update), until the settings page is saved once.
+
+Upgrading from a release needs no action for `divided_by`: every release up to v1.4.1 refuses it at
+save, as an unknown filter. Only an install that ran an untagged build of `main` from commit
+`0d71ed88` (B135, #193) or later can hold a stored `divided_by`, and it divides as a decimal (D134).
+After upgrading, such an install should search every stored Liquid field for `divided_by`: campaign
+subjects, bodies, alternative bodies, sender addresses and headers; campaign templates; transactional
+template bodies and subjects; and sequence step subject overrides. Where a whole number is needed, add
+`, true`, which rounds down, so `-10 | divided_by: 4, true` is -3. Until then the match prints decimals.
+A named argument such as `integer: true` is refused at save, so write `, true` instead. There is no
+`floor` filter. See [D134](design/09-decisions.md#d134-liquid-authoring-bounded-filters-a-save-time-render-and-the-converters-names-lead-2026-11-22).
 
 From the release that pairs privacy actions (D126), the preference links of mail sent before the
 upgrade change in three ways. A transactional mail sent before the upgrade has a manage link to a

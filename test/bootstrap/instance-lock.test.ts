@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { isPortInUse, startOnFreePort } from "@/test/serve-port";
+import { portZeroRootUrl } from "@/test/serve-port";
 import {
   admin,
   apiClient,
@@ -72,19 +72,22 @@ async function run(args: Array<string>, options: { stdin?: string; cwd?: string 
   return { exitCode, stdout, stderr };
 }
 
-/** On a port of its own, so only the lock can stop it. */
+/** On port 0 (D144), a port of its own that no other process can hold, so only the lock can stop it. */
 function secondServer(dataDir: string, options?: { cwd?: string }) {
-  return startOnFreePort(async (port) => {
-    const result = await run(
-      ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
-      options,
-    );
-    // A port taken in the meantime is not the lock's answer: the start is retried on another port.
-    if (result.exitCode !== 0 && isPortInUse(result.stderr)) {
-      throw new Error(result.stderr);
-    }
-    return result;
-  });
+  return run(
+    [
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--root-url",
+      portZeroRootUrl,
+      "--data-dir",
+      dataDir,
+    ],
+    options,
+  );
 }
 
 /** The database as it stands on disk. */

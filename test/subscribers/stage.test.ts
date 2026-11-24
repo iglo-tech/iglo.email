@@ -8,6 +8,7 @@ import { openFilePaths } from "@/test/host-processes";
 import { queryFixture } from "@/test/subscribers/fixture";
 import type { QueryFixture } from "@/test/subscribers/fixture";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const TOTAL = STAGE_CHUNK * 2 + 123;
 const q = (fragment: string) => encodeURIComponent(fragment);
@@ -84,7 +85,12 @@ describe("staged selections", () => {
     await response.body!.cancel();
     const page = await f.request(`/api/subscribers?per_page=all`, { headers: f.sessionHeaders });
     await page.body!.cancel();
-    await Bun.sleep(100);
+    // The cancelled export's file leaves the folder (and the open-file list) once its work stops.
+    await untilState(() => staged().length === 0, {
+      label: "cancelled export staged files",
+      progress: () => staged().join(),
+      stallMs: 3000,
+    }).catch(() => undefined);
     expect(staged()).toEqual([]);
   });
 
@@ -122,7 +128,11 @@ describe("a query killed by its time limit", () => {
         await Bun.sleep(wait % 40);
         await run;
       }
-      await Bun.sleep(100);
+      await untilState(() => (existsSync(dir) ? readdirSync(dir) : []).length === 0, {
+        label: "killed exports' staged files",
+        progress: () => (existsSync(dir) ? readdirSync(dir) : []).join(),
+        stallMs: 3000,
+      }).catch(() => undefined);
       expect(existsSync(dir) ? readdirSync(dir) : []).toEqual([]);
     } finally {
       await timed.close();

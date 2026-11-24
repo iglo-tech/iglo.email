@@ -324,8 +324,6 @@ test("a step test whose Message-ID cannot be recorded answers 500 and sends noth
     emails: [DELIVERED],
   });
   expect(failed.status).toBe(500);
-  await Bun.sleep(50);
-  expect(f.sink.messages).toHaveLength(0);
 
   // Once the write can succeed, the same request is sent, so no in-flight slot was left behind.
   f.db.run("DROP TRIGGER refuse_test_sends");
@@ -333,7 +331,12 @@ test("a step test whose Message-ID cannot be recorded answers 500 and sends noth
     emails: [DELIVERED],
   });
   expect(sent.status).toBe(200);
-  await f.until(() => f.sink.messages.length === 1, "the retried test message");
+  await f.until(() => f.sink.messages.length >= 1, "the retried test message");
+  // Settled: close() waits for every message the emailer started and starts none after, so a message
+  // the refused request had pushed is in the sink by now. Only the retried one may be there.
+  await f.emailer.close();
+  expect(f.sink.messages).toHaveLength(1);
+  expect(f.sink.messages[0]!.to).toEqual([DELIVERED]);
 });
 
 test("a campaign test whose Message-ID cannot be recorded answers 500 and sends nothing", async () => {
@@ -356,12 +359,14 @@ test("a campaign test whose Message-ID cannot be recorded answers 500 and sends 
   );
   const failed = await f.json(`/api/campaigns/${campaign.id}/test`, "POST", body);
   expect(failed.status).toBe(500);
-  await Bun.sleep(50);
-  expect(f.sink.messages).toHaveLength(0);
 
   f.db.run("DROP TRIGGER refuse_test_sends");
   const sent = await f.json(`/api/campaigns/${campaign.id}/test`, "POST", body);
   expect(sent.status).toBe(200);
   await f.mail(1);
+  // Settled, as in the step test above: close() drains what the emailer started, so only the
+  // retried message can be in the sink.
+  await f.owners.emailer.close();
   expect(f.sink.messages).toHaveLength(1);
+  expect(f.sink.messages[0]!.to).toEqual([DELIVERED]);
 });

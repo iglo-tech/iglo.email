@@ -13,6 +13,7 @@ import {
 import { textPart } from "@/test/messaging/mime";
 import { startSink } from "@/test/tx/sink";
 import { asBody, readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 setDefaultTimeout(120_000);
 
@@ -24,19 +25,22 @@ beforeAll(async () => {
 });
 afterAll(() => removeDirectory(build));
 
-/** Polls `read` until it returns a value, for at most 20 s of real time. */
+/**
+ * Polls `read` until it returns a value. There is no progress signal beyond the value itself, so
+ * the wait's 20 s limit is a stall window on that (B118d sweep).
+ */
 async function waitFor<T>(read: () => Promise<T | undefined>, what: string): Promise<T> {
-  const deadline = Date.now() + 20_000;
-  for (;;) {
-    const value = await read();
-    if (value !== undefined) {
-      return value;
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await Bun.sleep(25);
+  let value: T | undefined;
+  await untilState(async () => (value = await read()) !== undefined, {
+    label: `timed out waiting for ${what}`,
+    progress: () => (value === undefined ? "unread" : "read"),
+    stallMs: 20_000,
+    intervalMs: 25,
+  });
+  if (value === undefined) {
+    throw new Error(`timed out waiting for ${what}`);
   }
+  return value;
 }
 
 /** A running executable with its SMTP server pointed at a sink, and a client for its API. */
@@ -243,8 +247,10 @@ test("a 14 KB template that renders to 840 KB converts promptly, and /health ans
 });
 
 // r2 B1: the reviewer's 7 KB template that renders to about 1 MB of nested <b>. The send is in flight
-// when /health is asked, and /health must answer within a second of being asked.
-test("a 7 KB template that renders to 1 MB does not delay /health by more than 1 s", async () => {
+// when /health is asked, and /health must answer in less than half the time the send takes (B118j
+// item 4: a comparison within the run, not a second on the host). Mutation: remove the handler cap in
+// the converter; /health then waits for the conversion, and the comparison fails.
+test("a 7 KB template that renders to 1 MB does not hold /health for half of its own send", async () => {
   const s = await stack();
   try {
     const body =
@@ -261,17 +267,27 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
     });
     expect(template.status).toBe(200);
     const id = (await readJson<{ data: { id: number } }>(template)).data.id;
-    const sending = s.call("/api/tx", "POST", {
-      subscriber_mode: "external",
-      subscriber_emails: ["bold@example.test"],
-      template_id: id,
-    });
+    const sendStarted = performance.now();
+    let sendMs = 0;
+    const sending = s
+      .call("/api/tx", "POST", {
+        subscriber_mode: "external",
+        subscriber_emails: ["bold@example.test"],
+        template_id: id,
+      })
+      .then((response) => {
+        sendMs = performance.now() - sendStarted;
+        return response;
+      });
     await Bun.sleep(300);
     const asked = performance.now();
     const health = await s.call("/health");
+    const healthMs = performance.now() - asked;
     expect(health.status).toBe(200);
-    expect(performance.now() - asked).toBeLessThan(1000);
     expect((await sending).status).toBe(200);
+    // B118j item 4: a comparison inside the run, as the 12 KB test below (B118c item 3). /health must
+    // answer in less than half the time the same send takes.
+    expect(healthMs).toBeLessThan(sendMs / 2);
     // Past the 1024 cap on open elements (D118 r4): the message sends its HTML with no text part.
     expect(await textTo(s, "bold@example.test")).toBeUndefined();
   } finally {
@@ -282,7 +298,12 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
 // r3 B1: the reviewer's 12 KB template of unclosed <p> elements, which renders to about 1 MB. The
 // conversion gives up at its handler cap, so /health must not wait for it, and the message still
 // sends its HTML with no text part.
-test("a 12 KB template of unclosed <p> elements does not delay /health by more than 200 ms, and sends its HTML", async () => {
+// B118c item 3: the bound is a comparison inside the run, not 200 ms on the host. /health must answer
+// in less than half the time the same send takes; a server that waits for the conversion answers
+// only when the send is nearly over. The 300 ms wait lets the send reach its conversion first.
+// Mutation: remove the handler cap in the converter; /health then waits for the conversion, and the
+// comparison fails.
+test("a 12 KB template of unclosed <p> elements does not hold /health for half of its own send, and sends its HTML", async () => {
   const s = await stack();
   try {
     const body = "{% for i in (1..85) %}" + "<p>x<b>y</b>".repeat(1000) + "{% endfor %}";
@@ -294,17 +315,25 @@ test("a 12 KB template of unclosed <p> elements does not delay /health by more t
     });
     expect(template.status).toBe(200);
     const id = (await readJson<{ data: { id: number } }>(template)).data.id;
-    const sending = s.call("/api/tx", "POST", {
-      subscriber_mode: "external",
-      subscriber_emails: ["unclosed@example.test"],
-      template_id: id,
-    });
+    const sendStarted = performance.now();
+    let sendMs = 0;
+    const sending = s
+      .call("/api/tx", "POST", {
+        subscriber_mode: "external",
+        subscriber_emails: ["unclosed@example.test"],
+        template_id: id,
+      })
+      .then((response) => {
+        sendMs = performance.now() - sendStarted;
+        return response;
+      });
     await Bun.sleep(300);
     const asked = performance.now();
     const health = await s.call("/health");
+    const healthMs = performance.now() - asked;
     expect(health.status).toBe(200);
-    expect(performance.now() - asked).toBeLessThan(200);
     expect((await sending).status).toBe(200);
+    expect(healthMs).toBeLessThan(sendMs / 2);
     const mail = await waitFor(
       async () => s.sink.messages.find((m) => m.to.includes("unclosed@example.test")),
       "the unclosed-p mail",
