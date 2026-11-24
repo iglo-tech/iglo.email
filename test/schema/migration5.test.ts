@@ -13,6 +13,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { startRuntime } from "@/test/scheduler/runtime";
 import { startSink } from "@/test/tx/sink";
+import { untilState } from "@/test/wait";
 
 /** Arrange data as v4 saves left it: deleted steps keep their pre-save position. */
 function seedVersion4(directory: string) {
@@ -111,14 +112,14 @@ const version = (db: Database) =>
 const backups = async (directory: string) =>
   (await readdir(join(directory, "backups"))).filter((name) => name.endsWith(".db"));
 
-async function until(condition: () => boolean, label: string) {
-  const deadline = Date.now() + 15_000;
-  while (!condition()) {
-    if (Date.now() > deadline) {
-      throw new Error(`timed out: ${label}`);
-    }
-    await Bun.sleep(25);
-  }
+/** Waits for `condition`; fails by name after 15 s with no change in what `progress` reports. */
+async function until(condition: () => boolean, label: string, progress = () => "") {
+  await untilState(condition, {
+    label: `timed out: ${label}`,
+    progress,
+    stallMs: 15_000,
+    intervalMs: 25,
+  });
 }
 
 test("migration 5 converts populated v4 tombstones once and waiting enrollments reach the right step", async () => {
