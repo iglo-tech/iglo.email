@@ -127,6 +127,31 @@ test("validates sender defaults and offers the configured senders to a campaign"
   await expect(options.nth(2)).toHaveAttribute("value", templated);
 });
 
+// B117f (D136 item 1): the notification field holds one address per top-level comma, so a comma inside a quoted
+// display name stays in its address. The form splits the field before it saves; the API keeps an array.
+test("saves notification addresses whose display name holds a comma, one entry per address", async ({
+  page,
+}) => {
+  const named = '"Ops, Team" <ops@example.test>';
+  const other = "other@example.test";
+  const field = page.locator('[name="app.notify_emails"]');
+  await field.fill(`${named}, ${other}`);
+  await save(page);
+  expect((await settings(page))["app.notify_emails"]).toEqual([named, other]);
+  await page.reload();
+  await expect(field).toHaveValue(`${named}, ${other}`);
+
+  // A save with nothing changed sends the same two entries back.
+  await save(page);
+  expect((await settings(page))["app.notify_emails"]).toEqual([named, other]);
+
+  // An escaped quote inside the display name does not end it, so the comma after it is still inside.
+  const escaped = String.raw`"A \"B, C\"" <a@example.test>`;
+  await field.fill(`${escaped}, b@example.test`);
+  await save(page);
+  expect((await settings(page))["app.notify_emails"]).toEqual([escaped, "b@example.test"]);
+});
+
 test("saves edits across tabs, enables SMTP and deletes a server", async ({ page }) => {
   const favicon = `${ORIGIN}/public/static/logo.png`;
   // Deliberate difference: the root URL is a bootstrap flag (D44), shown read-only.

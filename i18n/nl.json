@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Data verwijderd",
     "public.dataSent": "Uw data is naar u ge-e-maild als bijlage.",
     "public.dataSentTitle": "Data e-mailen",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Fout bij ophalen e-mailbericht.",
     "public.errorFetchingEmail": "E-mailbericht niet gevonden.",
     "public.errorFetchingLists": "Fout bij ophalen lijsten. Probeer opnieuw.",

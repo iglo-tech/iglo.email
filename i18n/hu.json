@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Adatok törölve",
     "public.dataSent": "Adatait e-mailben (mellékletként) elküldtük.",
     "public.dataSentTitle": "Adatok elküldve",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Hiba az üzenet lekérésekor.",
     "public.errorFetchingEmail": "Az üzenet nem található",
     "public.errorFetchingLists": "Hiba a listák lekérésekor. Kérjük, próbálja újra.",

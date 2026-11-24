@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "已刪除資料",
     "public.dataSent": "您的資料已作為附件透過電子郵件發送給您",
     "public.dataSentTitle": "資料已透過電子郵件寄送",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "取得電子郵件訊息時發生錯誤。",
     "public.errorFetchingEmail": "未找到電子郵件",
     "public.errorFetchingLists": "取得清單時發生錯誤，請再試一次。",

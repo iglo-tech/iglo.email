@@ -45,7 +45,7 @@ test("plus, minus, times and divided_by compute on numbers and on numeric text",
     { a: "7", f: 7.5 },
   );
   expect(sent.status).toBe("sent");
-  expect(sent.html).toContain("[7] [5] [21] [3] [3.75]");
+  expect(sent.html).toContain("[7] [5] [21] [3.5] [3.75]");
 });
 
 test("an arithmetic filter on a nil input renders empty, and on a number it does not read fails the send", async () => {

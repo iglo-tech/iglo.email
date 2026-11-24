@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Dati cancellati",
     "public.dataSent": "I tuoi dati ti sono stati trasmessi via mail.",
     "public.dataSentTitle": "Dati trasmessi via mail",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Errore durante il recupero della mail.",
     "public.errorFetchingEmail": "Messaggio mail impossibile da trovare",
     "public.errorFetchingLists": "Errore durante il recupero delle liste. Per favore, riprova.",

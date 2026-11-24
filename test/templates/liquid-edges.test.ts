@@ -1,8 +1,8 @@
 // The Liquid edges left after B135 (B117e, D134 as amended there): a loop object that a template prints,
 // filters or reaches through a property the renderer does not expose is refused at save; the date guard in 06
 // holds for every value the date filter renders empty; blank text renders empty in arithmetic and a non-number
-// still fails; a divisor written as quoted text with a decimal point divides as a float. Observed through
-// POST /api/templates and POST /api/tx into the loopback SMTP sink.
+// still fails; a division is a decimal whatever its operands are (lead decision 1, see divided-by.test.ts).
+// Observed through POST /api/templates and POST /api/tx into the loopback SMTP sink.
 import { afterEach, expect, test } from "bun:test";
 import { htmlPart } from "@/test/messaging/mime";
 import { txFixture } from "@/test/tx/fixture";
@@ -82,15 +82,60 @@ test("a loop object printed or read by a filter, and a loop property the rendere
   expect(exposed.status).toBe(200);
 });
 
-test("a loop object stored with assign is not refused, and its properties still read in a send", async () => {
+test("a loop object stored with assign is refused at save, and a loop property stored with assign still sends (B117f)", async () => {
   const f = await open();
+  // The stored loop object is read later through a name the save cannot follow, so the store itself is refused.
+  for (const body of [
+    "{% for i in data.items %}{% assign f = forloop %}{{ f.index }}{% endfor %}",
+    "{% for i in data.items %}{% assign f = forloop %}{{ f.parentloop }}{% endfor %}",
+  ]) {
+    const refused = await saveTx(f, body);
+    expect(refused.status, body).toBe(400);
+    expect(refused.body.message, body).toContain(
+      "a loop object (forloop) cannot be stored with assign",
+    );
+  }
   const sent = await send(
     f,
-    "{% for i in data.items %}{% assign f = forloop %}[{{ f.index }}{{ f.last | json }}]{% endfor %}",
+    "{% for i in data.items %}{% assign n = forloop.index %}[{{ n }}{{ forloop.last | json }}]{% endfor %}",
     { items: ["a", "b"] },
   );
   expect(sent.http).toBe(200);
   expect(sent.html).toContain("[1false][2true]");
+});
+
+test("a bare forloop given to a for tag's limit or offset is refused at save, and a loop property is not (B117f)", async () => {
+  const f = await open();
+  for (const argument of ["limit: forloop", "offset: forloop"]) {
+    const body = `{% for i in data.items %}{% for j in data.items ${argument} %}x{% endfor %}{% endfor %}`;
+    const refused = await saveTx(f, body);
+    expect(refused.status, body).toBe(400);
+    expect(refused.body.message, body).toContain(
+      "a loop object (forloop) cannot be a for tag's limit, offset or reversed argument",
+    );
+  }
+  // The outer loop's index is a number, which the inner loop reads as its limit at send.
+  const sent = await send(
+    f,
+    "{% for i in data.items %}{% for j in data.items limit: forloop.index %}{{ j }}{% endfor %}.{% endfor %}",
+    { items: ["a", "b"] },
+  );
+  expect(sent.http).toBe(200);
+  expect(sent.html).toContain("a.ab.");
+});
+
+test("a division is decimal whatever its operands were written as, as LiquidJS is (B117f, lead decision 1)", async () => {
+  const f = await open();
+  // Every division is a float: the operands' spelling does not matter, and only `, true` rounds down.
+  const sent = await send(
+    f,
+    "[{{ 10.0 | divided_by: 4 }}][{{ 10 | times: 1.0 | divided_by: 4 }}][{{ data.n | times: 1.0 | divided_by: 4 }}]" +
+      "[{{ 7.0 | times: 1 | divided_by: 2 }}][{{ 10.0 | divided_by: 4.0 }}]" +
+      "[{{ 10 | divided_by: 4 }}][{{ 10 | times: 2 | divided_by: 4 }}][{{ 10.0 | times: 1 | divided_by: 4 }}]",
+    { n: 10 },
+  );
+  expect(sent.http).toBe(200);
+  expect(sent.html).toContain("[2.5][2.5][2.5][3.5][2.5][2.5][5][2.5]");
 });
 
 test("the date guard in 06 prints the date only when the date filter renders one", async () => {
@@ -127,7 +172,7 @@ test("blank text is empty in arithmetic, as a nil is, and a text that is not a n
   expect(word.message).toContain("plus needs a number, got text");
 });
 
-test("a divisor written as quoted text with a decimal point divides as a float, as a number literal does", async () => {
+test("a divisor or dividend written as quoted or data text divides as a decimal too (B117e, lead decision 1)", async () => {
   const f = await open();
   const sent = await send(
     f,
@@ -136,20 +181,19 @@ test("a divisor written as quoted text with a decimal point divides as a float, 
     { a: 10, q: "4.0", i: "4" },
   );
   expect(sent.http).toBe(200);
-  expect(sent.html).toContain("[2.5][2.5][2][2.5][2]");
+  expect(sent.html).toContain("[2.5][2.5][2.5][2.5][2.5]");
 });
 
-test("a dividend written as decimal text divides as a float, as a decimal divisor does (B117e)", async () => {
+test("a dividend written as decimal text, or as a data text, divides as a decimal (B117e, lead decision 1)", async () => {
   const f = await open();
-  // The dividend is text from data or a quoted literal: its decimal point makes the division a float. A JSON
-  // number 10.0 is parsed to 10, and a number literal 10.0 is its value too, so both divide as integers.
+  // The division is a decimal for every operand, so the text of data and of a literal gives the same quotient.
   const sent = await send(
     f,
     "[{{ data.t | divided_by: 4 }}][{{ '10.0' | divided_by: 4 }}][{{ data.i | divided_by: 4 }}][{{ 10 | divided_by: 4 }}]",
     { t: "10.0", i: "10" },
   );
   expect(sent.http).toBe(200);
-  expect(sent.html).toContain("[2.5][2.5][2][2]");
+  expect(sent.html).toContain("[2.5][2.5][2.5][2.5]");
 });
 
 test("round renders empty for a blank or missing digits argument from data, and still fails a text that is not a number (B117e)", async () => {

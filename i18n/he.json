@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "נתונים הוסרו",
     "public.dataSent": "הנתונים שלך נשלחו אליך כעת לאימייל כקובץ מצורך.",
     "public.dataSentTitle": "הנתונים נשלחו לאימייל.",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "שגיאה באחזור הודעת האימייל.",
     "public.errorFetchingEmail": "הודעת האימייל לא נמצאה.",
     "public.errorFetchingLists": "שגיאה באחזור הרשימות, נא לנסות שוב.",

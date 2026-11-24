@@ -468,6 +468,7 @@
     "public.dataRemovedTitle": "Dữ liệu đã bị xóa",
     "public.dataSent": "Dữ liệu của bạn đã được gửi qua e-mail cho bạn dưới dạng tệp đính kèm.",
     "public.dataSentTitle": "Dữ liệu được gửi qua e-mail",
+    "public.emailSettings": "Your email settings",
     "public.errorFetchingCampaign": "Lỗi khi tìm nạp thư e-mail.",
     "public.errorFetchingEmail": "Không tìm thấy tin nhắn e-mail",
     "public.errorFetchingLists": "Lỗi khi tìm nạp danh sách. Xin hãy thử lại.",

@@ -892,6 +892,16 @@ uuid is refused with 400 and changes nothing. An install that already holds dupl
 hand-made API calls could store them) gets 400 on every API settings save (`PUT /api/settings` or a
 per-key update), until the settings page is saved once.
 
+Upgrading from a release needs no action for `divided_by`: every release up to v1.4.1 refuses it at
+save, as an unknown filter. Only an install that ran an untagged build of `main` from commit
+`0d71ed88` (B135, #193) or later can hold a stored `divided_by`, and it divides as a decimal (D134).
+After upgrading, such an install should search every stored Liquid field for `divided_by`: campaign
+subjects, bodies, alternative bodies, sender addresses and headers; campaign templates; transactional
+template bodies and subjects; and sequence step subject overrides. Where a whole number is needed, add
+`, true`, which rounds down, so `-10 | divided_by: 4, true` is -3. Until then the match prints decimals.
+A named argument such as `integer: true` is refused at save, so write `, true` instead. There is no
+`floor` filter. See [D134](design/09-decisions.md#d134-liquid-authoring-bounded-filters-a-save-time-render-and-the-converters-names-lead-2026-11-22).
+
 From the release that pairs privacy actions (D126), the preference links of mail sent before the
 upgrade change in three ways. A transactional mail sent before the upgrade has a manage link to a
 placeholder path: opening it shows a page that lists only the subscriber's pending double opt-ins, with
