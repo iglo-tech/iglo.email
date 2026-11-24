@@ -82,8 +82,10 @@ shared, so the spread between invocations is the noise):
 
 The claim and settle phases are within the spread of the host: the sign of the difference changes from
 run to run. The insert is slower on schema 28 in all three invocations (by 9% to 59%), which the r2 runs
-did not show; no write in migration 0028 changes the insert itself, so the cause is not known. This is a
-question for the lead before the decision below is taken as settled.
+did not show. The gap follows measurement order, not the schema: the script measures schema 27 first, and
+with the order reversed (B118j r1 review, two invocations) schema 28's insert was faster (656 and 619 ms
+against 850 and 768 ms). Migration 0028 swaps one status index for another that each insert writes once,
+at the end of the queued range, with a smaller key.
 
 **Migration 0029 (B127 r2, `enrollments.exit_condition`).** The migration adds one nullable column with
 no default, which SQLite does not rewrite rows for: `ALTER TABLE enrollments ADD COLUMN` on one million
@@ -148,6 +150,6 @@ are read once, through the index that already serves the subscriber's enrollment
 Migration 0028 is accepted: the status-filtered send log and the dashboard drop from about half a
 second to microseconds, the count stays at 25 ms, and writes cost the same (the r2 table, three
 repetitions, three invocations). The B118j re-run shows the claim and settle within the spread but the
-insert slower on schema 28 in every invocation, which this decision has not yet accounted for. Decision D135's "no measurement" was wrong; this note is the measurement it needed.
+insert slower on schema 28 in every invocation, an effect of measurement order (above). Decision D135's "no measurement" was wrong; this note is the measurement it needed.
 Migration 0029 is accepted on the 14 ms column probe: it rewrites no row, and the send path does not
 change.

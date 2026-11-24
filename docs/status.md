@@ -127,6 +127,7 @@ Host disk/memory are constrained; no protected cache/worktree/export cleanup or 
 | B118f | [#209](https://github.com/iglo-tech/iglo.email/pull/209) | b757408 | 2FA and archive-preview error pages pinned to site branding (D119 B121 entry) through real signed-in flows; unexpected handler error keeps its stack, via a compiled test-only fixture with the production logger (absent from the build); B101 shutdown test renamed and asserts the 5 s drain (r1 APPROVE, 7/7 mutants) |
 | B118g | [#210](https://github.com/iglo-tech/iglo.email/pull/210) | 4eac5b6 | readiness is a stall window on the child's CPU time (Linux /proc, macOS ps); B114 reference log searched from the pre-write size; step condition edit keeps the stored exit text; B127 perf script uses production claim/finish; 30-day e2e keeps its database stand-in (pass needs a clock hook in the executable); settings e2e clears toasts before each save (failed on main on Linux since B117f) (r1 CHANGES, r2 diff-checked by lead) |
 | B118h | [#211](https://github.com/iglo-tech/iglo.email/pull/211) | 1295016 | an event exit is shown on one event: lowest id of the exit's name and time, after a same-time trigger of any name, chosen across the subscriber's events in one statement per page (Events tab at 200k same-named events 2.4 s → 62 ms, no index); 6 HTTP tests with mutants (r1 CHANGES, r2 APPROVE, r3 test gaps diff-checked by lead) |
+| B118j | [#212](https://github.com/iglo-tech/iglo.email/pull/212) | 55aee14 | test-send trace drains the emailer instead of `sleep(50)`; stack test SIGKILLs after 8 s, named; B127 perf script times production `claimBatch`/`finishAll` (schema 28 insert gap was measurement order, doc corrected); plain-executable `/health` is a same-run comparison (r1 APPROVE, mutants re-run by the reviewer) |
 | B125 | [#173](https://github.com/iglo-tech/iglo.email/pull/173) | 70098fe | Export mail throttled per subscriber (no oracle); no-store/no-referrer/frame-ancestors/X-Frame-Options on every personal page (form frameable); private webhook targets blocked by default, upgrade flips a stored false once, every start names refused targets (D122; r1 CHANGES e2e, r2 APPROVE; adopter 44/44) |
 | B124 | [#172](https://github.com/iglo-tech/iglo.email/pull/172) | df27a4e | Self-wipe stores keyed hashes (email, external_id): later grants answer `suppressed`, no marketing; tx still sends; cleared by the person's opt-in confirm or `DELETE /api/suppressions` (`suppressions:manage`); wipe webhook carries `external_id`, `list_ids`; fixes `contract:subscribers` red since B123 (D125; r1 APPROVE, r2 CHANGES auth count, fix (a) lead-verified; adopter PASS) |
 | B123 | [#171](https://github.com/iglo-tech/iglo.email/pull/171) | e47fc13 | `subscriber_events:get` enforced (REST, MCP); every public state change needs a server-issued pairing (campaign delivered / `/m/:send`); sub-only export and wipe retired; nil-campaign links end pending opt-ins only, tx `manage_url` pairs via `/m/:send`; view-in-browser and pixel paired; step tests carry placeholder UUIDs (D126; r1 CHANGES, r2 CHANGES, r3 APPROVE; adopter PASS twice) |
@@ -298,13 +299,9 @@ Audited 2026-11-25 before v1.5.0 (owner rule: nothing stays backlog). Fixed and 
 - the `reference:smoke` PID race (#202);
 - the scheduler and tracked-links watches (#203).
 
-Open, in [B118i/B118j](briefs/B118i.md):
+Open, in [B118i](briefs/B118i.md) (B118j merged, #212):
 - `release verify` port race: the CLI binds port 0 (D144); a retry does not clear it;
 - `cli.test.ts` fixed 3 s SIGKILL in `shutDown`;
-- B108's two `Bun.sleep(50)` in `test-send-trace.test.ts`;
-- the stack test's SIGKILL fallback;
-- the B127 perf script timing `claim` instead of `claimBatch`;
-- `plain-executable.test.ts:277` absolute `/health` bound.
 
 Captured runs (investigation on #211, 2026-11-25, `oven/bun:1.4.5` arm64 on 56801a71, load recorded):
 - **The unattributed `toBe`** (B112 worker run): did not recur in 3 full test steps (6,218 passing executions). It stays on watch. The v1.5.0 gate runs keep junit output, and any unattributed failure there blocks the tag.
@@ -315,6 +312,9 @@ Captured runs (investigation on #211, 2026-11-25, `oven/bun:1.4.5` arm64 on 5680
 New safe exotic-response differences are backlog under D57, by PR link; actual safety, auth or data defects never become backlog by relabelling.
 
 ## Accepted trade-offs
+
+- `test-send-trace.test.ts` counts the sink after draining the emailer with `close()`; a leak deferred past `close()` would not be counted (B118j r1 B1). No send path defers a push past the emailer, and the old 50 ms sleep had the same limit (lead, 2026-11-25).
+- `plain-executable.test.ts` `/health` comparisons (`:290`, `:336`): in a normal run the send has finished before `/health` is asked, so they catch a missing converter cap only through its multi-second send (B118j r1 B2). They pass with a 40–60 ms effective bound; if one fails, the fix is to ask while the conversion provably runs, not a wider bound (lead, 2026-11-25).
 
 - Media: under parallel load one extra campaign attachment buffer (at most one batch, 10 MiB or less) stays reachable after GC, with the holder unidentified ([D141](design/09-decisions.md), #196). The bound is measured, and a fix without the holder would be a guess (lead, 2026-11-25).
 - "Delivered test send logs nothing" waits 20 ms after the sink receives the message (`test/messaging/test-send-log.test.ts`). A delivered test send logs nothing by design (D109), and no settled signal is observable through a public boundary (B118d). A regression would have to log after that window, which needs a code change, not timing (lead, 2026-11-25).
