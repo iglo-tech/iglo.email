@@ -86,13 +86,26 @@ const membership = async (f: TxFixture, subscriber: number, list: number) =>
 /**
  * Waits until `check` holds, so a test reads a send after its outbox write, not at a fixed point. The
  * sink can hold a message before the send row is written (the row says `sending` until then), so a
- * single read after the sink count is not the settled state. Fails after 15 s without the state.
+ * single read after the sink count is not the settled state. The wait fails when nothing moves for 15 s:
+ * the sink's message count and `progress` (the send's status) stay the same. Total time alone never
+ * fails it (B118c item 1: a total limit ends a wait that is still making progress).
  */
-async function until(f: TxFixture, check: () => Promise<boolean>, label: string) {
-  const deadline = Date.now() + 15_000;
+async function until(
+  f: TxFixture,
+  check: () => Promise<boolean>,
+  label: string,
+  progress: () => Promise<string> = async () => "",
+) {
+  const stallMs = 15_000;
+  let mark = "";
+  let movedAt = Date.now();
   while (!(await check())) {
-    if (Date.now() > deadline) {
-      throw new Error(`timed out waiting for ${label}`);
+    const now = `${f.sink.messages.length}|${await progress()}`;
+    if (now !== mark) {
+      mark = now;
+      movedAt = Date.now();
+    } else if (Date.now() - movedAt > stallMs) {
+      throw new Error(`timed out waiting for ${label}: no progress for 15 s (${mark})`);
     }
     // The outbox's pauses run on the injected clock.
     f.clock.advance(0);
@@ -298,6 +311,7 @@ test("failed marketing does not count; resend respects the cap and rechecks cons
     f,
     async () => !["queued", "sending"].includes(await settledStatus(f, first.body.data.id)),
     "resend settled",
+    () => settledStatus(f, first.body.data.id),
   );
   expect(await settledStatus(f, first.body.data.id)).toBe("sent");
   // Now a delivered marketing message is inside the window for any other send.
@@ -325,6 +339,7 @@ test("failed marketing does not count; resend respects the cap and rechecks cons
     f,
     async () => (await settledStatus(f, resend.body.data.id)) !== "queued",
     "queued resend admitted",
+    () => settledStatus(f, resend.body.data.id),
   );
   expect((await f.json(`/api/sends/${resend.body.data.id}`)).body.data).toMatchObject({
     status: "skipped",
@@ -378,6 +393,7 @@ test("marketing has one SMTP recipient: request copies are 400, server copies ar
     f,
     async () => !["queued", "sending"].includes((await row(f, queued)).status),
     "queued marketing settled",
+    async () => String((await row(f, queued)).status),
   );
   expect((await row(f, queued)).status).toBe("sent");
   // Manual resend.

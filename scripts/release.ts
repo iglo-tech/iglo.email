@@ -88,7 +88,13 @@ async function startExecutable(
       await child.exited;
       const stderr = await new Response(child.stderr).text();
       if (attempt >= startAttempts || !/port \d+ in use/i.test(stderr)) {
-        throw error;
+        // The child's own message (its port in use, or its exit) is what a release operator needs.
+        const reason = error instanceof Error ? error.message : String(error);
+        const detail = stderr.trim() ? `: ${stderr.trim()}` : "";
+        throw new Error(
+          `Start failed after ${attempt} attempt${attempt === 1 ? "" : "s"}: ${reason}${detail}`,
+          { cause: error },
+        );
       }
     }
   }

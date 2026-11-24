@@ -116,6 +116,25 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
     }
   });
 
+  // B118c item 4 (B118a r2): when every attempt finds its port in use, the final error names the
+  // attempt count and the child's port-in-use message. Mutation: throw the bare error again (as
+  // before) and the message lacks "after 5 attempts" and the child's text.
+  test("gives up after five attempts and names the child's port in use", async () => {
+    const fake = join(temporaryDirectory, "always-in-use");
+    await writeFile(
+      fake,
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nprintf '%s\\n' 'listen: port 4242 in use' >&2\nexit 1\n`,
+    );
+    await chmod(fake, 0o755);
+    const result = await run(script("verify", fake), {
+      GITHUB_REF_TYPE: "branch",
+      GITHUB_REF_NAME: "main",
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("after 5 attempts");
+    expect(result.stderr).toContain("port 4242 in use");
+  });
+
   test("moves to a fresh port when another iglo.email server holds the first one", async () => {
     const directory = join(temporaryDirectory, "holder");
     await Bun.write(join(directory, ".keep"), "");

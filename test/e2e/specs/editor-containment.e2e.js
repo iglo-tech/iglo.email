@@ -6,6 +6,18 @@ import { expect } from "@playwright/test";
 import { corpus, audit } from "../hostile-html.js";
 import { api, ORIGIN, test, unique, signIn } from "../helpers.js";
 
+// A click just beside the first image, at a point computed from the boxes: right of it, or left of
+// it when the editor has no room. A fixed offset from the editor's corner can land on the image
+// after a resize, and the macOS layout puts it there (B118c item 6).
+const clickBesideImage = async (page) => {
+  const editor = await page.locator(EDITOR).boundingBox();
+  const image = await page.locator(`${EDITOR} img`).first().boundingBox();
+  const right = image.x + image.width + 6 - editor.x;
+  const x = right < editor.width ? right : Math.max(1, image.x - editor.x - 6);
+  const y = Math.max(1, image.y - editor.y + 2);
+  await page.locator(EDITOR).click({ position: { x, y } });
+};
+
 // One click selects an image for Squire's resizer; a drag on the corner handle resizes it.
 const afterDrag = async (page, stored) => {
   await signIn(page);
@@ -13,7 +25,7 @@ const afterDrag = async (page, stored) => {
   await open(page, c.id);
   await page.locator(`${EDITOR} img`).click();
   const dragged = await dragCorner(page);
-  await page.locator(EDITOR).click({ position: { x: 5, y: 5 } });
+  await clickBesideImage(page);
   await page.locator(EDITOR).pressSequentially("x");
   const save = page.waitForResponse((r) => r.request().method() === "PUT");
   await page.keyboard.press("Control+s");
@@ -239,7 +251,7 @@ test.describe("foreign content and undo", () => {
     await page.keyboard.type(" more");
     await page.keyboard.press("Enter");
     await page.keyboard.type("line");
-    await page.keyboard.press("Control+a");
+    await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("Control+b");
     for (const key of [
       "Control+z",
@@ -401,7 +413,7 @@ test.describe("remote images load on request", () => {
     await page.mouse.down();
     await page.mouse.move(box.x + 120, box.y + 80, { steps: 8 });
     await page.mouse.up();
-    await page.locator(EDITOR).click({ position: { x: 5, y: 5 } });
+    await clickBesideImage(page);
     await page.locator(EDITOR).pressSequentially("x");
     const stored = await saved(page, c.id);
     const tag = /<img[^>]*>/.exec(stored)[0];
@@ -585,7 +597,8 @@ test.describe("remote images load on request", () => {
       const c = await campaign(page, body);
       await open(page, c.id);
       await page.locator(`${EDITOR} p`).first().click();
-      for (const key of ["Control+a", "Control+x", "Control+v"]) {
+      // ControlOrMeta: on macOS Control+a and Control+x are not select-all and cut (B118c item 6).
+      for (const key of ["ControlOrMeta+a", "ControlOrMeta+x", "ControlOrMeta+v"]) {
         await page.keyboard.press(key);
       }
       await expect(page.getByTestId("editor-held")).toBeVisible();
@@ -651,11 +664,11 @@ test.describe("remote images load on request", () => {
       const c = await campaign(page, body);
       await open(page, c.id);
       await page.locator(`${EDITOR} p`).first().click();
-      for (const key of ["Control+a", "Control+x"]) {
+      for (const key of ["ControlOrMeta+a", "ControlOrMeta+x"]) {
         await page.keyboard.press(key);
       }
       await expect(page.locator(`${EDITOR} img`)).toHaveCount(0);
-      await page.keyboard.press("Control+v");
+      await page.keyboard.press("ControlOrMeta+v");
       await expect(page.locator(`${EDITOR} img`)).toHaveCount(1);
       await expect(page.getByTestId("editor-removed")).toBeHidden();
 
@@ -872,7 +885,9 @@ test.describe("remote images load on request", () => {
       await page.mouse.click(box.x + box.width + 2, box.y + box.height / 2);
       await page.keyboard.type("X");
       const body = await saveBody(page, c.id);
-      expect(body).toMatch(/<img[^>]*alt="held"[^>]*>X(&nbsp;| )two/);
+      // The caret goes to the image's edge or past the space after it, depending on the font (on
+      // macOS, after it: `&nbsp;X`). The check is that X lands between the image and "two".
+      expect(body).toMatch(/<img[^>]*alt="held"[^>]*>(&nbsp;| )?X(&nbsp;| )?two/);
     });
 
     test("one Backspace after a click on a linked banner with whitespace in the link removes image and link (B15)", async ({

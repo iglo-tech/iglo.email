@@ -136,6 +136,21 @@ describe("owned production lifecycle", () => {
     }
   });
 
+  // B118c item 1: a run that never ends is cancelled by the default lifetime, which must end before
+  // the 30 s test timeout, so the rejection and the child's removal belong to this test. Mutation:
+  // the default lifetime back at 30_000 makes this test time out instead of observing the cancel.
+  test("a run that never ends is cancelled by the default lifetime before the test timeout", async () => {
+    let origin = "";
+    await expect(
+      withProduction(executable, new AbortController().signal, async (baseUrl) => {
+        origin = baseUrl;
+        await new Promise<never>(() => {});
+      }),
+    ).rejects.toThrow();
+    expect(origin).not.toBe("");
+    await expect(get(origin)).rejects.toThrow();
+  }, 30_000);
+
   test("closes its compiled child when the run is cancelled", async () => {
     const controller = new AbortController();
     let ready!: (origin: string) => void;

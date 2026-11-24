@@ -28,7 +28,10 @@ export async function withProduction<T>(
     dataDir: string,
   ) => Promise<T>,
   admin?: { user: string; password: string },
-  timeoutMs = 30_000,
+  // The lifetime ends before a 30 s test timeout (`bun run test`), with room for the 8 s SIGKILL
+  // in `stop`. Equal lifetimes let the child outlive a timed-out test, and its late abort surfaces
+  // as an error that no test owns (B118c item 1).
+  timeoutMs = 20_000,
   environment: Record<string, string> = {},
 ): Promise<T> {
   const lifetime = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);

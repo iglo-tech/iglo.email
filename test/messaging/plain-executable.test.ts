@@ -282,7 +282,12 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
 // r3 B1: the reviewer's 12 KB template of unclosed <p> elements, which renders to about 1 MB. The
 // conversion gives up at its handler cap, so /health must not wait for it, and the message still
 // sends its HTML with no text part.
-test("a 12 KB template of unclosed <p> elements does not delay /health by more than 200 ms, and sends its HTML", async () => {
+// B118c item 3: the bound is a comparison inside the run, not 200 ms on the host. /health must answer
+// in less than half the time the same send takes; a server that waits for the conversion answers
+// only when the send is nearly over. The 300 ms wait lets the send reach its conversion first.
+// Mutation: remove the handler cap in the converter; /health then waits for the conversion, and the
+// comparison fails.
+test("a 12 KB template of unclosed <p> elements does not hold /health for half of its own send, and sends its HTML", async () => {
   const s = await stack();
   try {
     const body = "{% for i in (1..85) %}" + "<p>x<b>y</b>".repeat(1000) + "{% endfor %}";
@@ -294,17 +299,25 @@ test("a 12 KB template of unclosed <p> elements does not delay /health by more t
     });
     expect(template.status).toBe(200);
     const id = (await readJson<{ data: { id: number } }>(template)).data.id;
-    const sending = s.call("/api/tx", "POST", {
-      subscriber_mode: "external",
-      subscriber_emails: ["unclosed@example.test"],
-      template_id: id,
-    });
+    const sendStarted = performance.now();
+    let sendMs = 0;
+    const sending = s
+      .call("/api/tx", "POST", {
+        subscriber_mode: "external",
+        subscriber_emails: ["unclosed@example.test"],
+        template_id: id,
+      })
+      .then((response) => {
+        sendMs = performance.now() - sendStarted;
+        return response;
+      });
     await Bun.sleep(300);
     const asked = performance.now();
     const health = await s.call("/health");
+    const healthMs = performance.now() - asked;
     expect(health.status).toBe(200);
-    expect(performance.now() - asked).toBeLessThan(200);
     expect((await sending).status).toBe(200);
+    expect(healthMs).toBeLessThan(sendMs / 2);
     const mail = await waitFor(
       async () => s.sink.messages.find((m) => m.to.includes("unclosed@example.test")),
       "the unclosed-p mail",

@@ -282,6 +282,8 @@ for (const kind of Object.keys(implied)) {
 // catches quadratic work on the output, such as joining the output parts every 64 writes.
 const worstStrayEnds = (size: number) =>
   "<span>".repeat(1023) + "x</q>".repeat(Math.floor(size / 5));
+/** One line break per five bytes: the "x<br>" growth step (B118b r3). */
+const lineBreaks = (size: number) => "x<br>".repeat(Math.floor(size / 5));
 /** The size the capped shapes are compared at: a conversion that runs past the cap is quadratic there. */
 const CAP_SIZE = 4 * SIZE;
 /** One conversion's wall time, in milliseconds. */
@@ -324,16 +326,24 @@ test(`the worst linear case has each 4x step of input under ${STEP_BOUND}x, and 
       slow: false,
     });
   }
-  const inputs = [SIZE, 4 * SIZE, 16 * SIZE].map(worstStrayEnds).concat(capped.map((c) => c.html));
+  // B118b r3: "x<br>" gets its own 64 KiB to 256 KiB step, which a per-emit join (the join mutant) makes
+  // quadratic while the stray-end shape above does not.
+  const inputs = [SIZE, 4 * SIZE, 16 * SIZE].map(worstStrayEnds).concat(
+    [SIZE, 4 * SIZE].map(lineBreaks),
+    capped.map((c) => c.html),
+  );
   const samples = inputs.map((): Array<number> => []);
   for (let round = 0; round < ROUNDS; round++) {
     for (const [i, input] of inputs.entries()) {
       samples[i]!.push(await timed(input));
     }
   }
-  const [one, four, sixteen, ...cappedTimes] = samples.map((times) => median(times));
+  const [one, four, sixteen, breakOne, breakFour, ...cappedTimes] = samples.map((times) =>
+    median(times),
+  );
   expect(four! / one!).toBeLessThan(STEP_BOUND);
   expect(sixteen! / four!).toBeLessThan(STEP_BOUND);
+  expect(breakFour! / breakOne!).toBeLessThan(STEP_BOUND);
   const limit = four! / CAP_SHARE;
   expect(capped.flatMap((c, i) => (cappedTimes[i]! >= limit ? [c.name] : []))).toEqual([]);
 }, 30_000);

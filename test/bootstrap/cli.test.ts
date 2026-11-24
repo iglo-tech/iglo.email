@@ -9,6 +9,7 @@ import {
 import { AsyncLocalStorage } from "node:async_hooks";
 import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { healthWhenReady, restartOnPort, startOnFreePort, stopChild } from "@/test/serve-port";
@@ -58,6 +59,8 @@ interface Budget {
   readonly name: string;
   readonly ends: number;
   readonly children: Set<ReturnType<typeof start>>;
+  /** Set by the kill timer. A timer can fire a few ms before `performance.now()` reaches `ends`. */
+  expired: boolean;
 }
 const budgets = new AsyncLocalStorage<Budget>();
 const budgetMarginMs = 3000;
@@ -70,8 +73,10 @@ function test(name: string, body: () => Promise<void>, timeoutMs = defaultTimeou
         name,
         ends: performance.now() + timeoutMs - budgetMarginMs,
         children: new Set(),
+        expired: false,
       };
       const timer = setTimeout(() => {
+        budget.expired = true;
         for (const child of budget.children) {
           child.kill("SIGKILL");
         }
@@ -82,10 +87,14 @@ function test(name: string, body: () => Promise<void>, timeoutMs = defaultTimeou
   );
 }
 
-/** Starts the executable. Under a budget, a start after it ended fails by name, and the child is kept. */
+/**
+ * Starts the executable. Under a budget, a start after it ended fails by name, and the child is kept.
+ * A start is refused once the kill timer has fired, even when the clock has not yet reached `ends`:
+ * a child added after the kill would otherwise escape it (B118a r2).
+ */
 function start(args: Array<string>, env: Record<string, string> = {}) {
   const budget = budgets.getStore();
-  if (budget && performance.now() >= budget.ends) {
+  if (budget && (budget.expired || performance.now() >= budget.ends)) {
     throw new Error(`The test "${budget.name}" budget ended before: ${args.join(" ")}`);
   }
   const child = Bun.spawn([executable, ...args], {
@@ -101,31 +110,21 @@ function start(args: Array<string>, env: Record<string, string> = {}) {
   return child;
 }
 
+/**
+ * Runs the CLI to its exit. A CLI that is still running when its test's budget ends is killed by
+ * that budget (B118c item 2), so there is no per-call timer; a killed child fails the run by name.
+ */
 async function runCli(args: Array<string>, env: Record<string, string> = {}) {
   const child = start(args, env);
-  const budget = budgets.getStore();
-  const remaining = budget ? budget.ends - performance.now() : Number.POSITIVE_INFINITY;
-  let timedOut = false;
-  const timer = setTimeout(
-    () => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    },
-    Math.min(3000, remaining),
-  );
-  try {
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ]);
-    if (timedOut) {
-      throw new Error(`CLI did not exit: ${args.join(" ")}`);
-    }
-    return { code, stdout, stderr };
-  } finally {
-    clearTimeout(timer);
+  const [code, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  if (child.signalCode !== null) {
+    throw new Error(`CLI did not exit before its budget ended: ${args.join(" ")}`);
   }
+  return { code, stdout, stderr };
 }
 
 /**
@@ -916,8 +915,8 @@ describe("compiled executable", () => {
   test("a body that outlives its budget fails its next CLI run by name and kills its children", async () => {
     const name =
       "a body that outlives its budget fails its next CLI run by name and kills its children";
-    // Its budget ends 9 s after the test starts (the 12 s timeout less 3 s). The child it starts is
-    // killed then, and the wait below ends at that exit, or at 9 s when no kill comes.
+    // The budget ends 9 s after the test starts (the 12 s timeout less 3 s), and kills the child
+    // then. The wait is on that exit itself: when no kill comes, the test's own timeout ends it.
     const { child } = await startOnPort((listenPort) => ({
       args: [
         "--port",
@@ -927,17 +926,40 @@ describe("compiled executable", () => {
       ],
     }));
     try {
-      await Promise.race([child.exited, Bun.sleep(9000)]);
+      await child.exited;
+      expect(child.signalCode).toBe("SIGKILL");
       const next = await runCli(["--version"]).then(() => "ran", String);
       expect(next).toContain(`The test "${name}" budget ended`);
-      const exited = await Promise.race([
-        child.exited.then(() => true),
-        Bun.sleep(500).then(() => false),
-      ]);
-      expect(exited).toBe(true);
     } finally {
       child.kill("SIGKILL");
       await child.exited;
     }
+  }, 12_000);
+
+  // B118c item 2: runCli has no fixed kill timer. A CLI that runs past 3 s lives until its budget
+  // ends at 9 s. The sleep is the thing under test: the server must still run at 4 s. Mutation:
+  // restore a 3 s timer in runCli; the server is then killed before the check at 4 s.
+  test("a CLI that runs past 3 s is killed by its budget, not by a fixed timer", async () => {
+    const probe = createServer();
+    await new Promise<void>((done) => {
+      probe.listen(0, "127.0.0.1", () => done());
+    });
+    const address: AddressInfo | string | null = probe.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("No probe port was assigned");
+    }
+    const port = address.port;
+    await new Promise<void>((done) => {
+      probe.close(() => done());
+    });
+    const run = runCli([
+      "--port",
+      String(port),
+      "--data-dir",
+      join(temporaryDirectory, "past-3s"),
+    ]).then(() => "exited", String);
+    await Bun.sleep(4000);
+    expect(await Promise.race([run, Promise.resolve("running")])).toBe("running");
+    expect(await run).toContain("did not exit before its budget ended");
   }, 12_000);
 });
