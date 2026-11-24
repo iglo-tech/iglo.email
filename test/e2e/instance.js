@@ -226,7 +226,9 @@ export async function restoredInstance(executable, sourceDataDir) {
       throw new Error(`backup exited ${made.code}: ${made.stderr}`);
     }
     const dataDir = join(directory, "data");
-    await cp(snapshot, dataDir, { recursive: true });
+    // B138b layout (docs/operations.md, Restore): a backup is the primary project's directory and
+    // is restored as projects/main/ of the new data directory.
+    await cp(snapshot, join(dataDir, "projects", "main"), { recursive: true });
     return await startInstance(executable, dataDir, directory);
   } catch (error) {
     await rm(directory, { recursive: true, force: true });

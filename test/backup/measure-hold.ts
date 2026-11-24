@@ -13,9 +13,11 @@ const SUBSCRIBERS = 300_000;
 const directory = temporaryDirectory();
 try {
   const dataDir = join(directory, "data");
-  mkdirSync(dataDir);
-  const db = openDatabase(dataDir);
-  runMigrations(db, dataDir, createRealClock(), productionMigrations);
+  // B138b layout: the primary project's database, under projects/main/, where seedSubscribers writes.
+  const project = join(dataDir, "projects", "main");
+  mkdirSync(project, { recursive: true });
+  const db = openDatabase(project);
+  runMigrations(db, project, createRealClock(), productionMigrations);
   const reads = (label: string) => {
     const started = performance.now();
     for (let i = 0; i < ROUNDS; i++) {
@@ -29,7 +31,7 @@ try {
   db.close(true);
 
   seedSubscribers(dataDir, SUBSCRIBERS);
-  const source = new Database(join(dataDir, "iglo-email.db"));
+  const source = new Database(join(project, "iglo-email.db"));
   const snapshot = join(directory, "snapshot.db");
   source.run("VACUUM INTO ?", [snapshot]);
   source.close(true);

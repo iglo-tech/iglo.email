@@ -237,7 +237,9 @@ test.skipIf(process.getuid?.() === 0)("a lock file it cannot write stops the ser
   const refused = await secondServer(data);
   expect(refused.exitCode).toBe(1);
   expect(refused.stderr).toStartWith(`Cannot lock ${lock}: `);
-  expect(existsSync(join(data, "iglo-email.db"))).toBe(false);
+  // B138b layout: neither the instance database nor the primary project's was created.
+  expect(existsSync(join(data, "instance.db"))).toBe(false);
+  expect(existsSync(join(data, "projects", "main", "iglo-email.db"))).toBe(false);
 });
 
 test("two data directories run side by side", async () => {

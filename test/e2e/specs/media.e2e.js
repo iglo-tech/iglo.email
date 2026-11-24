@@ -127,7 +127,8 @@ test("hostile file names render as text and stay inside a copied URL", async ({
 });
 
 test("a refused upload root shows the API's reason and keeps the page", async ({ page }) => {
-  const uploads = join(process.env.E2E_DATA_DIR, "uploads");
+  // B138b layout: uploads are the primary project's, under projects/main/.
+  const uploads = join(process.env.E2E_DATA_DIR, "projects", "main", "uploads");
   const moved = `${uploads}.e2e`;
   const outside = await mkdtemp(join(tmpdir(), "iglo-e2e-outside-"));
   await page.goto(MEDIA);
