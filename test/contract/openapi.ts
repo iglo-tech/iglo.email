@@ -1715,6 +1715,13 @@ export async function runOpenApiContract(target: {
       "DELETE /api/templates/{id}",
       "PUT /api/templates/{id}/default",
     ]);
+    // B117c r1: these answer 200 for a missing ID, as listmonk does (checked against upstream). The
+    // answer is pinned per endpoint, so a 2xx from any other endpoint fails rather than passing as "any 2xx".
+    const absentAnswers = new Map<string, number>([
+      ["PUT /api/subscribers/{id}/blocklist", 200],
+      ["GET /api/subscribers/{id}/bounces", 200],
+      ["GET /api/subscribers/{id}/activity", 200],
+    ]);
     const absentFailures: Array<string> = [];
     for (const { key, operation } of operations) {
       // One path parameter only: the others would take a placeholder that is not an ID.
@@ -1732,10 +1739,12 @@ export async function runOpenApiContract(target: {
             expect: [200, 400, 404],
           });
           const code = reply.body?.code;
+          const pinned = absentAnswers.get(key);
           check(
-            reply.status < 400 ||
-              code === "not_found" ||
-              (refusedAbsent.has(key) && code === "invalid_fields"),
+            pinned !== undefined
+              ? reply.status === pinned
+              : reply.status >= 400 &&
+                  (code === "not_found" || (refusedAbsent.has(key) && code === "invalid_fields")),
             `not-found-${key} ${reply.status} ${reply.text.slice(0, 200)}`,
           );
         } catch (error) {

@@ -443,3 +443,11 @@ x@route.test / route.test, pinned selects x@route.test while native selects
 route.test, one accepted message each. This prevents local-part contents
 from steering mail to an unrelated configured provider bucket. The paired
 routing corpus marks this exact difference; ordinary controls remain compatible.
+
+## SMTP connection limits seen by one server (B101, B118c)
+
+Each configured SMTP server has two pools: the real-send pool and the test-send pool (D109). Each
+pool is capped at the server's `max_conns`, so one server can see up to 2 × `max_conns` connections
+at once: real sends and campaign or sequence-step test sends at the same time. A test pool does not
+share a socket with a real send, but it does share the remote server's limit, so an operator who
+sets `max_conns` for a provider's limit must count both pools.
