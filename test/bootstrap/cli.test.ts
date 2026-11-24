@@ -12,6 +12,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  cpuProgress,
   healthWhenReady,
   listensOn,
   restartOnPort,
@@ -195,8 +196,9 @@ async function startThroughCli(port: number, dataDir: string) {
   const exited = run.then((result) => {
     throw new Error(`Server exited before it became ready: ${result.stderr}`);
   });
-  // Readiness has no progress signal, so the stall window is the whole 15 s budget (as in
-  // `healthWhenReady`). After an exit the wait never settles: the exit alone decides the start.
+  // Readiness is a stall window on the child's CPU time, as in `healthWhenReady` (B118g): a start
+  // that is still computing keeps going, and one that hangs without CPU fails after 15 s. After an
+  // exit the wait never settles: the exit alone decides the start.
   let last = "no answer yet";
   const listening = untilState(
     async () => {
@@ -222,7 +224,7 @@ async function startThroughCli(port: number, dataDir: string) {
     },
     {
       label: "Server ready",
-      progress: () => "starting",
+      progress: () => cpuProgress(child.pid),
       stallMs: 15_000,
       intervalMs: 25,
       describe: () => last,

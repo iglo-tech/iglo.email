@@ -603,7 +603,9 @@ export async function txFixture(
     /**
      * Advances the injected clock a second per step, at most 200 steps, while a send is open. The
      * bound is in injected time, so every host sees the same window: a send that never settles uses
-     * all 200 steps. Fails by name unless exactly `expectOpen` (default 0) sends are still open.
+     * all 200 steps. A send that settles also takes real time: each step yields 5 ms so the outbox
+     * and SMTP I/O can run, so a settling drain is bounded by its steps and by that real time.
+     * Fails by name unless exactly `expectOpen` (default 0) sends are still open.
      */
     async drain(expectOpen = 0) {
       let open = Number(openSends());

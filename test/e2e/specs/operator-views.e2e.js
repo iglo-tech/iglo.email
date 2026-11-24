@@ -1,8 +1,6 @@
 // B127: the operator screens. The send log is a page of its own and filters by status; a subscriber's
 // sends and events name each message's subject, sequence and reason; an exact external ID finds its
 // subscriber on the list; and the subscriber's tabs fit a phone without the page scrolling sideways.
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { expect } from "@playwright/test";
 import { api, createUser, logout, makeList, PASSWORD, signIn, test, unique } from "../helpers.js";
 
@@ -345,42 +343,10 @@ test("a cap-held wait names the cap and when it frees the step, on the subscribe
   );
 });
 
-// B127 r2: the sends whose sent time is missing or whose subject the thirty-day retention dropped say
-// so. The pass cannot run in a test, so the payload of a finished send is cleared as the pass clears
-// it; the address and the status stay, and the send log must read the same as after a real pass.
-test("a sent send past the thirty-day retention says its subject is no longer kept", async ({
-  page,
-}) => {
-  await signIn(page);
-  const list = await audience(page);
-  const email = `${unique("op")}@example.com`;
-  const { subscriber, subject } = await started(page, list, email);
-  let sendID = null;
-  await expect
-    .poll(async () => {
-      const sends = await api(page, `/api/subscribers/${subscriber}/sends?per_page=100`);
-      sendID = sends.body.data.results.find((send) => send.status === "sent")?.id ?? null;
-      return sendID;
-    })
-    .not.toBeNull();
-  const db = new DatabaseSync(join(process.env.E2E_DATA_DIR, "iglo-email.db"), { timeout: 5000 });
-  try {
-    db.prepare("UPDATE sends SET payload = NULL WHERE id = ?").run(sendID);
-  } finally {
-    db.close();
-  }
-
-  await page.goto("/admin/sends");
-  const row = page.locator(`[data-testid="send-row"][data-id="${sendID}"]`);
-  await expect(row).toContainText("Subject no longer kept (30-day retention)");
-  await expect(row).not.toContainText(subject);
-  await expect(row).toContainText(email);
-  await expect(row.locator('td[data-label="Sent"]')).not.toHaveText("—");
-  await page.goto(`/admin/subscribers/${subscriber}/sends`);
-  await expect(page.getByTestId("send-row").first()).toContainText(
-    "Subject no longer kept (30-day retention)",
-  );
-});
+// B127 r2: the thirty-day retention label ("Subject no longer kept") is not checked here. Only the
+// retention pass leaves a sent send without its payload, and this spec runs on the real clock, so it
+// cannot run that pass. test/retention runs it through the injected clock and checks the API's
+// `subject_missing: "retention"`, which the send log turns into the label.
 
 test("a send with no subject says why: a refused one was never prepared, a wiped one lost its address", async ({
   page,

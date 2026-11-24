@@ -18,6 +18,12 @@ plan and its time at a million sends.
   `bun test/sends/measure-status-index.ts 1000000 20000 3`: one database migrated to schema 27 and one to
   schema 28, each filled with the same million sends (5,000 subscribers), then three repetitions of the
   send path's write work, and the two analytics reads through the production store.
+- B118g: the script's claim and settle are now the production `createSends` functions (`claim`,
+  `finish`), and migration 0029 is timed with its production SQL. The claim and settle figures under
+  "Write path at a million sends" were taken with the earlier hand-written statements, so they are
+  not a comparison for the script as it is now; a re-run at the size above is needed before a claim
+  or settle number is compared. The migration 0029 figure was taken with a stand-in `ALTER` of the
+  same shape. The insert and the reads are unchanged.
 
 ## Before and after migration 0028
 
