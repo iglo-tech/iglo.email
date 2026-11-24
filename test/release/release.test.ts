@@ -119,9 +119,10 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
   // Mutation: the five-attempt retry back in the script, and "after 5 attempts" is in the message.
   test("fails at once, with the child's message, when its port is in use", async () => {
     const fake = join(temporaryDirectory, "port-in-use");
+    const starts = join(temporaryDirectory, "port-in-use.starts");
     await writeFile(
       fake,
-      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nprintf '%s\\n' 'listen: port 4242 in use' >&2\nexit 1\n`,
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nprintf 'x' >> '${starts}'\nprintf '%s\\n' 'listen: port 4242 in use' >&2\nexit 1\n`,
     );
     await chmod(fake, 0o755);
     const result = await run(script("verify", fake), {
@@ -131,6 +132,8 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("port 4242 in use");
     expect(result.stderr).not.toContain("attempts");
+    // One start: a second start on another port would be a retry, which the port naming removes.
+    expect(await Bun.file(starts).text()).toBe("x");
   });
 
   // The script reads the port from the child's line and checks that the child listens on it. The
@@ -141,7 +144,7 @@ describe.skipIf(process.platform !== "linux")("release verify", () => {
     const fake = join(temporaryDirectory, "names-another-port");
     await writeFile(
       fake,
-      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nprintf '%s\\n' 'listening on port 1'\nexec sleep 30\n`,
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then printf '%s\\n' '${version}'; exit 0; fi\nprintf '%s\\n' 'listening on port 1'\nexec /bin/sleep 30\n`,
     );
     await chmod(fake, 0o755);
     const result = await run(script("verify", fake), {
