@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAnalyticsReader } from "@/analytics/reader";
+import { untilState } from "@/test/wait";
 
 // Each child logs when it starts and, once released, when it ends; the order of the log says
 // whether the second read ran beside the first or waited for it. No elapsed time is measured.
@@ -28,9 +29,14 @@ const run = async (advance: boolean) => {
   });
   try {
     const first = reader.read("dashboardCounts", []);
-    while (lines().length < 1) {
-      await Bun.sleep(5);
-    }
+    // A child start is real I/O: the wait fails by name when the log stops growing (B118d sweep).
+    const started = (count: number) =>
+      untilState(() => lines().length >= count, {
+        label: `child ${count} started`,
+        progress: () => String(lines().length),
+        stallMs: 10_000,
+      });
+    await started(1);
     if (advance) {
       time = 10_000;
     }
@@ -38,9 +44,7 @@ const run = async (advance: boolean) => {
     // Within the window the second child starts beside the first; past it, it is held back
     // until the first has finished, so there is nothing to wait for and the release comes now.
     if (!advance) {
-      while (lines().length < 2) {
-        await Bun.sleep(5);
-      }
+      await started(2);
     }
     writeFileSync(go, "");
     await Promise.all([first, second]);
