@@ -69,6 +69,8 @@ interface Budget {
 }
 const budgets = new AsyncLocalStorage<Budget>();
 const budgetMarginMs = 3000;
+/** The budget of a test with a 12 s timeout: the budget tests at the end of this file. */
+const budgetMs = 12_000 - budgetMarginMs;
 
 function test(name: string, body: () => Promise<void>, timeoutMs = defaultTimeoutMs) {
   bunTest(
@@ -182,6 +184,9 @@ async function startThroughCli(port: number, dataDir: string) {
   });
   const [child] = started;
   if (!child) {
+    // runCli rejects when start refuses (a budget that has ended): its error is the answer, and
+    // awaiting the run handles its rejection instead of leaving it unhandled (B118c r3 backlog).
+    await run;
     throw new Error("runCli did not start the executable");
   }
   // The run settles only when the process has exited, and then the start fails with its stderr.
@@ -1009,9 +1014,21 @@ describe("compiled executable", () => {
   // before the check at 4 s. Mutation 2: the "did not exit before its budget ended" check removed
   // from runCli; the run then resolves, and the expectation on its rejection fails.
   test("a server that runs past 3 s is killed by its budget, not by a fixed timer", async () => {
+    const begun = performance.now();
     const { child, run } = await startOnFreePort((port) =>
       startThroughCli(port, join(temporaryDirectory, "past-3s")),
     );
+    // B118c r3 item 8b: a start that takes 5 to 9 s would leave the check below to find the process
+    // already killed, with the same output as mutation 1. Name a slow start instead (mutation 3: a
+    // 5 s sleep before the start fails with this message, not with "SIGKILL").
+    const startMs = performance.now() - begun;
+    if (startMs > budgetMs - 4000) {
+      child.kill("SIGKILL");
+      await run.catch(() => undefined);
+      throw new Error(
+        `start took ${Math.round(startMs)} ms, too slow to leave the 4 s check within the ${budgetMs} ms budget`,
+      );
+    }
     await Bun.sleep(4000);
     expect(child.exitCode).toBeNull();
     expect(child.signalCode).toBeNull();
@@ -1019,5 +1036,19 @@ describe("compiled executable", () => {
     const outcome = await run.then(() => "resolved", String);
     expect(outcome).toContain("CLI did not exit before its budget ended");
     expect(child.signalCode).toBe("SIGKILL");
+  }, 12_000);
+
+  // B118c r3 backlog: a retry that starts after its budget ended. The sleep is the thing under test:
+  // the budget has to end in real time before the start. The start is refused by name, and the
+  // refusal is the answer; before the fix the run's rejection went unhandled and the test saw
+  // "runCli did not start the executable". Mutation: the `await run` in startThroughCli removed.
+  test("a start after its budget ended is refused with the budget message", async () => {
+    await Bun.sleep(budgetMs + 100);
+    const outcome = await startThroughCli(1, join(temporaryDirectory, "after-budget")).then(
+      () => "started",
+      String,
+    );
+    expect(outcome).toContain("budget ended before: --port 1 --data-dir");
+    expect(outcome).not.toContain("did not start the executable");
   }, 12_000);
 });
