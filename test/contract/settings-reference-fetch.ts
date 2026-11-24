@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { asBody } from "@/test/read-body";
 
 // Last lines of the reference's own log, on one printable line, without credentials.
@@ -75,13 +75,30 @@ export async function settingsFetch(
 
 const INVALID_BATCH_SIZE_EXIT = "'batch_size' cannot parse value as 'int'";
 
-function upstreamLogHas(text: string): boolean {
+/**
+ * Bytes the reference's log holds now. A caller records it before a write; the read then searches
+ * only the log written after it.
+ */
+export function upstreamLogSize(): number {
+  const path = process.env.REFERENCE_LOG;
+  if (!path) {
+    return 0;
+  }
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
+// Searches the log from byte `from` on, so an exit line written before the write cannot end the read.
+function upstreamLogHas(text: string, from: number): boolean {
   const path = process.env.REFERENCE_LOG;
   if (!path) {
     return false;
   }
   try {
-    return readFileSync(path, "utf-8").includes(text);
+    return readFileSync(path).subarray(from).toString("utf-8").includes(text);
   } catch {
     return false;
   }
@@ -94,9 +111,15 @@ function upstreamLogHas(text: string): boolean {
 // accepted; a healthy 200 or any other status is "unexpected".
 export type InvalidSettingsReadEnd = "500" | "exited" | "unexpected";
 
+/**
+ * `logFrom` is `upstreamLogSize()` taken before the invalid write, so only the log written after it
+ * can show the failed boot (B114). `deadlineMs` bounds the wait for that line.
+ */
 export async function invalidSettingsReadEnd(
   url: string,
   init: RequestInit,
+  logFrom: number,
+  deadlineMs = 10_000,
 ): Promise<InvalidSettingsReadEnd> {
   let status: number | undefined;
   try {
@@ -114,8 +137,8 @@ export async function invalidSettingsReadEnd(
   }
   // Upstream's awaitReload waits up to 3 s for shutdown before it respawns, and the
   // respawned process must then fail to boot, so the exit line can trail the refusal.
-  const deadline = Date.now() + 10_000;
-  while (!upstreamLogHas(INVALID_BATCH_SIZE_EXIT)) {
+  const deadline = Date.now() + deadlineMs;
+  while (!upstreamLogHas(INVALID_BATCH_SIZE_EXIT, logFrom)) {
     if (Date.now() >= deadline) {
       return "unexpected";
     }

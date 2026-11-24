@@ -156,6 +156,35 @@ function listensOnProc(pid: number, port: number): boolean {
   return false;
 }
 
+/**
+ * The CPU time `pid` has used so far, as a string that changes while the process works. A readiness
+ * wait uses it as its progress: a start that is slow but still computing keeps its stall window open,
+ * and a start that hangs without CPU fails when the window ends (B118g). Linux reads utime and stime
+ * from /proc; macOS asks ps for the cumulative time. A process that is gone reads as "gone".
+ */
+export function cpuProgress(pid: number | undefined): string {
+  if (pid === undefined) {
+    return "starting";
+  }
+  if (process.platform === "darwin") {
+    const result = Bun.spawnSync({
+      cmd: ["/bin/ps", "-o", "time=", "-p", String(pid)],
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    return result.stdout.toString().trim() || "gone";
+  }
+  try {
+    // The fields after the command name, which is in parentheses: field 3 (state) is the first.
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    // utime is field 14 and stime field 15 of /proc/<pid>/stat.
+    return `${fields[11]}+${fields[12]}`;
+  } catch {
+    return "gone";
+  }
+}
+
 /** The part of a spawned process that these helpers use: `Bun.spawn` returns it. */
 export interface Child {
   readonly pid?: number;
@@ -189,10 +218,11 @@ export async function stopChild(
  * Resolves once the process answers /health on `port` and listens on it, or throws with its stderr
  * when it exits first. Gives up after `timeoutMs` (fifteen seconds by default).
  *
- * The budget bounds a start that never finishes; a start that fails is seen at once through the
- * exit code. It was five seconds, and a start on a loaded host (8 test workers, or amd64 emulation)
- * could take longer than that for a reason that is not a failure (B118a). Fifteen seconds stays
- * inside the 30-second per-test limit, so a hung start still fails by name before the test does.
+ * The window is a stall window, not a total budget (B118g): the child's CPU time is the progress, so
+ * a start on a loaded host that is still computing is not cut off, and one that hangs without CPU
+ * fails once `timeoutMs` (fifteen seconds by default) has passed with no CPU time used. A start that
+ * fails is seen at once through the exit code. Fifteen seconds stays inside the 30-second per-test
+ * limit, so a hung start still fails by name before the test does.
  */
 export async function healthWhenReady(
   child: Child,
@@ -201,8 +231,6 @@ export async function healthWhenReady(
 ): Promise<Response> {
   let response: Response | undefined;
   let last = "no answer yet";
-  // Readiness has no progress signal: nothing in the process changes until it listens. So the
-  // stall window is the whole budget, with the progress fixed at "starting" (B118d perf note).
   await untilState(
     async () => {
       if (child.exitCode !== null) {
@@ -229,7 +257,7 @@ export async function healthWhenReady(
     },
     {
       label: "Server ready",
-      progress: () => "starting",
+      progress: () => cpuProgress(child.pid),
       stallMs: timeoutMs,
       intervalMs: 25,
       describe: () => last,
