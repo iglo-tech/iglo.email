@@ -1,6 +1,6 @@
 // Representative HTTP binding cases shared with the pinned reference.
 import type { Credentials, Mode } from "@/test/contract/types";
-import { settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { assertReloadable, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import { asBody } from "@/test/read-body";
 
 const check = (condition: unknown, label: string) => {
@@ -15,6 +15,7 @@ export async function runSettingsBinding(target: {
   credentials: Credentials;
 }) {
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
+  const reference = target.mode === "reference";
   const request = (path: string, init: RequestInit) =>
     settingsFetch(target.baseUrl + path, init, target.mode === "reference");
   const get = async () =>
@@ -33,6 +34,7 @@ export async function runSettingsBinding(target: {
     ["nel-padding", "<AppBatchSize>\u0085 42 \u0085</AppBatchSize>", 42],
   ] as const) {
     check((await put("/api/settings", xml(contents), "application/xml")).status === 200, label);
+    await assertReloadable(reference, label);
     const result = await get();
     check(
       result["app.batch_size"] === expected && result["app.enable_public_archive"] === false,
@@ -49,6 +51,7 @@ export async function runSettingsBinding(target: {
     ).status === 200,
     "repeated-slice",
   );
+  await assertReloadable(reference, "repeated-slice");
   check(
     JSON.stringify((await get())["app.notify_emails"]) === '["","ops@example.test"]',
     "repeated-slice-projection",
@@ -57,6 +60,7 @@ export async function runSettingsBinding(target: {
     (await put("/api/settings", xml("") + "<broken", "application/xml")).status === 200,
     "unconsumed-suffix",
   );
+  await assertReloadable(reference, "unconsumed-suffix");
   const suffixBytes = new Uint8Array([...new TextEncoder().encode(xml("")), 255]);
   check(
     (
@@ -68,6 +72,7 @@ export async function runSettingsBinding(target: {
     ).status === 200,
     "unconsumed-invalid-utf8",
   );
+  await assertReloadable(reference, "unconsumed-invalid-utf8");
   const badBytes = new Uint8Array([
     ...new TextEncoder().encode(base + "<AppSiteName>"),
     255,
@@ -92,6 +97,7 @@ export async function runSettingsBinding(target: {
     (await put("/api/settings", "<!DOCTYPE Settings>" + xml(""), "application/xml")).status === 200,
     "doctype",
   );
+  await assertReloadable(reference, "doctype");
   check(
     (
       await put(
@@ -102,11 +108,13 @@ export async function runSettingsBinding(target: {
     ).status === 200,
     "declaration-metadata",
   );
+  await assertReloadable(reference, "declaration-metadata");
   check(
     (await put("/api/settings", xml("<OIDC><DefaultUserRoleID/></OIDC>"), "application/xml"))
       .status === 200,
     "empty-nullable-role",
   );
+  await assertReloadable(reference, "empty-nullable-role");
   check(
     (await get())["security.oidc"].default_user_role_id === null,
     "empty-nullable-role-projection",
@@ -121,6 +129,7 @@ export async function runSettingsBinding(target: {
     ).status === 200,
     "omitted-pointer-role",
   );
+  await assertReloadable(reference, "omitted-pointer-role");
   for (const [label, body] of [
     ["bom-scalar", xml("<AppBatchSize>\ufeff42\ufeff</AppBatchSize>")],
     ["unsupported-map", xml("<BounceActions><x><Count>1</Count></x></BounceActions>")],
@@ -138,10 +147,12 @@ export async function runSettingsBinding(target: {
   const longS: Record<string, unknown> = { ...original, "app.ſite_name": "folded" };
   delete longS["app.site_name"];
   check((await put("/api/settings", JSON.stringify(longS))).status === 200, "long-s");
+  await assertReloadable(reference, "long-s");
   check((await get())["app.site_name"] === "folded", "long-s-projection");
   const sharpS: Record<string, unknown> = { ...original, "app.ßite_name": "ignored" };
   delete sharpS["app.site_name"];
   check((await put("/api/settings", JSON.stringify(sharpS))).status === 200, "sharp-s");
+  await assertReloadable(reference, "sharp-s");
   check((await get())["app.site_name"] === "", "sharp-s-projection");
   const addMembers = (members: string) =>
     JSON.stringify(original).slice(0, -1) + "," + members + "}";
@@ -184,6 +195,7 @@ export async function runSettingsBinding(target: {
     ],
   ] as const) {
     check((await put("/api/settings", addMembers(members))).status === 200, label);
+    await assertReloadable(reference, label);
     let value: any = await get();
     if (label === "nested-alias" || label === "nested-kelvin") {
       value = value["security.captcha"].hcaptcha.key;
@@ -205,6 +217,7 @@ export async function runSettingsBinding(target: {
     (await put("/api/settings", addMembers('"unknown":{"x":1e999}'))).status === 200,
     "unused-large-metadata",
   );
+  await assertReloadable(reference, "unused-large-metadata");
   for (const [label, type, body, message] of [
     [
       "form-valid",
@@ -250,6 +263,7 @@ export async function runSettingsBinding(target: {
         .status === 200,
       "address-valid",
     );
+    await assertReloadable(reference, "address-valid");
     check((await get())["app.from_email"][0] === address, "address-projection");
   }
   for (const address of [
@@ -297,6 +311,7 @@ export async function runSettingsBinding(target: {
       ).status === 200,
       "cron-valid",
     );
+    await assertReloadable(reference, "cron-valid");
   }
   for (const cron of [
     "@every 1500ms",
@@ -352,4 +367,5 @@ export async function runSettingsBinding(target: {
     "cron-duration-envelope",
   );
   check((await put("/api/settings", JSON.stringify(original))).status === 200, "restore");
+  await assertReloadable(reference, "restore");
 }

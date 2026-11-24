@@ -1,6 +1,6 @@
 // Public parser regressions: listmonk cmd/settings.go at 6fcd95f.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
-import { settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { assertReloadable, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
@@ -21,6 +21,7 @@ export async function runSettingsCouncilParser(target: {
   credentials: Credentials;
 }) {
   const auth = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
+  const reference = target.mode === "reference";
   const request = (value?: unknown) =>
     settingsFetch(
       `${target.baseUrl}/api/settings`,
@@ -47,6 +48,7 @@ export async function runSettingsCouncilParser(target: {
     const response = await request(next);
     const result = await response.json();
     check(response.status === 200 && JSON.stringify(result) === '{"data":true}', `${label}-status`);
+    await assertReloadable(reference, `${label}-status`);
     const after = await read();
     check(JSON.stringify(after[key]) === JSON.stringify(value), `${label}-stored`);
   }
@@ -213,10 +215,12 @@ export async function runSettingsCouncilParser(target: {
   disabled["app.cache_slow_queries"] = false;
   disabled["app.cache_slow_queries_interval"] = "\ufeffnot a cron";
   check((await request(disabled)).status === 200, "cron-disabled");
+  await assertReloadable(reference, "cron-disabled");
   check(
     (await read())["app.cache_slow_queries_interval"] ===
       disabled["app.cache_slow_queries_interval"],
     "cron-disabled-stored",
   );
   check((await request(candidate(original))).status === 200, "restore");
+  await assertReloadable(reference, "restore");
 }

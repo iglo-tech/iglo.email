@@ -7,6 +7,7 @@ import { runSettingsNewItems } from "@/test/contract/settings-new-items";
 import { runSettingsCouncilFinal } from "@/test/contract/settings-council-final";
 import { runSettingsBinding } from "@/test/contract/settings-binding";
 import {
+  assertReloadable,
   invalidSettingsReadEnd,
   settingsFetch,
   upstreamLogSize,
@@ -27,6 +28,8 @@ export async function runSettingsContract(target: {
   restart?: () => Promise<void>;
 }) {
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
+  // Reference writes are followed by assertReloadable, which reads the stored SMTP items from upstream's database.
+  const reference = target.mode === "reference";
   const request = (path: string, method = "GET", body?: string, auth = authorization) =>
     settingsFetch(
       `${target.baseUrl}${path}`,
@@ -106,6 +109,7 @@ export async function runSettingsContract(target: {
     target.mode === "reference",
   );
   check(xml.status === 200, "xml-full-write");
+  await assertReloadable(reference, "xml-full-write");
   check(
     JSON.stringify(
       asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
@@ -147,6 +151,7 @@ export async function runSettingsContract(target: {
     write.status === 200 && JSON.stringify(await write.json()) === '{"data":true}',
     "full-write",
   );
+  await assertReloadable(reference, "full-write");
   const updated = asBody<{ data: Record<string, any> }>(
     await (await request("/api/settings")).json(),
   ).data;
@@ -187,6 +192,7 @@ export async function runSettingsContract(target: {
     max_msg_retries: 1,
   };
   check((await messengerPut([postback])).status === 200, "messenger-add");
+  await assertReloadable(reference, "messenger-add");
   let listed = await messengerGet();
   check(
     listed.length === 1 &&
@@ -200,6 +206,7 @@ export async function runSettingsContract(target: {
   );
   const kept = { ...listed[0], password: "", timeout: "7s" } as Record<string, any>;
   check((await messengerPut([kept])).status === 200, "messenger-keep-password");
+  await assertReloadable(reference, "messenger-keep-password");
   listed = await messengerGet();
   check(
     listed.length === 1 &&
@@ -213,6 +220,7 @@ export async function runSettingsContract(target: {
       (await messengerGet())[0]!.password === "•".repeat("longer-secret".length),
     "messenger-change-password",
   );
+  await assertReloadable(reference, "messenger-change-password");
   for (const [label, names] of [
     ["duplicate", ["dup", "DUP"]],
     ["reserved", ["email"]],
@@ -229,12 +237,14 @@ export async function runSettingsContract(target: {
     "messenger-refusal-atomic",
   );
   check((await messengerPut([{ ...kept, name: "Renamed" }])).status === 200, "messenger-rename");
+  await assertReloadable(reference, "messenger-rename");
   listed = await messengerGet();
   check(
     listed.length === 1 && listed[0]!.name === "renamed" && listed[0]!.uuid === kept.uuid,
     "messenger-rename-projection",
   );
   check((await messengerPut([])).status === 200, "messenger-remove");
+  await assertReloadable(reference, "messenger-remove");
   check((await messengerGet()).length === 0, "messenger-removed");
   const addressCandidate = structuredClone(updated);
   addressCandidate["app.from_email"] = ['"Display, Name" <"quoted local"@example.invalid>'];
@@ -242,6 +252,7 @@ export async function runSettingsContract(target: {
     (await request("/api/settings", "PUT", JSON.stringify(addressCandidate))).status === 200,
     "quoted-from-address",
   );
+  await assertReloadable(reference, "quoted-from-address");
   check(
     asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.from_email"
@@ -260,6 +271,7 @@ export async function runSettingsContract(target: {
     (await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 200,
     "from-matrix-write",
   );
+  await assertReloadable(reference, "from-matrix-write");
   check(
     JSON.stringify(
       asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
@@ -378,27 +390,33 @@ export async function runSettingsContract(target: {
     (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200,
     "valid-enabled-cron",
   );
+  await assertReloadable(reference, "valid-enabled-cron");
   cronCandidate["app.cache_slow_queries"] = false;
   cronCandidate["app.cache_slow_queries_interval"] = "invalid but unused";
   check(
     (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200,
     "disabled-unused-cron",
   );
+  await assertReloadable(reference, "disabled-unused-cron");
   check(
     (await request("/api/settings/app.check_updates", "PUT", "false")).status === 200,
     "check-updates-false",
   );
+  await assertReloadable(reference, "check-updates-false");
   const invalidDuration = await request("/api/settings/security.session_duration", "PUT", '"0s"');
   check(invalidDuration.status === (target.mode === "reference" ? 200 : 400), "duration-d45");
+  await assertReloadable(reference, "duration-d45");
   check(
     (await request("/api/settings/security.session_duration", "PUT", '"7d"')).status === 200,
     "duration-restore",
   );
+  await assertReloadable(reference, "duration-restore");
   const ordered = JSON.stringify(updated).replace(
     /"app.site_name":"[^"]*"/,
     '"app.site_name":"first","APP.SITE_NAME":"second","app.site_name":null',
   );
   check((await request("/api/settings", "PUT", ordered)).status === 200, "ordered-write");
+  await assertReloadable(reference, "ordered-write");
   check(
     asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.site_name"
@@ -410,6 +428,7 @@ export async function runSettingsContract(target: {
     '"app.batch_size":9007199254740993',
   );
   check((await request("/api/settings", "PUT", integerCandidate)).status === 200, "int64-write");
+  await assertReloadable(reference, "int64-write");
   const integerProjection = await (await request("/api/settings")).text();
   check(
     /"app.batch_size"\s*:\s*9007199254740993(?:[,}])/.test(integerProjection),
@@ -426,10 +445,9 @@ export async function runSettingsContract(target: {
   }
   for (const integer of ["9223372036854775807", "-9223372036854775808"]) {
     const body = integerCandidate.replace("9007199254740993", integer);
-    check(
-      (await request("/api/settings", "PUT", body)).status === 200,
-      `int64-boundary-${integer.startsWith("-") ? "min" : "max"}`,
-    );
+    const boundary = `int64-boundary-${integer.startsWith("-") ? "min" : "max"}`;
+    check((await request("/api/settings", "PUT", body)).status === 200, boundary);
+    await assertReloadable(reference, boundary);
     check(
       (await (await request("/api/settings")).text()).includes(`"app.batch_size":${integer}`),
       `int64-boundary-projection-${integer.startsWith("-") ? "min" : "max"}`,
@@ -443,12 +461,14 @@ export async function runSettingsContract(target: {
     (await request("/api/settings", "PUT", JSON.stringify(updated))).status === 200,
     "int64-restore",
   );
+  await assertReloadable(reference, "int64-restore");
   const key = await request(
     "/api/settings/app.site_name",
     "PUT",
     JSON.stringify("Synthetic settings"),
   );
   check(key.status === 200 && JSON.stringify(await key.json()) === '{"data":true}', "key-write");
+  await assertReloadable(reference, "key-write");
   const xmlKey = await settingsFetch(
     `${target.baseUrl}/api/settings/app.site_name`,
     {
@@ -462,6 +482,7 @@ export async function runSettingsContract(target: {
     xmlKey.status === 200 && JSON.stringify(await xmlKey.json()) === '{"data":true}',
     "key-xml-write",
   );
+  await assertReloadable(reference, "key-xml-write");
   check(
     asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.site_name"
@@ -491,6 +512,7 @@ export async function runSettingsContract(target: {
       .status === 200,
     "key-restore",
   );
+  await assertReloadable(reference, "key-restore");
   check(
     asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.site_name"
@@ -499,10 +521,12 @@ export async function runSettingsContract(target: {
   );
   const unknown = await request("/api/settings/unknown.setting", "PUT", "true");
   check(unknown.status === (target.mode === "reference" ? 200 : 400), "unknown-key-d44");
+  await assertReloadable(reference, "unknown-key-d44");
   // The reference log's size before the invalid write: its exit line is searched for after this (B114).
   const logFrom = upstreamLogSize();
   const malformedKey = await request("/api/settings/app.batch_size", "PUT", '"not-an-integer"');
   check(malformedKey.status === (target.mode === "reference" ? 200 : 400), "invalid-key-d44");
+  await assertReloadable(reference, "invalid-key-d44");
   if (target.mode === "reference") {
     // Last reference step. Upstream's accepted write schedules a reload that exits on the
     // stored invalid value, so the read is a race: accept only its two documented end states.

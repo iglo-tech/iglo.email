@@ -1,6 +1,7 @@
 // Public settings boundary regressions for D46; pinned listmonk 6fcd95f.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
+import { assertReloadable } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
 
@@ -76,6 +77,7 @@ export async function runSettingsNul(target: {
     String.raw`"unconsumed_metadata":{"bad":"discarded\u0000value"}}`;
   const response = await request("/api/settings", "PUT", body);
   check(response.status === 200, "final-bound-write");
+  await assertReloadable(target.mode === "reference", "final-bound-write");
   const after = await read();
   check(after["app.site_name"] === "Final bound value", "overwritten-and-ignored");
   check(after.smtp[0].name === "email-normalized--name", "normalized-value");

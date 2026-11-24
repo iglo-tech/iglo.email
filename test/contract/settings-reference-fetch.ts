@@ -1,5 +1,37 @@
 import { readFileSync, statSync } from "node:fs";
 import { asBody } from "@/test/read-body";
+import { upstreamSetting } from "@/test/reference/upstream-db";
+
+// Go's time.ParseDuration grammar: "0", or signed runs of number and unit (ns, us, µs, μs, ms, s, m, h).
+const GO_DURATION = /^(?:[-+]?(?:(?:\d+\.?\d*|\.\d+)(?:ns|us|µs|μs|ms|s|m|h))+|0)$/;
+
+/**
+ * After an accepted settings write, upstream's stored SMTP items must reload. An enabled item whose
+ * idle_timeout or wait_timeout is not a Go duration makes the reloaded process exit at boot
+ * (cmd/init.go:747, lo.Fatalf). The stored value is read from the reference's own database, not from
+ * the HTTP projection, so the failure names the write that left it behind (B118k).
+ */
+export async function assertReloadable(reference: boolean, label: string): Promise<void> {
+  if (!reference) {
+    return;
+  }
+  const items = await upstreamSetting("smtp");
+  if (!Array.isArray(items)) {
+    throw new Error(`FAIL settings-reload-${label} (smtp is not a list)`);
+  }
+  for (const [index, item] of items.entries()) {
+    const entry = asBody<Record<string, unknown>>(item);
+    if (entry.enabled !== true) {
+      continue;
+    }
+    for (const field of ["idle_timeout", "wait_timeout"]) {
+      const value = entry[field];
+      if (typeof value !== "string" || !GO_DURATION.test(value)) {
+        throw new Error(`FAIL settings-reload-${label} (smtp[${index}].${field})`);
+      }
+    }
+  }
+}
 
 // Last lines of the reference's own log, on one printable line, without credentials.
 function upstreamLogTail(): string {
