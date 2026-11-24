@@ -680,7 +680,7 @@ test("a runner whose heartbeat stalled keeps its campaign from a second pipe in 
 });
 
 test("tracked links personalized per subscriber do not accumulate across batches", async () => {
-  // The test's own start, setup included: the give-up below counts from here.
+  // The test's own start, setup included: the backstop below counts from here.
   const started = Date.now();
   // This test's own fixture. The module's `f` is replaced by the next test, and a wait that outlives
   // this test must keep driving this test's campaign, not the next one's.
@@ -688,8 +688,10 @@ test("tracked links personalized per subscriber do not accumulate across batches
   f = fx;
   const { heapStats } = await import("bun:jsc");
   const list = await fx.list("l");
-  // 20 messages per batch: 8 batches. Each message carries 8 distinct tracked links of 7 KB.
-  const count = 160;
+  // 10 messages per batch: 6 batches. Each message carries 8 distinct tracked links of 7 KB: a template's
+  // source is limited to 64 KB, so 8 links is as long as the links can be. The work of a wait is its messages
+  // (one render and link registration each), so 60 messages instead of 160 is the cut.
+  const count = 60;
   for (let i = 0; i < count; i++) {
     await fx.member(`p${String(i).padStart(4, "0")}@x.test`, [list]);
   }
@@ -706,7 +708,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
     lists: [list],
     body: links,
   });
-  Object.assign(fx.settings, { concurrency: 5, batchSize: 20 });
+  Object.assign(fx.settings, { concurrency: 5, batchSize: 10 });
   await fx.status(c.id, "running");
   fx.start();
   const heap = () => {
@@ -721,7 +723,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
   let first = 0;
   let settled = 0;
   const done = () => {
-    if (fx.pushes.length >= 40 && !first) {
+    if (fx.pushes.length >= 20 && !first) {
       first = heap();
     }
     if (fx.pushes.length === count) {
@@ -732,31 +734,31 @@ test("tracked links personalized per subscriber do not accumulate across batches
     }
     return false;
   };
-  // A wait ends when every message is pushed. The 60 s budget is per stretch without a new push: a
-  // campaign that is slow on a loaded host keeps pushing and is not cut off, while a stalled one fails
-  // with its state. The whole wait also ends at giveUp, 140 s after the test started, under the test's
-  // 150 s timeout. bun does not stop a timed-out body, so a drive that outlived the timeout would keep
-  // driving this fixture after the test had failed. Here the drive's own wall ends at giveUp, and the
-  // test fails there, with the state, before anything can run on. The give-up was 80 s until a run at host
-  // load 11 took 81.5 s with 130 of 160 messages pushed and still going, so 140 s leaves room for that.
-  const giveUp = started + 140_000;
+  // A wait ends when every message is pushed. It fails when no push comes for STALL_MS, with its state,
+  // the same shape as the scheduler's progress wait: total time alone never fails it, so a campaign that is
+  // slow on a loaded host keeps pushing and is not cut off. The backstop is not the failure criterion: it
+  // ends the drive at 140 s after the test started, under the test's 150 s timeout, because bun does not stop
+  // a timed-out body and a drive that outlived the timeout would keep driving this fixture after the test
+  // had failed. A run of this size takes seconds, so reaching the backstop means a stuck campaign.
+  const STALL_MS = 20_000;
+  const backstop = started + 140_000;
   for (;;) {
     const pushed = fx.pushes.length;
-    const remaining = giveUp - Date.now();
+    const remaining = backstop - Date.now();
     try {
-      await fx.drive(done, 0, undefined, Math.max(1, Math.min(60_000, remaining)));
+      await fx.drive(done, 0, undefined, Math.max(1, Math.min(STALL_MS, remaining)));
       break;
     } catch (error) {
-      if (fx.pushes.length === pushed || Date.now() >= giveUp) {
+      if (fx.pushes.length === pushed || Date.now() >= backstop) {
         throw error;
       }
     }
   }
   const last = heap();
-  // 120 messages after the first measurement, 8 distinct links of 7 KB each: about 6.7 MB of URLs. A
-  // cache that kept them across batches grew by about 7 MB in the mutation run; the correct run grew by
-  // 0.4 MB (the same run that failed a 6 MB bound on 300 messages).
-  expect(last - first).toBeLessThan(3 * 1024 * 1024);
+  // 40 messages after the first measurement, 8 distinct links of 7 KB each: about 2.2 MB of URLs. A cache
+  // that kept them across batches grew by 2.4 MB more than the correct run in the mutation run (PR comment);
+  // the correct run grows by about 0.5 MB. The bound is 1 MiB, between the two.
+  expect(last - first).toBeLessThan(1024 * 1024);
   fx.control.hold = false;
   for (const push of fx.pushes) {
     push.settle();
