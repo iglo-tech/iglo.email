@@ -10,6 +10,7 @@ import type { Socket } from "node:net";
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
 import { imagePng } from "@/test/media/images";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 const fixtures = await readFile(resolve(repository, "test/users/fixtures.md"), "utf-8");
@@ -148,13 +149,14 @@ try {
         ],
       });
       assert.equal(updated.status, 200, updated.text);
-      for (let i = 0; i < 100; i++) {
-        // A settings save restarts the SMTP pool in place; wait for the next request to answer.
-        if ((await fetch(`${origin}/health`)).ok) {
-          break;
-        }
-        await Bun.sleep(50);
-      }
+      // A settings save restarts the SMTP pool in place; wait for the next request to answer.
+      // /health has no progress to watch, so the stall window is the limit (5 s).
+      await untilState(async () => (await fetch(`${origin}/health`)).ok, {
+        label: "health after the settings save",
+        progress: () => "down",
+        stallMs: 5000,
+        intervalMs: 50,
+      }).catch(() => undefined);
 
       const upload = new FormData();
       upload.append("file", new File([imagePng], "embed-logo.png", { type: "image/png" }));
@@ -234,12 +236,13 @@ try {
         status: "running",
       });
       assert.equal(running.status, 200, running.text);
-      for (let i = 0; i < 400; i++) {
-        if (sink.messages.some((m) => m.to === "campaign-embed@example.test")) {
-          break;
-        }
-        await Bun.sleep(50);
-      }
+      // The campaign's message arrives through the sink; the assertion below names a miss.
+      await untilState(() => sink.messages.some((m) => m.to === "campaign-embed@example.test"), {
+        label: "campaign message",
+        progress: () => String(sink.messages.length),
+        stallMs: 10_000,
+        intervalMs: 50,
+      }).catch(() => undefined);
       const delivered = sink.messages.find((m) => m.to === "campaign-embed@example.test");
       assert.ok(delivered, "campaign message arrived");
       const campaignInline = parts(delivered.data).find((p) => /^Content-ID:/im.test(p.headers));

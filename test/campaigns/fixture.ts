@@ -51,6 +51,7 @@ import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const admin = { user: "fixture-admin", password: "fixture-admin-password" };
 const root = "http://fixture.test";
@@ -318,9 +319,12 @@ export async function campaignsFixture(
   };
   /** Wait for the sink: test sends are queued to the emailer, as in listmonk. */
   const mail = async (count: number) => {
-    for (let i = 0; i < 400 && sink.messages.length < count; i++) {
-      await Bun.sleep(5);
-    }
+    // A sink that stops receiving ends the wait; the caller's expectation then names the miss.
+    await untilState(() => sink.messages.length >= count, {
+      label: `sink messages ${count}`,
+      progress: () => String(sink.messages.length),
+      intervalMs: 5,
+    }).catch(() => undefined);
     return sink.messages;
   };
   return {

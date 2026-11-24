@@ -11,6 +11,7 @@ import { imageSize } from "@/media/image";
 import { makeFilename } from "@/media/filesystem";
 import type { JsonObject } from "@/test/json-object";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -446,10 +447,19 @@ test("queued test sends keep their slots until they settle, and the next is refu
   // The emailer's own deadline settles them, and the slots come back.
   f.clock.advance(60_000);
   let next = 0;
-  for (let i = 0; i < 400 && next !== 200; i++) {
-    await Bun.sleep(5);
-    next = (await send(6 + i)).status;
-  }
+  let attempt = 0;
+  await untilState(
+    async () => {
+      next = (await send(6 + attempt++)).status;
+      return next === 200;
+    },
+    {
+      label: "the export slots come back",
+      progress: () => String(next),
+      stallMs: 10_000,
+      intervalMs: 5,
+    },
+  ).catch(() => undefined);
   expect(next).toBe(200);
 });
 

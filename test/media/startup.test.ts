@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { listensOn, startOnFreePort } from "@/test/serve-port";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 const directories: Array<string> = [];
@@ -51,19 +52,24 @@ async function bootOnce(dataDir: string) {
 async function bootAt(dataDir: string, port: number) {
   const { child, origin } = serve(dataDir, port);
   try {
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline) {
-      if (child.exitCode !== null) {
-        break;
-      }
-      const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
-        () => null,
-      );
-      if (up?.ok && listensOn(child.pid, port)) {
-        break;
-      }
-      await Bun.sleep(25);
-    }
+    // Ready, or exited (reported below); the wait ends at its 15 s stall, as the old deadline did.
+    await untilState(
+      async () => {
+        if (child.exitCode !== null) {
+          return true;
+        }
+        const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(500) }).catch(
+          () => null,
+        );
+        return Boolean(up?.ok && listensOn(child.pid, port));
+      },
+      {
+        label: "media startup",
+        progress: () => String(child.exitCode),
+        stallMs: 15_000,
+        intervalMs: 25,
+      },
+    ).catch(() => undefined);
     if (child.exitCode !== null) {
       throw new Error(await new Response(child.stderr).text());
     }
