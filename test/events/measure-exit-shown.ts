@@ -34,8 +34,8 @@ try {
   const db = openDatabase(root);
   runMigrations(db, root, clock, productionMigrations);
   // One subscriber, one sequence that every page_view event triggers and exits (reentry always).
-  // Events are one ms apart in receive time, so each is the only event with its time. Every event on
-  // page 1 carries one exited enrollment whose trigger is the event before it.
+  // Events are one second apart in receive time, so each is the only event with its time. Every
+  // event on page 1 carries one exited enrollment whose trigger is the event before it.
   db.run(
     "INSERT INTO subscribers (uuid, email, name) VALUES ('measure-sub', 'measure@example.test', 'Measure')",
   );

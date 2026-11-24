@@ -1,7 +1,8 @@
 // B118h: an enrollment's exit is shown on one event of the subscriber's Events tab, the one that
 // would have ended it: the lowest-ID event with the exit's name and receive time among all of the
-// subscriber's events, or, when the enrollment's trigger is one of them, the lowest after the trigger
-// (docs/design/05-sequences.md#events-tab). Observed over HTTP with the injected clock.
+// subscriber's events, or, when the enrollment's trigger was received at the same time, whatever its
+// name, the lowest after the trigger (docs/design/05-sequences.md#events-tab). Observed over HTTP with
+// the injected clock.
 import { afterEach, expect, test } from "bun:test";
 import { hour, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
@@ -46,6 +47,13 @@ async function tab(f: SchedulerFixture, subscriberId: number, query = "") {
   const r = await f.json(`/api/subscribers/${subscriberId}/subscriber-events${query}`);
   expect(r.status).toBe(200);
   return asBody<Array<TabRow>>(r.body.data.results);
+}
+
+/** A batch of events, in order; each result carries its event's ID and its enrollments. */
+async function batch(f: SchedulerFixture, events: Array<Record<string, unknown>>) {
+  const r = await f.json("/api/subscriber-events/batch", "POST", { events });
+  expect(r.status).toBe(200);
+  return asBody<Array<BatchResult>>(r.body.data.results);
 }
 
 // Two events of one name in one batch share the receive time, so both match the exit. The exit
@@ -166,4 +174,65 @@ test("an exit shows on this page only when its one event is on this page", async
   expect(pageTwo.find((row) => row.id === first!.event_id)!.exited).toEqual([
     expect.objectContaining({ enrollment_id: enrollment }),
   ]);
+});
+
+// Two exits of one name, an hour apart, with reentry always: each run ends on its own stop. The
+// second stop's choice must be the one received at its own time, not the first stop of the name.
+test("two exits of one name an hour apart are each shown on their own event", async () => {
+  const f = await open();
+  const template = await f.template("<p>Hi</p>", "Waiting");
+  await f.sequence({
+    name: "Repeat stop path",
+    trigger: { event: "four_start" },
+    exit_on: ["four_stop"],
+    reentry: "always",
+    steps: [tx(template, { wait: "P1D" })],
+  });
+  const firstStart = await f.event(email, "four_start", { subscriber });
+  const firstEnrollment = firstStart.enrollments.started[0]!.id;
+  await f.pass(hour);
+  const [firstStop] = await batch(f, [named("four_stop")]);
+  await f.pass(hour);
+  const secondStart = await f.event(email, "four_start", { subscriber });
+  const secondEnrollment = secondStart.enrollments.started[0]!.id;
+  await f.pass(hour);
+  const [secondStop] = await batch(f, [named("four_stop")]);
+  expect(firstStop!.enrollments.ended.map((e) => e.id)).toEqual([firstEnrollment]);
+  expect(secondStop!.enrollments.ended.map((e) => e.id)).toEqual([secondEnrollment]);
+
+  const rows = await tab(f, firstStart.subscriber_id);
+  const byId = (id: number) => rows.find((row) => row.id === id)!;
+  expect(byId(firstStop!.event_id).exited.map((link) => link.enrollment_id)).toEqual([
+    firstEnrollment,
+  ]);
+  expect(byId(secondStop!.event_id).exited.map((link) => link.enrollment_id)).toEqual([
+    secondEnrollment,
+  ]);
+});
+
+// Another subscriber's event of the same name, received in the same batch and before Ana's, has
+// the same receive time. It is not Ana's event: Ana's stop is shown the exit, Bob's event is not.
+test("another subscriber's same-named event in the same batch is never chosen", async () => {
+  const f = await open();
+  const template = await f.template("<p>Hi</p>", "Waiting");
+  await f.sequence({
+    name: "Other subscriber path",
+    trigger: { event: "five_start" },
+    exit_on: ["five_stop"],
+    reentry: "always",
+    steps: [tx(template, { wait: "P1D" })],
+  });
+  const started = await f.event(email, "five_start", { subscriber });
+  const enrollment = started.enrollments.started[0]!.id;
+  await f.pass(hour);
+  const [other, ana] = await batch(f, [
+    { subscriber: { email: "other-exit@example.test", name: "Bob" }, name: "five_stop" },
+    named("five_stop"),
+  ]);
+  expect(other!.subscriber_id).not.toBe(started.subscriber_id);
+  expect(ana!.enrollments.ended.map((e) => e.id)).toEqual([enrollment]);
+
+  const rows = await tab(f, started.subscriber_id);
+  const byId = (id: number) => rows.find((row) => row.id === id)!;
+  expect(byId(ana!.event_id).exited.map((link) => link.enrollment_id)).toEqual([enrollment]);
 });
