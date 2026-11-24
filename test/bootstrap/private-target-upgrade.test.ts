@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
 import { healthWhenReady, startOnFreePort, stopChild } from "@/test/serve-port";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(60_000);
@@ -99,11 +100,13 @@ const logLines = async (port: number, text: string) =>
 
 /** Waits until this process has named a refused webhook in its log buffer. */
 async function noticed(port: number) {
-  const deadline = Date.now() + 20_000;
-  while (!(await logLines(port, fixed)).length) {
-    expect(Date.now()).toBeLessThan(deadline);
-    await Bun.sleep(50);
-  }
+  let lines = 0;
+  await untilState(async () => (lines = (await logLines(port, fixed)).length) > 0, {
+    label: "refused private target logged",
+    progress: () => String(lines),
+    stallMs: 20_000,
+    intervalMs: 50,
+  });
 }
 
 /**

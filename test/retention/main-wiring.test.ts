@@ -14,6 +14,7 @@ import {
   temporaryDirectory,
 } from "@/test/backup/fixture";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 setDefaultTimeout(120_000);
 
@@ -90,11 +91,17 @@ test("the server's first retention pass runs every owner's purge", async () => {
         count(reader, "events WHERE created_at < datetime('now', '-400 days')") === 0 &&
         count(reader, "webhooks WHERE id = 1 AND previous_secret IS NOT NULL") === 0;
       // The loop pauses between owners, so a pass per owner takes about a second.
-      for (const deadline = Date.now() + 60_000; !gone(); await Bun.sleep(50)) {
-        if (Date.now() > deadline) {
-          break;
-        }
-      }
+      await untilState(gone, {
+        label: "retention pass",
+        progress: () =>
+          [
+            count(reader, "webhook_deliveries WHERE uuid = 'old-delivery'"),
+            count(reader, "sends WHERE payload IS NULL"),
+            count(reader, "events WHERE created_at < datetime('now', '-400 days')"),
+          ].join(),
+        stallMs: 60_000,
+        intervalMs: 50,
+      }).catch(() => undefined);
       expect({
         sessions: count(reader, "sessions WHERE id IN ('old-expired', 'old-legacy')"),
         oldDelivery: count(reader, "webhook_deliveries WHERE uuid = 'old-delivery'"),

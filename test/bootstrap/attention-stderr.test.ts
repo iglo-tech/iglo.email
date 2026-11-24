@@ -15,6 +15,7 @@ import { startSnsTunnel } from "@/test/bounces/sns-tunnel";
 import type { SnsTunnel } from "@/test/bounces/sns-tunnel";
 import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(30_000);
@@ -103,14 +104,18 @@ async function changeSettings(port: number, changes: Record<string, unknown>) {
 
 /** Polls until `read` gives a value, or fails after a bounded number of tries. */
 async function until<T>(read: () => Promise<T | undefined>, what: string): Promise<T> {
-  for (let i = 0; i < 400; i++) {
-    const value = await read();
-    if (value !== undefined) {
-      return value;
-    }
-    await Bun.sleep(25);
+  let value: T | undefined;
+  // The read has no progress beyond the value; a 10 s stall of "unread" fails the wait by name.
+  await untilState(async () => (value = await read()) !== undefined, {
+    label: `timed out waiting for ${what}`,
+    progress: () => (value === undefined ? "unread" : "read"),
+    stallMs: 10_000,
+    intervalMs: 25,
+  });
+  if (value === undefined) {
+    throw new Error(`timed out waiting for ${what}`);
   }
-  throw new Error(`timed out waiting for ${what}`);
+  return value;
 }
 
 /** The buffer's lines that contain `text`, read through GET /api/logs. */
