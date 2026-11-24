@@ -903,7 +903,9 @@ From an archive, first unpack it with `tar -xzf` and verify what came out.
 
 A backup is the primary project's directory: restore it as `projects/main/`, and keep
 `instance.db` and the lock where they are. The admin's password and TOTP come from `instance.db`:
-the next start writes them into the restored database's copy of the admin. On a new host, start the server once on an empty data
+the next start writes them into the restored database's copy of the admin. After a restore the
+admin's password and TOTP are the instance account's, not the snapshot's: a TOTP device enrolled
+only in the restored data no longer works, and must be enrolled again on the Account page. On a new host, start the server once on an empty data
 directory first, stop it, then restore. Move the whole project directory, as here. A new database
 beside an old `iglo-email.db-wal` is corrupted by it. If the upload directory is a mount, restore into it with `cp -a monday/uploads/. <mount>/`. The
 extra `iglo-email-backup.json` in a restored directory is harmless. If `upload_path` is absolute

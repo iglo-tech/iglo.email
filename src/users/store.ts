@@ -37,7 +37,8 @@ export interface SessionData {
 
 /**
  * A change to the instance admin's copy that a project's API or UI may not make: delete, disable,
- * rename, or change its role, type or password login (14-projects section 5, B140).
+ * rename, or change its role, type or password login, or, by anyone but the copy itself, its
+ * password or email (14-projects section 5, B140, D153).
  */
 export class CopyProtectedError extends Error {
   constructor() {
@@ -249,7 +250,15 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       }
       return false;
     },
-    update(id: bigint, resolve: (current: UserRow) => UserFields): UserRow | null {
+    /**
+     * `actor` is the user making the change. Only the copy itself may change the copy's password or
+     * email (B140, D153); any other actor, or none, is refused.
+     */
+    update(
+      id: bigint,
+      resolve: (current: UserRow) => UserFields,
+      actor: bigint | null = null,
+    ): UserRow | null {
       const result = writeTransaction(db, () => {
         const previous = byId(id);
         if (!previous) {
@@ -282,7 +291,9 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
             fields.type !== previous.type ||
             fields.userRoleId !== previous.user_role_id ||
             fields.listRoleId !== previous.list_role_id ||
-            Number(fields.passwordLogin) !== Number(previous.password_login))
+            Number(fields.passwordLogin) !== Number(previous.password_login) ||
+            (actor !== previous.id &&
+              (fields.password !== previous.password || fields.email !== previous.email)))
         ) {
           throw new CopyProtectedError();
         }

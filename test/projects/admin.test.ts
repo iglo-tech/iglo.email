@@ -14,6 +14,7 @@ import { handoff, instanceCall, instanceLogin, setCookies } from "@/test/project
 import type { InstanceSession } from "@/test/projects/admin-fixture";
 import {
   adminCredentials,
+  api,
   createApiUser,
   logIn,
   prepareExecutable,
@@ -414,6 +415,68 @@ test("the copy cannot be deleted, disabled, renamed or have its role or password
     body: JSON.stringify({ ...base, name: "The Admin" }),
   });
   expect(renamedDisplay.status).toBe(200);
+});
+
+test("only the copy itself changes its password or email: another Super Admin or an API user gets 403", async () => {
+  const session = await logIn(port, A, admin);
+  const headers = sessionHeaders(session);
+  const token = await createApiUser(port, A, session, "automation-a");
+  const other: Credentials = { user: "other-admin-of-a", password: "other-admin-password" };
+  const created = await request(port, A, "/api/users", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      username: other.user,
+      email: "other-admin@a.example.test",
+      name: other.user,
+      type: "user",
+      status: "enabled",
+      password_login: true,
+      password: other.password,
+      user_role_id: 1,
+    }),
+  });
+  expect(created.status).toBe(200);
+  const otherSession = await logIn(port, A, other);
+  const copy = (await users(A, session)).find((user) => user.username === admin.user)!;
+  const base = {
+    username: admin.user,
+    name: "The Admin",
+    email: "initial-admin@localhost.invalid",
+    type: "user",
+    status: "enabled",
+    password_login: true,
+    user_role_id: 1,
+  };
+  const changes = [{ password: "attacker-chosen-pw" }, { email: "attacker@a.example.test" }];
+  for (const change of changes) {
+    const byToken = await api(port, A, token, "PUT", `/api/users/${copy.id}`, {
+      ...base,
+      ...change,
+    });
+    expect(byToken.status).toBe(403);
+    const bySession = await request(port, A, `/api/users/${copy.id}`, {
+      method: "PUT",
+      headers: sessionHeaders(otherSession),
+      body: JSON.stringify({ ...base, ...change }),
+    });
+    expect(bySession.status).toBe(403);
+  }
+  // Another field of the copy is still theirs to edit, as for any user.
+  const named = await api(port, A, token, "PUT", `/api/users/${copy.id}`, base);
+  expect(named.status).toBe(200);
+  // Nothing was written: the email stands, the old password works everywhere, the new one nowhere.
+  const viewed = await readJson<{ data: { email: string } }>(
+    await request(port, A, `/api/users/${copy.id}`, { headers }),
+  );
+  expect(viewed.data.email).toBe("initial-admin@localhost.invalid");
+  const attacker = { user: admin.user, password: "attacker-chosen-pw" };
+  for (const host of [PRIMARY, A, B]) {
+    expect(await projectLogin(host, admin)).toBe("/admin");
+    expect(await projectLogin(host, attacker)).toBe("");
+  }
+  expect((await instanceLogin(port, PRIMARY, admin)).session).toBeDefined();
+  expect((await instanceLogin(port, PRIMARY, attacker)).session).toBeUndefined();
 });
 
 test("the admin's username is reserved in every project: 409, nothing written", async () => {

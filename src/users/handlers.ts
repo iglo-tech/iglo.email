@@ -330,45 +330,50 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     let updated;
     let fields: UserFields | undefined;
     try {
-      updated = store.update(id, (current) => {
-        const currentType = (input.type || current.type) as "user" | "api";
-        if (
-          currentType === "user" &&
-          input.passwordLogin &&
-          hash === null &&
-          (!current.password || current.type === "api")
-        ) {
-          invalid(context, "password");
-        }
-        const currentRole = input.userRoleId === 0n ? current.user_role_id : input.userRoleId;
-        if (
-          !roles.hasRole(currentRole, "user") ||
-          (input.listRoleId !== null &&
-            input.listRoleId !== 0n &&
-            !roles.hasRole(input.listRoleId, "list"))
-        ) {
-          throw new HttpError(400, "invalid role");
-        }
-        fields = {
-          username: input.username,
-          name: input.name || input.username,
-          email: input.email.toLowerCase() || current.email,
-          type: currentType,
-          status: (input.status || current.status) as "enabled" | "disabled",
-          passwordLogin: currentType === "api" ? false : input.passwordLogin,
-          password:
-            currentType === "api"
-              ? current.type === "api"
-                ? current.password
-                : null
-              : input.passwordLogin
-                ? (hash ?? current.password)
-                : null,
-          userRoleId: currentRole,
-          listRoleId: input.listRoleId === 0n ? current.list_role_id : input.listRoleId,
-        };
-        return fields;
-      });
+      updated = store.update(
+        id,
+        (current) => {
+          const currentType = (input.type || current.type) as "user" | "api";
+          if (
+            currentType === "user" &&
+            input.passwordLogin &&
+            hash === null &&
+            (!current.password || current.type === "api")
+          ) {
+            invalid(context, "password");
+          }
+          const currentRole = input.userRoleId === 0n ? current.user_role_id : input.userRoleId;
+          if (
+            !roles.hasRole(currentRole, "user") ||
+            (input.listRoleId !== null &&
+              input.listRoleId !== 0n &&
+              !roles.hasRole(input.listRoleId, "list"))
+          ) {
+            throw new HttpError(400, "invalid role");
+          }
+          fields = {
+            username: input.username,
+            name: input.name || input.username,
+            email: input.email.toLowerCase() || current.email,
+            type: currentType,
+            status: (input.status || current.status) as "enabled" | "disabled",
+            passwordLogin: currentType === "api" ? false : input.passwordLogin,
+            password:
+              currentType === "api"
+                ? current.type === "api"
+                  ? current.password
+                  : null
+                : input.passwordLogin
+                  ? (hash ?? current.password)
+                  : null,
+            userRoleId: currentRole,
+            listRoleId: input.listRoleId === 0n ? current.list_role_id : input.listRoleId,
+          };
+          return fields;
+        },
+        // B140: only the admin's copy itself may change its password or email.
+        current(context).user.id,
+      );
     } catch (error) {
       if (error instanceof HttpError) {
         throw error;
