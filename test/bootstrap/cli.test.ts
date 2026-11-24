@@ -743,31 +743,61 @@ describe("compiled executable", () => {
     }
   });
 
-  test("a half-set API pair, a malformed token or a clashing user name fails startup without echoing the token", async () => {
-    const token = apiTokenValue();
-    for (const [env, names] of [
-      [{ IGLO_EMAIL_API_USER: "api-only-user" }, ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_API_TOKEN"]],
-      [{ IGLO_EMAIL_API_TOKEN: token }, ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_API_TOKEN"]],
-      [{ IGLO_EMAIL_API_USER: "api-empty", IGLO_EMAIL_API_TOKEN: "" }, ["IGLO_EMAIL_API_TOKEN"]],
-      [{ IGLO_EMAIL_API_USER: "api-short", IGLO_EMAIL_API_TOKEN: "too-short-value" }, ["48"]],
-      [
-        { IGLO_EMAIL_API_USER: "api-dashes", IGLO_EMAIL_API_TOKEN: `${token.slice(0, 47)}-` },
-        ["48"],
-      ],
-      [{ IGLO_EMAIL_API_USER: "ab", IGLO_EMAIL_API_TOKEN: token }, ["IGLO_EMAIL_API_USER"]],
-      [
-        {
-          IGLO_EMAIL_API_USER: adminUser,
-          IGLO_EMAIL_API_TOKEN: token,
-          IGLO_EMAIL_ADMIN_USER: adminUser,
-          IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
-        },
-        ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_ADMIN_USER"],
-      ],
-    ] as Array<[Record<string, string>, Array<string>]>) {
+  // One test per case, each with its own budget (B118i item 4): seven starts in one test ran past the
+  // 12 s budget under load. Each case builds its environment from the token of its own test.
+  const partialCases: Array<
+    [label: string, env: (token: string) => Record<string, string>, names: Array<string>]
+  > = [
+    [
+      "an API user without its token",
+      () => ({ IGLO_EMAIL_API_USER: "api-only-user" }),
+      ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_API_TOKEN"],
+    ],
+    [
+      "an API token without its user",
+      (token) => ({ IGLO_EMAIL_API_TOKEN: token }),
+      ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_API_TOKEN"],
+    ],
+    [
+      "an empty API token",
+      () => ({ IGLO_EMAIL_API_USER: "api-empty", IGLO_EMAIL_API_TOKEN: "" }),
+      ["IGLO_EMAIL_API_TOKEN"],
+    ],
+    [
+      "a short API token",
+      () => ({ IGLO_EMAIL_API_USER: "api-short", IGLO_EMAIL_API_TOKEN: "too-short-value" }),
+      ["48"],
+    ],
+    [
+      "an API token ending in a dash",
+      (token) => ({
+        IGLO_EMAIL_API_USER: "api-dashes",
+        IGLO_EMAIL_API_TOKEN: `${token.slice(0, 47)}-`,
+      }),
+      ["48"],
+    ],
+    [
+      "an API user name of two letters",
+      (token) => ({ IGLO_EMAIL_API_USER: "ab", IGLO_EMAIL_API_TOKEN: token }),
+      ["IGLO_EMAIL_API_USER"],
+    ],
+    [
+      "an API user named like the admin",
+      (token) => ({
+        IGLO_EMAIL_API_USER: adminUser,
+        IGLO_EMAIL_API_TOKEN: token,
+        IGLO_EMAIL_ADMIN_USER: adminUser,
+        IGLO_EMAIL_ADMIN_PASSWORD: adminPassword,
+      }),
+      ["IGLO_EMAIL_API_USER", "IGLO_EMAIL_ADMIN_USER"],
+    ],
+  ];
+  for (const [label, env, names] of partialCases) {
+    test(`fails startup without echoing the token: ${label}`, async () => {
+      const token = apiTokenValue();
       const result = await runCli(
         ["--data-dir", join(temporaryDirectory, `api-partial-${crypto.randomUUID()}`)],
-        env,
+        env(token),
       );
       expect(result.code).not.toBe(0);
       for (const name of names) {
@@ -775,8 +805,8 @@ describe("compiled executable", () => {
       }
       expect(result.stderr).not.toContain(token);
       expect(result.stderr).not.toContain(adminPassword);
-    }
-  });
+    });
+  }
 
   test("an untrusted X-Forwarded-For report reaches the logs page as its own line, without the address", async () => {
     const dataDir = join(temporaryDirectory, "forwarded-report");
