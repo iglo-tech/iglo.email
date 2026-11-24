@@ -13,6 +13,7 @@
 import type { ChildProcess } from "node:child_process";
 import { readFileSync, readdirSync, readlinkSync } from "node:fs";
 import { createServer } from "node:net";
+import { untilState } from "@/test/wait";
 
 const attempts = 5;
 
@@ -198,26 +199,41 @@ export async function healthWhenReady(
   port: number,
   timeoutMs = 15_000,
 ): Promise<Response> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      const stderr =
-        typeof child.stderr === "object" ? await new Response(child.stderr).text() : "";
-      throw new Error(`Server exited before it became ready: ${stderr}`);
-    }
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/health`, {
-        headers: { Connection: "close" },
-        signal: AbortSignal.timeout(500),
-      });
-      // Another server can hold the port and answer first: ready only when this child listens on it.
-      if (child.pid !== undefined && listensOn(child.pid, port)) {
-        return response;
+  let response: Response | undefined;
+  let last = "no answer yet";
+  // Readiness has no progress signal: nothing in the process changes until it listens. So the
+  // stall window is the whole budget, with the progress fixed at "starting" (B118d perf note).
+  await untilState(
+    async () => {
+      if (child.exitCode !== null) {
+        const stderr =
+          typeof child.stderr === "object" ? await new Response(child.stderr).text() : "";
+        throw new Error(`Server exited before it became ready: ${stderr}`);
       }
-    } catch {
-      // This delay is only for bounded process readiness, not application time.
-    }
-    await Bun.sleep(25);
-  }
-  throw new Error(`Server did not become ready within ${timeoutMs} ms`);
+      try {
+        const answer = await fetch(`http://127.0.0.1:${port}/health`, {
+          headers: { Connection: "close" },
+          signal: AbortSignal.timeout(500),
+        });
+        // Another server can hold the port and answer first: ready only when this child listens on it.
+        if (child.pid !== undefined && listensOn(child.pid, port)) {
+          response = answer;
+          return true;
+        }
+        last = `answered ${answer.status} but this process is not listening`;
+      } catch {
+        // This delay is only for bounded process readiness, not application time.
+        last = "no answer";
+      }
+      return false;
+    },
+    {
+      label: "Server ready",
+      progress: () => "starting",
+      stallMs: timeoutMs,
+      intervalMs: 25,
+      describe: () => last,
+    },
+  );
+  return response!;
 }
