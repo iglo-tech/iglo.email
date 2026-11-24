@@ -164,7 +164,8 @@ test("a stalled test send does not cut real sends on the same server at its 60 s
   await emailer.close();
 });
 
-test("shutdown drains, then cancels a stalled test send with the real sends", async () => {
+// B101 r1: the shutdown waits five seconds for a stalled test send, then cancels it as unknown.
+test("shutdown waits five seconds for a stalled test send, then cancels it as unknown", async () => {
   const sink = await holdingSink([STALLED]);
   cleanup.push(sink.close);
   const clock = new TestClock();
@@ -173,10 +174,18 @@ test("shutdown drains, then cancels a stalled test send with the real sends", as
     clock,
   });
   const stalled = emailer.push({ ...message, to: [STALLED] }, { copies: false, testPool: true });
+  let settled = false;
+  void stalled.result.then(() => {
+    settled = true;
+  });
   await sink.dataSeen(STALLED);
   const close = emailer.close();
   clock.advance(4999);
-  await Promise.resolve();
+  // Enough turns for a cancel to reach the send's result: it must not have settled yet.
+  for (let turn = 0; turn < 50; turn += 1) {
+    await Promise.resolve();
+  }
+  expect(settled).toBe(false);
   clock.advance(1);
   await close;
   expect(await stalled.result).toMatchObject({ status: "ambiguous", stage: "unknown" });
