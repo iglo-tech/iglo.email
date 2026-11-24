@@ -1908,3 +1908,22 @@ Brief B117a, from an adopter's checks and reviews of B126, B127, B131, B134f and
 - **Decision:** the single independent reviewer of each round is a fresh Claude Opus 5.5 (medium) delegate, not Gemini 4 Neon (D146). The owner switched it after the Gemini quota ran out mid-round (B138a round 2). It stays Opus until the owner says otherwise.
 - **Unchanged:** one fresh reviewer per round that did not write the code, the reviewer suffix, the round scopes and D145's test scope. The worker that wrote the code never reviews it, even on the same model.
 - **Considered:** waiting about two hours for the Gemini quota to reset. The owner chose to keep work moving.
+
+## D151. Instance layout, routing and shared budgets (B138b, lead, 2026-11-24)
+
+- **Decision:** the choices [14-projects](14-projects.md) sections 1–3 and 9 leave open, as B138b built them ([section 3, "As built"](14-projects.md#as-built-b138b)):
+  - **Primary project.** A fresh install registers one primary project with slug `main`, named after the site name default (`Mailing list`), on the instance host. "Fresh" is an empty registry with nothing under `projects/` but possibly `main/`, which is then used as it is, so a restored or half-started directory needs no step of its own.
+  - **The primary follows `--root-url`.** Its main hostname is set to the instance host at each start, as one install's links always followed the root URL; a non-primary project may not hold the instance host. The primary's root URL is `--root-url` itself; another project's is `--root-url` with the host replaced.
+  - **Seeds.** `IGLO_EMAIL_ADMIN_*` seeds every project that has no users (until B140's admin copy). `IGLO_EMAIL_API_*` seeds only the primary project.
+  - **No primary.** `/health` is the instance health; `/admin` and `/admin/…` (but not `/admin/instance/…`) redirect `302` to `--root-url` + `/admin/instance/projects`; anything else is `404`, `text/plain`, body `404 page not found\n`, with no log line.
+  - **Instance health.** `200 {"data":true}` until a project's loop fails, then `503`; a loop failure still stops the process.
+  - **Stderr.** Every line starts with `[<slug>] ` or `[instance] `. The only visible change for one install; no contract reads stderr.
+  - **Pre-migration snapshots** go to `backups/pre-migration/` as `instance-…` and `<slug>-…`.
+  - **CLI.** `backup`, `reset-password`, `reset-totp` and `--release-hold` act on the primary project under the one lock, until B140 and B144. That needed one line in `src/backup/snapshot.ts` (the database and uploads path), outside B138b's modules; it is listed for the lead in the PR.
+  - **Budgets.** Shared objects built once by the instance: a rate-limit table per public limit kind (each project's peers keyed by slug, one 10,000-peer bound), one ALTCHA key and replay table, one pair of query-runner children and one pair of analytics children (each project's own runner and reader acquire a shared slot first, so their databases and staging directories stay their own), and one tx attachment gate (`registerTxRoutes` takes it as an optional `gate`, outside B138b's modules, listed in the PR).
+- **Unchanged:** one install's routes, contracts, cookies, links and Message-IDs; the lock (D69); the pragmas; at-most-once; B52's wire, bind, start order; the per-project log buffer and health route.
+- **Considered:**
+  - *Changing the rate limiter, captcha, query runner and analytics reader to take a shared budget object.* Cleaner, but a constructor change in four modules this task does not own. The shared objects wrap or front them instead, and a module owner may fold them in later.
+  - *A primary only when the operator asks for one.* A fresh install would then serve nothing until an instance page exists (B143).
+  - *Stderr without a prefix while there is one project.* Brief and spec ask for the prefix on every line.
+- **Left for later:** the analytics egress budget (64 MiB of finished responses) is still per project, and so is the send rate limiter until the dispatcher (B141).

@@ -5,6 +5,11 @@ first full v1 schema. Future numbered
 SQL files are imported as text into that explicit manifest and compiled into the
 executable. Startup never scans this directory.
 
+These files are each project's schema (`projects/<slug>/iglo-email.db`). The instance database
+(`instance.db`, the project registry) has its own manifest in `instance/`, embedded as
+`instanceMigrations` and applied by the same runner (14-projects section 1, B138b). The server puts
+both kinds of pre-migration snapshot in `backups/pre-migration/`, named `instance-…` and `<slug>-…`.
+
 Versions start at 1, are ordered and contiguous. A source contains SQL schema and
 data statements only; transaction control and all PRAGMAs are owned by the
 connection and runner. Each file and its version update commit together. Before a batch on

@@ -201,17 +201,35 @@ breaks a rule stops the server at startup, and the message names the variable wi
 
 ```text
 /var/lib/iglo.email/
-  iglo-email.db         the database, with -wal and -shm while it is open
   iglo-email.lock       the instance lock; holds no data and stays after the server stops
-  stage/                IDs of a large subscriber selection while it runs; empty at rest
-  uploads/              media files
-  backups/              pre-migration snapshots, and backups with no --output
-  .iglo-email-import/   the file of a running import
+  instance.db           the project registry, with -wal and -shm while it is open
+  projects/
+    main/               the primary project; a fresh install has only this one
+      iglo-email.db     the project's database, with -wal and -shm while it is open
+      stage/            IDs of a large subscriber selection while it runs; empty at rest
+      uploads/          media files
+      .iglo-email-import/  the file of a running import
+  backups/              backups with no --output
+    pre-migration/      snapshots taken before migrations, of instance.db and each project
 ```
 
-The database holds SMTP passwords, API tokens, password hashes, webhook secrets
+The databases hold SMTP passwords, API tokens, password hashes, webhook secrets
 and subscriber data, stored as given. Protect the directory with the host's permissions and disk
-encryption. Never copy `iglo-email.db` of a running server by hand: use `backup`.
+encryption. Never copy a database of a running server by hand: use `backup`.
+
+**Earlier data directories are refused.** A data directory with `iglo-email.db` at its root comes
+from a release before projects. The server exits nonzero with one line and writes nothing; nothing
+converts it (there is no upgrade path from it):
+
+```text
+/var/lib/iglo.email is a data directory from an earlier iglo.email: it has iglo-email.db at its root. The data directory layout changed and nothing is converted; start with an empty data directory.
+```
+
+`backup`, `reset-password`, `reset-totp` and `backup --release-hold` act on the primary project's
+database, under the one instance lock.
+
+**Stderr lines name their project.** Every line the server writes to stderr starts with
+`[<slug>] `, or `[instance] ` for the instance's own lines, such as `[main] X-Forwarded-For from …`.
 
 ### One process per data directory
 
@@ -272,6 +290,11 @@ server {
     }
 }
 ```
+
+**The proxy must pass `Host` through** (`proxy_set_header Host $host;` above). The server picks the
+project a request belongs to by its `Host` header alone, lowercased and without the port; it ignores
+`X-Forwarded-Host`. A host that no project claims, including the address a health check calls, is
+served by the primary project, so a single install behaves as before whatever host reaches it.
 
 Behind a proxy every visitor arrives from the proxy's address, so one client's rate limit would
 stop all of them. List the proxy in `security.trusted_proxies` ([D60](design/09-decisions.md#d60-explicit-trusted-proxies-for-client-addresses)).
@@ -654,7 +677,8 @@ refuses a directory holding anything and a file, so of two overlapping backups t
 second to finish exits nonzero and the first stays. An empty directory that appears in that moment
 is replaced, which loses nothing.
 
-A backup is a directory shaped like a data directory:
+A backup is the primary project's database and uploads, in a directory shaped like
+`projects/main/` (a backup of `instance.db` and of every project is B144's):
 
 ```text
 monday/                    mode 0700
@@ -761,8 +785,8 @@ nothing until you release it, however the files were copied. There is no step to
 ```sh
 systemctl stop iglo.email
 runuser -u iglo-email -- iglo.email backup --verify /var/backups/iglo.email/monday
-mv /var/lib/iglo.email /var/lib/iglo.email.before-restore
-cp -a /var/backups/iglo.email/monday /var/lib/iglo.email
+mv /var/lib/iglo.email/projects/main /var/lib/iglo.email.before-restore
+cp -a /var/backups/iglo.email/monday /var/lib/iglo.email/projects/main
 systemctl start iglo.email
 curl -fsSi http://127.0.0.1:9000/health
 ```
@@ -863,15 +887,18 @@ login off or converts the user to an API user, so an old key never comes back.
 
 From an archive, first unpack it with `tar -xzf` and verify what came out.
 
-Move the whole directory, as here. A new database beside an old `iglo-email.db-wal` is corrupted by
-it. If the upload directory is a mount, restore into it with `cp -a monday/uploads/. <mount>/`. The
+A backup is the primary project's directory: restore it as `projects/main/`, and keep
+`instance.db` and the lock where they are. On a new host, start the server once on an empty data
+directory first, stop it, then restore. Move the whole project directory, as here. A new database
+beside an old `iglo-email.db-wal` is corrupted by it. If the upload directory is a mount, restore into it with `cp -a monday/uploads/. <mount>/`. The
 extra `iglo-email-backup.json` in a restored directory is harmless. If `upload_path` is absolute
 and the data directory moved, media is refused until the path is right again.
 
 Executable and backup versions:
 
 - A newer executable restores an older backup: `--verify` says it will migrate, and the first
-  start takes a pre-migration snapshot in `backups/` and runs the migrations. The hold stays.
+  start takes a pre-migration snapshot in `backups/pre-migration/` and runs the migrations. The
+  hold stays.
 - An older executable refuses a newer backup. `--verify` exits nonzero, and `serve` exits with
   `Database version N is ahead of this executable`. Restore with that version or a newer one.
 

@@ -153,15 +153,28 @@ process-global mutable request state. No language HTTP endpoint exists until aut
 
 ```text
 data/
-  iglo-email.db        (+ -wal, -shm)
-  iglo-email.lock      instance lock (D69); no data
-  stage/               IDs of a running large subscriber selection (D62); empty at rest
-  uploads/             media files
-  backups/             pre-migration snapshots, and `backup` output by default
+  iglo-email.lock      instance lock (D69); no data; one for the whole directory
+  instance.db          (+ -wal, -shm) the project registry (B138b, D151)
+  projects/
+    <slug>/            one project; a fresh install has one, `main`, the primary project
+      iglo-email.db    (+ -wal, -shm) the project's whole schema
+      stage/           IDs of a running large subscriber selection (D62); empty at rest
+      uploads/         media files
+      .iglo-email-import/  the file of a running import
+  backups/
+    pre-migration/     snapshots before migrations: `instance-…` and `<slug>-…`
+                       and `backup` output by default (the primary project, until B144)
 ```
 
-Startup takes the instance lock, opens `iglo-email.db`, validates and applies the embedded migration
-manifest, then wires every store, route and loop without starting any of them. The port is bound
+A data directory with `iglo-email.db` at its root is the earlier layout: start refuses it with one
+message, writes nothing and converts nothing ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)).
+One instance serves several projects by `Host` ([14-projects](14-projects.md) sections 1–3); a
+fresh install is an instance with one primary project and behaves as one install did.
+
+Startup refuses the earlier layout, takes the instance lock, opens and migrates `instance.db` (its own
+manifest, `migrations/instance/`), then for each registered project opens its `iglo-email.db`,
+validates and applies the embedded migration manifest, and wires every store, route and loop without
+starting any of them ([14-projects](14-projects.md) section 3). The port is bound
 next, and only then does each background loop start, in wiring order ([B52](../briefs/B52.md)). So a
 start that cannot listen claims no send, campaign batch or webhook delivery and recovers nothing.
 The shutdown path stops whatever did start. It closes the connection after HTTP shutdown or a
