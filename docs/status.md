@@ -306,11 +306,11 @@ Open, in [B118i/B118j](briefs/B118i.md):
 - the B127 perf script timing `claim` instead of `claimBatch`;
 - `plain-executable.test.ts:277` absolute `/health` bound.
 
-Open, needing captured runs before v1.5.0 (an unexplained intermittent failure blocks the tag):
-- the unattributed `toBe` (B112 worker run);
-- the unattributed test-step error (B117b worker, B117e r2);
-- `contract:settings:reference` failing once without a visible cause (B126 r2, after #166);
-- B101's media held-send check, not restored until its 1-in-6 failure is explained.
+Captured runs (investigation on #211, 2026-11-25, `oven/bun:1.4.5` arm64 on 56801a71, load recorded):
+- **The unattributed `toBe`** (B112 worker run): did not recur in 3 full test steps (6,218 passing executions). It stays on watch. The v1.5.0 gate runs keep junit output, and any unattributed failure there blocks the tag.
+- **The unattributed test-step error** (B117b, B117e r2): attributed. `cli.test.ts:717` runs seven CLI starts inside one 12 s budget, and they took 9.4–11.5 s under load. Open in [B118i](briefs/B118i.md) item 4: one budget per start.
+- **`contract:settings:reference`**: failed 1 in 28 runs. Upstream's reload exits at boot on an SMTP `idle_timeout`/`wait_timeout` it cannot decode (`cmd/init.go:747`); the write that stored it is not yet found. Open in [B118k](briefs/B118k.md).
+- **B101's media held-send check**: closed. The check (`carried.reachable()` while the sixth send is held) and the `reachable()` counter it read were removed in B119. Restored in a scratch copy, it passed 12 of 12 runs (6 under six busy loops).
 
 New safe exotic-response differences are backlog under D57, by PR link; actual safety, auth or data defects never become backlog by relabelling.
 
