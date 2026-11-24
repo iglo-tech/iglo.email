@@ -8,7 +8,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
-import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import {
+  listensOn,
+  portZeroRootUrl,
+  reportedPort,
+  restartOnPort,
+  stderrDrained,
+} from "@/test/serve-port";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import { readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
@@ -16,8 +22,8 @@ import { untilState } from "@/test/wait";
 const admin = { user: "crash-admin", password: "crash-admin-password" };
 const executable = resolve(import.meta.dir, "../../dist/iglo.email");
 const directory = mkdtempSync(join(tmpdir(), "iglo-webhook-crash-"));
-// Set by the first start, which takes a port that startOnFreePort finds free; restarts reuse it
-// through restartOnPort, since the origin above is kept.
+// Set by the first start, which binds port 0 and names the port the OS gave it (D144); restarts
+// reuse it through restartOnPort, since the origin above is kept. Every start has the same root URL.
 let port = 0;
 let origin = "";
 let child: ChildProcess | undefined;
@@ -35,6 +41,8 @@ async function start(listenPort: number) {
       "127.0.0.1",
       "--port",
       String(listenPort),
+      "--root-url",
+      portZeroRootUrl,
       "--data-dir",
       join(directory, "d"),
     ],
@@ -45,7 +53,7 @@ async function start(listenPort: number) {
         IGLO_EMAIL_ADMIN_USER: admin.user,
         IGLO_EMAIL_ADMIN_PASSWORD: admin.password,
       },
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", listenPort === 0 ? "pipe" : "ignore", "pipe"],
     },
   );
   const attempt = child;
@@ -54,6 +62,14 @@ async function start(listenPort: number) {
       errors = (errors + chunk.toString()).slice(-4000);
     }
   });
+  if (listenPort === 0) {
+    port = await reportedPort(attempt, 10_000).catch(async (error: unknown) => {
+      await stderrDrained(attempt);
+      throw new Error(`not ready: ${String(error)}: ${errors}`);
+    });
+    origin = `http://127.0.0.1:${port}`;
+  }
+  const bound = port;
   let observed = "starting";
   // An exit here is a failed start (the port in use, for one); /health alone could be another server's.
   await untilState(
@@ -64,9 +80,7 @@ async function start(listenPort: number) {
       }
       const response = await fetch(`${origin}/health`).catch(() => null);
       observed = `status ${response?.status ?? "none"}`;
-      return (
-        response?.status === 200 && child!.pid !== undefined && listensOn(child!.pid, listenPort)
-      );
+      return response?.status === 200 && child!.pid !== undefined && listensOn(child!.pid, bound);
     },
     {
       label: "not ready",
@@ -96,11 +110,7 @@ const receiver = startReceiver(async () => {
   return new Response("too late");
 });
 try {
-  await startOnFreePort(async (free) => {
-    port = free;
-    origin = `http://127.0.0.1:${port}`;
-    await start(free);
-  });
+  await start(0);
   const { user, token } = await provisionApiUser(origin, admin);
   const authorization = `Basic ${btoa(`${user}:${token}`)}`;
   const api = async (path: string, method = "GET", body?: unknown) => {

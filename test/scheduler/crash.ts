@@ -10,7 +10,7 @@ import { createServer } from "node:net";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { portZeroRootUrl, reportedPort, stderrDrained } from "@/test/serve-port";
 import { untilState } from "@/test/wait";
 
 interface Sink {
@@ -223,23 +223,34 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
 // The real production executable: kill it while SMTP delivery of step 0 is in flight.
 type Launched = Awaited<ReturnType<typeof launchProduction>>;
 async function production(dir: string, launched: Array<Launched>) {
-  const running = await startOnFreePort((port) => launchProduction(dir, port));
+  const running = await launchProduction(dir);
   launched.push(running);
   return running;
 }
-// Returns once this process listens on its port; a start that fails in use is retried by the caller.
-// Its stderr is kept, and printed only if the run fails: a healthy start writes nothing to read.
-async function launchProduction(dir: string, port: number) {
+// Returns once this process has bound port 0 and named the port (D144): the line comes after the
+// bind, so the process listens by then. Its stderr is kept, and printed only if the run fails: a
+// healthy start writes nothing to read.
+async function launchProduction(dir: string) {
   const child = spawn(
     resolve("dist/iglo.email"),
-    ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dir],
+    [
+      "serve",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "0",
+      "--root-url",
+      portZeroRootUrl,
+      "--data-dir",
+      dir,
+    ],
     {
       env: {
         PATH: "",
         IGLO_EMAIL_ADMIN_USER: "fixture-admin",
         IGLO_EMAIL_ADMIN_PASSWORD: "fixture-admin-password",
       },
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
     },
   );
   let errors = "";
@@ -250,21 +261,10 @@ async function launchProduction(dir: string, port: number) {
     child.once("exit", (code, signal) => r({ code, signal }));
   });
   try {
-    await untilState(
-      async () => {
-        if (child.exitCode !== null || child.signalCode !== null) {
-          await stderrDrained(child);
-          throw new Error(`production exited before listening: ${errors}`);
-        }
-        return child.pid !== undefined && listensOn(child.pid, port);
-      },
-      {
-        label: "production did not listen",
-        progress: () => String(child.pid),
-        stallMs: 20_000,
-        intervalMs: 25,
-      },
-    );
+    await reportedPort(child, 20_000).catch(async (error: unknown) => {
+      await stderrDrained(child);
+      throw new Error(`production did not listen: ${String(error)}: ${errors}`);
+    });
   } catch (error) {
     child.kill("SIGKILL");
     await exited;

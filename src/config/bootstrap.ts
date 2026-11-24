@@ -39,6 +39,9 @@ Start the HTTP server. Bootstrap options override their environment equivalents:
   --help                                        Show this help
   --version                                     Print the version
 
+A port of 0 binds a port the OS chooses, and prints one line, "listening on port <port>", once it
+is bound. It needs --root-url, because the root URL is set before the bind.
+
 IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD initialize the first admin
 only when no users exist. Without them public health is available but login is denied.
 IGLO_EMAIL_API_USER and IGLO_EMAIL_API_TOKEN create an API user with the Super Admin role on the
@@ -99,13 +102,15 @@ export function parseBootstrap(args: Array<string>, env: Environment): Bootstrap
     return { help: false, version: true };
   }
 
+  // 0 asks the OS for a port (D144). The root URL is built here, before the bind, so it cannot name
+  // that port: a port of 0 takes the root URL from the flag or the environment.
   const portValue = options["--port"] ?? env.IGLO_EMAIL_PORT ?? "9000";
   if (!/^[0-9]+$/.test(portValue)) {
-    throw new Error("Invalid port: expected an integer from 1 to 65535");
+    throw new Error("Invalid port: expected an integer from 0 to 65535");
   }
   const port = Number(portValue);
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
-    throw new Error("Invalid port: expected an integer from 1 to 65535");
+  if (!Number.isSafeInteger(port) || port > 65_535) {
+    throw new Error("Invalid port: expected an integer from 0 to 65535");
   }
 
   const host = parseHost(options["--host"] ?? env.IGLO_EMAIL_HOST ?? "127.0.0.1");
@@ -115,7 +120,13 @@ export function parseBootstrap(args: Array<string>, env: Environment): Bootstrap
   }
 
   const urlHost = isIP(host) === 6 ? `[${host}]` : host;
-  const rootUrl = options["--root-url"] ?? env.IGLO_EMAIL_ROOT_URL ?? `http://${urlHost}:${port}`;
+  const givenRootUrl = options["--root-url"] ?? env.IGLO_EMAIL_ROOT_URL;
+  if (port === 0 && givenRootUrl === undefined) {
+    throw new Error(
+      "A port of 0 needs --root-url (or IGLO_EMAIL_ROOT_URL): the root URL is set before the OS picks the port",
+    );
+  }
+  const rootUrl = givenRootUrl ?? `http://${urlHost}:${port}`;
   validateAbsoluteUrl(rootUrl, "root-url");
 
   return {

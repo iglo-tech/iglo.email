@@ -1,10 +1,16 @@
-// Ports for a process that must be given its port before it starts, such as the compiled
-// executable with `serve --port`.
+// Ports for a process under test.
 //
-// A port that a test probes and releases can be taken by another test before the process binds
-// it. So a start that fails because its port is in use is retried on a fresh port, and a server
-// counts as the one started only when that very process listens on the port: another server can
-// hold the port and answer /health while this process is still starting, or after it has failed.
+// A server started with `--port 0` (D144) binds a port the OS chooses and names it on one stdout
+// line, so no port is picked before the start and no other process can take it first:
+// `readyOnPortZero` waits for that line and for /health on the port it names. That is the way to
+// start a server in a test.
+//
+// `startOnFreePort` remains for the starts that must be given their port before they start: a
+// root URL that names the port (it is set before the bind), a restart on the origin a caller keeps,
+// or a fixed-port case. A port that a test probes and releases can be taken by another test before
+// the process binds it. So such a start that fails because its port is in use is retried on a fresh
+// port, and a server counts as the one started only when that very process listens on the port:
+// another server can hold the port and answer /health while this process is still starting.
 //
 // The guarantee depends on `Bun.serve` running without `reusePort` (src/server/server.ts). With
 // SO_REUSEPORT, two servers can bind the same port, so a start would no longer fail when its port
@@ -190,8 +196,153 @@ export interface Child {
   readonly pid?: number;
   readonly exitCode: number | null;
   readonly exited: Promise<number>;
+  readonly stdout?: ReadableStream<Uint8Array> | number | null | undefined;
   readonly stderr: ReadableStream<Uint8Array> | number | null | undefined;
   kill(signal?: number | NodeJS.Signals): void;
+}
+
+/**
+ * The part of a child that names its port: its pid and a piped stdout. A `Bun.spawn` child has it,
+ * and so has a `node:child_process` child, whose stdout is an async iterable too.
+ */
+export interface PortReporter {
+  readonly pid?: number | undefined;
+  readonly stdout?: AsyncIterable<Uint8Array> | number | null | undefined;
+}
+
+/** What a child with a piped stdout wrote: the port it named, and the whole text once it ends. */
+export interface CapturedOutput {
+  /** The port of the `listening on port N` line (D144). Rejects when stdout ends without one. */
+  readonly port: Promise<number>;
+  /** The whole stdout, resolved when the stream ends (the child has exited). */
+  readonly text: Promise<string>;
+}
+
+// A whole line only: a line read in two parts must not give the port from its first part.
+const boundPortLine = /^listening on port (\d+)\n/m;
+
+/**
+ * Reads a child's stdout once, for both its port line and its whole text. A child started on port 0
+ * names the port the OS gave it on that line (D144), so the port is known only once it has written
+ * the line. The text is the same stream read in full, so no output is lost to the port read.
+ */
+export function captureOutput(child: PortReporter): CapturedOutput {
+  const stream = child.stdout;
+  if (!stream || typeof stream === "number") {
+    throw new Error("captureOutput needs a child whose stdout is piped");
+  }
+  const named = Promise.withResolvers<number>();
+  // A caller that never awaits the port must not see an unhandled rejection when stdout ends first.
+  named.promise.catch(() => {});
+  const text = (async () => {
+    const decoder = new TextDecoder();
+    let written = "";
+    let found = false;
+    for await (const chunk of stream) {
+      written += decoder.decode(chunk, { stream: true });
+      const line = found ? null : boundPortLine.exec(written);
+      if (line) {
+        found = true;
+        named.resolve(Number(line[1]));
+      }
+    }
+    written += decoder.decode();
+    named.reject(new Error(`Server exited before it reported its port. Its output: ${written}`));
+    return written;
+  })();
+  return { port: named.promise, text };
+}
+
+/** Starts `captureOutput` for the child's stdout, so `port` and `text` are read from one stream. */
+const captured = new WeakMap<PortReporter, CapturedOutput>();
+export function outputOf(child: PortReporter): CapturedOutput {
+  let output = captured.get(child);
+  if (!output) {
+    output = captureOutput(child);
+    captured.set(child, output);
+  }
+  return output;
+}
+
+/**
+ * The port a child started on port 0 names on its stdout line (D144). The wait is a stall window on
+ * the child's CPU time, as in `healthWhenReady` (B118g): a start that is slow but still working is
+ * not cut off, and one that stops without naming its port fails by name once `stallMs` has passed
+ * with no CPU time used. A child that exits first fails at once, when its stdout ends.
+ */
+export async function reportedPort(child: PortReporter, stallMs = 15_000): Promise<number> {
+  let port: number | undefined;
+  let failure: unknown;
+  outputOf(child).port.then(
+    (value) => {
+      port = value;
+    },
+    (error: unknown) => {
+      failure = error;
+    },
+  );
+  await untilState(
+    () => {
+      if (port !== undefined) {
+        return true;
+      }
+      if (failure !== undefined) {
+        throw failure;
+      }
+      return false;
+    },
+    {
+      label: `Server did not report its port within ${stallMs / 1000} s of no CPU progress`,
+      progress: () => cpuProgress(child.pid),
+      stallMs,
+      intervalMs: 25,
+    },
+  );
+  return port!;
+}
+
+/** The root URL of a test start on port 0: it is set before the bind, so it names no port (D144). */
+export const portZeroRootUrl = "http://127.0.0.1";
+
+/** The stderr a failed `readyOnPortZero` start wrote, as written, or undefined when none was read. */
+export function startStderr(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("startStderr" in error)) {
+    return undefined;
+  }
+  return typeof error.startStderr === "string" ? error.startStderr : undefined;
+}
+
+/**
+ * Waits for a child started with `--port 0 --root-url <url>` (D144) to name its port and answer
+ * /health on it, and returns the port. Each wait is a stall window of `stallMs` on the child's CPU
+ * time. A start that fails is killed and reaped before its error is thrown, with the child's stderr
+ * in its message when it is still unread; `startStderr` gives that stderr as written.
+ */
+export async function readyOnPortZero(
+  child: Child,
+  stallMs = 15_000,
+): Promise<{ port: number; health: Response }> {
+  try {
+    const port = await reportedPort(child, stallMs);
+    return { port, health: await healthWhenReady(child, port, stallMs) };
+  } catch (error) {
+    if (child.exitCode === null) {
+      child.kill("SIGKILL");
+    }
+    await child.exited;
+    const stream = child.stderr;
+    const stderr =
+      typeof stream === "object" && stream !== null && !stream.locked
+        ? await new Response(stream).text()
+        : "";
+    if (!stderr.trim()) {
+      throw error;
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    throw Object.assign(new Error(`${reason}: ${stderr.trim()}`, { cause: error }), {
+      startStderr: stderr,
+    });
+  }
 }
 
 /**

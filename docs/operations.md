@@ -185,6 +185,12 @@ Flags win over variables. The root URL goes into every link in every email: set 
 URL, with its scheme (`https://news.example.com`). It is the one setting that needs a restart.
 Everything else is in the admin UI under Settings, or `PUT /api/settings`, and applies at once.
 
+A port of 0 (`--port 0` or `IGLO_EMAIL_PORT=0`) asks the OS for a free port. Once the server is
+bound it writes one line to stdout, `listening on port <port>`, and only for port 0. A port of 0
+needs `--root-url`, because the root URL is set before the bind. The admin pages refuse a POST from
+an origin other than the root URL's, so a server on port 0 is for scripts and checks, not for an
+operator's browser: a browser must reach the server on the port the root URL names.
+
 The admin and API pairs are read only on the first start, while no users exist, and each pair is
 both or neither. The API token must be 48 letters and digits (`A-Z`, `a-z`, `0-9`), the format of a
 generated token. Like one, it is stored only as a SHA-256 digest, and the server never prints it.
