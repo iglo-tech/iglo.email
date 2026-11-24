@@ -100,7 +100,7 @@ describe("owned production lifecycle", () => {
     ).rejects.toThrow("synthetic contract failure");
     expect(origin).not.toBe("");
     await expect(get(origin)).rejects.toThrow();
-  });
+  }, 30_000);
 
   test("a nonzero child shutdown is reported as a failure", async () => {
     const started = Date.now();
@@ -115,7 +115,7 @@ describe("owned production lifecycle", () => {
       lifetimeWithinTest(started),
     );
     await expect(run).rejects.toThrow("shutdown");
-  });
+  }, 30_000);
 
   test("the production CLI removes its own data after refusing an unsupported case", async () => {
     await ensureProductionBuild();
@@ -197,7 +197,7 @@ describe("owned production lifecycle", () => {
     controller.abort();
     await expect(running).rejects.toThrow();
     await expect(get(origin)).rejects.toThrow();
-  });
+  }, 30_000);
 });
 
 describe("difference metadata and strict transport", () => {

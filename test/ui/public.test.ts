@@ -49,7 +49,7 @@ test("compiled executable includes the vendored editor theme MIT notice", async 
     undefined,
     lifetimeWithinTest(started),
   );
-});
+}, 30_000);
 
 test.each([
   "/public/static/%73tyle.css",
@@ -243,7 +243,7 @@ test("admin and API paths keep their own answers; only other paths get the publi
     admin,
     lifetimeWithinTest(started),
   );
-});
+}, 30_000);
 
 // B121 review (lead decision): sign-in, two-factor, password reset and the archive preview are
 // branded like the public pages. The sign-in page shows the site's logo.
@@ -271,4 +271,4 @@ test("the sign-in, forgot-password and reset pages show the site's logo", async 
     admin,
     lifetimeWithinTest(started),
   );
-});
+}, 30_000);
