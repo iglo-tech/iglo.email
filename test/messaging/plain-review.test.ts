@@ -7,32 +7,13 @@ import { asBody } from "@/test/read-body";
 
 const text = (html: string) => plainText(html, createMessageBudget());
 
-/**
- * Linear growth as a step ratio: one shape timed at 64 KiB, 256 KiB and 1 MiB (1x, 4x and 16x). Linear work
- * gives about 4x for each 4x step and quadratic work about 16x, so a bound of 8x per step sits a factor of 2
- * from each. Within a round the three sizes run in turn, so host load that slows one size slows the others
- * in that round too, and each size's time is the median over the rounds.
- */
 const SIZE = 64 * 1024;
 const ROUNDS = 5;
 const STEP_BOUND = 8;
+/** A capped shape's median at 1 MiB must sit under 1/CAP_SHARE of the linear case's median at 1 MiB. */
+const CAP_SHARE = 8;
 const median = (values: Array<number>) =>
   [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
-/** Asserts that each step's ratio, 4x/1x and 16x/4x, is under STEP_BOUND. `build` makes the input of a size. */
-const expectLinearGrowth = async (build: (size: number) => string) => {
-  const inputs = [SIZE, 4 * SIZE, 16 * SIZE].map((size) => build(size));
-  const samples = inputs.map((): Array<number> => []);
-  for (let round = 0; round < ROUNDS; round++) {
-    for (const [i, input] of inputs.entries()) {
-      const started = performance.now();
-      await text(input);
-      samples[i]!.push(performance.now() - started);
-    }
-  }
-  const [one, four, sixteen] = samples.map((times) => median(times));
-  expect(four! / one!).toBeLessThan(STEP_BOUND);
-  expect(sixteen! / four!).toBeLessThan(STEP_BOUND);
-};
 
 // B1: character references in an href decode once. `&amp;` is the HTML form of `&`, and the URL
 // a reader follows has the parameter separator, not `amp;`.
@@ -281,28 +262,58 @@ const prefix: Record<string, string> = {
   "unclosed span with stray end tags": "",
   "div stack then stray end tags": "<div>".repeat(256),
 };
+/** The implied-end input of one kind whose HTML is about `size` bytes. */
+const impliedHtml = (kind: string, size: number) =>
+  prefix[kind]! + implied[kind]!.unit.repeat(Math.floor(size / implied[kind]!.bytes));
 for (const kind of Object.keys(implied)) {
-  const { unit, bytes } = implied[kind]!;
-  const build = (size: number) => prefix[kind]! + unit.repeat(Math.floor(size / bytes));
   // The cap, without timing: with the cap disabled, each of these shapes has text at this size, so the
   // test fails every shape then.
   test(`${kind} at 64 KiB has no text part: the end-tag cap stops it (D118)`, async () => {
-    expect(await text(build(SIZE))).toBe("");
+    expect(await text(impliedHtml(kind, SIZE))).toBe("");
   });
 }
 
 // r4: the worst case the cap still allows: 1023 open elements, then stray end tags, each of which
 // searches the open elements. It was one absolute sample under 1 s, which failed at 1006-1181 ms on a
-// loaded host (B137). It is a growth step check now: the median of rounds at 64 KiB, 256 KiB and 1 MiB.
-// It is the only shape here that stays under the cap at every size, so its cost is real work at each
-// size, and it is the one growth check: the other shapes stop at the cap in a few milliseconds, where a
-// ratio of two such times measured 13x and 19x under load and says nothing about linear work. It catches
-// quadratic work on the output, such as joining the output parts on every few writes.
+// loaded host (B137). It is the only shape here that stays under the cap at every size, so its cost is
+// real work at each size, and it is the one growth check. The capped shapes stop at the cap in a few
+// milliseconds, where a ratio of two such times measured 13x and 19x under load and says nothing about
+// linear work, so they are timed once each, at 1 MiB, against this shape. It catches quadratic work on the
+// output, such as joining the output parts every 64 writes.
 const worstStrayEnds = (size: number) =>
   "<span>".repeat(1023) + "x</q>".repeat(Math.floor(size / 5));
-test(`the worst linear case, 1023 open spans then stray end tags, has each 4x step of input under ${STEP_BOUND}x`, async () => {
-  await expectLinearGrowth(worstStrayEnds);
-});
+/**
+ * Linear growth and the cap's stop, timed in the same rounds. The worst linear case is timed at 64 KiB,
+ * 256 KiB and 1 MiB (1x, 4x and 16x): linear work gives about 4x for each 4x step and quadratic work about
+ * 16x, so a bound of 8x per step sits a factor of 2 from each. Each capped shape at 1 MiB (the nested kinds
+ * and the implied ends) stops at the cap, so it costs a few milliseconds at any size: its median must sit
+ * under 1/CAP_SHARE of the linear case's median at 1 MiB. A conversion that goes on past the cap takes
+ * seconds per shape at that size and fails here. Within a round every input runs in turn, so host load
+ * that slows one slows the others in that round too, and each input's time is the median over the rounds.
+ */
+test(`the worst linear case has each 4x step of input under ${STEP_BOUND}x, and each capped shape at 1 MiB stops (under 1/${CAP_SHARE} of it)`, async () => {
+  const capped = [
+    ...asBody<Array<keyof typeof nested>>(Object.keys(nested)).map((kind) => ({
+      name: `nested ${kind}`,
+      html: nestedHtml(kind, MIB),
+    })),
+    ...Object.keys(implied).map((kind) => ({ name: kind, html: impliedHtml(kind, MIB) })),
+  ];
+  const inputs = [SIZE, 4 * SIZE, 16 * SIZE].map(worstStrayEnds).concat(capped.map((c) => c.html));
+  const samples = inputs.map((): Array<number> => []);
+  for (let round = 0; round < ROUNDS; round++) {
+    for (const [i, input] of inputs.entries()) {
+      const started = performance.now();
+      await text(input);
+      samples[i]!.push(performance.now() - started);
+    }
+  }
+  const [one, four, sixteen, ...cappedTimes] = samples.map((times) => median(times));
+  expect(four! / one!).toBeLessThan(STEP_BOUND);
+  expect(sixteen! / four!).toBeLessThan(STEP_BOUND);
+  const limit = sixteen! / CAP_SHARE;
+  expect(capped.flatMap((c, i) => (cappedTimes[i]! >= limit ? [c.name] : []))).toEqual([]);
+}, 30_000);
 
 test("a message past the implied-end cap gives no text part, and its HTML is still converted by the caller", async () => {
   expect(await text("<p>x".repeat(4000))).toBe("");
