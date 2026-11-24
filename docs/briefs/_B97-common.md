@@ -34,11 +34,13 @@ The harness labels and removes its own containers and volumes; touch no other Do
 - Update the design docs your brief names in the same PR so code and design agree, plus the OpenAPI document (`src/openapi/*`; MCP tools are generated from it, D98) for any API change.
 - A decision record is **appended at the end** of `docs/design/09-decisions.md` (inserting it earlier split D114 in B107 and D115 in B112); check `git diff origin/main -- docs/design/09-decisions.md` shows only the appended record. It goes in as "(lead, 2026-11-17)" with the number your brief gives. State the decision, what is unchanged, considered alternatives and why.
 - Do not edit `docs/status.md`.
-- Owner rule "Local first": push only code that passed `bun run check` and the brief's acceptance on this host; never trigger CI.
-- Open a PR to `main` titled as your brief says; the body lists what changed, the acceptance summary lines, any macOS-only limits, and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Commits end with `Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>`. No CI wait, no workflow trigger, no merge.
+- Owner rule "Local first" with D145: push only code that passed the tests and checks the change can affect (changed and new test files, dependents of changed fixtures, mutants, `lint`, `typecheck`, `format:check`); never trigger CI. The full acceptance below runs once, on the head the reviewer approved, before the merge.
+- Open a PR to `main` titled as your brief says; the body lists what changed, the acceptance summary lines, any macOS-only limits, and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Commits end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No CI wait, no workflow trigger, no merge.
 - Last line: PR <URL>, head <SHA>, local checks <state>.
 
-## Acceptance (every task unless the brief adds more)
+## Acceptance (once, on the approved head; D145)
+
+It runs after the reviewer approves, not before each push. It covers only the steps the change can reach, named in the brief or by the lead at approval: a docs-only change runs `format:check`; a test-only change its own files and the static checks; the release steps only when `scripts/release*`, the build or the bootstrap changed; the `reference-linux` steps only when `test/contract`, `test/reference` or a route a contract corpus exercises changed. The paragraphs below describe the full set, which the release commit always runs.
 
 The release gate's 10-run series is for release commits only (runbook "Release gate"); in a task PR one valid `bun run check` suffices, where a run is invalid only under the runbook's foreign-load rule. Run every check in the foreground: if one would exceed the Bash timeout, split it; never let it continue in the background.
 

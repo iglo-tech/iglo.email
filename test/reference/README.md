@@ -73,6 +73,11 @@ The child inherits its caller's environment and receives these additional values
 | `WEBHOOK_URL` | webhook delivery endpoint (`POST /deliver`) |
 | `WEBHOOK_RECEIVER_URL` | receiver HTTP origin for capture and controls |
 | `REFERENCE_RUN_ID` | unique ID used to label owned Docker resources |
+| `REFERENCE_DB_CONTAINER`, `REFERENCE_DB_USER`, `REFERENCE_DB_NAME` | this run's Postgres container and its database user and name; `upstreamSetting()` in `upstream-db.ts` reads a stored setting with `docker exec psql` over the local socket (no password is passed) |
+
+When a reference run fails, its `listmonk.log` is copied to
+`upstream/reference/failed-logs/<run-id>-listmonk.log` before the run directory
+is removed, and the harness prints that path. Passing runs keep nothing.
 
 The token is captured privately from the installer, and the harness does not
 print it. The child command is responsible for not printing it. See

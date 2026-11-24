@@ -1,7 +1,7 @@
 // Public round-3 regressions for pinned listmonk/Go/cron; D48 is explicitly paired.
 import { withBlankPasswords } from "@/test/contract/settings-candidate";
 import { listmonkEnvelope } from "@/test/contract/envelope";
-import { settingsFetch } from "@/test/contract/settings-reference-fetch";
+import { acceptedWrite, settingsFetch } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
 
@@ -47,7 +47,11 @@ export async function runSettingsCouncilFinal(target: {
   ]) {
     const out = candidate();
     out["app.from_email"] = [address];
-    check((await request(JSON.stringify(out))).status === 200, `${label}-status`);
+    check(
+      (await acceptedWrite(target, `${label}-status`, () => request(JSON.stringify(out))))
+        .status === 200,
+      `${label}-status`,
+    );
     check((await read())["app.from_email"][0] === address, `${label}-stored`);
   }
   const beforeAlias = await read();
@@ -108,15 +112,21 @@ export async function runSettingsCouncilFinal(target: {
       ...bytes,
       ...encoder.encode(text.slice(index + "ROUND_THREE_UTF8".length)),
     ]);
-    check((await request(body)).status === 200, `${label}-status`);
+    check(
+      (await acceptedWrite(target, `${label}-status`, () => request(body))).status === 200,
+      `${label}-status`,
+    );
     check((await read())["app.site_name"] === expected, `${label}-stored`);
     const keyBody = Uint8Array.from([34, ...bytes, 34]);
     const beforeKey = await read();
     // D44 binds a typed candidate; upstream forwards RawMessage bytes to PG.
     const referenceRawFailure = target.mode === "reference" && label !== "valid-rune";
     check(
-      (await request(keyBody, "/api/settings/app.site_name")).status ===
-        (referenceRawFailure ? 500 : 200),
+      (
+        await acceptedWrite(target, `${label}-key-status`, () =>
+          request(keyBody, "/api/settings/app.site_name"),
+        )
+      ).status === (referenceRawFailure ? 500 : 200),
       `${label}-key-status`,
     );
     const afterKey = await read();
@@ -134,12 +144,20 @@ export async function runSettingsCouncilFinal(target: {
     const body =
       JSON.stringify(out).slice(0, -1) +
       ',"smtp":[' +
-      JSON.stringify({ enabled: firstEnabled }) +
+      // The pool fields are sent on the first item too. Upstream stores a missing one as "" and an
+      // enabled item with an empty duration exits at boot (cmd/init.go:747), so a sparse enabled
+      // item leaves the stored settings unreloadable (B118k; settings.ts notes the same for MaxConns).
+      JSON.stringify({
+        enabled: firstEnabled,
+        max_conns: 1,
+        idle_timeout: "15s",
+        wait_timeout: "5s",
+      }) +
       // The pool fields keep upstream able to restart before the restore below.
       ',{"enabled":true,"name":"second","host":"retained.example","port":25,"max_conns":1,' +
       '"idle_timeout":"15s","wait_timeout":"5s"}],' +
       '"smtp":[{}],"smtp":[{},{}]}';
-    const response = await request(body);
+    const response = await acceptedWrite(target, `D48-${firstEnabled}`, () => request(body));
     const allowed = firstEnabled || target.mode === "reference";
     check(response.status === (allowed ? 200 : 400), `D48-${firstEnabled}-status`);
     const after = await read();
@@ -165,5 +183,9 @@ export async function runSettingsCouncilFinal(target: {
       );
     }
   }
-  check((await request(JSON.stringify(candidate()))).status === 200, "restore");
+  check(
+    (await acceptedWrite(target, "restore", () => request(JSON.stringify(candidate())))).status ===
+      200,
+    "restore",
+  );
 }

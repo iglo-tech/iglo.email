@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { constants as osConstants } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { command, spawnGroup, stopGroup } from "@/test/reference/command";
 import type { GroupChild } from "@/test/reference/command";
 import { cache, prepare } from "@/test/reference/prepare";
@@ -502,6 +502,9 @@ async function run(args: Array<string>): Promise<number> {
         REFERENCE_RUN_ID: id,
         REFERENCE_URL: referenceUrl,
         REFERENCE_LOG: join(directory, "listmonk.log"),
+        REFERENCE_DB_CONTAINER: name,
+        REFERENCE_DB_USER: dbUser,
+        REFERENCE_DB_NAME: dbName,
         REFERENCE_API_USER: apiUser,
         REFERENCE_API_TOKEN: token,
         MAILPIT_URL: mailUrl,
@@ -564,6 +567,25 @@ async function run(args: Array<string>): Promise<number> {
         if (resourcesMayExist) {
           await removeOwned("volume");
         }
+      },
+      async () => {
+        if (!ownsDirectory || (!failed && exitCode === 0)) {
+          return;
+        }
+        // The run directory is removed next. A failed run keeps upstream's log, because a boot
+        // exit or a reload error there is the only record of the write that caused it.
+        const source = join(directory, "listmonk.log");
+        const kept = join(cache, "failed-logs", `${id}-listmonk.log`);
+        try {
+          await mkdir(dirname(kept), { recursive: true, mode: 0o700 });
+          await copyFile(source, kept);
+        } catch (error) {
+          if (asBody<NodeJS.ErrnoException>(error).code === "ENOENT") {
+            return;
+          }
+          throw error;
+        }
+        console.error(`Reference run failed; upstream log kept at ${kept}`);
       },
       async () => {
         if (ownsDirectory) {
