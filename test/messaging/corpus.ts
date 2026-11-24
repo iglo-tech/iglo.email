@@ -7,6 +7,7 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const base = process.env.REFERENCE_URL!,
@@ -44,16 +45,21 @@ const cases = [
 ] as const;
 async function getOne(subject: string) {
   // Upstream TX queues asynchronously; polling is bounded observation, not time-policy testing.
-  const deadline = Date.now() + 5000;
-  do {
-    const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-    if (found.length === 1) {
-      return found[0]!;
-    }
-    assert.equal(found.length, 0);
-    await Bun.sleep(20);
-  } while (Date.now() < deadline);
-  throw new Error("Reference message was not received");
+  let found: Awaited<ReturnType<typeof mailpit.list>> = [];
+  await untilState(
+    async () => {
+      found = (await mailpit.list()).filter((m) => m.Subject === subject);
+      return found.length > 0;
+    },
+    {
+      label: "Reference message was not received",
+      progress: () => String(found.length),
+      stallMs: 5000,
+      intervalMs: 20,
+    },
+  );
+  assert.equal(found.length, 1);
+  return found[0]!;
 }
 async function snapshot(id: string) {
   const message = await mailpit.message(id),

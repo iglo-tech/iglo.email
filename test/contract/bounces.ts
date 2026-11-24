@@ -7,6 +7,7 @@ import { TOPIC, bounceMessage, envelope } from "@/test/bounces/ses-fixture";
 import { startSink } from "@/test/tx/sink";
 import { signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 /** A page of bounces as GET /api/bounces returns it, read as the shape the checks use. */
 type BounceList = {
@@ -61,16 +62,23 @@ export async function runBouncesContract(target: {
     check((await call(`/api/settings/${key}`, "PUT", value)).status === 200, `setting-${key}`);
     // Upstream reloads asynchronously after a settings write.
     if (reference) {
+      // Kept: the old process answers /health for a moment after the write, before it reloads.
       await Bun.sleep(1200);
-      for (const deadline = Date.now() + 15_000; Date.now() < deadline; await Bun.sleep(100)) {
-        try {
-          if ((await fetch(`${target.baseUrl}/health`)).ok) {
-            break;
+      let reloading = "down";
+      // The reload has no progress signal beyond /health; the stall window is its limit (15 s).
+      await untilState(
+        async () => {
+          try {
+            const health = await fetch(`${target.baseUrl}/health`);
+            reloading = `status ${health.status}`;
+            return health.ok;
+          } catch {
+            reloading = "unreachable";
+            return false;
           }
-        } catch {
-          /* Still reloading. */
-        }
-      }
+        },
+        { label: "bounces settings reload", progress: () => reloading, stallMs: 15_000 },
+      ).catch(() => undefined);
     }
   };
   const address = (name: string) => `${name}-${suffix}@example.com`;
@@ -98,12 +106,12 @@ export async function runBouncesContract(target: {
     const sentinel = await subscriber(`sentinel-${crypto.randomUUID().slice(0, 8)}`);
     const sent = await post({ email: sentinel.email, type: "soft", source: "sentinel" });
     check(sent.status === 200, "sentinel");
-    for (const deadline = Date.now() + 10_000; ; await Bun.sleep(25)) {
-      if ((await bounces(sentinel.id)).length === 1) {
-        break;
-      }
-      check(Date.now() < deadline, "sentinel-wait");
-    }
+    let handled = 0;
+    await untilState(async () => (handled = (await bounces(sentinel.id)).length) === 1, {
+      label: "sentinel-wait",
+      progress: () => String(handled),
+      stallMs: 10_000,
+    });
     await call(`/api/subscribers/${sentinel.id}`, "DELETE");
   };
   const recorded = async (body: unknown) => {

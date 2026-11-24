@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { createAnalyticsPurge } from "@/analytics/purge";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
@@ -6,6 +6,10 @@ import { createLogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { MAINTENANCE_SUBSCRIBERS as BATCH } from "@/subscribers/store";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
+
+// A 5 s stall would end at the single-file run's 5 s default before it fails by name.
+setDefaultTimeout(30_000);
 
 let f: CampaignsFixture;
 let purge: ReturnType<typeof createAnalyticsPurge>;
@@ -115,15 +119,24 @@ test("an export stops with a client that goes away, and at most two run at once"
     await response.body!.cancel();
   }
   // The server sees the cancels when the connections close.
-  for (let i = 0; i < 200; i++) {
-    const again = await get();
-    if (again.status === 200) {
-      await again.body!.cancel();
-      return;
-    }
-    await Bun.sleep(10);
-  }
-  throw new Error("export slots were not released");
+  let answer = 0;
+  await untilState(
+    async () => {
+      const again = await get();
+      answer = again.status;
+      if (again.status === 200) {
+        await again.body!.cancel();
+        return true;
+      }
+      return false;
+    },
+    {
+      label: "export slots were not released",
+      progress: () => String(answer),
+      stallMs: 5000,
+      intervalMs: 10,
+    },
+  );
 });
 
 test("an export with individual tracking off holds no subscriber", async () => {

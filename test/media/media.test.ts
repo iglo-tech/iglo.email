@@ -1,6 +1,6 @@
 // M3.5 behavior that needs a failure, the injected clock or a sent message. The shared corpus and
 // the compiled executable are in test/contract/media.ts.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, readdirSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { campaignsFixture } from "@/test/campaigns/fixture";
@@ -11,6 +11,10 @@ import { imageSize } from "@/media/image";
 import { makeFilename } from "@/media/filesystem";
 import type { JsonObject } from "@/test/json-object";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -310,7 +314,12 @@ test("two campaigns sharing attachments hold them once, with concurrency 1", asy
 });
 
 test("attachments over the cache budget are evicted and read again for the next batch", async () => {
-  const f = await openRunner({ hold: true, attachmentCacheBytes: 9 * 1024 * 1024 });
+  const reads: Array<string> = [];
+  const f = await openRunner({
+    hold: true,
+    attachmentCacheBytes: 9 * 1024 * 1024,
+    attachmentReads: reads,
+  });
   Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
   const list = await f.list("evicted");
   for (const i of [1, 2, 3]) {
@@ -334,6 +343,14 @@ test("attachments over the cache budget are evicted and read again for the next 
   // see a batch that read its file twice and carried one buffer, since batchSize 1 carries one
   // buffer per batch either way.
   expect(carried.carried()).toBe(6);
+  // The same claim, counted at the disk: six batches, six reads of the two files, three each. A
+  // batch that took its file from the cache would not appear here, and a cache that never evicts
+  // would read each file once (B101 r1: assert re-reads directly).
+  expect(reads).toHaveLength(6);
+  expect(new Set(reads).size).toBe(2);
+  for (const path of new Set(reads)) {
+    expect(reads.filter((read) => read === path)).toHaveLength(3);
+  }
   f.control.hold = false;
   for (const push of f.pushes) {
     push.settle();
@@ -433,10 +450,19 @@ test("queued test sends keep their slots until they settle, and the next is refu
   // The emailer's own deadline settles them, and the slots come back.
   f.clock.advance(60_000);
   let next = 0;
-  for (let i = 0; i < 400 && next !== 200; i++) {
-    await Bun.sleep(5);
-    next = (await send(6 + i)).status;
-  }
+  let attempt = 0;
+  await untilState(
+    async () => {
+      next = (await send(6 + attempt++)).status;
+      return next === 200;
+    },
+    {
+      label: "the test-send slots come back",
+      progress: () => String(next),
+      stallMs: 10_000,
+      intervalMs: 5,
+    },
+  ).catch(() => undefined);
   expect(next).toBe(200);
 });
 

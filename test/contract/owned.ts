@@ -5,6 +5,7 @@ import { spawnGroup, stopGroup } from "@/test/reference/command";
 import type { GroupChild } from "@/test/reference/command";
 import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 async function stop(child: GroupChild, closed: Promise<number>): Promise<number> {
   if (child.exitCode === null && child.signalCode === null) {
@@ -101,36 +102,44 @@ export async function withProduction<T>(
       });
       // Attach a rejection handler immediately, even if readiness fails first.
       void closed.catch(() => {});
-      const deadline = Date.now() + 5000;
-      let ready = false;
-      while (Date.now() < deadline) {
-        lifetime.throwIfAborted();
-        if (child.exitCode !== null || child.signalCode !== null) {
-          await stderrDrained(child);
-          throw new Error(`Compiled production process exited before readiness: ${errors}`);
-        }
-        try {
-          const response = await fetch(`${origin}/health`, {
-            headers: { Connection: "close" },
-            signal: AbortSignal.any([lifetime, AbortSignal.timeout(500)]),
-          });
-          if (
-            response.status === 200 &&
-            (await response.text()) === '{"data":true}\n' &&
-            child.pid !== undefined &&
-            listensOn(child.pid, listenPort)
-          ) {
-            ready = true;
-            break;
-          }
-        } catch {
+      // Readiness is the health answer from this very process. The wait fails by name when what it
+      // last saw stops changing for 5 s (the readiness budget), and says what that was.
+      let observed = "starting";
+      const running = child;
+      await untilState(
+        async () => {
           lifetime.throwIfAborted();
-        }
-        await Bun.sleep(25);
-      }
-      if (!ready) {
-        throw new Error("Compiled production process readiness timed out");
-      }
+          if (running.exitCode !== null || running.signalCode !== null) {
+            await stderrDrained(running);
+            throw new Error(`Compiled production process exited before readiness: ${errors}`);
+          }
+          try {
+            const response = await fetch(`${origin}/health`, {
+              headers: { Connection: "close" },
+              signal: AbortSignal.any([lifetime, AbortSignal.timeout(500)]),
+            });
+            const listening = running.pid !== undefined && listensOn(running.pid, listenPort);
+            observed = `status ${response.status}, ${listening ? "listening" : "not listening"}`;
+            if (
+              response.status === 200 &&
+              (await response.text()) === '{"data":true}\n' &&
+              listening
+            ) {
+              return true;
+            }
+          } catch {
+            lifetime.throwIfAborted();
+            observed = "no answer";
+          }
+          return false;
+        },
+        {
+          label: "Compiled production process readiness",
+          progress: () => observed,
+          stallMs: 5000,
+          intervalMs: 25,
+        },
+      );
     };
     // A start that fails leaves no process running: the child it spawned is stopped first.
     const launch = async (listenPort: number) => {

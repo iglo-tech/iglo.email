@@ -1,5 +1,5 @@
 // M2.6 outbound webhooks through the HTTP API, the injected clock and a local receiver.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { ascending } from "@/test/order";
 import { createServer } from "node:https";
 import type { AddressInfo } from "node:net";
@@ -12,6 +12,10 @@ import { signatureTime, signatureValid, startReceiver } from "@/test/webhooks/re
 import type { JsonObject } from "@/test/json-object";
 import type { Receiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 // A webhook delivery body as the receiver saw it: the fields these tests assert.
 type DeliveryBody = {
@@ -67,14 +71,24 @@ const deliveries = async (f: TxFixture, id: number) =>
     (await f.json(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results,
   );
 /** Network I/O is real, so settling is awaited in real time; delays use the injected clock. */
+/**
+ * Waits for `check`. The value it last returned is the progress: a value that stops changing for
+ * 10 s fails the wait by name, and a slow host that keeps moving is not cut off by time alone.
+ */
 async function until(check: () => unknown | Promise<unknown>) {
-  const deadline = Date.now() + 10_000;
-  while (!(await check())) {
-    if (Date.now() > deadline) {
-      throw new Error("Condition not reached");
-    }
-    await Bun.sleep(2);
-  }
+  let last: unknown;
+  await untilState(
+    async () => {
+      last = await check();
+      return Boolean(last);
+    },
+    {
+      label: "Condition not reached",
+      progress: () => String(JSON.stringify(last)),
+      stallMs: 10_000,
+      intervalMs: 2,
+    },
+  );
 }
 const settled = (f: TxFixture, id: number, uuid: string, status: string, attempts?: number) =>
   until(async () => {

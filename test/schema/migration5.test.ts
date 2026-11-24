@@ -4,7 +4,7 @@
 // Data is generated and arranged in the v4 shape with SQL; mail goes to a loopback sink only.
 import { Database } from "bun:sqlite";
 import { ascending } from "@/test/order";
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,10 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { startRuntime } from "@/test/scheduler/runtime";
 import { startSink } from "@/test/tx/sink";
+import { untilState } from "@/test/wait";
+
+// A 15 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 /** Arrange data as v4 saves left it: deleted steps keep their pre-save position. */
 function seedVersion4(directory: string) {
@@ -111,14 +115,14 @@ const version = (db: Database) =>
 const backups = async (directory: string) =>
   (await readdir(join(directory, "backups"))).filter((name) => name.endsWith(".db"));
 
-async function until(condition: () => boolean, label: string) {
-  const deadline = Date.now() + 15_000;
-  while (!condition()) {
-    if (Date.now() > deadline) {
-      throw new Error(`timed out: ${label}`);
-    }
-    await Bun.sleep(25);
-  }
+/** Waits for `condition`; fails by name after 15 s with no change in what `progress` reports. */
+async function until(condition: () => boolean, label: string, progress = () => "") {
+  await untilState(condition, {
+    label: `timed out: ${label}`,
+    progress,
+    stallMs: 15_000,
+    intervalMs: 25,
+  });
 }
 
 test("migration 5 converts populated v4 tombstones once and waiting enrollments reach the right step", async () => {

@@ -6,6 +6,7 @@ import { createConnection } from "node:net";
 import { join } from "node:path";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 import { startReceiver } from "@/test/webhooks/receiver";
 
 const IDLE = { name: "", total: 0, imported: 0, status: "none" };
@@ -96,13 +97,24 @@ export async function runImportContract(target: {
   const logs = async () => asBody<string>((await call("/api/import/subscribers/logs")).body.data);
   const reset = () => call("/api/import/subscribers", "DELETE");
   const settled = async () => {
-    for (const deadline = Date.now() + 60_000; Date.now() < deadline; await Bun.sleep(20)) {
-      const current = asBody<Run>(await status());
-      if (current.status === "finished" || current.status === "failed") {
-        return current;
-      }
+    let current: Run | undefined;
+    // The run's counts move while it works: a stall, not a total, ends the wait.
+    await untilState(
+      async () => {
+        current = asBody<Run>(await status());
+        return current.status === "finished" || current.status === "failed";
+      },
+      {
+        label: "FAIL import-did-not-settle",
+        progress: () => JSON.stringify(current ?? null),
+        stallMs: 60_000,
+        intervalMs: 20,
+      },
+    );
+    if (!current) {
+      throw new Error("FAIL import-did-not-settle");
     }
-    throw new Error("FAIL import-did-not-settle");
+    return current;
   };
   const run = async (params: unknown, content: BlobPart, name?: string) => {
     const started = await post(params, content, name);
@@ -509,14 +521,17 @@ export async function runImportContract(target: {
     check(!oversized || oversized.status === 413, `oversized-${oversized?.status}`);
     check(JSON.stringify(await status()) === JSON.stringify(IDLE), "oversized-idle");
     const temporary = join(target.dataDir!, ".iglo-email-import");
-    const drained = async () => {
-      for (const deadline = Date.now() + 5000; Date.now() < deadline; await Bun.sleep(20)) {
-        if (!existsSync(temporary) || readdirSync(temporary).length === 0) {
-          return true;
-        }
-      }
-      return false;
-    };
+    const entries = () => (existsSync(temporary) ? readdirSync(temporary).length : 0);
+    const drained = () =>
+      untilState(() => entries() === 0, {
+        label: "temporary-empty",
+        progress: () => String(entries()),
+        stallMs: 5000,
+        intervalMs: 20,
+      }).then(
+        () => true,
+        () => false,
+      );
     check(await drained(), "temporary-empty");
 
     // Webhooks: blocklist mode queues what the API queues, and repeats queue nothing.

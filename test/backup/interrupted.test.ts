@@ -13,6 +13,7 @@ import {
   temporaryDirectory,
 } from "@/test/backup/fixture";
 import type { Server } from "@/test/backup/fixture";
+import { untilState } from "@/test/wait";
 
 setDefaultTimeout(60_000);
 const PARTIAL = ".iglo-email-backup-partial-";
@@ -67,26 +68,36 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const) {
       stderr: "ignore",
     });
     let partial: string | undefined;
-    for (const deadline = Date.now() + 20_000; !partial && Date.now() < deadline;) {
-      partial = names(destination).find((name) => name.startsWith(PARTIAL));
-      // The folder exists before its database file does: a missing or empty file is not ready yet.
-      const size =
-        partial &&
-        statSync(join(destination, partial, "iglo-email.db"), { throwIfNoEntry: false })?.size;
-      if (!size) {
-        partial = undefined;
-        await Bun.sleep(1);
-      }
-    }
+    await untilState(
+      () => {
+        const found = names(destination).find((name) => name.startsWith(PARTIAL));
+        // The folder exists before its database file does: a missing or empty file is not ready yet.
+        const size =
+          found &&
+          statSync(join(destination, found, "iglo-email.db"), { throwIfNoEntry: false })?.size;
+        if (size) {
+          partial = found;
+        }
+        return Boolean(size);
+      },
+      {
+        label: "interrupted backup folder",
+        progress: () => names(destination).join(),
+        stallMs: 20_000,
+        intervalMs: 1,
+      },
+    ).catch(() => undefined);
     expect(partial).toBeDefined();
     child.kill(signal);
     expect(await child.exited).not.toBe(0);
 
     // The helper that syncs the snapshot goes with it.
     const helperRunning = () => commandLines().some((line) => line.includes(partial!));
-    for (const deadline = Date.now() + 5000; helperRunning() && Date.now() < deadline;) {
-      await Bun.sleep(25);
-    }
+    await untilState(() => !helperRunning(), {
+      label: "snapshot helper",
+      progress: () => commandLines().join("\n"),
+      stallMs: 5000,
+    }).catch(() => undefined);
     expect(helperRunning()).toBe(false);
 
     expect(existsSync(output)).toBe(false);

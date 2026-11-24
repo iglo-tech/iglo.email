@@ -8,6 +8,7 @@ import type { TxFixture } from "@/test/tx/fixture";
 import { startReceiver } from "@/test/webhooks/receiver";
 import { MAX_BULK_DELIVERIES } from "@/webhooks/effects";
 import { asBody } from "@/test/read-body";
+import { waitWall } from "@/test/wait";
 
 const cleanups: Array<() => unknown> = [];
 afterEach(async () => {
@@ -78,14 +79,24 @@ const status = async (f: TxFixture) =>
   asBody<{ imported: number; status: string }>((await f.json("/api/import/subscribers")).body.data);
 /** Let batches through until `imported`, or the end. The import then waits on the clock. */
 async function release(f: TxFixture, imported = Infinity) {
-  for (const deadline = Date.now() + 20_000; Date.now() < deadline; await Bun.sleep(1)) {
-    const current = await status(f);
-    if (current.imported >= imported || !["importing", "stopping"].includes(current.status)) {
-      return current;
-    }
-    f.clock.advance(1);
+  let current: { imported: number; status: string } | undefined;
+  // The batches run on the injected clock, one step at a time (waitWall with advance).
+  await waitWall(
+    async () => {
+      current = await status(f);
+      return current.imported >= imported || !["importing", "stopping"].includes(current.status);
+    },
+    {
+      label: "Import did not reach the row",
+      advance: (ms) => f.clock.advance(ms),
+      step: 1,
+      wallMs: 20_000,
+    },
+  );
+  if (!current) {
+    throw new Error("Import did not reach the row");
   }
-  throw new Error("Import did not reach the row");
+  return current;
 }
 const count = (f: TxFixture, sql: string) =>
   Number(asBody<{ n: bigint }>(f.db.query(`SELECT count(*) AS n FROM ${sql}`).get()).n);

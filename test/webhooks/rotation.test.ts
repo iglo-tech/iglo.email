@@ -1,5 +1,5 @@
 // Secret rotation (D130) through the HTTP API, the injected clock and a local receiver.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { writeTransaction } from "@/db/transaction";
 import { startPurge } from "@/loops/purge";
 import { txFixture } from "@/test/tx/fixture";
@@ -7,6 +7,10 @@ import type { TxFixture } from "@/test/tx/fixture";
 import { signatureCount, signatureValid, startReceiver } from "@/test/webhooks/receiver";
 import type { Receiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
+
+// A 10 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+setDefaultTimeout(30_000);
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -48,14 +52,21 @@ async function deliver(f: TxFixture, email: string) {
   const blocked = await f.json(`/api/subscribers/${id}/blocklist`, "PUT", {});
   expect(blocked.status).toBe(200);
 }
+/** Waits for `check`; the value it last returned is the progress, so a value that stops changing fails. */
 async function until(check: () => unknown | Promise<unknown>) {
-  const deadline = Date.now() + 10_000;
-  while (!(await check())) {
-    if (Date.now() > deadline) {
-      throw new Error("Condition not reached");
-    }
-    await Bun.sleep(2);
-  }
+  let last: unknown;
+  await untilState(
+    async () => {
+      last = await check();
+      return Boolean(last);
+    },
+    {
+      label: "Condition not reached",
+      progress: () => String(JSON.stringify(last)),
+      stallMs: 10_000,
+      intervalMs: 2,
+    },
+  );
 }
 
 test("a rotation answers the new secret once and states when the old one stops", async () => {

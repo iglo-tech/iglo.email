@@ -14,6 +14,7 @@ import { createRouter, startServer } from "@/server/server";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { asBody, readJson } from "@/test/read-body";
+import { waitWall } from "@/test/wait";
 
 const lists = async () =>
   (await data<{ lists: { total: number } }>("/api/dashboard/counts")).lists.total;
@@ -426,23 +427,19 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
     f.clock.advance(ms);
     await Bun.sleep(0);
   };
-  const until = async (expected: number) => {
-    for (let i = 0; i < 400 && (await lists()) !== expected; i++) {
-      await Bun.sleep(5);
-      f.clock.advance(0);
-    }
-    expect(await lists()).toBe(expected);
-  };
+  // The rows are written by the loop after a clock step; each wait names the count it is after.
   try {
     // Nothing stored yet: the first tick fills the rows without waiting for the interval.
-    await until(0);
+    await waitWall(async () => (await lists()) === 0, { label: "dashboard lists 0" });
     await f.list("one");
     expect(await lists()).toBe(0);
     await tick(60_000); // 03:05:05.
-    await Bun.sleep(100);
+    // Nothing is due before the cron minute: the loop has settled on its next sleep, and no row was
+    // written in between.
+    await f.clock.whenSleeping();
     expect(await lists()).toBe(0);
     await tick(55 * 60_000); // 04:00:05 passed the cron minute.
-    await until(1);
+    await waitWall(async () => (await lists()) === 1, { label: "dashboard lists 1" });
     const { data: raw } = asBody<{ data: string }>(
       f.db.query("SELECT data FROM analytics_summaries WHERE name = 'list_stats'").get(),
     );
@@ -451,9 +448,9 @@ test("the refresh loop runs on the interval and keeps numbers still between runs
     settings.enabled = false;
     options.cacheSlowQueries = false;
     await tick(60_000);
-    await Bun.sleep(20);
+    await f.clock.whenSleeping();
     await tick(60_000);
-    await Bun.sleep(20);
+    await f.clock.whenSleeping();
     expect(summaries.missing()).toBe(true);
     expect(logged).toEqual([]);
   } finally {
@@ -475,9 +472,7 @@ test("a refresh that fails is logged, keeps the old rows and leaves the loop run
     summaries: broken,
     settings: () => ({ enabled: true, interval: "@hourly" }),
   });
-  for (let i = 0; i < 400 && !logged.length; i++) {
-    await Bun.sleep(5);
-  }
+  await waitWall(() => logged.length > 0, { label: "refresh failure logged" });
   expect(logged[0]).toBeInstanceOf(ReaderError);
   await f.clock.whenSleeping();
   f.clock.advance(60_000);
@@ -775,12 +770,8 @@ const alive = (pid: number) => {
     return false;
   }
 };
-const until = async (condition: () => boolean) => {
-  for (let i = 0; i < 400 && !condition(); i++) {
-    await Bun.sleep(5);
-  }
-  expect(condition()).toBe(true);
-};
+/** A child process or a read reaches a state: the wait names what it is after (waitWall). */
+const until = (condition: () => boolean) => waitWall(condition, { label: "analytics child state" });
 const kinds = async (reads: Array<Promise<unknown>>) =>
   (await Promise.allSettled(reads)).map((result) =>
     result.status === "rejected" ? asBody<ReaderError>(result.reason).kind : "read",

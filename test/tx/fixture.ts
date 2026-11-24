@@ -130,6 +130,10 @@ export async function txFixture(
   const testClock = new TestClock();
   const clock = options.clock ?? testClock;
   const db = openDatabase(directory);
+  const openSends = () =>
+    asBody<{ n: bigint }>(
+      db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
+    ).n;
   runMigrations(db, directory, clock, productionMigrations);
   const errors: Array<unknown> = [];
   const app = createApp({
@@ -596,18 +600,19 @@ export async function txFixture(
     count: () => Number(asBody<{ n: bigint }>(db.query("SELECT count(*) AS n FROM sends").get()).n),
     settings: settingsStore,
     mailTo: (address: string) => sink.messages.filter((m) => m.to.includes(address)),
+    /**
+     * Advances the injected clock a second per step, at most 200 steps, while a send is open. The
+     * bound is in injected time, so every host sees the same window: a send that never settles uses
+     * all 200 steps. Returns the sends still open (0 when drained).
+     */
     async drain() {
-      for (
-        let i = 0;
-        i < 200 &&
-        asBody<{ n: bigint }>(
-          db.query("SELECT count(*) AS n FROM sends WHERE status IN ('queued', 'sending')").get(),
-        ).n > 0n;
-        i++
-      ) {
+      let open = openSends();
+      for (let i = 0; i < 200 && open > 0; i++) {
         testClock.advance(1000);
         await Bun.sleep(5);
+        open = openSends();
       }
+      return Number(open);
     },
     async close() {
       await delivery?.halt();

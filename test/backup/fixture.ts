@@ -7,6 +7,7 @@ import { provisionApiUser } from "@/test/contract/owned";
 import { ensureProductionBuild } from "@/test/production-build";
 import { listensOn, startOnFreePort } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 // Generated for these tests; see test/backup/fixtures.md.
@@ -76,22 +77,31 @@ async function launchServer(executable: string, dataDir: string, port: number) {
     },
   );
   const origin = `http://127.0.0.1:${port}`;
-  for (const deadline = Date.now() + 30_000; ; await Bun.sleep(25)) {
-    if (child.exitCode !== null) {
-      throw new Error(await new Response(child.stderr).text());
-    }
-    const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1000) }).catch(
-      () => null,
+  let observed = "starting";
+  try {
+    await untilState(
+      async () => {
+        if (child.exitCode !== null) {
+          throw new Error(await new Response(child.stderr).text());
+        }
+        const up = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(1000) }).catch(
+          () => null,
+        );
+        observed = up ? `status ${up.status}` : "no answer";
+        return up?.ok === true && listensOn(child.pid, port);
+      },
+      {
+        label: "The server did not start",
+        progress: () => observed,
+        stallMs: 30_000,
+        intervalMs: 25,
+      },
     );
-    if (up?.ok && listensOn(child.pid, port)) {
-      break;
-    }
-    if (Date.now() > deadline) {
-      child.kill("SIGKILL");
-      // Reaped before the failure is reported: the process must not outlive its start.
-      await child.exited;
-      throw new Error("The server did not start");
-    }
+  } catch (error) {
+    child.kill("SIGKILL");
+    // Reaped before the failure is reported: the process must not outlive its start.
+    await child.exited;
+    throw error;
   }
   return {
     origin,

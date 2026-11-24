@@ -10,6 +10,7 @@ import { createServer } from "node:net";
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { untilState } from "@/test/wait";
 
 const COUNT = 25;
 interface Sink {
@@ -202,15 +203,19 @@ for (const point of ["claimed", "mid-batch"] as const) {
     sink.release();
     const second = launch(dir, sink.port, "run");
     children.push(second);
-    const deadline = Date.now() + 30_000;
     let after = rows(dir);
-    while (after.some((r) => r.status === "queued" || r.status === "sending")) {
-      if (Date.now() > deadline) {
-        throw new Error(`${point}: restart did not finish`);
-      }
-      await Bun.sleep(50);
-      after = rows(dir);
-    }
+    await untilState(
+      () => {
+        after = rows(dir);
+        return !after.some((r) => r.status === "queued" || r.status === "sending");
+      },
+      {
+        label: `${point}: restart did not finish`,
+        progress: () => after.map((r) => r.status).join(),
+        stallMs: 30_000,
+        intervalMs: 50,
+      },
+    );
     second.child.kill("SIGTERM");
     await within(second.exited, 15_000, "stop");
 

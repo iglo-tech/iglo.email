@@ -9,6 +9,7 @@ import { createAnalyticsReader, ReaderError } from "@/analytics/reader";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
+import { untilState } from "@/test/wait";
 
 const report = (values: unknown) => process.stdout.write(`${JSON.stringify(values)}\n`);
 const mb = (bytes: number) => Math.round((bytes / 1_048_576) * 10) / 10;
@@ -121,10 +122,12 @@ async function egress(budgeted: boolean, clients: number, bodyBytes: number) {
     socket.write("GET / HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n");
     return socket;
   });
-  const deadline = performance.now() + 60_000;
-  while (served + refused < clients && performance.now() < deadline) {
-    await Bun.sleep(50);
-  }
+  await untilState(() => served + refused >= clients, {
+    label: "budget clients answered",
+    progress: () => `${served}|${refused}`,
+    stallMs: 10_000,
+  });
+  // Kept: the memory sample is taken after the burst has drained (a measurement settle).
   await Bun.sleep(1000);
   clearInterval(sampler);
   peak = Math.max(peak, process.memoryUsage().rss);

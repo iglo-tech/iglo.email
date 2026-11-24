@@ -13,6 +13,7 @@ import {
 } from "@/test/webhooks/receiver";
 import { verifyDelivery } from "@/test/webhooks/verify-delivery";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const dummy = "00000000-0000-0000-0000-000000000000";
 const events = [
@@ -69,11 +70,11 @@ export async function runWebhooksContract(target: {
   };
   const ofEvent = (event: string) => receiver.received.filter((r) => r.body.event === event);
   const arrived = async (event: string, count: number) => {
-    const deadline = Date.now() + 10_000;
-    while (ofEvent(event).length < count) {
-      check(Date.now() < deadline, `arrival-${event}-${count}`);
-      await Bun.sleep(5);
-    }
+    await untilState(() => ofEvent(event).length >= count, {
+      label: `arrival-${event}-${count}`,
+      progress: () => String(ofEvent(event).length),
+      stallMs: 10_000,
+    });
   };
   try {
     // Authorization: an API user without the permission, and no credentials at all.
@@ -128,15 +129,15 @@ export async function runWebhooksContract(target: {
     }
     await call(`/api/subscribers/${probe}/blocklist`, "PUT", {});
     for (const id of probes) {
-      const deadline = Date.now() + 10_000;
-      for (;;) {
-        const [row] = (await call(`/api/webhooks/${id}/deliveries`)).body.data.results;
-        if (row?.last_error === "blocked_address") {
-          break;
-        }
-        check(Date.now() < deadline, "default-refused");
-        await Bun.sleep(5);
-      }
+      let last = "no delivery";
+      await untilState(
+        async () => {
+          const [row] = (await call(`/api/webhooks/${id}/deliveries`)).body.data.results;
+          last = row?.last_error ?? "no delivery";
+          return last === "blocked_address";
+        },
+        { label: "default-refused", progress: () => last, stallMs: 10_000 },
+      );
     }
     check(receiver.received.length === 0, "default-refused-no-request");
     for (const id of probes) {
@@ -309,12 +310,13 @@ export async function runWebhooksContract(target: {
         200,
       "wipe-pairing-start",
     );
-    for (const deadline = Date.now() + 30_000; ; await Bun.sleep(100)) {
-      if ((await call(`/api/campaigns/${paired.id}`)).body.data.status === "finished") {
-        break;
-      }
-      check(Date.now() < deadline, "wipe-pairing-finish");
-    }
+    let pairedStatus = "";
+    await untilState(
+      async () =>
+        (pairedStatus = (await call(`/api/campaigns/${paired.id}`)).body.data.status) ===
+        "finished",
+      { label: "wipe-pairing-finish", progress: () => pairedStatus, stallMs: 10_000 },
+    );
     await call(`/api/subscribers/${wiped.id}/blocklist`, "PUT", {});
     await arrived("subscriber.blocklisted", 4);
     // B126 (D123): a wipe deletes only when confirmed.
@@ -350,17 +352,21 @@ export async function runWebhooksContract(target: {
       "admin-external-id",
     );
     const settled = async () => {
-      const deadline = Date.now() + 10_000;
-      for (;;) {
-        const rows = asBody<Array<{ status: string }>>(
-          (await call(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results,
-        );
-        if (rows.every((row) => row.status === "delivered")) {
-          return rows;
-        }
-        check(Date.now() < deadline, "deliveries-settle");
-        await Bun.sleep(5);
-      }
+      let rows: Array<{ status: string }> = [];
+      await untilState(
+        async () => {
+          rows = asBody<Array<{ status: string }>>(
+            (await call(`/api/webhooks/${id}/deliveries?per_page=100`)).body.data.results,
+          );
+          return rows.every((row) => row.status === "delivered");
+        },
+        {
+          label: "deliveries-settle",
+          progress: () => rows.map((row) => row.status).join(),
+          stallMs: 10_000,
+        },
+      );
+      return rows;
     };
     const rows = await settled();
     check(rows.length === receiver.received.length, "one-delivery-each");
@@ -419,15 +425,15 @@ export async function runWebhooksContract(target: {
     const blocked = receiver.received.length;
     const refused = await subscriber("refused");
     await call(`/api/subscribers/${refused.id}/blocklist`, "PUT", {});
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      const [row] = (await call(`/api/webhooks/${id}/deliveries`)).body.data.results;
-      if (row.last_error === "blocked_address") {
-        break;
-      }
-      check(Date.now() < deadline, "blocked-address");
-      await Bun.sleep(5);
-    }
+    let last = "no delivery";
+    await untilState(
+      async () => {
+        const [row] = (await call(`/api/webhooks/${id}/deliveries`)).body.data.results;
+        last = row?.last_error ?? "no delivery";
+        return last === "blocked_address";
+      },
+      { label: "blocked-address", progress: () => last, stallMs: 10_000 },
+    );
     check(receiver.received.length === blocked, "blocked-no-request");
     // A listmonk client's full settings write keeps the native key.
     const full = (await call("/api/settings")).body.data;

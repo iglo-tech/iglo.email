@@ -11,6 +11,7 @@ import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { listensOn, startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { untilState } from "@/test/wait";
 
 interface Sink {
   port: number;
@@ -172,18 +173,22 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
 
     // Restart six minutes later on the injected clock, so the dead process's lease expired.
     const second = launch(dir, sink.port, { SCHEDULER_CRASH_OFFSET_MS: String(6 * 60_000) });
-    const deadline = Date.now() + 30_000;
     let after = state(dir);
-    while (
-      after.enrollments[0] !== "completed" ||
-      after.sends.some((s) => s.status === "queued" || s.status === "sending")
-    ) {
-      if (Date.now() > deadline) {
-        throw new Error(`${point}: restart did not finish`);
-      }
-      await Bun.sleep(50);
-      after = state(dir);
-    }
+    await untilState(
+      () => {
+        after = state(dir);
+        return (
+          after.enrollments[0] === "completed" &&
+          !after.sends.some((s) => s.status === "queued" || s.status === "sending")
+        );
+      },
+      {
+        label: `${point}: restart did not finish`,
+        progress: () => JSON.stringify(after),
+        stallMs: 30_000,
+        intervalMs: 50,
+      },
+    );
     await stop(second.child, second.exited);
 
     const perStep = [0, 1].map((step) => after.sends.filter((s) => s.step === step));
@@ -244,21 +249,26 @@ async function launchProduction(dir: string, port: number) {
   const exited = new Promise<{ code: number | null; signal: string | null }>((r) => {
     child.once("exit", (code, signal) => r({ code, signal }));
   });
-  const deadline = Date.now() + 20_000;
-  for (;;) {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      await stderrDrained(child);
-      throw new Error(`production exited before listening: ${errors}`);
-    }
-    if (child.pid !== undefined && listensOn(child.pid, port)) {
-      break;
-    }
-    if (Date.now() > deadline) {
-      child.kill("SIGKILL");
-      await exited;
-      throw new Error(`production did not listen: ${errors}`);
-    }
-    await Bun.sleep(25);
+  try {
+    await untilState(
+      async () => {
+        if (child.exitCode !== null || child.signalCode !== null) {
+          await stderrDrained(child);
+          throw new Error(`production exited before listening: ${errors}`);
+        }
+        return child.pid !== undefined && listensOn(child.pid, port);
+      },
+      {
+        label: "production did not listen",
+        progress: () => String(child.pid),
+        stallMs: 20_000,
+        intervalMs: 25,
+      },
+    );
+  } catch (error) {
+    child.kill("SIGKILL");
+    await exited;
+    throw error;
   }
   return { child, exited, errors: () => errors };
 }
@@ -278,18 +288,22 @@ async function launchProduction(dir: string, port: number) {
     assert.equal((await within(first.exited, 20_000, "production kill")).signal, "SIGKILL");
     const before = state(dir);
     const second = await production(dir, launched);
-    const deadline = Date.now() + 30_000;
     let after = state(dir);
-    while (
-      after.enrollments[0] !== "completed" ||
-      after.sends.some((s) => s.status === "queued" || s.status === "sending")
-    ) {
-      if (Date.now() > deadline) {
-        throw new Error("production: restart did not finish");
-      }
-      await Bun.sleep(50);
-      after = state(dir);
-    }
+    await untilState(
+      () => {
+        after = state(dir);
+        return (
+          after.enrollments[0] === "completed" &&
+          !after.sends.some((s) => s.status === "queued" || s.status === "sending")
+        );
+      },
+      {
+        label: "production: restart did not finish",
+        progress: () => JSON.stringify(after),
+        stallMs: 30_000,
+        intervalMs: 50,
+      },
+    );
     await stop(second.child, second.exited);
     assert.deepEqual(
       after.sends.map((s) => [s.step, s.status]),

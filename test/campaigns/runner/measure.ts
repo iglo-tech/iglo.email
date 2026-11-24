@@ -373,7 +373,12 @@ async function limits() {
   const concurrency = 5,
     rate = 10,
     windowRate = 2500,
-    windowMs = 60_000;
+    windowMs = 60_000,
+    // The account-wide cap (D92, since B37) applies to campaigns too. Set explicitly to the
+    // default these runs have always had, so they stay comparable. With the cap off (0) the most
+    // messages in any one second reaches 70+, a peak above the per-second bound below; the
+    // sustained rate is about 50 msg/s. See docs/perf/M3.2-runner.md.
+    maxSendRate = 14;
   await withRun("limits", async (directory, sink) => {
     const before = free();
     const app = await server(directory);
@@ -385,6 +390,7 @@ async function limits() {
         "app.message_sliding_window": true,
         "app.message_sliding_window_duration": "1m",
         "app.message_sliding_window_rate": windowRate,
+        "messaging.max_send_rate": maxSendRate,
       });
       const single = (await api("/api/lists", "POST", { name: "single", type: "public" })).body.data
         .id;
@@ -474,7 +480,7 @@ async function limits() {
       }
       const entry = {
         scenario: "limits-10k",
-        settings: { concurrency, rate, windowRate, window: "1m", batch: 1000 },
+        settings: { concurrency, rate, windowRate, window: "1m", batch: 1000, maxSendRate },
         seedSeconds: +seedSeconds.toFixed(1),
         eligible: 10_000,
         delivered: to.length,
