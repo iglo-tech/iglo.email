@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
+import { untilState } from "@/test/wait";
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const marker = `m08${sink.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
@@ -63,38 +64,46 @@ const servers: Array<SMTPServer> = [
 ];
 const referenceOnly = process.env.M21_REFERENCE_ONLY === "1";
 async function received(subject: string) {
-  const until = Date.now() + 5000;
-  do {
-    const messages = (await mailpit.list()).filter((m) => m.Subject === subject);
-    if (messages.length) {
-      assert.equal(messages.length, 1);
-      return header(await mailpit.raw(messages[0]!.ID), "X-Review-Route");
-    }
-    await Bun.sleep(20);
-  } while (Date.now() < until);
-  throw new Error("No received fixture");
+  let messages: Awaited<ReturnType<typeof mailpit.list>> = [];
+  // The mail is observed, not timed: the wait fails by name when no mail arrives for 5 s.
+  await untilState(
+    async () => {
+      messages = (await mailpit.list()).filter((m) => m.Subject === subject);
+      return messages.length > 0;
+    },
+    {
+      label: `No received fixture for ${subject}`,
+      progress: () => String(messages.length),
+      stallMs: 5000,
+    },
+  );
+  assert.equal(messages.length, 1);
+  return header(await mailpit.raw(messages[0]!.ID), "X-Review-Route");
 }
 try {
   assert.equal((await request("/api/settings/smtp", servers, "PUT")).status, 200);
   // Public validation barrier: the named messenger exists only after settings reload.
-  const until = Date.now() + 7000;
   let ready = false;
-  do {
-    try {
-      const probe = await request("/api/tx", {
-        subscriber_mode: "external",
-        subscriber_emails: ["recipient@example.test"],
-        messenger: "email-review-exact",
-        template_id: 2_147_483_647,
-      });
-      ready = /template 2147483647/.test(await probe.text());
-    } catch {
-      // A refused or failed probe is not ready yet; the loop tries again until its deadline.
-    }
-    if (!ready) {
-      await Bun.sleep(20);
-    }
-  } while (!ready && Date.now() < until);
+  let probed = "no answer";
+  // A refused or failed probe is not ready yet; the wait goes on while the answer changes.
+  await untilState(
+    async () => {
+      try {
+        const probe = await request("/api/tx", {
+          subscriber_mode: "external",
+          subscriber_emails: ["recipient@example.test"],
+          messenger: "email-review-exact",
+          template_id: 2_147_483_647,
+        });
+        probed = `status ${probe.status}`;
+        ready = /template 2147483647/.test(await probe.text());
+      } catch {
+        probed = "refused";
+      }
+      return ready;
+    },
+    { label: "reference reload barrier", progress: () => probed, stallMs: 7000, intervalMs: 20 },
+  ).catch(() => undefined);
   assert.equal(ready, true, "reference reload barrier");
   for (const [label, from] of [
     ["plain", "sender@route.test"],

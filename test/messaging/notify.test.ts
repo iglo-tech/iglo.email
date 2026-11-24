@@ -82,7 +82,7 @@ interface Fixture {
   /** Makes the runner's open of a campaign fail when `fn` is true for its audience. */
   failOpen(fn: ((audience: { lists: Array<{ id: unknown }> }) => boolean) | undefined): void;
   /** Advances the clock until `done` holds; fails with `what` if it never does. */
-  waitUntil(done: () => boolean, what: string, step?: number, rounds?: number): Promise<void>;
+  waitUntil(done: () => boolean, what: string, step?: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -444,18 +444,13 @@ async function createNotifyFixture(
       { label: "outbox drain", advance: (ms) => clock.advance(ms), step: 100 },
     );
 
-  const waitUntil = async (done: () => boolean, what: string, step = 50, rounds = 200) => {
-    for (let i = 0; i < rounds; i++) {
-      if (done()) {
-        return;
-      }
-      clock.advance(step);
-      await Bun.sleep(5);
-    }
-    if (!done()) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-  };
+  // The clock steps while the work it waits for runs in real time (waitWall: a state wait).
+  const waitUntil = (done: () => boolean, what: string, step = 50) =>
+    waitWall(done, {
+      label: `timed out waiting for ${what}`,
+      advance: (ms) => clock.advance(ms),
+      step,
+    });
 
   return {
     db,

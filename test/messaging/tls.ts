@@ -12,6 +12,7 @@ import type { SMTPServer } from "@/messaging/email";
 import { mailpitBinaryPath } from "@/test/reference/prepare";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const reference = referenceMailpit(process.env);
 await assertOwnedMailpit(reference);
@@ -78,27 +79,34 @@ try {
     });
     const sink = { api: `http://127.0.0.1:${httpPort}`, host: "127.0.0.1", port: smtpPort, runId };
     try {
-      let ready = false;
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && !ready) {
-        if (spawnFailure.error) {
-          throw new Error(
-            `Mailpit cannot start from ${binary}: ${spawnFailure.error.message}. Run bun run reference:prepare for this host.`,
-          );
-        }
-        if (child.exitCode !== null || child.signalCode !== null) {
-          throw new Error(`Mailpit (${mode}) exited before it was ready`);
-        }
-        try {
-          await assertOwnedMailpit(sink);
-          ready = true;
-        } catch {
-          await Bun.sleep(25);
-        }
-      }
-      if (!ready) {
-        throw new Error(`Mailpit (${mode}) was not ready within 5 s`);
-      }
+      let observed = "starting";
+      // Ready is the owned sink answering. The wait fails by name after 5 s with no change in what
+      // it saw, and says what that was.
+      await untilState(
+        async () => {
+          if (spawnFailure.error) {
+            throw new Error(
+              `Mailpit cannot start from ${binary}: ${spawnFailure.error.message}. Run bun run reference:prepare for this host.`,
+            );
+          }
+          if (child.exitCode !== null || child.signalCode !== null) {
+            throw new Error(`Mailpit (${mode}) exited before it was ready`);
+          }
+          try {
+            await assertOwnedMailpit(sink);
+            return true;
+          } catch (error) {
+            observed = String(error);
+            return false;
+          }
+        },
+        {
+          label: `Mailpit (${mode}) was not ready within 5 s`,
+          progress: () => observed,
+          stallMs: 5000,
+          intervalMs: 25,
+        },
+      );
       const server: SMTPServer = {
         name: "",
         enabled: true,

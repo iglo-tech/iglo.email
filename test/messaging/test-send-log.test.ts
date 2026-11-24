@@ -10,6 +10,7 @@ import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const REFUSED = "refused@example.test";
 const DELIVERED = "delivered@example.test";
@@ -96,9 +97,11 @@ test("a refused test send answers true, then one attention line in the log", asy
   const stderr = await captureStderr(async () => {
     campaign = await testCampaign(f, REFUSED);
     // The send is queued; its refusal is logged once the emailer settles it.
-    for (let i = 0; i < 400 && (await logLines(f)).length === 0; i++) {
-      await Bun.sleep(5);
-    }
+    await untilState(async () => (await logLines(f)).length > 0, {
+      label: "refused test send logged",
+      progress: async () => String((await logLines(f)).length),
+      stallMs: 10_000,
+    });
   });
   const lines = await logLines(f);
   expect(lines.filter((line) => line.includes(FIXED))).toHaveLength(1);

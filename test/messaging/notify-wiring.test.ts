@@ -13,6 +13,7 @@ import {
 } from "@/test/backup/fixture";
 import { startSink } from "@/test/tx/sink";
 import { asBody, readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 setDefaultTimeout(120_000);
 
@@ -25,19 +26,22 @@ beforeAll(async () => {
 });
 afterAll(() => removeDirectory(build));
 
-/** Polls `read` until it returns a value, for at most 20 s of real time. */
+/**
+ * Polls `read` until it returns a value. There is no progress signal beyond the value itself, so
+ * the wait's 20 s limit is a stall window on that (B118d sweep).
+ */
 async function waitFor<T>(read: () => Promise<T | undefined>, what: string): Promise<T> {
-  const deadline = Date.now() + 20_000;
-  for (;;) {
-    const value = await read();
-    if (value !== undefined) {
-      return value;
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await Bun.sleep(25);
+  let value: T | undefined;
+  await untilState(async () => (value = await read()) !== undefined, {
+    label: `timed out waiting for ${what}`,
+    progress: () => (value === undefined ? "unread" : "read"),
+    stallMs: 20_000,
+    intervalMs: 25,
+  });
+  if (value === undefined) {
+    throw new Error(`timed out waiting for ${what}`);
   }
+  return value;
 }
 
 test("the admin notification carries the app.logo_url the server saved", async () => {
