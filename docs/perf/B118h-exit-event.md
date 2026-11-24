@@ -65,15 +65,29 @@ it is not added here (round-1 lead decision).
 
 ## Mutants
 
-Each mutant was applied to the working tree, run against `test/scheduler/exit-one-event.test.ts`, and
-reverted; no mutant was committed.
+Tests are numbered in file order in `test/scheduler/exit-one-event.test.ts`: 1 two events of one name
+in one batch, 2 an enrollment started by the batch's first event, 3 a trigger of another name at the
+same time, 4 the page-only case, 5 two exits of one name an hour apart, 6 another subscriber's event
+in the same batch.
+
+Each mutant was applied to a `git archive` export of the commit in the Linux arm64 container
+(`oven/bun:1.4.5`), never to the repository. The export's file was restored from its copy and checked
+with `cmp` after each run; no mutant was committed. The first four rows were re-run this round against
+the test file at `ec8f4b2d`, each a one-line `sed` on `src/events/store.sql`:
 
 | Mutant | Tests that failed |
 | --- | --- |
-| Trigger check keeps `t.name = w.name` (round-1 blocker 1) | 4 (`whatever the trigger's name`) |
-| Every same-named event of the page gets the exit (old loop) | 1, 2, 3, 4 (all four) |
-| The trigger never counts | 2, 4 |
-| The page-local lowest ID is shown, not the subscriber's | 2, 3, 4 |
+| Drop `c.created_at = w.at` from the exit choice (round 3, backlog 1) | 5 (`two exits of one name an hour apart`) |
+| Drop `subscriber_id = ?1` from the candidates (round 3, backlog 2) | 6 (`another subscriber's same-named event`) |
+| Trigger check keeps `t.name = w.name` (round-1 blocker 1) | 3 (`whatever the trigger's name`) |
+| The trigger never counts | 2, 3 |
+| Every same-named event of the page gets the exit (old loop) | 1, 2, 3, 4 (all four; carried forward from round 2, not re-run) |
+| The page-local lowest ID is shown, not the subscriber's | 2, 3, 4 (carried forward from round 2, not re-run) |
 
-Test 1 (two same-named events in one batch) is caught by the old-loop mutant, and test 3 (the other
-page) by the page-local mutant and the old loop.
+The last two rows were run in round 2 under the earlier numbering (where the trigger-name test was 4
+and the other-page test was 3) and are carried forward with the renumbering. They are not one-line
+`sed` edits, so they were not re-run this round; the product code they mutate has not changed since
+`a33a3ab7`.
+
+Test 1 (two same-named events in one batch) is caught by the old-loop mutant, test 4 (the other page)
+by the page-local mutant and the old loop, and test 5 by dropping the receive-time match.
