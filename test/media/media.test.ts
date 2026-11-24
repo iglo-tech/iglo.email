@@ -310,7 +310,12 @@ test("two campaigns sharing attachments hold them once, with concurrency 1", asy
 });
 
 test("attachments over the cache budget are evicted and read again for the next batch", async () => {
-  const f = await openRunner({ hold: true, attachmentCacheBytes: 9 * 1024 * 1024 });
+  const reads: Array<string> = [];
+  const f = await openRunner({
+    hold: true,
+    attachmentCacheBytes: 9 * 1024 * 1024,
+    attachmentReads: reads,
+  });
   Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
   const list = await f.list("evicted");
   for (const i of [1, 2, 3]) {
@@ -334,6 +339,14 @@ test("attachments over the cache budget are evicted and read again for the next 
   // see a batch that read its file twice and carried one buffer, since batchSize 1 carries one
   // buffer per batch either way.
   expect(carried.carried()).toBe(6);
+  // The same claim, counted at the disk: six batches, six reads of the two files, three each. A
+  // batch that took its file from the cache would not appear here, and a cache that never evicts
+  // would read each file once (B101 r1: assert re-reads directly).
+  expect(reads).toHaveLength(6);
+  expect(new Set(reads).size).toBe(2);
+  for (const path of new Set(reads)) {
+    expect(reads.filter((read) => read === path)).toHaveLength(3);
+  }
   f.control.hold = false;
   for (const push of f.pushes) {
     push.settle();

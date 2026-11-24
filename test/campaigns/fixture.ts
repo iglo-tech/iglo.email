@@ -58,6 +58,8 @@ const root = "http://fixture.test";
 export async function campaignsFixture(
   options: {
     attachmentCacheBytes?: number;
+    /** Every file the attachment cache reads from disk, in order (a cache miss is one read). */
+    attachmentReads?: Array<string>;
     smtpPort?: number;
     sinkPauseMs?: number;
     /** Recipients the sink refuses with a 550 at RCPT (B101: an undelivered test send). */
@@ -177,7 +179,20 @@ export async function campaignsFixture(
     };
   };
   const files = createFilesystem(directory, mediaSettings);
-  const attachments = createAttachments(media, files, options.attachmentCacheBytes);
+  const reads = options.attachmentReads;
+  const attachments = createAttachments(
+    media,
+    reads
+      ? {
+          ...files,
+          read: async (path: string) => {
+            reads.push(path);
+            return files.read(path);
+          },
+        }
+      : files,
+    options.attachmentCacheBytes,
+  );
   const embedImages = createEmbeds(media, app.logger);
   const store = createCampaignStore(db, clock, {
     templateExists: (id) => templates.get(id) !== null,
