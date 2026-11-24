@@ -18,9 +18,11 @@ A redundant healthy check-in auto-settles only itself via `t3_thread_organize` a
 
 ## When work ends
 
+Owner, 2026-11-24: the lead pushes the release tag itself once the gate and the release PR are merged, and publishes the draft release after verifying the release run; the owner is not needed for it.
+
 Owner rule, 2026-11-01: work until nothing remains that can be done without the owner doing something. A merged work plan does not end the goal: after it come the Work queue and every line of the Hardening backlog in [`status.md`](status.md).
 
-- Only these need the owner: publishing a release, making the GHCR package public after its first push, and product scope D89 defers: OIDC, translations and postback messengers.
+- Only these need the owner: making the GHCR package public after its first push, and product scope D89 defers: OIDC, translations and postback messengers.
 - An owner item blocks only itself. Skip it and continue. Decisions, reviews and backlog are never owner items: decide, log and go on.
 - Never disable or pause the schedule. When only owner items remain, name them and settle that run.
 
