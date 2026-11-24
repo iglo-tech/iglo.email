@@ -519,6 +519,8 @@ export async function schedulerFixture(
     errors,
     logs,
     testSends,
+    /** The emailer the step-test routes push to: a test drains it with close() before it counts mail. */
+    emailer,
     marketing,
     scheduler,
     request,

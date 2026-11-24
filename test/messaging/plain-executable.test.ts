@@ -247,8 +247,10 @@ test("a 14 KB template that renders to 840 KB converts promptly, and /health ans
 });
 
 // r2 B1: the reviewer's 7 KB template that renders to about 1 MB of nested <b>. The send is in flight
-// when /health is asked, and /health must answer within a second of being asked.
-test("a 7 KB template that renders to 1 MB does not delay /health by more than 1 s", async () => {
+// when /health is asked, and /health must answer in less than half the time the send takes (B118j
+// item 4: a comparison within the run, not a second on the host). Mutation: remove the handler cap in
+// the converter; /health then waits for the conversion, and the comparison fails.
+test("a 7 KB template that renders to 1 MB does not hold /health for half of its own send", async () => {
   const s = await stack();
   try {
     const body =
@@ -265,17 +267,27 @@ test("a 7 KB template that renders to 1 MB does not delay /health by more than 1
     });
     expect(template.status).toBe(200);
     const id = (await readJson<{ data: { id: number } }>(template)).data.id;
-    const sending = s.call("/api/tx", "POST", {
-      subscriber_mode: "external",
-      subscriber_emails: ["bold@example.test"],
-      template_id: id,
-    });
+    const sendStarted = performance.now();
+    let sendMs = 0;
+    const sending = s
+      .call("/api/tx", "POST", {
+        subscriber_mode: "external",
+        subscriber_emails: ["bold@example.test"],
+        template_id: id,
+      })
+      .then((response) => {
+        sendMs = performance.now() - sendStarted;
+        return response;
+      });
     await Bun.sleep(300);
     const asked = performance.now();
     const health = await s.call("/health");
+    const healthMs = performance.now() - asked;
     expect(health.status).toBe(200);
-    expect(performance.now() - asked).toBeLessThan(1000);
     expect((await sending).status).toBe(200);
+    // B118j item 4: a comparison inside the run, as the 12 KB test below (B118c item 3). /health must
+    // answer in less than half the time the same send takes.
+    expect(healthMs).toBeLessThan(sendMs / 2);
     // Past the 1024 cap on open elements (D118 r4): the message sends its HTML with no text part.
     expect(await textTo(s, "bold@example.test")).toBeUndefined();
   } finally {

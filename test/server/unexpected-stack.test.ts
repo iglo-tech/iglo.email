@@ -5,6 +5,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+/** Whether the child exits within `ms`. A child still running after that is left for the caller. */
+async function exitedWithin(child: ReturnType<typeof Bun.spawn>, ms: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    child.exited.then(() => true),
+    new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(false), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 test("an unexpected handler error prints its stack to stderr and answers a hidden 500", async () => {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "iglo-email-stack-"));
   const executable = join(temporaryDirectory, "stack-fixture");
@@ -58,9 +69,15 @@ test("an unexpected handler error prints its stack to stderr and answers a hidde
     expect(body).toBe('{"message":"Internal Server Error","code":"internal_error"}\n');
     expect(body).not.toContain("private");
 
-    // The stderr copy is read once the child has exited, so every line it wrote is there.
+    // The stderr copy is read once the child has exited, so every line it wrote is there. The exit
+    // is waited for within a bound above the product's 5 s shutdown drain (D104); a child that
+    // ignores SIGTERM is killed and fails by name, not at the 30 s test timeout (B118j item 2).
     child.kill("SIGTERM");
-    await child.exited;
+    if (!(await exitedWithin(child, 8000))) {
+      child.kill("SIGKILL");
+      await child.exited;
+      throw new Error("The fixture ignored SIGTERM: it did not exit within 8 s and was killed.");
+    }
     const stderr = await new Response(started.stderr).text();
     expect(stderr).toContain("Unexpected request error:");
     expect(stderr).toContain("private detail private-password");
