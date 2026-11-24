@@ -223,3 +223,28 @@ scripts, and the measurement scripts) and have no timeout of their own. An optio
   signal for each path, which the product does not expose; that is out of scope for this sweep.
 - The M rows are opt-in measurement scripts. They are not in `bun run check`, so their sleeps change
   no test outcome.
+
+## B118e: mutation evidence (each mutant applied, run, reverted; none committed)
+
+| Changed code | Mutation | Before the change | After the change |
+|---|---|---|---|
+| `test/public/fixture.ts` and `test/tx/fixture.ts` `drain()` | a `sending` row with no lease inserted before the no-mail drain in `paired-actions.test.ts` | passes (14 pass): the drain returns 1 and nobody reads it | fails by name: `drain: 1 mail or send still queued or sending after 200 steps (expected 0)` (13 pass, 1 fail) |
+| `test/serve-port.ts` `healthWhenReady` | `listensOn` forced false, so no child ever counts as ready | not applicable (poll) | `test/bootstrap/private-target-upgrade.test.ts` with `--timeout=60000`: `Server ready: no progress for 30000 ms (starting); answered 200 but this process is not listening` |
+| `test/bootstrap/cli.test.ts` `startThroughCli` | `listensOn` forced false | not applicable (poll) | `a server that runs past 3 s …` fails by its budget (`CLI did not exit before its budget ended`), the 9 s budget ends before the 15 s stall |
+
+The drain mutant was the gap the B118d review named: no caller read the value `drain()` returned,
+so a send left open passed every no-mail check. After the change every caller of `drain()` asserts
+settlement (or states the one open row it expects, in `public.test.ts`); `test/public` is 125
+pass, 0 fail, 12 files.
+
+## B118e: counts and deferred items
+
+- `Bun.sleep` lines: 156 in 77 files on `main` (d5bef8d5), 154 in 77 files at the B118e head. The
+  two lines removed are the readiness polls in `test/serve-port.ts` and `test/bootstrap/cli.test.ts`.
+- The deferred state waits that run in `bun run check` (the first bullet of "Deferred") are
+  converted. The rest stay deferred: each needs a Docker, opt-in or browser run that B118e did not
+  add to the acceptance (see the PR body).
+- Brief item 3 (the 2FA and archive-preview branding, the B110 stack test, B114 log scoping, the
+  B127 r3 items, the B101 shutdown name and runner per-message cost) is not done in this PR. Each
+  is listed in the PR body with its reason, including a product question the manual-cancel item
+  raised.
