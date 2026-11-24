@@ -37,6 +37,7 @@ import {
 } from "@/test/backup/fixture";
 import type { Client, Server } from "@/test/backup/fixture";
 import { asBody, readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 setDefaultTimeout(60_000);
 const HOLD_HEADER = "x-iglo-email-hold";
@@ -112,16 +113,23 @@ test("a backup under write load restores, opens and holds what was committed", a
       }
     }
   })();
-  while (written < 50) {
-    await Bun.sleep(5);
-  }
+  // The writers' count is the progress: a stall of the writers fails the wait by name.
+  await untilState(() => written >= 50, {
+    label: "writers reached 50",
+    progress: () => String(written),
+    stallMs: 10_000,
+    intervalMs: 5,
+  });
   const acknowledged = written;
   const output = join(base, "backup");
   const backup = await runBackup(executable, ["--data-dir", dataDir, "--output", output]);
   const during = written - acknowledged;
-  while (written < acknowledged + during + 20) {
-    await Bun.sleep(5);
-  }
+  await untilState(() => written >= acknowledged + during + 20, {
+    label: "writers after the backup",
+    progress: () => String(written),
+    stallMs: 10_000,
+    intervalMs: 5,
+  });
   writing = false;
   await Promise.all([...writers, uploader]);
   expect(failures).toEqual([]);
