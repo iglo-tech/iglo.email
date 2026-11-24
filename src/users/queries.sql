@@ -78,3 +78,16 @@ SELECT count(*) AS count FROM users WHERE user_role_id = ? OR list_role_id = ?;
 
 -- name: set-twofa
 UPDATE users SET twofa_type = ?, twofa_key = ?, updated_at = ? WHERE id = ?;
+
+-- B140 (D153): the instance admin's copy. Native.
+-- name: get-admin-copy
+SELECT * FROM users WHERE admin_copy = 1;
+
+-- name: unmark-admin-copy
+UPDATE users SET admin_copy = 0 WHERE admin_copy = 1 AND id != ?;
+
+-- name: write-admin-copy
+-- A Super Admin human with password login, enabled, holding the account's username and credentials.
+UPDATE users SET username = ?, password_login = 1, password = ?, type = 'user', user_role_id = ?,
+    list_role_id = NULL, status = 'enabled', twofa_type = ?, twofa_key = ?, admin_copy = 1, updated_at = ?
+  WHERE id = ? RETURNING *;

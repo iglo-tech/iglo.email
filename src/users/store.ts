@@ -4,6 +4,7 @@ import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import { writeTransaction } from "@/db/transaction";
 import type { Roles } from "@/roles/roles";
+import type { AdminAccount, AdminCredentials } from "@/users/account";
 import type { UserRow } from "@/users/models";
 import sql from "@/users/queries.sql" with { type: "text" };
 
@@ -34,6 +35,27 @@ export interface SessionData {
   expires_at: number;
 }
 
+/**
+ * A change to the instance admin's copy that a project's API or UI may not make: delete, disable,
+ * rename, or change its role, type or password login, or, by anyone but the copy itself, its
+ * password or email (14-projects section 5, B140, D153).
+ */
+export class CopyProtectedError extends Error {
+  constructor() {
+    super("The instance admin cannot be changed here");
+  }
+}
+
+/** A project user named as the instance admin, other than its copy (B140). */
+export class UsernameReservedError extends Error {
+  constructor() {
+    super("The username belongs to the instance admin");
+  }
+}
+
+/** The email a new copy gets, as the bootstrap admin always had (it is the project's own field). */
+const copyEmail = "initial-admin@localhost.invalid";
+
 const noop = () => {};
 export function createUserStore(db: Database, clock: Clock, roles: Roles) {
   const queries = prepareNamedQueries(db, [{ name: "users", sql }]);
@@ -53,6 +75,35 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       }
     ).count;
   let onMutation: (id: bigint) => void = noop;
+  let onAdminChange: (credentials: AdminCredentials) => void = noop;
+  const copy = (): UserRow | null => queries.get("get-admin-copy").get() as UserRow | null;
+  /**
+   * Inside the transaction that changed the copy: the instance writes itself, then every other
+   * project's copy, before this project's transaction commits (D153). A failed instance write throws
+   * and rolls this one back.
+   */
+  function writeThrough(previous: UserRow, updated: UserRow | null): void {
+    if (
+      previous.admin_copy === 1n &&
+      updated?.password &&
+      (updated.password !== previous.password ||
+        updated.twofa_type !== previous.twofa_type ||
+        updated.twofa_key !== previous.twofa_key)
+    ) {
+      onAdminChange({
+        password: updated.password,
+        twofaType: updated.twofa_type,
+        twofaKey: updated.twofa_key,
+      });
+    }
+  }
+  /** A name only the copy may hold, compared as `get-user-name` compares (exactly). */
+  function reserved(username: string, id?: bigint): void {
+    const current = copy();
+    if (current && current.username === username && current.id !== id) {
+      throw new UsernameReservedError();
+    }
+  }
   function insert(fields: UserFields): UserRow {
     const time = now();
     return queries
@@ -104,9 +155,110 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       return queries.get("get-users").all(sort, direction) as Array<UserRow>;
     },
     create(fields: UserFields): UserRow {
-      return insert(fields);
+      return writeTransaction(db, () => {
+        reserved(fields.username);
+        return insert(fields);
+      });
     },
-    update(id: bigint, resolve: (current: UserRow) => UserFields): UserRow | null {
+    /** The instance admin's copy in this project, or null without one. */
+    copy,
+    /** Called with the copy's new credentials when this project changes them (B140). */
+    onAdminChange(callback: (credentials: AdminCredentials) => void): void {
+      onAdminChange = callback;
+    },
+    /**
+     * Writes the account into this project's copy: at wiring (each start and a runtime add), after
+     * another place changed the credentials, and from the CLI. A row with the account's username
+     * and no mark is adopted. A changed password or factor ends every session of the copy, as a
+     * reset does; true when anything changed. `endSessions` ends them even when nothing changed, as
+     * the CLI's reset always does.
+     */
+    syncCopy(account: AdminAccount, endSessions = false): boolean {
+      let changedId: bigint | undefined;
+      writeTransaction(db, () => {
+        let target = copy();
+        const named = byName(account.username);
+        if (target && named && named.id !== target.id) {
+          // The account's name is held by another row: that row becomes the copy.
+          target = named;
+        }
+        target ??= named;
+        const userRoleId = roles.primordial(now());
+        if (!target) {
+          queries.get("unmark-admin-copy").run(0n);
+          const email = byEmail(copyEmail) ? `${account.username}@localhost.invalid` : copyEmail;
+          const created = insert({
+            username: account.username,
+            passwordLogin: true,
+            password: account.password,
+            email,
+            name: account.username,
+            type: "user",
+            userRoleId,
+            listRoleId: null,
+            status: "enabled",
+          });
+          queries
+            .get("write-admin-copy")
+            .get(
+              account.username,
+              account.password,
+              userRoleId,
+              account.twofaType,
+              account.twofaKey,
+              now(),
+              created.id,
+            );
+          return;
+        }
+        const same =
+          target.admin_copy === 1n &&
+          target.username === account.username &&
+          target.password === account.password &&
+          target.password_login === 1n &&
+          target.type === "user" &&
+          target.user_role_id === userRoleId &&
+          target.list_role_id === null &&
+          target.status === "enabled" &&
+          target.twofa_type === account.twofaType &&
+          target.twofa_key === account.twofaKey;
+        if (same) {
+          if (endSessions) {
+            revoke(target.id);
+            changedId = target.id;
+          }
+          return;
+        }
+        queries.get("unmark-admin-copy").run(target.id);
+        queries
+          .get("write-admin-copy")
+          .get(
+            account.username,
+            account.password,
+            userRoleId,
+            account.twofaType,
+            account.twofaKey,
+            now(),
+            target.id,
+          );
+        revoke(target.id);
+        changedId = target.id;
+      });
+      if (changedId !== undefined) {
+        onMutation(changedId);
+        return true;
+      }
+      return false;
+    },
+    /**
+     * `actor` is the user making the change. Only the copy itself may change the copy's password or
+     * email (B140, D153); any other actor, or none, is refused.
+     */
+    update(
+      id: bigint,
+      resolve: (current: UserRow) => UserFields,
+      actor: bigint | null = null,
+    ): UserRow | null {
       const result = writeTransaction(db, () => {
         const previous = byId(id);
         if (!previous) {
@@ -131,6 +283,21 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         if (canAdminister && !stillCan && remaining([id]) === 0n) {
           return null;
         }
+        // After the last-admin rule, so a refusal that answered before keeps its answer (B140).
+        if (
+          previous.admin_copy === 1n &&
+          (fields.username !== previous.username ||
+            fields.status !== previous.status ||
+            fields.type !== previous.type ||
+            fields.userRoleId !== previous.user_role_id ||
+            fields.listRoleId !== previous.list_role_id ||
+            Number(fields.passwordLogin) !== Number(previous.password_login) ||
+            (actor !== previous.id &&
+              (fields.password !== previous.password || fields.email !== previous.email)))
+        ) {
+          throw new CopyProtectedError();
+        }
+        reserved(fields.username, id);
         const updated = queries
           .get("update-user")
           .get(
@@ -156,6 +323,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         ) {
           revoke(id);
         }
+        writeThrough(previous, updated);
         return updated;
       });
       if (result) {
@@ -187,6 +355,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         if (updated && hash !== null) {
           revoke(id, sessionId);
         }
+        writeThrough(previous, updated);
         return updated;
       });
       if (result && hash !== null) {
@@ -208,6 +377,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         }
         const result = queries.get("update-password").get(hash, now(), id) as UserRow;
         revoke(id);
+        writeThrough(current, result);
         return result;
       });
       if (updated) {
@@ -218,12 +388,15 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
     /** Operator recovery from a lost device: any user's TOTP goes and all their sessions end. */
     clearFactor(id: bigint): UserRow | null {
       const cleared = writeTransaction(db, () => {
-        if (!byId(id)) {
+        const previous = byId(id);
+        if (!previous) {
           return null;
         }
         queries.get("set-twofa").run("none", null, now(), id);
         revoke(id);
-        return byId(id);
+        const cleared = byId(id);
+        writeThrough(previous, cleared);
+        return cleared;
       });
       if (cleared) {
         onMutation(id);
@@ -254,6 +427,7 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         }
         queries.get("set-twofa").run(type, secret, now(), current.id);
         revoke(current.id, session);
+        writeThrough(current, byId(current.id));
         return true;
       });
       if (changed) {
@@ -265,6 +439,11 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
       const result = writeTransaction(db, () => {
         if (!ids.length || remaining(ids) === 0n) {
           return false;
+        }
+        // After the last-admin rule, as for an update (B140).
+        const protectedId = copy()?.id;
+        if (protectedId !== undefined && ids.includes(protectedId)) {
+          throw new CopyProtectedError();
         }
         const result = queries.get("delete-users").run(JSON.stringify(ids.map(String)));
         if (!result.changes) {

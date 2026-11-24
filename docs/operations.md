@@ -47,9 +47,20 @@ Run every `iglo.email` command below as that account, so what it creates keeps t
 runuser -u iglo-email -- iglo.email backup --help
 ```
 
-The first start creates the first administrator from `IGLO_EMAIL_ADMIN_USER` and
-`IGLO_EMAIL_ADMIN_PASSWORD`. They are read only while no users exist, and there is no public
-first-account form. Without them `/health` works and login is denied.
+The first start creates the admin account from `IGLO_EMAIL_ADMIN_USER` and
+`IGLO_EMAIL_ADMIN_PASSWORD`. They are read only while the instance has no admin account, and there
+is no public first-account form. Without them `/health` works and login is denied.
+
+**One admin account (B140).** The account lives in `instance.db` and every project holds a copy of
+it: a Super Admin user with the same name, password and TOTP. Log in on any project's
+`/admin/login` with it, or on the instance host's `/admin/instance/login`, which leads to
+`/admin/instance/account` (password and TOTP for every project at once) and opens a project with
+`/admin/instance/open/<slug>` without a second sign-in. A password or TOTP change made anywhere (a
+project's profile or 2FA, the reset mail, the Account page, the CLI) reaches the instance and every
+project, and ends the admin's other sessions. A project's Users page cannot delete, disable, rename
+or re-role the copy (`403`), and no other project user may take its name (`409`). The instance
+sessions are the `instance_session` and `instance_csrf` cookies, beside a project's `session` and
+`csrf` on the instance host.
 
 The same first start can also create an API user for a script or an app, with
 `IGLO_EMAIL_API_USER` and `IGLO_EMAIL_API_TOKEN`: it has the Super Admin role, and its token is the
@@ -225,8 +236,9 @@ converts it (there is no upgrade path from it):
 /var/lib/iglo.email is a data directory from an earlier iglo.email: it has iglo-email.db at its root. The data directory layout changed and nothing is converted; start with an empty data directory. An earlier backup is restored into projects/main/ of the new data directory.
 ```
 
-`backup`, `reset-password`, `reset-totp` and `backup --release-hold` act on the primary project's
-database, under the one instance lock.
+`backup` and `backup --release-hold` act on the primary project's database, under the one instance
+lock. `reset-password` and `reset-totp` with the admin's name act on the admin account and its copy
+in every project, under the same lock; with any other name, on that user of the primary project.
 
 **Stderr lines name their project.** Every line the server writes to stderr starts with
 `[<slug>] `, or `[instance] ` for the instance's own lines, such as `[main] X-Forwarded-For from …`.
@@ -865,7 +877,9 @@ is a shell builtin. It follows the same rule as everywhere else, 8 to 2000 bytes
 refuses while anything has the database open, and refuses a disabled account, an API user and one
 with password login off.
 
-It changes that one account: the hold stays, and all of the user's sessions end. A second factor
+It changes that one account: the hold stays, and all of the user's sessions end. With the admin's
+name it changes the admin account in `instance.db` and its copy in every project, and ends the
+admin's sessions everywhere, the instance's included. A second factor
 stays required, so a user with TOTP gets the challenge after the new password. Control of the
 machine does not replace the device. The command works the same on an install with no hold.
 
@@ -888,7 +902,10 @@ login off or converts the user to an API user, so an old key never comes back.
 From an archive, first unpack it with `tar -xzf` and verify what came out.
 
 A backup is the primary project's directory: restore it as `projects/main/`, and keep
-`instance.db` and the lock where they are. On a new host, start the server once on an empty data
+`instance.db` and the lock where they are. The admin's password and TOTP come from `instance.db`:
+the next start writes them into the restored database's copy of the admin. After a restore the
+admin's password and TOTP are the instance account's, not the snapshot's: a TOTP device enrolled
+only in the restored data no longer works, and must be enrolled again on the Account page. On a new host, start the server once on an empty data
 directory first, stop it, then restore. Move the whole project directory, as here. A new database
 beside an old `iglo-email.db-wal` is corrupted by it. If the upload directory is a mount, restore into it with `cp -a monday/uploads/. <mount>/`. The
 extra `iglo-email-backup.json` in a restored directory is harmless. If `upload_path` is absolute

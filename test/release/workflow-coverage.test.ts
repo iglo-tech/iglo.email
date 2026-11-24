@@ -10,8 +10,14 @@ const workflows = ["ci.yml", "release.yml"];
 const family = /^(contract|messaging|sends|templates|reference|server):/;
 const scripts: Record<string, string> = packageJson.scripts;
 
-/** Family scripts no workflow runs, each with the reason. Empty: every script is wired (B122). */
-const excluded: Record<string, string> = {};
+/**
+ * Family scripts no workflow runs, each with the reason (B122). `contract:projects` waits for the
+ * owner to add its ci.yml step (B140); remove the entry when that step lands.
+ */
+const excluded: Record<string, string> = {
+  "contract:projects":
+    "not yet in ci.yml: agent tokens cannot change workflow files; the owner adds the step after contract:openapi, then removes this entry",
+};
 
 /** Each `bun run <script>` a workflow step runs, with the workflows that run it. */
 async function workflowRuns(): Promise<Map<string, Set<string>>> {

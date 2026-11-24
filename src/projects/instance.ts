@@ -8,6 +8,10 @@ import type { Clock } from "@/clock";
 import { must } from "@/invariant";
 import { openDatabase } from "@/db/connection";
 import { instanceMigrations, runMigrations } from "@/db/migrations";
+import { createApp } from "@/app";
+import { createInstanceRouter } from "@/admin/instance/routes";
+import { createTranslation } from "@/i18n/i18n";
+import { createAdminSync } from "@/projects/admin-sync";
 import { createInstanceBudgets } from "@/projects/budgets";
 import type { InstanceBudgets } from "@/projects/budgets";
 import { createProject } from "@/projects/compose";
@@ -20,7 +24,7 @@ import {
   projectDirectory,
   usesOldLayout,
 } from "@/projects/layout";
-import { instanceAttention } from "@/projects/logger";
+import { createSourceLogger, instanceAttention } from "@/projects/logger";
 import {
   SLUG_PATTERN,
   createRegistry,
@@ -31,6 +35,22 @@ import type { NewProject, ProjectRecord, Registry } from "@/projects/registry";
 import type { Router } from "@/server/router";
 import { ok } from "@/server/response";
 import { defaults } from "@/settings/defaults";
+import { createAdminAccountStore } from "@/users/account";
+import type { AdminAccountStore } from "@/users/account";
+import { initialAdmin } from "@/users/bootstrap";
+import { createHandoffTokens } from "@/users/handoff";
+import { createInstanceAuth } from "@/users/instance-auth";
+import { hashPassword } from "@/users/password";
+
+/** The paths the instance answers on the instance host and on an unclaimed one (section 2). */
+function instancePath(pathname: string): boolean {
+  return (
+    pathname === "/admin/instance" ||
+    pathname.startsWith("/admin/instance/") ||
+    pathname === "/api/instance" ||
+    pathname.startsWith("/api/instance/")
+  );
+}
 
 /** The fresh install's one project (D151). Its name is the site name's default. */
 export const PRIMARY_SLUG = "main";
@@ -40,7 +60,10 @@ export interface InstanceConfig {
   /** `--root-url`: its host is the instance host, and the primary project's root URL is it. */
   readonly rootUrl: string;
   readonly listen: { readonly host: string; readonly port: number };
-  /** The environment's first users, seeded as before into a project that has none (D151). */
+  /**
+   * The environment's first users: the admin account on a first start with none (B140, D153), and
+   * the API user, seeded as before into the primary project while it has no users (D151).
+   */
   readonly seed: ProjectOptions["seed"];
 }
 
@@ -104,6 +127,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   const db = openInstanceDatabase(root, clock);
   let registry: Registry | undefined;
   let budgets: InstanceBudgets | undefined;
+  let account: AdminAccountStore | undefined;
   /** Wired projects in registration order (slug order at start). */
   const entries: Array<Entry> = [];
   /** The routing table: hostname to project, and the primary for every other host. */
@@ -135,11 +159,36 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     seed: record.primary ? config.seed : { admin: config.seed.admin },
   });
 
-  const wire = (record: ProjectRecord) =>
-    createProject(
-      { clock, budgets: must(budgets, "budgets"), listen: config.listen },
+  const tokens = createHandoffTokens(clock);
+  const adminSync = () =>
+    createAdminSync({
+      account: must(account, "admin account"),
+      projects: () =>
+        entries.map((entry) => ({
+          slug: entry.record.slug,
+          syncAdmin: (current: Parameters<Project["syncAdmin"]>[0]) =>
+            entry.project.syncAdmin(current),
+        })),
+      attention: instanceAttention,
+    });
+  let sync: ReturnType<typeof adminSync> | undefined;
+
+  const wire = (record: ProjectRecord) => {
+    const admin = must(sync, "admin sync");
+    return createProject(
+      {
+        clock,
+        budgets: must(budgets, "budgets"),
+        listen: config.listen,
+        admin: {
+          account: admin.account,
+          changed: (slug, credentials) => admin.change(slug, credentials),
+          redeem: (slug, token) => tokens.redeem(slug, token),
+        },
+      },
       options(record),
     );
+  };
 
   /** Only the primary project may hold the instance host (14-projects section 2). */
   const checkInstanceHost = (record: Pick<ProjectRecord, "primary" | "hostname" | "extra">) => {
@@ -154,6 +203,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     }
     entries.length = 0;
     registry?.close();
+    account?.close();
     db.close(true);
   };
 
@@ -182,6 +232,14 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       }
     }
     budgets = await createInstanceBudgets(clock);
+    // The admin account (B140): created from the environment on a start with none. Once it exists
+    // the variables are not read, as a project with users never read them (D153).
+    account = createAdminAccountStore(db, clock);
+    const first = account.get() ? null : initialAdmin(config.seed.admin, config.seed.api);
+    if (first) {
+      account.create(first.username, await hashPassword(first.password));
+    }
+    sync = adminSync();
     for (const record of records) {
       checkInstanceHost(record);
       entries.push({ record, project: await wire(record) });
@@ -192,6 +250,36 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     throw error;
   }
   const registered = must(registry, "registry");
+  const changes = must(sync, "admin sync");
+  const rootUrlOf = (slug: string) => {
+    const entry = entries.find((item) => item.record.slug === slug);
+    return entry ? options(entry.record).rootUrl : undefined;
+  };
+  const instanceAuth = await createInstanceAuth({
+    account: must(account, "admin account"),
+    clock,
+    rootUrl: config.rootUrl,
+    change: (credentials, keepSession) => changes.change(null, credentials, keepSession),
+  });
+  const instanceRouter = createInstanceRouter({
+    auth: instanceAuth,
+    tokens,
+    rootUrl: config.rootUrl.replace(/\/+$/, ""),
+    projectRootUrl: rootUrlOf,
+  });
+  const instanceApp = createApp({
+    bootstrap: {
+      host: config.listen.host,
+      port: config.listen.port,
+      dataDir: root,
+      rootUrl: config.rootUrl,
+      initialAdmin: config.seed.admin,
+    },
+    clock,
+    db,
+    logger: createSourceLogger("instance"),
+    i18n: createTranslation(),
+  });
 
   return {
     /** The instance host: `--root-url`'s host. */
@@ -207,9 +295,21 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
      * project claims, the instance host included, goes to the primary project if there is one.
      */
     dispatch(request: Request, peerAddress: string): Promise<Response> {
-      const entry = hosts.get(requestHostname(request.headers.get("host"))) ?? primary;
+      const hostname = requestHostname(request.headers.get("host"));
+      const claimed = hosts.get(hostname);
+      const { pathname } = new URL(request.url);
+      // The instance routes come first on the instance host and on a host no project claims
+      // (section 2); on a project's own host these paths are that project's.
+      if ((!claimed || hostname === instanceHost) && instancePath(pathname)) {
+        return instanceRouter.handle(instanceApp, request, peerAddress);
+      }
+      const entry = claimed ?? primary;
       if (entry) {
         return entry.project.router.handle(entry.project.app, request, peerAddress);
+      }
+      // Without a primary, the instance pages still need the admin's stylesheet and scripts.
+      if (pathname.startsWith("/admin/static/")) {
+        return instanceRouter.handle(instanceApp, request, peerAddress);
       }
       return Promise.resolve(answerWithoutPrimary(request));
     },

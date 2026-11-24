@@ -35,7 +35,9 @@ import { createRoles } from "@/roles/roles";
 import { must } from "@/invariant";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
+import { registerHandoffRoute } from "@/users/handoff";
 import { registerUserRoutes } from "@/users/routes";
+import type { AdminAccount, AdminCredentials } from "@/users/account";
 import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
 import { sessionDuration } from "@/settings/duration";
@@ -122,6 +124,16 @@ export interface ProjectServices {
    * reads; production binds once, in main().
    */
   readonly listen: { readonly host: string; readonly port: number };
+  /**
+   * The instance admin (B140, D153): the account every project copies, the write-through of this
+   * project's changes to it, and the handoff tokens this project redeems. Without it (a fixture),
+   * the seed's admin is bootstrapped as before.
+   */
+  readonly admin?: {
+    account(): AdminAccount | null;
+    changed(slug: string, credentials: AdminCredentials): void;
+    redeem(slug: string, token: string): boolean;
+  };
 }
 
 /** What one project is wired from: its identity, its directory, its root URL and its seed. */
@@ -161,6 +173,8 @@ export interface Project {
   stop(): Array<unknown>;
   /** Closes every store and the database. main() calls it last, after the lock is still held. */
   close(): Promise<void>;
+  /** Writes the instance admin account into this project's copy (B140). */
+  syncAdmin(account: AdminAccount): void;
 }
 
 /**
@@ -353,7 +367,19 @@ export async function createProject(
         );
       },
     });
-    await bootstrapAdmin(users, auth, options.seed.admin, options.seed.api);
+    const admin = services.admin;
+    if (admin) {
+      // The API user is seeded first, as before only while the project has no users; then the
+      // account's copy is written, adopting a row of its name (D153).
+      await bootstrapAdmin(users, auth, { user: undefined, password: undefined }, options.seed.api);
+      const account = admin.account();
+      if (account) {
+        users.syncCopy(account);
+      }
+      users.onAdminChange((credentials) => admin.changed(options.slug, credentials));
+    } else {
+      await bootstrapAdmin(users, auth, options.seed.admin, options.seed.api);
+    }
     // Only the fixtures' startServer reads host and port from here; the instance binds in main().
     const bootstrap: BootstrapConfig = {
       host: services.listen.host,
@@ -385,6 +411,9 @@ export async function createProject(
     registerUserRoutes(router, users, roles, auth, () =>
       publicSettings(must(settings, "settings").read()),
     );
+    if (admin) {
+      registerHandoffRoute(router, users, auth, (token) => admin.redeem(options.slug, token));
+    }
     registerListRoutes(router, listStore, roles, auth);
     registerSubscriberRoutes(
       router,
@@ -1013,6 +1042,9 @@ export async function createProject(
         ];
       },
       close: closeAll,
+      syncAdmin(account: AdminAccount) {
+        must(users, "users").syncCopy(account);
+      },
     };
   } catch (error) {
     await closeAll();

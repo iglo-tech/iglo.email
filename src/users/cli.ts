@@ -9,12 +9,26 @@ import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
 import { hashPassword, validPassword } from "@/users/password";
 import { createUserStore } from "@/users/store";
+import type { AdminAccount, AdminCredentials } from "@/users/account";
+
+/**
+ * Acts on the instance admin account and every project's copy when `username` is the admin's
+ * (B140); returns the account as it was, or null for any other name. main() passes
+ * src/projects/admin-recovery.ts's `recoverAdmin`.
+ */
+export type AdminRecovery = (options: {
+  dataDir: string;
+  username: string;
+  clock: Clock;
+  change: (account: AdminAccount) => AdminCredentials;
+}) => AdminAccount | null;
 
 export const resetPasswordHelp = `
 Usage: iglo.email reset-password --user <name> [--data-dir <path>]
 
 Set a user's password with the server stopped, reading it from stdin. A restore hold stays, the
-user's sessions end, and a second factor stays required:
+user's sessions end, and a second factor stays required. The instance admin's name changes the
+admin account and its copy in every project; any other name is a user of the primary project:
   --user <name>          The account
   --data-dir <path>      IGLO_EMAIL_DATA_DIR   Data directory (default: ./data)
 `;
@@ -23,7 +37,9 @@ export const resetTotpHelp = `
 Usage: iglo.email reset-totp --user <name> [--data-dir <path>]
 
 Turn off a user's TOTP second factor with the server stopped, for a lost device. The user's
-sessions end and they log in with their password alone, then can enroll again:
+sessions end and they log in with their password alone, then can enroll again. The instance admin's
+name acts on the admin account and its copy in every project; any other name is a user of the
+primary project:
   --user <name>          The account
   --data-dir <path>      IGLO_EMAIL_DATA_DIR   Data directory (default: ./data)
 `;
@@ -95,6 +111,7 @@ export async function recoverPassword(options: RecoveryOptions): Promise<void> {
 export async function runResetPassword(
   args: Array<string>,
   env: Record<string, string | undefined>,
+  admin?: AdminRecovery,
 ): Promise<void> {
   const parsed = parseArguments(args);
   if (parsed.help) {
@@ -104,12 +121,37 @@ export async function runResetPassword(
   if (parsed.user === undefined) {
     throw new Error("--user is required");
   }
+  const dataDir = parsed.dataDir ?? env.IGLO_EMAIL_DATA_DIR ?? "./data";
+  // The line a pipe or a here-string ends with is not part of it.
+  const password = (await Bun.stdin.text()).replace(/\r?\n$/, "");
+  const clock = createRealClock();
+  if (admin) {
+    if (!validPassword(password)) {
+      throw new Error("A password must be 8 to 2000 bytes long");
+    }
+    const hash = await hashPassword(password);
+    const changed = admin({
+      dataDir,
+      username: parsed.user,
+      clock,
+      change: (account) => ({
+        password: hash,
+        twofaType: account.twofaType,
+        twofaKey: account.twofaKey,
+      }),
+    });
+    if (changed) {
+      process.stdout.write(
+        `Password set for ${parsed.user} in the instance and every project; their sessions have ended\n`,
+      );
+      return;
+    }
+  }
   await recoverPassword({
-    dataDir: parsed.dataDir ?? env.IGLO_EMAIL_DATA_DIR ?? "./data",
+    dataDir,
     username: parsed.user,
-    // The line a pipe or a here-string ends with is not part of it.
-    password: (await Bun.stdin.text()).replace(/\r?\n$/, ""),
-    clock: createRealClock(),
+    password,
+    clock,
     supportedVersion: productionMigrations.length,
   });
   process.stdout.write(`Password set for ${parsed.user}; their sessions have ended\n`);
@@ -142,6 +184,7 @@ export async function recoverTotp(options: Omit<RecoveryOptions, "password">): P
 export async function runResetTotp(
   args: Array<string>,
   env: Record<string, string | undefined>,
+  admin?: AdminRecovery,
 ): Promise<void> {
   const parsed = parseArguments(args);
   if (parsed.help) {
@@ -151,12 +194,22 @@ export async function runResetTotp(
   if (parsed.user === undefined) {
     throw new Error("--user is required");
   }
-  const had = await recoverTotp({
-    dataDir: parsed.dataDir ?? env.IGLO_EMAIL_DATA_DIR ?? "./data",
+  const dataDir = parsed.dataDir ?? env.IGLO_EMAIL_DATA_DIR ?? "./data";
+  const clock = createRealClock();
+  const before = admin?.({
+    dataDir,
     username: parsed.user,
-    clock: createRealClock(),
-    supportedVersion: productionMigrations.length,
+    clock,
+    change: (account) => ({ password: account.password, twofaType: "none", twofaKey: null }),
   });
+  const had = before
+    ? before.twofaType !== "none"
+    : await recoverTotp({
+        dataDir,
+        username: parsed.user,
+        clock,
+        supportedVersion: productionMigrations.length,
+      });
   process.stdout.write(
     had
       ? `TOTP turned off for ${parsed.user}; their sessions have ended\n`

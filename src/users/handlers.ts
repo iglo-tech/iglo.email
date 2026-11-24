@@ -11,6 +11,7 @@ import { readBody } from "@/users/input";
 import { validPassword } from "@/users/password";
 import { projectUser } from "@/users/models";
 import type { Identity } from "@/users/models";
+import { CopyProtectedError, UsernameReservedError } from "@/users/store";
 import type { UserFields, UserStore } from "@/users/store";
 
 interface Input {
@@ -185,11 +186,21 @@ function current(context: RequestContext): Identity {
 function needSuper(context: RequestContext): never {
   throw new HttpError(400, context.app.i18n.T("users.needSuper"));
 }
+/** B140: the instance admin's copy is protected (403) and its username reserved (409). */
+function copyRefusal(error: unknown): void {
+  if (error instanceof CopyProtectedError) {
+    throw new HttpError(403, error.message);
+  }
+  if (error instanceof UsernameReservedError) {
+    throw new HttpError(409, error.message);
+  }
+}
 function storageFailure(
   error: unknown,
   action: "creating" | "updating",
   fields: Pick<UserFields, "username" | "email">,
 ): never {
+  copyRefusal(error);
   if (error instanceof Error) {
     for (const column of ["username", "email"] as const) {
       if (error.message.includes(`UNIQUE constraint failed: users.${column}`)) {
@@ -319,45 +330,50 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     let updated;
     let fields: UserFields | undefined;
     try {
-      updated = store.update(id, (current) => {
-        const currentType = (input.type || current.type) as "user" | "api";
-        if (
-          currentType === "user" &&
-          input.passwordLogin &&
-          hash === null &&
-          (!current.password || current.type === "api")
-        ) {
-          invalid(context, "password");
-        }
-        const currentRole = input.userRoleId === 0n ? current.user_role_id : input.userRoleId;
-        if (
-          !roles.hasRole(currentRole, "user") ||
-          (input.listRoleId !== null &&
-            input.listRoleId !== 0n &&
-            !roles.hasRole(input.listRoleId, "list"))
-        ) {
-          throw new HttpError(400, "invalid role");
-        }
-        fields = {
-          username: input.username,
-          name: input.name || input.username,
-          email: input.email.toLowerCase() || current.email,
-          type: currentType,
-          status: (input.status || current.status) as "enabled" | "disabled",
-          passwordLogin: currentType === "api" ? false : input.passwordLogin,
-          password:
-            currentType === "api"
-              ? current.type === "api"
-                ? current.password
-                : null
-              : input.passwordLogin
-                ? (hash ?? current.password)
-                : null,
-          userRoleId: currentRole,
-          listRoleId: input.listRoleId === 0n ? current.list_role_id : input.listRoleId,
-        };
-        return fields;
-      });
+      updated = store.update(
+        id,
+        (current) => {
+          const currentType = (input.type || current.type) as "user" | "api";
+          if (
+            currentType === "user" &&
+            input.passwordLogin &&
+            hash === null &&
+            (!current.password || current.type === "api")
+          ) {
+            invalid(context, "password");
+          }
+          const currentRole = input.userRoleId === 0n ? current.user_role_id : input.userRoleId;
+          if (
+            !roles.hasRole(currentRole, "user") ||
+            (input.listRoleId !== null &&
+              input.listRoleId !== 0n &&
+              !roles.hasRole(input.listRoleId, "list"))
+          ) {
+            throw new HttpError(400, "invalid role");
+          }
+          fields = {
+            username: input.username,
+            name: input.name || input.username,
+            email: input.email.toLowerCase() || current.email,
+            type: currentType,
+            status: (input.status || current.status) as "enabled" | "disabled",
+            passwordLogin: currentType === "api" ? false : input.passwordLogin,
+            password:
+              currentType === "api"
+                ? current.type === "api"
+                  ? current.password
+                  : null
+                : input.passwordLogin
+                  ? (hash ?? current.password)
+                  : null,
+            userRoleId: currentRole,
+            listRoleId: input.listRoleId === 0n ? current.list_role_id : input.listRoleId,
+          };
+          return fields;
+        },
+        // B140: only the admin's copy itself may change its password or email.
+        current(context).user.id,
+      );
     } catch (error) {
       if (error instanceof HttpError) {
         throw error;
@@ -410,8 +426,16 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     }
     return ok(projectUser(updated, roles));
   };
+  const remove = (ids: Array<bigint>): boolean => {
+    try {
+      return store.delete(ids);
+    } catch (error) {
+      copyRefusal(error);
+      throw error;
+    }
+  };
   const deleteUser: Handler = (context) => {
-    if (!store.delete([BigInt(getID(context))])) {
+    if (!remove([BigInt(getID(context))])) {
       needSuper(context);
     }
     return ok(true);
@@ -431,7 +455,7 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
       }
       ids.push(id);
     }
-    if (!store.delete(ids)) {
+    if (!remove(ids)) {
       needSuper(context);
     }
     return ok(true);

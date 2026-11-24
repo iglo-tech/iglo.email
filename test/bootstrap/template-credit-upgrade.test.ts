@@ -164,6 +164,9 @@ test("a seeded install from before this release takes the migrated bodies, and a
     // Migration 31 (B117d) names each send; schema 26 has no such columns.
     db.run("ALTER TABLE sends DROP COLUMN template_name");
     db.run("ALTER TABLE sends DROP COLUMN sequence_name");
+    // Migration 32 (B140) marks the admin's copy; the earlier schema has no such column.
+    db.run("DROP INDEX users_one_admin_copy");
+    db.run("ALTER TABLE users DROP COLUMN admin_copy");
     db.run("PRAGMA user_version = 26");
   } finally {
     db.close(true);
@@ -173,7 +176,7 @@ test("a seeded install from before this release takes the migrated bodies, and a
   const second = await up(dataDir);
   try {
     const after = await templates(second.port);
-    expect(userVersion(dataDir)).toBe(31);
+    expect(userVersion(dataDir)).toBe(32);
     expect(after.get(names.campaign)?.body).toBe(seeded.get(names.campaign)?.body);
     expect(after.get(names.archive)?.body).toBe(seeded.get(names.archive)?.body);
     expect(after.get(names.sample)?.body).toBe(seeded.get(names.sample)?.body);

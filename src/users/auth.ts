@@ -41,7 +41,7 @@ const resetMailIntervalMs = 5 * 60_000;
 function randomValue(): string {
   return randomBytes(32).toString("base64url");
 }
-function equal(left: string, right: string): boolean {
+export function equal(left: string, right: string): boolean {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
   return a.length === b.length && timingSafeEqual(a, b);
@@ -95,7 +95,7 @@ function parseAuthorization(header: string) {
   return { user, token };
 }
 
-class PasswordWork {
+export class PasswordWork {
   private active = 0;
   private readonly waiting: Array<() => void> = [];
   constructor(private readonly policy: AuthPolicy) {}
@@ -467,6 +467,14 @@ export async function createAuthentication(
       } finally {
         proof?.release();
       }
+    },
+    /**
+     * A normal session for one user, as a password login makes it, with no password: the handoff
+     * from the instance (B140), which has already proved the admin. Null when the user cannot log in.
+     */
+    createSession(userId: bigint): { id: string; csrf: string; duration: number } | null {
+      const user = store.byId(userId);
+      return user ? newSession(user) : null;
     },
     challengeExists(token: string): boolean {
       return !!challenge(token);
