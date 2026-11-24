@@ -715,7 +715,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
     Bun.gc(true);
     return heapStats().heapSize;
   };
-  // The first measurement is after two batches, so the first batches' own allocations are not counted.
+  // The first measurement is after the first batch (10 pushes), so most of the run's growth is inside the window.
   // The drive does not step the injected clock: nothing asserted here needs fake time, and every
   // wait below ends on the state it waits for, not on how long the host took to reach it.
   // Each push is settled once, when the wait first sees it. settle() does nothing after the first
@@ -723,7 +723,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
   let first = 0;
   let settled = 0;
   const done = () => {
-    if (fx.pushes.length >= 20 && !first) {
+    if (fx.pushes.length >= 10 && !first) {
       first = heap();
     }
     if (fx.pushes.length === count) {
@@ -755,9 +755,9 @@ test("tracked links personalized per subscriber do not accumulate across batches
     }
   }
   const last = heap();
-  // 40 messages after the first measurement, 8 distinct links of 7 KB each: about 2.2 MB of URLs. A cache
-  // that kept them across batches grew by 2.4 MB more than the correct run in the mutation run (PR comment);
-  // the correct run grows by about 0.5 MB. The bound is 1 MiB, between the two.
+  // 50 messages after the first measurement, each with 8 links of about 7 KB: about 2.8 MB of URLs
+  // (50 × 8 × 7 KB). A cache that kept them across batches grew the heap by about 3.2 MB in the
+  // mutation run (PR #206 mutation table). The bound is 1 MiB, far below that growth.
   expect(last - first).toBeLessThan(1024 * 1024);
   fx.control.hold = false;
   for (const push of fx.pushes) {

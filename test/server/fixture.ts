@@ -97,7 +97,13 @@ function wrapper(name: string): Middleware {
 }
 
 export function startFixture(
-  options: { clock?: Clock; i18n?: Translation; routePaths?: ReadonlyArray<string> } = {},
+  options: {
+    clock?: Clock;
+    i18n?: Translation;
+    routePaths?: ReadonlyArray<string>;
+    /** No public not-found: a bare router, which answers unknown pages with a bodyless 404. */
+    bare?: boolean;
+  } = {},
 ) {
   const errors: Array<unknown> = [];
   const clock = options.clock ?? new TestClock();
@@ -120,11 +126,13 @@ export function startFixture(
       attention: (message) => errors.push(new Error(message)),
     },
   });
-  const router = options.routePaths ? new Router() : createRouter();
+  const router = options.routePaths || options.bare ? new Router() : createRouter();
   // Unmatched paths answer the branded public 404, as in production (B121).
-  router.notFound("/", (context) =>
-    publicNotFound(context.app.i18n, context.request.method, fixturePageSite()),
-  );
+  if (!options.bare) {
+    router.notFound("/", (context) =>
+      publicNotFound(context.app.i18n, context.request.method, fixturePageSite()),
+    );
+  }
   function start() {
     try {
       const server = startServer(app, router);

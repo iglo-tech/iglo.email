@@ -14,6 +14,7 @@ import { createSendAnonymizer } from "@/messaging/anonymize";
 import { createSends } from "@/messaging/sends";
 import { createSubscriberStore } from "@/subscribers/store";
 import { TestClock } from "@/test/server/fixture";
+import { waitWall } from "@/test/wait";
 import { asBody } from "@/test/read-body";
 
 const open: Array<() => Promise<void> | void> = [];
@@ -22,6 +23,29 @@ afterEach(async () => {
     await close();
   }
 });
+
+/**
+ * Advances the injected clock until `done`. A wait budget (WAIT_WALL_MS) with no change in
+ * `progress` fails the wait with its own message. A budget in which the rows or the ended sends
+ * moved starts another, so a slow host that keeps moving is not cut off by time alone (B118c item 7).
+ */
+async function untilProgress(
+  done: () => boolean,
+  progress: () => string,
+  options: { label: string; advance: (ms: number) => void },
+): Promise<void> {
+  for (;;) {
+    const before = progress();
+    try {
+      await waitWall(done, { ...options, step: 1000 });
+      return;
+    } catch (error) {
+      if (progress() === before) {
+        throw error;
+      }
+    }
+  }
+}
 
 const accepted: Outcome = {
   messageId: "<m@example.test>",
@@ -172,10 +196,11 @@ test("a row claimed by no live push here is moved to unknown once its lease expi
   writeTransaction(f.db, () => f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1));
   expect(f.row(id).status).toBe("sending");
   await f.clock.whenSleeping();
-  for (let i = 0; i < 150; i++) {
-    f.clock.advance(1000);
-    await tick();
-  }
+  await untilProgress(
+    () => f.row(id).status === "unknown",
+    () => `${f.row(id).status}|${f.ended.length}`,
+    { label: "the expired send to settle", advance: (ms) => f.clock.advance(ms) },
+  );
   expect(f.row(id)).toMatchObject({ status: "unknown", error: "interrupted" });
   expect(f.ended).toEqual([{ uuid: f.uuid(id), status: "unknown", error: "interrupted" }]);
 });
@@ -298,10 +323,14 @@ test("a wiped send whose lease expires in the outbox pass ends silently; an unre
     createSendAnonymizer(f.db)([{ id: subscriber.id, email: subscriber.email }]),
   )();
   await f.clock.whenSleeping();
-  for (let i = 0; i < 150; i++) {
-    f.clock.advance(1000);
-    await tick();
-  }
+  // Advances the injected clock until both rows settle, not a fixed count of 25 ms ticks: 150 ticks
+  // took about 4 s of real time, which the serial run's 5 s default timeout did not allow (B118c item 7).
+  // Mutation: the outbox leaves the wiped row sending; the wait then fails by name once nothing moves.
+  await untilProgress(
+    () => f.row(wiped).status === "unknown" && f.row(other).status === "unknown",
+    () => `${f.row(wiped).status}|${f.row(other).status}|${f.ended.length}`,
+    { label: "the wiped and the unrelated send to settle", advance: (ms) => f.clock.advance(ms) },
+  );
   expect(f.row(wiped)).toMatchObject({
     status: "unknown",
     error: "interrupted",

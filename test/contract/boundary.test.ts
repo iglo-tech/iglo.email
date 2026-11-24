@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureProductionBuild } from "@/test/production-build";
-import { withProduction } from "@/test/contract/owned";
+import { lifetimeWithinTest, withProduction } from "@/test/contract/owned";
 import { runContract } from "@/test/contract/runner";
 import type { ContractCase, ContractTarget, Difference } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
@@ -82,20 +82,28 @@ function get(origin: string, path = "/health") {
 
 describe("owned production lifecycle", () => {
   test("runs the standalone compiled process and removes it after a failing run", async () => {
+    const started = Date.now();
     let origin = "";
     await expect(
-      withProduction(executable, new AbortController().signal, async (baseUrl) => {
-        origin = baseUrl;
-        expect((await get(origin)).status).toBe(200);
-        expect((await get(origin, "/api/health")).status).toBe(403);
-        throw new Error("synthetic contract failure");
-      }),
+      withProduction(
+        executable,
+        new AbortController().signal,
+        async (baseUrl) => {
+          origin = baseUrl;
+          expect((await get(origin)).status).toBe(200);
+          expect((await get(origin, "/api/health")).status).toBe(403);
+          throw new Error("synthetic contract failure");
+        },
+        undefined,
+        lifetimeWithinTest(started),
+      ),
     ).rejects.toThrow("synthetic contract failure");
     expect(origin).not.toBe("");
     await expect(get(origin)).rejects.toThrow();
-  });
+  }, 30_000);
 
   test("a nonzero child shutdown is reported as a failure", async () => {
+    const started = Date.now();
     const run = withProduction(
       badShutdownExecutable,
       new AbortController().signal,
@@ -103,9 +111,11 @@ describe("owned production lifecycle", () => {
         expect((await get(origin)).status).toBe(200);
         return true;
       },
+      undefined,
+      lifetimeWithinTest(started),
     );
     await expect(run).rejects.toThrow("shutdown");
-  });
+  }, 30_000);
 
   test("the production CLI removes its own data after refusing an unsupported case", async () => {
     await ensureProductionBuild();
@@ -136,28 +146,58 @@ describe("owned production lifecycle", () => {
     }
   });
 
+  // B118c item 1: a run that never ends is cancelled by its test-owned lifetime, which ends before
+  // the 30 s test timeout. The rejection names the lifetime, and the child is stopped by this test,
+  // not after bun has timed it out. Mutation: pass no lifetime (the 30 s default, equal to the test
+  // timeout): the test times out instead of observing the named cancel.
+  test("a run that never ends is cancelled by its test lifetime and stopped, named", async () => {
+    const started = Date.now();
+    let origin = "";
+    await expect(
+      withProduction(
+        executable,
+        new AbortController().signal,
+        async (baseUrl) => {
+          origin = baseUrl;
+          await new Promise<never>(() => {});
+        },
+        undefined,
+        lifetimeWithinTest(started),
+      ),
+    ).rejects.toThrow(/Compiled production run exceeded its \d+ ms lifetime/);
+    expect(origin).not.toBe("");
+    await expect(get(origin)).rejects.toThrow();
+  }, 30_000);
+
   test("closes its compiled child when the run is cancelled", async () => {
+    const started = Date.now();
     const controller = new AbortController();
     let ready!: (origin: string) => void;
-    const started = new Promise<string>((resolveReady) => {
+    const serving = new Promise<string>((resolveReady) => {
       ready = resolveReady;
     });
-    const running = withProduction(executable, controller.signal, async (origin) => {
-      ready(origin);
-      await new Promise<void>((_, reject) => {
-        controller.signal.addEventListener(
-          "abort",
-          () => reject(new Error("synthetic cancellation")),
-          { once: true },
-        );
-      });
-    });
-    const origin = await started;
+    const running = withProduction(
+      executable,
+      controller.signal,
+      async (origin) => {
+        ready(origin);
+        await new Promise<void>((_, reject) => {
+          controller.signal.addEventListener(
+            "abort",
+            () => reject(new Error("synthetic cancellation")),
+            { once: true },
+          );
+        });
+      },
+      undefined,
+      lifetimeWithinTest(started),
+    );
+    const origin = await serving;
     expect((await get(origin)).status).toBe(200);
     controller.abort();
     await expect(running).rejects.toThrow();
     await expect(get(origin)).rejects.toThrow();
-  });
+  }, 30_000);
 });
 
 describe("difference metadata and strict transport", () => {

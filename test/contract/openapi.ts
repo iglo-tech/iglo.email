@@ -1709,11 +1709,27 @@ export async function runOpenApiContract(target: {
     // Three answer an absent ID with an invalid_fields refusal that their messages name, and that
     // not_found would not describe: a delete that checks the last active Super Admin before
     // the lookup, a delete refused for "non-existent or default" (one message for both), and a
-    // default set of a template that is not a campaign's. Their status and message stay listmonk's.
+    // default set of a template that is not a campaign's. The first two keep listmonk's status and
+    // message. The default set answers 400 where upstream answers 200 with the template list: a
+    // marked difference (src/openapi/differences.ts, "Template default target").
     const refusedAbsent = new Set([
       "DELETE /api/users/{id}",
       "DELETE /api/templates/{id}",
       "PUT /api/templates/{id}/default",
+    ]);
+    // B117c r1: these answer 200 for a missing ID, as upstream does (checked against upstream at
+    // 6fcd95f): the three listed reads and writes, and the deletes that answer 200 for a delete of
+    // nothing. Each is pinned to its status, so a 2xx from any other endpoint fails instead of passing
+    // as "any 2xx".
+    const absentAnswers = new Map<string, number>([
+      ["PUT /api/subscribers/{id}/blocklist", 200],
+      ["GET /api/subscribers/{id}/bounces", 200],
+      ["GET /api/subscribers/{id}/activity", 200],
+      ["DELETE /api/roles/{id}", 200],
+      ["DELETE /api/lists/{id}", 200],
+      ["DELETE /api/subscribers/{id}", 200],
+      ["DELETE /api/subscribers/{id}/bounces", 200],
+      ["DELETE /api/bounces/{id}", 200],
     ]);
     const absentFailures: Array<string> = [];
     for (const { key, operation } of operations) {
@@ -1732,10 +1748,12 @@ export async function runOpenApiContract(target: {
             expect: [200, 400, 404],
           });
           const code = reply.body?.code;
+          const pinned = absentAnswers.get(key);
           check(
-            reply.status < 400 ||
-              code === "not_found" ||
-              (refusedAbsent.has(key) && code === "invalid_fields"),
+            pinned !== undefined
+              ? reply.status === pinned
+              : reply.status >= 400 &&
+                  (code === "not_found" || (refusedAbsent.has(key) && code === "invalid_fields")),
             `not-found-${key} ${reply.status} ${reply.text.slice(0, 200)}`,
           );
         } catch (error) {

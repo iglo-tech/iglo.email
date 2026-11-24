@@ -75,6 +75,10 @@ describe("raw-query deadline", () => {
     const first = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     const second = await get(f, `/api/subscribers/export?query=${q("1=1")}`);
     try {
+      // Both exports must start within the 1 s deadline: a second start after the kill would show
+      // the deadline's outcome without the case it names (B118a r2). Mutation: cut the child slots
+      // to one, and the second export is refused here.
+      expect([first.status, second.status]).toEqual([200, 200]);
       expect(await until(() => childPids().length === before, 15_000)).toBe(true);
       expect(
         await within(

@@ -11,7 +11,13 @@ import { chmod, copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { healthWhenReady, restartOnPort, startOnFreePort, stopChild } from "@/test/serve-port";
+import {
+  healthWhenReady,
+  listensOn,
+  restartOnPort,
+  startOnFreePort,
+  stopChild,
+} from "@/test/serve-port";
 import { ensureProductionBuild } from "@/test/production-build";
 import { startDbFixture } from "@/test/db/fixture";
 import { startSchemaFixture } from "@/test/schema/fixture";
@@ -58,6 +64,8 @@ interface Budget {
   readonly name: string;
   readonly ends: number;
   readonly children: Set<ReturnType<typeof start>>;
+  /** Set by the kill timer. A timer can fire a few ms before `performance.now()` reaches `ends`. */
+  expired: boolean;
 }
 const budgets = new AsyncLocalStorage<Budget>();
 const budgetMarginMs = 3000;
@@ -70,8 +78,10 @@ function test(name: string, body: () => Promise<void>, timeoutMs = defaultTimeou
         name,
         ends: performance.now() + timeoutMs - budgetMarginMs,
         children: new Set(),
+        expired: false,
       };
       const timer = setTimeout(() => {
+        budget.expired = true;
         for (const child of budget.children) {
           child.kill("SIGKILL");
         }
@@ -82,10 +92,14 @@ function test(name: string, body: () => Promise<void>, timeoutMs = defaultTimeou
   );
 }
 
-/** Starts the executable. Under a budget, a start after it ended fails by name, and the child is kept. */
+/**
+ * Starts the executable. Under a budget, a start after it ended fails by name, and the child is kept.
+ * A start is refused once the kill timer has fired, even when the clock has not yet reached `ends`:
+ * a child added after the kill would otherwise escape it (B118a r2).
+ */
 function start(args: Array<string>, env: Record<string, string> = {}) {
   const budget = budgets.getStore();
-  if (budget && performance.now() >= budget.ends) {
+  if (budget && (budget.expired || performance.now() >= budget.ends)) {
     throw new Error(`The test "${budget.name}" budget ended before: ${args.join(" ")}`);
   }
   const child = Bun.spawn([executable, ...args], {
@@ -101,31 +115,28 @@ function start(args: Array<string>, env: Record<string, string> = {}) {
   return child;
 }
 
-async function runCli(args: Array<string>, env: Record<string, string> = {}) {
+/**
+ * Runs the CLI to its exit. A CLI that is still running when its test's budget ends is killed by
+ * that budget (B118c item 2), so there is no per-call timer; a killed child fails the run by name.
+ * `onStart` receives the child before the run is awaited, so a test can watch the process while it
+ * runs (the call starts the child synchronously).
+ */
+async function runCli(
+  args: Array<string>,
+  env: Record<string, string> = {},
+  onStart?: (child: ReturnType<typeof start>) => void,
+) {
   const child = start(args, env);
-  const budget = budgets.getStore();
-  const remaining = budget ? budget.ends - performance.now() : Number.POSITIVE_INFINITY;
-  let timedOut = false;
-  const timer = setTimeout(
-    () => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    },
-    Math.min(3000, remaining),
-  );
-  try {
-    const [code, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ]);
-    if (timedOut) {
-      throw new Error(`CLI did not exit: ${args.join(" ")}`);
-    }
-    return { code, stdout, stderr };
-  } finally {
-    clearTimeout(timer);
+  onStart?.(child);
+  const [code, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  if (child.signalCode !== null) {
+    throw new Error(`CLI did not exit before its budget ended: ${args.join(" ")}`);
   }
+  return { code, stdout, stderr };
 }
 
 /**
@@ -156,6 +167,59 @@ function startOnPort(
   build: (port: number) => { args: Array<string>; env?: Record<string, string> },
 ) {
   return startOnFreePort(async (port) => ({ child: await launch(port, build), port }));
+}
+
+/**
+ * Starts the executable through `runCli` on `port`, and resolves once that very process listens on
+ * it and answers /health. The run is returned still pending: the caller decides how it ends. A
+ * process that exits before it is ready fails the start with the stderr `runCli` read, which
+ * `startOnFreePort` checks for a port in use. A start that never becomes ready is killed.
+ */
+async function startThroughCli(port: number, dataDir: string) {
+  const started: Array<ReturnType<typeof start>> = [];
+  const run = runCli(["--port", String(port), "--data-dir", dataDir], {}, (child) => {
+    started.push(child);
+  });
+  const [child] = started;
+  if (!child) {
+    throw new Error("runCli did not start the executable");
+  }
+  // The run settles only when the process has exited, and then the start fails with its stderr.
+  // The readiness poll never settles after an exit, so the exit alone decides the start.
+  const exited = run.then((result) => {
+    throw new Error(`Server exited before it became ready: ${result.stderr}`);
+  });
+  const listening = (async () => {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return new Promise<never>(() => {});
+      }
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/health`, {
+          headers: { Connection: "close" },
+          signal: AbortSignal.timeout(500),
+        });
+        // Another server can hold the port and answer first: ready only when this child listens on it.
+        if (child.pid !== undefined && listensOn(child.pid, port)) {
+          await response.body?.cancel();
+          return;
+        }
+      } catch {
+        // Not listening yet: the poll goes on until the deadline.
+      }
+      await Bun.sleep(25);
+    }
+    throw new Error("Server did not become ready within 15000 ms");
+  })();
+  try {
+    await Promise.race([exited, listening]);
+  } catch (error) {
+    child.kill("SIGKILL");
+    await run.catch(() => undefined);
+    throw error;
+  }
+  return { child, run };
 }
 
 /**
@@ -916,8 +980,8 @@ describe("compiled executable", () => {
   test("a body that outlives its budget fails its next CLI run by name and kills its children", async () => {
     const name =
       "a body that outlives its budget fails its next CLI run by name and kills its children";
-    // Its budget ends 9 s after the test starts (the 12 s timeout less 3 s). The child it starts is
-    // killed then, and the wait below ends at that exit, or at 9 s when no kill comes.
+    // The budget ends 9 s after the test starts (the 12 s timeout less 3 s), and kills the child
+    // then. The wait is on that exit itself: when no kill comes, the test's own timeout ends it.
     const { child } = await startOnPort((listenPort) => ({
       args: [
         "--port",
@@ -927,17 +991,33 @@ describe("compiled executable", () => {
       ],
     }));
     try {
-      await Promise.race([child.exited, Bun.sleep(9000)]);
+      await child.exited;
+      expect(child.signalCode).toBe("SIGKILL");
       const next = await runCli(["--version"]).then(() => "ran", String);
       expect(next).toContain(`The test "${name}" budget ended`);
-      const exited = await Promise.race([
-        child.exited.then(() => true),
-        Bun.sleep(500).then(() => false),
-      ]);
-      expect(exited).toBe(true);
     } finally {
       child.kill("SIGKILL");
       await child.exited;
     }
+  }, 12_000);
+
+  // B118c item 2: runCli has no fixed kill timer. A server that runs past 3 s lives until its budget
+  // ends at 9 s. The sleep is the thing under test: the server must still run at 4 s. The server is
+  // started through runCli, the path every other CLI run here takes, so a fixed timer in runCli is
+  // what this test sees. A start that finds its port in use is retried on another port
+  // (startOnFreePort). Mutation 1: main's 3 s SIGKILL timer in runCli; the server is then gone
+  // before the check at 4 s. Mutation 2: the "did not exit before its budget ended" check removed
+  // from runCli; the run then resolves, and the expectation on its rejection fails.
+  test("a server that runs past 3 s is killed by its budget, not by a fixed timer", async () => {
+    const { child, run } = await startOnFreePort((port) =>
+      startThroughCli(port, join(temporaryDirectory, "past-3s")),
+    );
+    await Bun.sleep(4000);
+    expect(child.exitCode).toBeNull();
+    expect(child.signalCode).toBeNull();
+    // The budget, not a timer of the test, ends the server: SIGKILL at 9 s, and runCli says so.
+    const outcome = await run.then(() => "resolved", String);
+    expect(outcome).toContain("CLI did not exit before its budget ended");
+    expect(child.signalCode).toBe("SIGKILL");
   }, 12_000);
 });

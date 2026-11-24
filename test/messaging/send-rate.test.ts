@@ -473,17 +473,17 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   // iteration can take seconds of real time while the sends still move. A stall (a wait budget with
   // no grant, receipt or send-status change) still fails it, with the same message.
   const progressMark = () => `${grants}|${cleared + sink.messages.length}|${sendRows()}`;
-  // The progress loop has a total deadline of its own, under the test's 30 s timeout: progress that keeps
-  // coming ends the wait with its state, rather than running into the next test's fixture.
+  // The stall is the limit: one wait budget (WAIT_WALL_MS) with no change in progressMark fails the wait with
+  // its state. There is no total deadline, so a wait on a slow host that keeps moving is not cut off by
+  // time alone (B118c item 1); the test's own timeout still bounds a body that never ends.
   const untilProgress = async (done: () => boolean | Promise<boolean>, options: WaitOptions) => {
-    const deadline = Date.now() + 25_000;
     for (;;) {
       const before = progressMark();
       try {
         await waitWall(done, options);
         return;
       } catch (error) {
-        if (progressMark() === before || Date.now() >= deadline) {
+        if (progressMark() === before) {
           throw error;
         }
       }

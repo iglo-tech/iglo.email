@@ -1,6 +1,7 @@
 // Native send journal. listmonk has no equivalent outbox or send-log API.
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import type { Clock } from "@/clock";
+import { must } from "@/invariant";
 import { writeTransaction } from "@/db/transaction";
 import type { Message, Outcome } from "@/messaging/email";
 import { decodePayload, encodePayload } from "@/messaging/payload";
@@ -150,13 +151,6 @@ const jsonBigint = (v: bigint) =>
     ? Number(v)
     : (JSON as typeof JSON & { rawJSON(value: string): object }).rawJSON(v.toString());
 const jsonID = (v: bigint | null) => (v === null ? null : jsonBigint(v));
-/** A row the module expects: a query that always returns one, or a row it has just written. */
-function expectRow<T>(row: T | null, what: string): T {
-  if (!row) {
-    throw new Error(`sends: ${what} is missing`);
-  }
-  return row;
-}
 function project(row: PublicRow, label?: StepLabel, liveTemplateName?: string) {
   return {
     id: jsonID(row.id),
@@ -259,7 +253,7 @@ export function createSends(options: {
       ),
     );
   };
-  const projectOne = (row: PublicRow) => expectRow(projectAll([row])[0] ?? null, "send");
+  const projectOne = (row: PublicRow) => must(projectAll([row])[0] ?? null, "send");
   /**
    * The names a send is queued with (B117d, D139), read by the modules that own the template and the
    * step, inside the queueing transaction. A deleted template or sequence therefore keeps its name.
@@ -617,10 +611,10 @@ export function createSends(options: {
           templateNameOf(names, input.templateId),
           sequenceNameOf(names, input.stepId),
         );
-      return expectRow(row, "inserted send").id;
+      return must(row, "inserted send").id;
     });
     wake();
-    return projectOne(expectRow(getPublic(id), "queued send"));
+    return projectOne(must(getPublic(id), "queued send"));
   }
   /** A resend of a send the reader's scope does not cover answers `"forbidden"`, and writes nothing (B117d). */
   function resend(id: bigint, authorize: () => void, scope: Scope) {
@@ -669,8 +663,8 @@ export function createSends(options: {
           // The child keeps the name its original was queued with; it is a resend, not a step.
           original.template_name,
         );
-      const resent = expectRow(inserted, "resent send");
-      return projectOne(expectRow(getPublic(resent.id), "resent send"));
+      const resent = must(inserted, "resent send");
+      return projectOne(must(getPublic(resent.id), "resent send"));
     });
     wake();
     return result;
@@ -829,11 +823,11 @@ export function createSends(options: {
             templateNameOf(names, send.templateId),
             sequenceNameOf(names, send.stepId),
           );
-        const row = expectRow(inserted, "queued send");
+        const row = must(inserted, "queued send");
         if (!skip) {
           queued.push(row.id);
         }
-        rows.push(expectRow(getPublic(row.id), "queued send"));
+        rows.push(must(getPublic(row.id), "queued send"));
       });
       return {
         replayed: false,
@@ -1002,7 +996,7 @@ export function createSends(options: {
         templateNameOf(names, row.templateId),
         sequenceNameOf(names, row.stepId),
       );
-    return expectRow(inserted, "sequence send").id;
+    return must(inserted, "sequence send").id;
   }
   return {
     enqueue,
@@ -1101,7 +1095,7 @@ export function createSends(options: {
           if (!changed.changes) {
             continue;
           }
-          const row = expectRow(get(id), "claimed send");
+          const row = must(get(id), "claimed send");
           claimed.push({ row, message: admit(row) });
         }
         return claimed;
@@ -1186,7 +1180,7 @@ export function createSends(options: {
         values.push(...scoped.args);
       }
       const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
-      const total = expectRow(
+      const total = must(
         db
           .query<{ total: bigint }, Array<SQLQueryBindings>>(
             `SELECT count(*) AS total FROM sends${where}`,
