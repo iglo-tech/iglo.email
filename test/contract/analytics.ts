@@ -11,6 +11,7 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const summed = (response: { status: number; body: any }, key: "campaign_id" | "list_id") => {
   check(response.status === 200, `summed-status-${response.status}`);
@@ -99,28 +100,30 @@ export async function runAnalyticsContract(target: {
     if (!reference) {
       return;
     }
+    // Kept: the reference's old process still answers /health for a moment after the write.
     await Bun.sleep(1500);
-    const deadline = Date.now() + 20_000;
-    for (;;) {
-      const up = await fetch(`${target.baseUrl}/health`, {
-        signal: AbortSignal.timeout(2000),
-      }).catch(() => null);
-      if (up?.ok) {
-        return;
-      }
-      check(Date.now() < deadline, "restart-wait");
-      await Bun.sleep(100);
-    }
+    // /health has no progress to watch, so the stall window is the wait's limit (20 s).
+    await untilState(
+      async () =>
+        (
+          await fetch(`${target.baseUrl}/health`, { signal: AbortSignal.timeout(2000) }).catch(
+            () => null,
+          )
+        )?.ok === true,
+      { label: "restart-wait", progress: () => "down", stallMs: 20_000 },
+    );
   };
   const received = async (subject: string) => {
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (found.length || Date.now() > deadline) {
-        return found;
-      }
-      await Bun.sleep(25);
-    }
+    let found: Awaited<ReturnType<typeof mailpit.list>> = [];
+    // A subject that never arrives returns what is there; the caller's check names the miss.
+    await untilState(
+      async () => {
+        found = (await mailpit.list()).filter((m) => m.Subject === subject);
+        return found.length > 0;
+      },
+      { label: `mail ${subject}`, progress: () => String(found.length), stallMs: 10_000 },
+    ).catch(() => undefined);
+    return found;
   };
   const counts = async () =>
     asBody<Record<string, any>>((await call("/api/dashboard/counts")).body.data);
@@ -295,29 +298,32 @@ export async function runAnalyticsContract(target: {
           status: "running",
         });
         check(started.status === 200, "links-run");
-        for (
-          const deadline = Date.now() + 20_000;
-          (await call(`/api/campaigns/${camp.id}`)).body.data.status !== "finished";
-          await Bun.sleep(25)
-        ) {
-          check(Date.now() < deadline, "links-finished");
-        }
+        let campaignStatus = "";
+        await untilState(
+          async () =>
+            (campaignStatus = (await call(`/api/campaigns/${camp.id}`)).body.data.status) ===
+            "finished",
+          { label: "links-finished", progress: () => campaignStatus, stallMs: 10_000 },
+        );
         // The send's mail names the campaign in every link, so it is found by that campaign's UUID.
-        const deadline = Date.now() + 10_000;
-        while (html === undefined) {
-          for (const mail of await received(subject)) {
-            const text = (await mailpit.message(mail.ID)).HTML;
-            if (text.includes(`/${camp.uuid}/`)) {
-              html = text;
+        let seen = 0;
+        await untilState(
+          async () => {
+            const mails = (await mailpit.list()).filter((m) => m.Subject === subject);
+            seen = mails.length;
+            for (const mail of mails) {
+              const text = (await mailpit.message(mail.ID)).HTML;
+              if (text.includes(`/${camp.uuid}/`)) {
+                html = text;
+              }
             }
-          }
-          check(html !== undefined || Date.now() < deadline, "links-received");
-          if (html === undefined) {
-            await Bun.sleep(25);
-          }
-        }
+            return html !== undefined;
+          },
+          { label: "links-received", progress: () => String(seen), stallMs: 10_000 },
+        );
       }
-      const found = [...html.matchAll(/\/link\/([0-9a-f-]{36})\//g)].map((m) => m[1]!);
+      // untilState has returned: the wait above ends only once html is set.
+      const found = [...html!.matchAll(/\/link\/([0-9a-f-]{36})\//g)].map((m) => m[1]!);
       check(found.length === 2, "test-links");
       return { a: found[0]!, b: found[1]! };
     };
@@ -531,13 +537,15 @@ export async function runAnalyticsContract(target: {
     await bounce(camp1, ada);
     await bounce(camp1, ada);
     await bounce(camp2, orphan);
-    const deadline = Date.now() + 10_000;
-    while (
-      summed(await analytics("campaigns", "bounces", ids), "campaign_id")[camp2.id] !== 1 &&
-      Date.now() < deadline
-    ) {
-      await Bun.sleep(50);
-    }
+    let bounced: number | undefined;
+    // The caller's `same` check names a count that never arrives.
+    await untilState(
+      async () =>
+        (bounced = summed(await analytics("campaigns", "bounces", ids), "campaign_id")[
+          camp2.id
+        ]) === 1,
+      { label: "bounces", progress: () => String(bounced), stallMs: 10_000 },
+    ).catch(() => undefined);
     same(
       summed(await analytics("campaigns", "bounces", ids), "campaign_id"),
       { [camp1.id]: 2, [camp2.id]: 1 },
@@ -659,6 +667,7 @@ export async function runAnalyticsContract(target: {
     // Dashboard campaigns: scheduled first, then the newest of the others, six at most.
     for (let i = 0; i < 6; i++) {
       await campaign(`filler ${i}`, [hidden]);
+      // Kept: the dashboard orders by created_at, so each campaign needs a later timestamp.
       await Bun.sleep(5);
     }
     const planned = await campaign("planned", [news]);

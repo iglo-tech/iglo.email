@@ -10,6 +10,7 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 type SendRow = { id: number; uuid: string; status: string };
 
@@ -46,14 +47,16 @@ export async function runUnsubscribeContract(target: {
   };
   // Public pages are fetched like a browser or mail provider: no credentials.
   const received = async (subject: string) => {
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (found.length || Date.now() > deadline) {
-        return found;
-      }
-      await Bun.sleep(25);
-    }
+    let found: Awaited<ReturnType<typeof mailpit.list>> = [];
+    // A subject that never arrives returns what is there; the caller's check names the miss.
+    await untilState(
+      async () => {
+        found = (await mailpit.list()).filter((m) => m.Subject === subject);
+        return found.length > 0;
+      },
+      { label: `mail ${subject}`, progress: () => String(found.length), stallMs: 10_000 },
+    ).catch(() => undefined);
+    return found;
   };
   const membership = async (subscriber: number, list: number) =>
     asBody<Array<{ id: number; subscription_status?: string }>>(

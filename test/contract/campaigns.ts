@@ -12,6 +12,7 @@ import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials, Mode } from "@/test/contract/types";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 type Campaign = Record<string, any> & { id: number; uuid: string };
 const fields = [
@@ -105,14 +106,16 @@ export async function runCampaignsContract(target: {
       "application/x-www-form-urlencoded",
     );
   const received = async (subject: string, count = 1) => {
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (found.length >= count || Date.now() > deadline) {
-        return found;
-      }
-      await Bun.sleep(25);
-    }
+    let found: Awaited<ReturnType<typeof mailpit.list>> = [];
+    // A subject that does not get count mails returns what is there; the caller's check names it.
+    await untilState(
+      async () => {
+        found = (await mailpit.list()).filter((m) => m.Subject === subject);
+        return found.length >= count;
+      },
+      { label: `mail ${subject}`, progress: () => String(found.length), stallMs: 10_000 },
+    ).catch(() => undefined);
+    return found;
   };
   // Go templates upstream, Liquid natively (06-templates.md).
   const tpl = {
@@ -972,16 +975,16 @@ export async function runCampaignsContract(target: {
         txSender,
       );
       check(txSent.status === 200, "tx-link-send");
-      const deadline = Date.now() + 10_000;
       let txSubject: string | undefined;
-      while (!txSubject && Date.now() < deadline) {
-        txSubject = (await mailpit.list()).find((m) =>
-          m.Subject.startsWith(`${marker} tx `),
-        )?.Subject;
-        if (!txSubject) {
-          await Bun.sleep(25);
-        }
-      }
+      await untilState(
+        async () => {
+          txSubject = (await mailpit.list()).find((m) =>
+            m.Subject.startsWith(`${marker} tx `),
+          )?.Subject;
+          return txSubject !== undefined;
+        },
+        { label: "tx-link-mail", progress: () => txSubject ?? "", stallMs: 10_000 },
+      ).catch(() => undefined);
       const txLink = /\/link\/([0-9a-f-]{36})/.exec(txSubject ?? "")?.[1];
       check(txLink, "tx-link-registered");
       const replay = await fetch(

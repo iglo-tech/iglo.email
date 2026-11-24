@@ -9,6 +9,7 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const failed = async (response: Response, label: string, status = 400) => {
   check(response.status === status, `${label}-status`);
@@ -70,14 +71,16 @@ export async function runTxContract(target: {
   };
   // Upstream queues asynchronously; bounded polling observes intake only.
   const received = async (subject: string, count = 1) => {
-    const deadline = Date.now() + 10_000;
-    for (;;) {
-      const found = (await mailpit.list()).filter((m) => m.Subject === subject);
-      if (found.length >= count || Date.now() > deadline) {
-        return found;
-      }
-      await Bun.sleep(25);
-    }
+    let found: Awaited<ReturnType<typeof mailpit.list>> = [];
+    // A subject that does not arrive in count returns what is there; the caller's check names it.
+    await untilState(
+      async () => {
+        found = (await mailpit.list()).filter((m) => m.Subject === subject);
+        return found.length >= count;
+      },
+      { label: `mail ${subject}`, progress: () => String(found.length), stallMs: 10_000 },
+    ).catch(() => undefined);
+    return found;
   };
   const absent = async (subject: string) => {
     // Upstream queues before SMTP; give an erroneous send time to arrive.
@@ -368,9 +371,11 @@ export async function runTxContract(target: {
       });
       const queued = await sends(response, "async", "queued");
       check((await received(subjectOf("J11"))).length === 1, "async-mail");
-      for (let i = 0; i < 200 && (await journal(queued[0]!.id)).status !== "sent"; i++) {
-        await Bun.sleep(25);
-      }
+      let journalStatus: unknown = "";
+      await untilState(
+        async () => (journalStatus = (await journal(queued[0]!.id)).status) === "sent",
+        { label: "async-journal", progress: () => String(journalStatus), stallMs: 10_000 },
+      ).catch(() => undefined);
       check((await journal(queued[0]!.id)).status === "sent", "async-journal");
 
       // New field: idempotency, sequential and concurrent.
