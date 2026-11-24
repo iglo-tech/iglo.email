@@ -1715,12 +1715,19 @@ export async function runOpenApiContract(target: {
       "DELETE /api/templates/{id}",
       "PUT /api/templates/{id}/default",
     ]);
-    // B117c r1: these answer 200 for a missing ID, as listmonk does (checked against upstream). The
-    // answer is pinned per endpoint, so a 2xx from any other endpoint fails rather than passing as "any 2xx".
+    // B117c r1: these answer 200 for a missing ID, as upstream does (checked against upstream at
+    // 6fcd95f): the three listed reads and writes, and the deletes that answer 200 for a delete of
+    // nothing. Each is pinned to its status, so a 2xx from any other endpoint fails instead of passing
+    // as "any 2xx".
     const absentAnswers = new Map<string, number>([
       ["PUT /api/subscribers/{id}/blocklist", 200],
       ["GET /api/subscribers/{id}/bounces", 200],
       ["GET /api/subscribers/{id}/activity", 200],
+      ["DELETE /api/roles/{id}", 200],
+      ["DELETE /api/lists/{id}", 200],
+      ["DELETE /api/subscribers/{id}", 200],
+      ["DELETE /api/subscribers/{id}/bounces", 200],
+      ["DELETE /api/bounces/{id}", 200],
     ]);
     const absentFailures: Array<string> = [];
     for (const { key, operation } of operations) {
