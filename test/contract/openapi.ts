@@ -1123,7 +1123,7 @@ export async function runOpenApiContract(target: {
       { label: "campaign-finish-wait", progress: () => campaignStatus, stallMs: 10_000 },
     );
     // A view and a click, through the real pixel and redirect.
-    const db = new Database(join(target.dataDir, "iglo-email.db"), {
+    const db = new Database(join(target.dataDir, "projects", "main", "iglo-email.db"), {
       readonly: true,
     });
     const link = asBody<{ uuid: string }>(

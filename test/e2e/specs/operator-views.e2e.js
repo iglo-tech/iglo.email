@@ -368,7 +368,9 @@ test("a sent send past the thirty-day retention says its subject is no longer ke
       return sendID;
     })
     .not.toBeNull();
-  const db = new DatabaseSync(join(process.env.E2E_DATA_DIR, "iglo-email.db"), { timeout: 5000 });
+  const db = new DatabaseSync(join(process.env.E2E_DATA_DIR, "projects", "main", "iglo-email.db"), {
+    timeout: 5000,
+  });
   try {
     db.prepare("UPDATE sends SET payload = NULL WHERE id = ?").run(sendID);
   } finally {

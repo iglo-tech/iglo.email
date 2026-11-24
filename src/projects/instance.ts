@@ -1,0 +1,344 @@
+// The instance (14-projects sections 1–3 and 9, D142, D151): instance.db with its registry, one
+// wired project per registered project, and the routing table that picks a project by `Host`.
+// Native: listmonk serves one database per process. main() owns the lock, the bind and the signals.
+import type { Database } from "bun:sqlite";
+import { existsSync, readdirSync, rmSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Clock } from "@/clock";
+import { must } from "@/invariant";
+import { openDatabase } from "@/db/connection";
+import { instanceMigrations, runMigrations } from "@/db/migrations";
+import { createInstanceBudgets } from "@/projects/budgets";
+import type { InstanceBudgets } from "@/projects/budgets";
+import { createProject } from "@/projects/compose";
+import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
+import {
+  INSTANCE_DATABASE,
+  PROJECTS,
+  oldLayoutMessage,
+  preMigrationDirectory,
+  projectDirectory,
+  usesOldLayout,
+} from "@/projects/layout";
+import { instanceAttention } from "@/projects/logger";
+import {
+  SLUG_PATTERN,
+  createRegistry,
+  normalizeHostname,
+  requestHostname,
+} from "@/projects/registry";
+import type { NewProject, ProjectRecord, Registry } from "@/projects/registry";
+import type { Router } from "@/server/router";
+import { ok } from "@/server/response";
+import { defaults } from "@/settings/defaults";
+
+/** The fresh install's one project (D151). Its name is the site name's default. */
+export const PRIMARY_SLUG = "main";
+
+export interface InstanceConfig {
+  readonly dataDir: string;
+  /** `--root-url`: its host is the instance host, and the primary project's root URL is it. */
+  readonly rootUrl: string;
+  readonly listen: { readonly host: string; readonly port: number };
+  /** The environment's first users, seeded as before into a project that has none (D151). */
+  readonly seed: ProjectOptions["seed"];
+}
+
+interface Entry {
+  readonly record: ProjectRecord;
+  readonly project: Project;
+}
+
+/**
+ * `--root-url` with its host replaced by `hostname`: scheme, port and path are kept
+ * (14-projects section 2).
+ */
+export function projectRootUrl(rootUrl: string, hostname: string): string {
+  const url = new URL(rootUrl);
+  const rest = url.href.slice(url.origin.length);
+  const origin = `${url.protocol}//${hostname}${url.port ? `:${url.port}` : ""}`;
+  // A root URL without a trailing slash keeps none, as the bootstrap gave it.
+  return origin + (rest === "/" && !rootUrl.endsWith("/") ? "" : rest);
+}
+
+const notFound = () =>
+  new Response("404 page not found\n", {
+    status: 404,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+
+export type Instance = Awaited<ReturnType<typeof openInstance>>;
+
+/**
+ * Opens and migrates `instance.db` in a data directory of today's layout; the caller closes it.
+ * A test fixture registers projects through it (with createRegistry) before a start.
+ */
+export function openInstanceDatabase(dataDir: string, clock: Clock): Database {
+  const root = resolve(dataDir);
+  if (usesOldLayout(root)) {
+    throw new Error(oldLayoutMessage(root));
+  }
+  const db = openDatabase(root, INSTANCE_DATABASE);
+  try {
+    runMigrations(db, root, clock, instanceMigrations, {
+      directory: preMigrationDirectory(root),
+      name: "instance",
+    });
+    return db;
+  } catch (error) {
+    db.close(true);
+    throw error;
+  }
+}
+
+/**
+ * Opens and migrates instance.db, registers the primary project on a fresh install, and wires every
+ * registered project (none of their loops start yet: B52). The caller already holds the lock.
+ */
+export async function openInstance(config: InstanceConfig, clock: Clock) {
+  const root = resolve(config.dataDir);
+  const instanceHost = normalizeHostname(new URL(config.rootUrl).hostname);
+  const db = openInstanceDatabase(root, clock);
+  let registry: Registry | undefined;
+  let budgets: InstanceBudgets | undefined;
+  /** Wired projects in registration order (slug order at start). */
+  const entries: Array<Entry> = [];
+  /** The routing table: hostname to project, and the primary for every other host. */
+  let hosts = new Map<string, Entry>();
+  let primary: Entry | undefined;
+  let server: ProjectServer | undefined;
+  let fail: ((failure?: unknown) => void) | undefined;
+  /** Projects whose loops failed: the instance health route turns unhealthy. */
+  const down = new Set<string>();
+
+  const rebuild = () => {
+    const next = new Map<string, Entry>();
+    for (const entry of entries) {
+      for (const hostname of [entry.record.hostname, ...entry.record.extra]) {
+        next.set(hostname, entry);
+      }
+    }
+    hosts = next;
+    primary = entries.find((entry) => entry.record.primary);
+  };
+
+  const options = (record: ProjectRecord): ProjectOptions => ({
+    slug: record.slug,
+    directory: projectDirectory(root, record.slug),
+    // The primary project's root URL is `--root-url` itself, so one install's links are unchanged.
+    rootUrl: record.primary ? config.rootUrl : projectRootUrl(config.rootUrl, record.hostname),
+    snapshots: { directory: preMigrationDirectory(root), name: record.slug },
+    // The environment's API user is the primary project's only: an API credential is one project's.
+    seed: record.primary ? config.seed : { admin: config.seed.admin },
+  });
+
+  const wire = (record: ProjectRecord) =>
+    createProject(
+      { clock, budgets: must(budgets, "budgets"), listen: config.listen },
+      options(record),
+    );
+
+  /** Only the primary project may hold the instance host (14-projects section 2). */
+  const checkInstanceHost = (record: Pick<ProjectRecord, "primary" | "hostname" | "extra">) => {
+    if (!record.primary && [record.hostname, ...record.extra].includes(instanceHost)) {
+      throw new Error(`The instance host ${instanceHost} can only be the primary project's`);
+    }
+  };
+
+  const closeAll = async () => {
+    for (const entry of entries.toReversed()) {
+      await entry.project.close();
+    }
+    entries.length = 0;
+    registry?.close();
+    db.close(true);
+  };
+
+  try {
+    registry = createRegistry(db, clock);
+    const directories = existsSync(resolve(root, PROJECTS))
+      ? readdirSync(resolve(root, PROJECTS), { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name)
+      : [];
+    // A fresh install, or one whose first start stopped before its registry row: register the
+    // primary project. Its directory is created by its wiring, or used as it is (D151).
+    if (registry.list().length === 0 && directories.every((name) => name === PRIMARY_SLUG)) {
+      registry.add({
+        slug: PRIMARY_SLUG,
+        name: defaults["app.site_name"],
+        hostname: instanceHost,
+        primary: true,
+      });
+    }
+    registry.followInstanceHost(instanceHost);
+    const records = registry.list();
+    for (const name of directories) {
+      if (!records.some((record) => record.slug === name)) {
+        instanceAttention(`${PROJECTS}/${name} has no registry row: it is not served`);
+      }
+    }
+    budgets = await createInstanceBudgets(clock);
+    for (const record of records) {
+      checkInstanceHost(record);
+      entries.push({ record, project: await wire(record) });
+    }
+    rebuild();
+  } catch (error) {
+    await closeAll();
+    throw error;
+  }
+  const registered = must(registry, "registry");
+
+  return {
+    /** The instance host: `--root-url`'s host. */
+    host: instanceHost,
+    /** The projects being served, in registration order. */
+    projects: (): ReadonlyArray<ProjectRecord> => entries.map((entry) => entry.record),
+    /** The primary project's router, for main()'s `inspect` (the OpenAPI coverage test). */
+    primaryRouter: (): Router | undefined => primary?.project.router,
+    /** False once any project's loops have failed (14-projects section 9). */
+    healthy: (): boolean => down.size === 0,
+    /**
+     * Picks the project by `Host` (lowercase, no port; `X-Forwarded-Host` is ignored). A host no
+     * project claims, the instance host included, goes to the primary project if there is one.
+     */
+    dispatch(request: Request, peerAddress: string): Promise<Response> {
+      const entry = hosts.get(requestHostname(request.headers.get("host"))) ?? primary;
+      if (entry) {
+        return entry.project.router.handle(entry.project.app, request, peerAddress);
+      }
+      return Promise.resolve(answerWithoutPrimary(request));
+    },
+    attach(bound: ProjectServer): void {
+      server = bound;
+      for (const entry of entries) {
+        entry.project.attach(bound);
+      }
+    },
+    /** Starts every project's loops, in registration order. A loop's failure calls `onFail`. */
+    start(onFail: (failure?: unknown) => void): void {
+      fail = onFail;
+      for (const entry of entries) {
+        startProject(entry);
+      }
+    },
+    /** Every project's orderly stops, the last registered first. main() appends the HTTP stop. */
+    stop(): Array<unknown> {
+      return entries.toReversed().flatMap((entry) => entry.project.stop());
+    },
+    close: closeAll,
+    /**
+     * Wires a project, registers it and serves it, without a restart (14-projects section 10).
+     * The registry row is written last: a failure before it removes the new directory, and a crash
+     * before it leaves a directory with no row, which a start reports and never serves.
+     */
+    async add(input: NewProject): Promise<ProjectRecord> {
+      if (!SLUG_PATTERN.test(input.slug)) {
+        throw new Error(`Invalid project slug: ${input.slug}`);
+      }
+      const hostname = normalizeHostname(input.hostname);
+      const extra = (input.extra ?? []).map(normalizeHostname);
+      if (input.primary && primary) {
+        throw new Error("There is a primary project already");
+      }
+      if (input.primary && hostname !== instanceHost) {
+        throw new Error("The primary project's hostname is the instance host");
+      }
+      checkInstanceHost({ primary: input.primary ?? false, hostname, extra });
+      const directory = projectDirectory(root, input.slug);
+      if (existsSync(directory)) {
+        throw new Error(`${PROJECTS}/${input.slug} exists already`);
+      }
+      const pending: ProjectRecord = {
+        slug: input.slug,
+        name: input.name,
+        createdAt: clock.now().toISOString(),
+        primary: input.primary ?? false,
+        hostname,
+        extra,
+      };
+      // Checked again, with the registry's own rules, when the row is written below.
+      const taken = new Set(entries.flatMap((e) => [e.record.hostname, ...e.record.extra]));
+      if ([hostname, ...extra].some((h) => taken.has(h))) {
+        throw new Error("A hostname belongs to another project");
+      }
+      let project: Project;
+      try {
+        project = await wire(pending);
+      } catch (error) {
+        rmSync(directory, { recursive: true, force: true });
+        throw error;
+      }
+      let record: ProjectRecord;
+      try {
+        record = registered.add({ ...input, hostname, extra });
+      } catch (error) {
+        await project.close();
+        rmSync(directory, { recursive: true, force: true });
+        throw error;
+      }
+      const entry = { record, project };
+      if (server) {
+        project.attach(server);
+      }
+      entries.push(entry);
+      rebuild();
+      if (fail) {
+        startProject(entry);
+      }
+      return record;
+    },
+    /**
+     * Takes a project off the routing table, stops and closes it, then removes its registry rows.
+     * A crash before the rows go serves it again at the next start, with nothing lost. Its directory
+     * stays: the final snapshot and the removal are the lifecycle's (B143).
+     */
+    async remove(slug: string): Promise<boolean> {
+      const index = entries.findIndex((entry) => entry.record.slug === slug);
+      if (index === -1) {
+        return false;
+      }
+      const entry = must(entries.splice(index, 1)[0], "project entry");
+      rebuild();
+      await Promise.allSettled(entry.project.stop());
+      await entry.project.close();
+      down.delete(slug);
+      registered.remove(slug);
+      return true;
+    },
+  };
+
+  function startProject(entry: Entry): void {
+    entry.project.start((failure) => {
+      down.add(entry.record.slug);
+      must(fail, "instance failure handler")(failure);
+    });
+  }
+
+  /** Without a primary project: health, a way to the instance pages, and a 404 that names nothing. */
+  function answerWithoutPrimary(request: Request): Response {
+    const { pathname } = new URL(request.url);
+    if (pathname === "/health" && (request.method === "GET" || request.method === "HEAD")) {
+      return down.size === 0
+        ? ok(true)
+        : Response.json({ message: "Background work has stopped" }, { status: 503 });
+    }
+    if (
+      (pathname === "/admin" || pathname.startsWith("/admin/")) &&
+      !pathname.startsWith("/admin/instance/")
+    ) {
+      // The page itself is later work (B143); the target may 404 until then.
+      const target = new URL(config.rootUrl);
+      target.pathname = `${target.pathname.replace(/\/$/, "")}/admin/instance/projects`;
+      return new Response(null, {
+        status: 302,
+        headers: { Location: target.href },
+      });
+    }
+    return notFound();
+  }
+}

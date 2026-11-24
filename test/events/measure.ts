@@ -246,7 +246,9 @@ async function run(name: string, events: boolean, sends: boolean) {
             name: "warmup",
           });
         }
-        const reader = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
+        const reader = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+          readonly: true,
+        });
         const sample = () => {
           const statuses = Object.fromEntries(
             asBody<Array<{ status: string; n: number }>>(

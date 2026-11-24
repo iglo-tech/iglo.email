@@ -276,8 +276,10 @@ async function launchProduction(dir: string) {
   const dir = await mkdtemp(join(tmpdir(), "iglo-scheduler-production-"));
   const sink = await startSink(true);
   const launched: Array<Launched> = [];
+  // B138b layout: the seed writes the primary project's database, which production adopts.
+  const project = join(dir, "projects", "main");
   try {
-    const seeded = launch(dir, sink.port, {
+    const seeded = launch(project, sink.port, {
       SCHEDULER_CRASH_SEED: "1",
       SCHEDULER_CRASH_AT: "seed",
     });
@@ -286,12 +288,12 @@ async function launchProduction(dir: string) {
     await within(sink.held, 20_000, "production held SMTP data");
     first.child.kill("SIGKILL");
     assert.equal((await within(first.exited, 20_000, "production kill")).signal, "SIGKILL");
-    const before = state(dir);
+    const before = state(project);
     const second = await production(dir, launched);
-    let after = state(dir);
+    let after = state(project);
     await untilState(
       () => {
-        after = state(dir);
+        after = state(project);
         return (
           after.enrollments[0] === "completed" &&
           !after.sends.some((s) => s.status === "queued" || s.status === "sending")

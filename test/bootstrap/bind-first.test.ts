@@ -60,7 +60,10 @@ async function seeded(receiverUrl: string): Promise<string> {
     },
     null,
   );
-  const db = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });
+  const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+    readwrite: true,
+    strict: true,
+  });
   try {
     db.run(
       `INSERT INTO sends (uuid, source, kind, to_email, status, payload, created_at)
@@ -145,7 +148,10 @@ async function serveOn(dataDir: string, port: number) {
 
 /** The rows the loops would claim, as the database holds them now. */
 function state(dataDir: string) {
-  const db = new Database(join(dataDir, "iglo-email.db"), { readonly: true, strict: true });
+  const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+    readonly: true,
+    strict: true,
+  });
   try {
     const send = db
       .query<{ status: string; attempts: number; claimed_until: string | null }, [string]>(

@@ -61,10 +61,11 @@ test("a root that leaves the data directory refuses media and stops nothing else
   const base = temporary();
   const data = join(base, "data");
   const elsewhere = join(base, "elsewhere");
-  mkdirSync(data);
+  // B138b layout: uploads are the primary project's, under projects/main/.
+  mkdirSync(join(data, "projects", "main"), { recursive: true });
   const stale = join(elsewhere, ".iglo-email-uploading", crypto.randomUUID());
   await Bun.write(stale, "x");
-  symlinkSync(elsewhere, join(data, "uploads"));
+  symlinkSync(elsewhere, join(data, "projects", "main", "uploads"));
   const reason = await bootOnce(data);
   expect(reason).toContain("data directory");
   expect(existsSync(stale)).toBe(true);
@@ -72,7 +73,8 @@ test("a root that leaves the data directory refuses media and stops nothing else
 
 test("the startup sweep removes its own temporary files and leaves the rest alone", async () => {
   const data = temporary();
-  const uploads = join(data, "uploads");
+  // B138b layout: uploads are the primary project's, under projects/main/.
+  const uploads = join(data, "projects", "main", "uploads");
   const own = join(uploads, ".iglo-email-uploading");
   const stale = join(own, crypto.randomUUID());
   const operator = [

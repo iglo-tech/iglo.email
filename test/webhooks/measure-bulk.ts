@@ -84,7 +84,7 @@ try {
         );
       const half = await list("half"),
         whole = await list("whole");
-      const path = join(dataDir, "iglo-email.db");
+      const path = join(dataDir, "projects", "main", "iglo-email.db");
       const writer = new Database(path);
       writer.run("BEGIN IMMEDIATE");
       writer.run(

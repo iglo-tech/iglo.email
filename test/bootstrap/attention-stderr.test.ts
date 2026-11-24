@@ -156,7 +156,7 @@ test("an invalid admin notification address is one plain stderr line and a fixed
     // B117a (D136): the API refuses an invalid administrator address on save, so one an older build
     // stored is written to the database while the server runs. The settings store reads its rows on
     // each call, so the send sees it at once.
-    const db = new Database(join(dataDir, "iglo-email.db"));
+    const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"));
     try {
       db.run("PRAGMA busy_timeout = 5000");
       db.run("UPDATE settings SET value = ? WHERE key = ?", [
@@ -181,7 +181,8 @@ test("an invalid admin notification address is one plain stderr line and a fixed
   // Stderr holds the address, once, on a single plain line: no stack and no source excerpt.
   const stderr = await new Response(child.stderr).text();
   expect(stderr.split("\n").filter((line) => line.includes("not-an-address"))).toEqual([
-    "Skipping invalid admin notification email address: not-an-address",
+    // B138b: every stderr line names its project (14-projects section 9).
+    "[main] Skipping invalid admin notification email address: not-an-address",
   ]);
   expect(stderr).not.toMatch(/^\s+at /m);
   expect(stderr).not.toContain("Unexpected request error");
@@ -290,7 +291,7 @@ test("a test-send bounce through the SES fixture is one plain stderr line, with 
     const stderr = await new Response(child.stderr).text();
     expect(stderr.split("\n").filter((line) => line.includes("Test send bounced"))).toEqual([
       expect.stringMatching(
-        /^Test send bounced: kind campaign, campaign \d+, recipient test@example\.com, bounce Permanent General$/,
+        /^\[main\] Test send bounced: kind campaign, campaign \d+, recipient test@example\.com, bounce Permanent General$/,
       ),
     ]);
     expect(stderr).not.toMatch(/^\s+at /m);

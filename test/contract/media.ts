@@ -291,7 +291,8 @@ export async function runMediaContract(target: {
     if (reference) {
       return;
     }
-    const dataDir = target.dataDir!;
+    // B138b layout: media lives in the primary project's directory, which is its data directory.
+    const dataDir = join(target.dataDir!, "projects", "main");
     const uploads = join(dataDir, "uploads");
     const raw = (path: string, init?: RequestInit) =>
       fetch(new URL(path, target.baseUrl), { redirect: "manual", ...init });

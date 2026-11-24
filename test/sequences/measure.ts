@@ -126,7 +126,9 @@ async function run(name: string, sequences: boolean) {
           name: "warmup",
         });
       }
-      const reader = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
+      const reader = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+        readonly: true,
+      });
       const sample = () => ({
         events: asBody<{ n: number }>(reader.query("SELECT count(*) AS n FROM events").get()).n,
         enrollments: Object.fromEntries(

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, createPublicKey, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { faultRelay } from "@/test/messaging/fault-relay";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
@@ -69,7 +69,12 @@ export async function runDKIMSettings(target: {
           mode === "bun" ? process.execPath : resolve("dist/messaging-stored-caller"),
           mode === "bun" ? [resolve("test/messaging/stored-caller.ts")] : [],
           {
-            env: { PATH: "", M21_DATA_DIR: target.dataDir, M21_SUBJECT: subject },
+            // B138b layout: the stored settings are the primary project's, under projects/main/.
+            env: {
+              PATH: "",
+              M21_DATA_DIR: join(target.dataDir, "projects", "main"),
+              M21_SUBJECT: subject,
+            },
             stdio: "ignore",
           },
         );

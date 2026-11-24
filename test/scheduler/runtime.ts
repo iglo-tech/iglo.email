@@ -1,4 +1,4 @@
-// Production scheduler, outbox and their owners wired as src/main.ts does, without HTTP, for the
+// Production scheduler, outbox and their owners wired as createProject (src/projects/compose.ts) does, without HTTP, for the
 // compiled crash fixture and the throughput measurement. Fixture data is generated and seeded
 // through SQL arrangement plus the enrollments owner; mail goes to a loopback sink only.
 import type { Database } from "bun:sqlite";

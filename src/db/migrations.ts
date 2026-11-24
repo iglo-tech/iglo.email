@@ -37,6 +37,7 @@ import sendStatusOrder from "@/migrations/0028_send_status_order.sql" with { typ
 import exitCondition from "@/migrations/0029_exit_condition.sql" with { type: "text" };
 import sampleTemplateBrand from "@/migrations/0030_sample_template_brand.sql" with { type: "text" };
 import sendNames from "@/migrations/0031_send_names.sql" with { type: "text" };
+import instanceRegistry from "@/migrations/instance/0001_registry.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -77,6 +78,17 @@ export const productionMigrations: ReadonlyArray<Migration> = [
   { version: 30, sql: sampleTemplateBrand },
   { version: 31, sql: sendNames },
 ];
+
+/** The instance database's own manifest (D142, 14-projects section 1), applied by the same runner. */
+export const instanceMigrations: ReadonlyArray<Migration> = [{ version: 1, sql: instanceRegistry }];
+
+/** Where a pre-migration snapshot goes and what its file is called. */
+export interface SnapshotPlace {
+  /** The folder the snapshot is published in. */
+  readonly directory: string;
+  /** The file name's prefix, before the time and a random suffix. */
+  readonly name: string;
+}
 
 function validateCatalog(catalog: ReadonlyArray<Migration>): void {
   for (const [index, migration] of catalog.entries()) {
@@ -172,13 +184,13 @@ function holdSnapshot(path: string, clock: Clock, version: number): void {
   }
 }
 
-function createSnapshot(db: Database, dataDir: string, clock: Clock, version: number): string {
-  const backups = join(dataDir, "backups");
+function createSnapshot(db: Database, place: SnapshotPlace, clock: Clock, version: number): string {
+  const backups = place.directory;
   mkdirSync(backups, { recursive: true });
   const timestamp = clock.now().toISOString().replaceAll(":", "-");
   const attempt = mkdtempSync(join(backups, ".partial-"));
   const temporary = join(attempt, "snapshot.db");
-  const destination = join(backups, `iglo-email-${timestamp}-${crypto.randomUUID()}.db`);
+  const destination = join(backups, `${place.name}-${timestamp}-${crypto.randomUUID()}.db`);
   try {
     db.run("VACUUM INTO ?", [temporary]);
     holdSnapshot(temporary, clock, version);
@@ -204,11 +216,17 @@ function createSnapshot(db: Database, dataDir: string, clock: Clock, version: nu
   }
 }
 
+/**
+ * Applies the catalog's pending migrations. Before a batch on a nonempty database it publishes one
+ * verified snapshot: by default in `<dataDir>/backups/` as `iglo-email-…`, or where `snapshot` says
+ * (the instance puts its own and each project's in `backups/pre-migration/`).
+ */
 export function runMigrations(
   db: Database,
   dataDir: string,
   clock: Clock,
   catalog: ReadonlyArray<Migration>,
+  snapshot: SnapshotPlace = { directory: join(dataDir, "backups"), name: "iglo-email" },
 ): void {
   validateCatalog(catalog);
   const version = userVersion(db);
@@ -224,7 +242,7 @@ export function runMigrations(
     )
     .get()?.count;
   if (version > 0 || (objects ?? 0n) > 0n) {
-    createSnapshot(db, dataDir, clock, version);
+    createSnapshot(db, snapshot, clock, version);
   }
   for (const migration of catalog.slice(version)) {
     writeTransaction(db, () => {

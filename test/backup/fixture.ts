@@ -142,13 +142,15 @@ export function uploadFile(client: Client, name: string, content: string) {
 
 /** The operations guide's restore: a stopped server's directory set aside, the backup in place. */
 export function restoreInto(backup: string, dataDir: string): void {
-  renameSync(dataDir, `${dataDir}.before-restore`);
-  cpSync(backup, dataDir, { recursive: true, preserveTimestamps: true });
+  // B138b layout: a backup is the primary project's, and is restored as its directory.
+  const project = join(dataDir, "projects", "main");
+  renameSync(project, `${dataDir}.before-restore`);
+  cpSync(backup, project, { recursive: true, preserveTimestamps: true });
 }
 
 /** Generated subscribers, written while no server runs. */
 export function seedSubscribers(dataDir: string, count: number): void {
-  const db = new Database(join(dataDir, "iglo-email.db"));
+  const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"));
   db.run("PRAGMA synchronous = OFF");
   const insert = db.prepare(
     "INSERT INTO subscribers (uuid, email, name, status, attribs, created_at, updated_at) VALUES (?, ?, ?, 'enabled', '{}', ?, ?)",

@@ -37,7 +37,7 @@ mkdirSync(measurements, { recursive: true });
 const base = temporaryDirectory(measurements);
 const dataDir = join(base, "data");
 const destination = join(base, "destination");
-const wal = join(dataDir, "iglo-email.db-wal");
+const wal = join(dataDir, "projects", "main", "iglo-email.db-wal");
 const mb = (bytes: number) => +(bytes / 1_048_576).toFixed(1);
 const percentile = (values: Array<number>, p: number) =>
   +(values.toSorted((a, b) => a - b)[Math.floor((values.length - 1) * p)] ?? 0).toFixed(1);
@@ -54,7 +54,7 @@ const available = () => {
 };
 
 function seed() {
-  const db = new Database(join(dataDir, "iglo-email.db"));
+  const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"));
   db.run("PRAGMA synchronous = OFF");
   const now = new Date().toISOString();
   const lists = [1, 2].map(
@@ -92,7 +92,7 @@ function seed() {
 const started = performance.now();
 const executable = await buildExecutable(base);
 try {
-  mkdirSync(join(dataDir, "uploads"), { recursive: true });
+  mkdirSync(join(dataDir, "projects", "main", "uploads"), { recursive: true });
   mkdirSync(destination);
   const first = await startServer(executable, dataDir);
   const authorization = await provisionAuthorization(first.origin);
@@ -100,7 +100,7 @@ try {
   seed();
   const bytes = new Uint8Array(uploadBytes).fill(7);
   for (let i = 0; i < uploadFiles; i++) {
-    writeFileSync(join(dataDir, "uploads", `orphan-${i}.bin`), bytes);
+    writeFileSync(join(dataDir, "projects", "main", "uploads", `orphan-${i}.bin`), bytes);
   }
   console.log(`seeded in ${Math.round((performance.now() - started) / 1000)} s`);
 
@@ -147,7 +147,7 @@ try {
         [
           "bun",
           join(repository, "test/maintenance/measure-probe.ts"),
-          join(dataDir, "iglo-email.db"),
+          join(dataDir, "projects", "main", "iglo-email.db"),
         ],
         { stdin: "pipe", stdout: "pipe" },
       );
@@ -210,7 +210,7 @@ try {
         throw new Error(verify.stderr.toString());
       }
 
-      const databaseBytes = statSync(join(dataDir, "iglo-email.db")).size;
+      const databaseBytes = statSync(join(dataDir, "projects", "main", "iglo-email.db")).size;
       const snapshotBytes = statSync(join(output, "iglo-email.db")).size;
       const record = {
         run,

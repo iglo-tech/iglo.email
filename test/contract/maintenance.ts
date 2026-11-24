@@ -133,7 +133,7 @@ export async function runMaintenanceContract(target: {
 
   /** The native owners a maintenance delete goes through, and what only this store holds. */
   const production = async (list: number) => {
-    const db = new Database(join(target.dataDir!, "iglo-email.db"));
+    const db = new Database(join(target.dataDir!, "projects", "main", "iglo-email.db"));
     const receiver = startReceiver();
     try {
       const count = (sql: string) => asBody<{ n: number }>(db.query(sql).get()).n;

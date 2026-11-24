@@ -48,7 +48,9 @@ async function fixture(dataDir: string, smtpPort: number, clockOffset = 0) {
   const child = spawn(resolve("dist/sends-producer"), [], {
     env: {
       ...process.env,
-      SENDS_FIXTURE_DIR: dataDir,
+      // B138b layout: production serves the seeded database as the primary project's, under
+      // projects/main/ of the data directory it is started on.
+      SENDS_FIXTURE_DIR: join(dataDir, "projects", "main"),
       SENDS_FIXTURE_SMTP_PORT: String(smtpPort),
       SENDS_FIXTURE_CLOCK_OFFSET: String(clockOffset),
     },

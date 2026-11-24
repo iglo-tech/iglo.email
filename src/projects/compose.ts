@@ -1,29 +1,33 @@
 // Project composition: the wiring half of listmonk's cmd/main.go, split out of main() by B138a
 // (docs/design/14-projects.md section 3). One call wires one database's stores, routes and loops.
-// The lock, the CLI, the bind and the signal handling stay in main(). Every loop is created here,
-// before the port binds, and starts only from start(), after main() binds (B52).
-// The settings store is `Record<string, any>` by design (settings/validate.ts; D132). The wiring reads
-// it exactly as main() did, so the unsafe-any rules are off here and nowhere else in this file.
-// oxlint-disable typescript/no-unsafe-assignment, typescript/no-unsafe-member-access, typescript/no-unsafe-argument, typescript/no-unsafe-return, typescript/no-unsafe-type-assertion
+// The lock, the CLI, the bind and the signal handling stay in main(); the instance (instance.ts)
+// calls this once per registered project (B138b). Every loop is created here, before the port
+// binds, and starts only from start(), after main() binds (B52).
+// The settings store is `Record<string, any>` by design (settings/validate.ts; D132); the unsafe-any
+// rules are off for this file in oxlint.config.ts.
 import type { Database } from "bun:sqlite";
-import { createApp, createErrorLogger } from "@/app";
+import { createApp } from "@/app";
 import type { App } from "@/app";
 import type { Clock } from "@/clock";
 import type { BootstrapConfig } from "@/config/bootstrap";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
+import type { SnapshotPlace } from "@/db/migrations";
+import type { InstanceBudgets } from "@/projects/budgets";
+import { createSourceLogger } from "@/projects/logger";
 import { createTranslation } from "@/i18n/i18n";
 import { createClientAddress } from "@/server/client-address";
 import type { Router } from "@/server/router";
 import { createRouter } from "@/server/server";
-import type { startServer } from "@/server/server";
+import type { RoutedServer } from "@/server/server";
 import { createListStore } from "@/lists/store";
 import { registerListRoutes } from "@/lists/routes";
 import { createSubscriberStore } from "@/subscribers/store";
 import { registerSubscriberRoutes } from "@/subscribers/routes";
 import { createSubscriberQuery } from "@/subscribers/query";
 import { registerSubscriberQueryRoutes } from "@/subscribers/query-routes";
-import { createQueryRunner, openReadOnly } from "@/subscribers/query-runner";
+import { openReadOnly } from "@/subscribers/query-runner";
+import type { QueryRunner } from "@/subscribers/query-runner";
 import { createListCounts } from "@/subscribers/list-counts";
 import { createCampaignListReferences } from "@/campaigns/list-references";
 import { createListReferences } from "@/lists/references";
@@ -86,10 +90,8 @@ import { googleFontUrl } from "@/public/brand";
 import { createSubscriberMail, createSignupMail } from "@/public/mail";
 import type { SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
-import { rateLimited } from "@/public/rate-limit";
 import { personalPageHeaders } from "@/public/headers";
 import { registerPublicRoutes } from "@/public/routes";
-import { createCaptcha } from "@/captcha/captcha";
 import { publicSettings } from "@/public/settings";
 import { createBounceStore } from "@/bounces/store";
 import { registerBounceRoutes } from "@/bounces/routes";
@@ -97,7 +99,7 @@ import { createWebhookDelivery } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
 import { createWebhookStore } from "@/webhooks/store";
-import { createAnalyticsReader } from "@/analytics/reader";
+import type { AnalyticsReader } from "@/analytics/reader";
 import { createAnalyticsPurge } from "@/analytics/purge";
 import { createSubscriberTracking } from "@/analytics/subscriber";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
@@ -109,23 +111,36 @@ import { registerOpenApiRoutes } from "@/openapi/routes";
 import { registerMcpRoutes } from "@/mcp/routes";
 
 /**
- * Process-wide services, passed in by main(). Every project in the process shares them, so a
+ * Process-wide services, passed in by the instance. Every project in the process shares them, so a
  * budget here is one budget for the process, never one per project (invariant 7).
  */
 export interface ProjectServices {
   readonly clock: Clock;
-  readonly budgets: {
-    /** Bounces a minute from providers, the floor of their own budget (main() sets it). */
-    readonly bounceWebhookPerMinute: number;
+  readonly budgets: InstanceBudgets;
+  /**
+   * Where the process listens. Only `App.bootstrap` carries it, which the fixtures' startServer
+   * reads; production binds once, in main().
+   */
+  readonly listen: { readonly host: string; readonly port: number };
+}
+
+/** What one project is wired from: its identity, its directory, its root URL and its seed. */
+export interface ProjectOptions {
+  readonly slug: string;
+  /** `projects/<slug>/`: the database, `uploads/` and `stage/` live here. */
+  readonly directory: string;
+  /** `--root-url` with the host replaced by the project's main hostname (14-projects section 2). */
+  readonly rootUrl: string;
+  /** Where a pre-migration snapshot of this project's database goes. */
+  readonly snapshots: SnapshotPlace;
+  /** The first users when the project has none, as the environment's pair did for one install. */
+  readonly seed: {
+    readonly admin: BootstrapConfig["initialAdmin"];
+    readonly api?: BootstrapConfig["initialApi"];
   };
 }
 
-/** What one project is wired from: its own configuration, with its data directory. */
-export interface ProjectOptions {
-  readonly config: BootstrapConfig;
-}
-
-export type ProjectServer = ReturnType<typeof startServer>;
+export type ProjectServer = RoutedServer;
 
 /** A wired project. main() binds `router` on `app`, then calls start(), then stop() and close(). */
 export interface Project {
@@ -157,14 +172,16 @@ export async function createProject(
   options: ProjectOptions,
 ): Promise<Project> {
   const clock = services.clock;
-  const config = options.config;
-  const db = openDatabase(config.dataDir);
+  const budgets = services.budgets;
+  const directory = options.directory;
+  const rootUrl = options.rootUrl;
+  const db = openDatabase(directory);
   let lists: ReturnType<typeof createListReferences> | undefined;
   let listStore: ReturnType<typeof createListStore> | undefined;
   let subscriberStore: ReturnType<typeof createSubscriberStore> | undefined;
   let counts: ReturnType<typeof createListCounts> | undefined;
   let readonly: ReturnType<typeof openReadOnly> | undefined;
-  let queryRunner: ReturnType<typeof createQueryRunner> | undefined;
+  let queryRunner: QueryRunner | undefined;
   let subscriberQuery: ReturnType<typeof createSubscriberQuery> | undefined;
   let campaigns: ReturnType<typeof createCampaignListReferences> | undefined;
   let roles: ReturnType<typeof createRoles> | undefined;
@@ -193,7 +210,7 @@ export async function createProject(
   let webhooks: ReturnType<typeof createWebhookStore> | undefined;
   let bounces: ReturnType<typeof createBounceStore> | undefined;
   let deliveries: ReturnType<typeof createWebhookDelivery> | undefined;
-  let analyticsReader: ReturnType<typeof createAnalyticsReader> | undefined;
+  let analyticsReader: AnalyticsReader | undefined;
   let summaries: ReturnType<typeof createSummaries> | undefined;
   let summaryRefresh: ReturnType<typeof createSummaryRefresh> | undefined;
   let analyticsPurge: ReturnType<typeof createAnalyticsPurge> | undefined;
@@ -260,10 +277,10 @@ export async function createProject(
     db.close(true);
   };
   try {
-    runMigrations(db, config.dataDir, clock, productionMigrations);
+    runMigrations(db, directory, clock, productionMigrations, options.snapshots);
     lists = createListReferences(db);
     roles = createRoles(db, lists);
-    settings = createSettings(db, clock, config.rootUrl, roles);
+    settings = createSettings(db, clock, rootUrl, roles);
     counts = createListCounts(db);
     enrollments = createEnrollments(db, clock);
     webhooks = createWebhookStore(db, clock);
@@ -283,7 +300,8 @@ export async function createProject(
     };
     subscriberStore = createSubscriberStore(db, clock, lists, subscriberEffects);
     readonly = openReadOnly(db.filename);
-    queryRunner = createQueryRunner({
+    // The project's own runner, whose children count against the process's slots (invariant 7).
+    queryRunner = budgets.queries({
       path: db.filename,
       timeoutMs: 10_000,
       concurrency: 2,
@@ -297,7 +315,7 @@ export async function createProject(
     });
     campaigns = createCampaignListReferences(db);
     const writer = db;
-    analyticsReader = createAnalyticsReader({
+    analyticsReader = budgets.analytics({
       path: db.filename,
       // After a long run of overlapping reads, let the WAL be checkpointed and restarted (D62).
       onGap: () => void writer.run("PRAGMA wal_checkpoint(PASSIVE)"),
@@ -320,12 +338,12 @@ export async function createProject(
     );
     users = createUserStore(db, clock, roles);
     const logs = createLogBuffer(clock);
-    const logger = createErrorLogger(logs);
+    const logger = createSourceLogger(options.slug, logs);
     const clientAddress = createClientAddress(
       () => must(settings, "settings").read()["security.trusted_proxies"],
       logger,
     );
-    const auth = await createAuthentication(users, roles, clock, config.rootUrl, {
+    const auth = await createAuthentication(users, roles, clock, rootUrl, {
       ...defaultAuthPolicy,
       clientAddress,
       get sessionDurationMs() {
@@ -335,9 +353,20 @@ export async function createProject(
         );
       },
     });
-    await bootstrapAdmin(users, auth, config.initialAdmin, config.initialApi);
+    await bootstrapAdmin(users, auth, options.seed.admin, options.seed.api);
+    // Only the fixtures' startServer reads host and port from here; the instance binds in main().
+    const bootstrap: BootstrapConfig = {
+      host: services.listen.host,
+      port: services.listen.port,
+      dataDir: directory,
+      rootUrl,
+      initialAdmin: options.seed.admin,
+    };
+    if (options.seed.api) {
+      bootstrap.initialApi = options.seed.api;
+    }
     const app = createApp({
-      bootstrap: config,
+      bootstrap,
       clock,
       db,
       logger,
@@ -414,7 +443,7 @@ export async function createProject(
       importStatus: (s) => notifier?.importStatus(s),
     };
     importer = createImporter({
-      dataDir: config.dataDir,
+      dataDir: directory,
       clock,
       logger: app.logger,
       i18n: app.i18n,
@@ -454,7 +483,7 @@ export async function createProject(
     });
     mediaStore = createMediaStore(db, clock);
     const media = mediaStore;
-    const files = createFilesystem(config.dataDir, () => {
+    const files = createFilesystem(directory, () => {
       const current = must(settings, "settings").read();
       return {
         uploadPath: current["upload.filesystem.upload_path"],
@@ -469,23 +498,18 @@ export async function createProject(
       settings,
       auth,
       createSMTPTest(settings, emailer, app.i18n, renderer),
-      uploadPathCheck(config.dataDir, media),
+      uploadPathCheck(directory, media),
     );
     const marketing = () => marketingSettings(must(settings, "settings").read());
     const pages = () => publicSettings(must(settings, "settings").read());
+    // Each limit is the process's one table for its kind; this project's peers are its own in it.
     const limit = (name: keyof ReturnType<typeof publicSettings>["rateLimits"]) =>
-      rateLimited(
-        clock,
-        {
-          get limit() {
-            return pages().rateLimits[name];
-          },
-          windowMs: 60_000,
-          maxPeers: 10_000,
-        },
-        pages,
+      budgets.limit(name, {
+        slug: options.slug,
+        limit: () => pages().rateLimits[name],
+        page: pages,
         clientAddress,
-      );
+      });
     const limits = {
       subscribe: limit("subscribe"),
       optin: limit("optin"),
@@ -555,6 +579,7 @@ export async function createProject(
       marketing: { settings: marketing, tracking },
       attachments,
       embedImages,
+      gate: budgets.attachments,
     });
     // B123 (D126): the export and wipe of a paired subscriber. The mail module is made below, and
     // a request is answered only after startup, so its getter reads it then.
@@ -683,23 +708,14 @@ export async function createProject(
       // Providers post from shared addresses too, with a budget of their own. A large campaign's
       // bounces arrive from SNS as one POST each; a 429 there is a lost bounce once SNS stops
       // retrying, so this budget is 20 times the unsubscribe default, or the unsubscribe setting when that is larger.
-      limit: rateLimited(
-        clock,
-        {
-          // Never below the 6,000 it is now, and an operator's higher unsubscribe setting still
-          // raises it (read at each request, like the public forms).
-          get limit() {
-            return Math.max(
-              services.budgets.bounceWebhookPerMinute,
-              pages().rateLimits.unsubscribe,
-            );
-          },
-          windowMs: 60_000,
-          maxPeers: 10_000,
-        },
-        pages,
+      limit: budgets.limit("bounce", {
+        slug: options.slug,
+        // Never below the 6,000 it is now, and an operator's higher unsubscribe setting still
+        // raises it (read at each request, like the public forms).
+        limit: () => Math.max(budgets.bounceWebhookPerMinute, pages().rateLimits.unsubscribe),
+        page: pages,
         clientAddress,
-      ),
+      }),
     });
     recipients = createCampaignRecipients(db);
     const templateStore = templates;
@@ -775,7 +791,7 @@ export async function createProject(
       subscribers: subscriberStore,
       mail,
       settings: pages,
-      captcha: await createCaptcha({ clock, options: captchaOptions }),
+      captcha: budgets.captcha(captchaOptions),
       altchaComplexity: () => captchaOptions().altcha.complexity,
       limits,
       clientAddress,

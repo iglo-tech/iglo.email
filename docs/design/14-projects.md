@@ -1,6 +1,6 @@
 # Projects
 
-**Status: planned, not implemented** ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)). Until the tasks in [section 17](#17-tasks) merge, every other design document describes one project per instance ([D15](09-decisions.md#d15-one-instance-per-product)). When a task lands, it updates the documents it changes in the same PR.
+**Status: in progress** ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)). B138a and B138b are built: the data directory is an instance with `instance.db` and `projects/<slug>/`, and one server routes by `Host` ([section 3, "As built"](#as-built-b138b)). Until the remaining tasks in [section 17](#17-tasks) merge, the other design documents describe one project per instance ([D15](09-decisions.md#d15-one-instance-per-product)) except for the data layout. When a task lands, it updates the documents it changes in the same PR.
 
 This is the implementation spec for a worker or lead picking up one of the tasks in [section 17](#17-tasks).
 
@@ -110,6 +110,23 @@ data/
   - All projects are wired before the port binds, and loops start only after it binds, as [B52](../briefs/B52.md) requires.
 - **No shared database handles.** A project's modules see only that project's database. Instance services are passed in as narrow functions, never as the instance `Database`.
 - **No SQLite transaction across two database files.** There is no `ATTACH`. Each step that writes two databases states its order and why a crash between the two writes is safe.
+
+### As built (B138b)
+
+[D151](09-decisions.md#d151-instance-layout-routing-and-shared-budgets-b138b-lead-2026-11-24) records the choices this spec left open. Where this list and the sections above differ, this list is the code.
+
+- **Modules.** `src/projects/layout.ts` (paths, the earlier-layout check and its message), `registry.ts` (the `projects` and `hostnames` tables, slug and hostname rules), `instance.ts` (`openInstance`: instance.db, wiring every project, the routing table, `add` and `remove` at runtime, the no-primary answers), `budgets.ts` (the process-wide budgets), `logger.ts` (prefixed stderr lines) and `compose.ts` (`createProject(services, options)`). `src/server/server.ts` has the routing seam, `serveRouted(listen, dispatch)`.
+- **`createProject(services, options)`.** Services: the clock, the shared budgets, and the listen address (only `App.bootstrap` carries it). Options: slug, directory, root URL, where its pre-migration snapshot goes, and its seed (the first admin, and for the primary project the first API user). No host, port or other instance configuration.
+- **Fresh install.** With an empty registry and nothing under `projects/` but possibly `main/`, the instance registers the primary project `main`, named after the site name default, on the instance host. An existing `projects/main/` is used as it is (a restore, or a first start that stopped before its row).
+- **The primary's main hostname follows `--root-url`.** At each start it is set to the instance host. A non-primary project may not hold the instance host.
+- **Seeds.** `IGLO_EMAIL_ADMIN_*` seeds every project with no users (a stand-in for the admin copy of B140). `IGLO_EMAIL_API_*` seeds the primary project only: an API credential belongs to one project.
+- **Routing.** `Host`, lowercased and without its port; a missing or unparsable `Host` is an unclaimed host. Without a primary: `GET /health` answers the instance's health; `/admin` and every `/admin/…` path except `/admin/instance/…` answer `302` to `--root-url` + `/admin/instance/projects`; anything else is `404` with the body `404 page not found\n`, `text/plain`.
+- **Instance health.** `200 {"data":true}` while no project's loops have failed, else `503`. A loop failure still stops the whole process, as one install did.
+- **Runtime add and remove.** `add` validates, wires the project (creating its directory and database), writes the registry rows last, then serves and starts it. A failure before the rows removes the new directory. `remove` takes the project off the routing table, stops and closes it, then deletes its rows; its directory stays (the final snapshot and removal are B143's).
+- **Budgets (invariant 7).** One rate-limit table per public limit kind (subscribe, opt-in, privacy, unsubscribe, bounce webhooks), with each project's peers keyed by its slug inside the one 10,000-peer bound; one ALTCHA key and replay table; one pair of subscriber-query children, which every project's own runner takes after its own and frees when the child exits; one pair of analytics children, which every project's reader acquires before its own; one analytics egress budget (64 MiB of finished responses for the process); one tx attachment byte gate. Still per project, as a follow-up: the send rate limiter, which the dispatcher replaces (B141).
+- **Logs.** Each project keeps its own buffer for `GET /api/logs`; every stderr line starts with `[<slug>] ` or `[instance] `.
+- **CLI.** `backup`, `reset-password`, `reset-totp` and `backup --release-hold` act on the primary project under the one lock, until B140 and B144.
+- **Two databases.** Two steps write both. Runtime `add` writes the project's database first, then its registry row: a crash between leaves a directory with no row, reported at start and never served. The fresh install writes the primary's row first, then its database: a crash between leaves a row whose project is created at the next start, and a crash before the row leaves at most `projects/main/`, which the next start adopts.
 
 ## 4. Settings: instance and project
 

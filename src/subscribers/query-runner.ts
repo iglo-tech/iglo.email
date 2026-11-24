@@ -149,7 +149,17 @@ export interface RunnerOptions {
    * run are removed when the runner is created, which the data directory lock makes safe.
    */
   stageDir?: string;
+  /**
+   * Slots shared with other runners (one process's projects, 14-projects invariant 7). A child
+   * takes one of these after its own, and frees both when it exits, never later.
+   */
+  slots?: SharedSlots;
   command?: Array<string>;
+}
+
+/** A budget of children shared by several runners: `acquire` returns its idempotent release. */
+export interface SharedSlots {
+  acquire(): Promise<() => void>;
 }
 
 function defaultCommand(): Array<string> {
@@ -175,7 +185,10 @@ export function createQueryRunner(options: RunnerOptions) {
       active--;
     }
   };
-  /** Take a child slot, waiting at most admissionMs; returns its idempotent release. */
+  /**
+   * Take a child slot (waiting at most admissionMs), then a shared one if any (waiting at most
+   * its own admission time); returns their idempotent release.
+   */
   const acquire = async (): Promise<() => void> => {
     if (active < options.concurrency) {
       active++;
@@ -196,10 +209,20 @@ export function createQueryRunner(options: RunnerOptions) {
         throw new RunnerError("busy", "too many queries in progress");
       }
     }
+    let shared: (() => void) | undefined;
+    if (options.slots) {
+      try {
+        shared = await options.slots.acquire();
+      } catch (error) {
+        release();
+        throw error;
+      }
+    }
     let held = true;
     return () => {
       if (held) {
         release();
+        shared?.();
       }
       held = false;
     };

@@ -111,7 +111,7 @@ async function templates(port: number) {
 const earlier = (file: string) => Bun.file(join(import.meta.dir, "earlier-templates", file)).text();
 
 function userVersion(dataDir: string): number {
-  const db = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
+  const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"), { readonly: true });
   try {
     const row = asBody<{ user_version: number }>(db.query("PRAGMA user_version").get());
     return Number(row.user_version);
@@ -139,7 +139,10 @@ test("a seeded install from before this release takes the migrated bodies, and a
   const oldArchive = await earlier("default-archive.tpl.txt");
   const copy = oldArchive.replace("color: #444;", "color: #445;");
   expect(copy.length).toBe(oldArchive.length);
-  const db = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });
+  const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+    readwrite: true,
+    strict: true,
+  });
   try {
     for (const [name, file] of [
       [names.campaign, "default.tpl.txt"],
@@ -221,7 +224,10 @@ test("a seeded install from before this release takes the migrated bodies, and a
     );
     // The archive publishes only a sent campaign, and this test sends nothing: its state is set the
     // way a finished send leaves it.
-    const sent = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });
+    const sent = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+      readwrite: true,
+      strict: true,
+    });
     try {
       sent.run("UPDATE campaigns SET status = 'finished' WHERE archive_slug = 'credit-check'");
     } finally {

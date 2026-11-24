@@ -33,7 +33,8 @@ beforeAll(async () => {
 beforeAll(async () => {
   seeded = temporaryDirectory();
   const template = join(seeded, "data");
-  mkdirSync(join(template, "uploads"), { recursive: true });
+  // B138b layout: uploads are the primary project's, under projects/main/.
+  mkdirSync(join(template, "projects", "main", "uploads"), { recursive: true });
   await (await startServer(executable, template)).stop();
   seedSubscribers(template, 300_000);
 }, 120_000);

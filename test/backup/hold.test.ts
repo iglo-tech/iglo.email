@@ -126,7 +126,8 @@ const stopServer = async () => {
 async function stack() {
   base = temporaryDirectory();
   dataDir = join(base, "data");
-  mkdirSync(join(dataDir, "uploads"), { recursive: true });
+  // B138b layout: the primary project's uploads.
+  mkdirSync(join(dataDir, "projects", "main", "uploads"), { recursive: true });
   sink = await startSink();
   receiver = Bun.serve({
     hostname: "127.0.0.1",
@@ -259,14 +260,16 @@ test("a restored install sends nothing to someone who opted out after the backup
   expect(unacknowledged.exitCode).toBe(1);
   expect(unacknowledged.stderr).toContain(ACKNOWLEDGE);
   expect(
-    (await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")])).stdout,
+    (await runBackup(executable, ["--verify", join(dataDir, "projects", "main", "iglo-email.db")]))
+      .stdout,
   ).toMatch(/Hold: held since /);
 
   // Released, the restored campaign goes on: only what the operator reapplied is honoured.
   const released = await release(ACKNOWLEDGE);
   expect(released.exitCode).toBe(0);
   expect(
-    (await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")])).stdout,
+    (await runBackup(executable, ["--verify", join(dataDir, "projects", "main", "iglo-email.db")]))
+      .stdout,
   ).toMatch(/Hold: released at /);
   await restart(authorization);
   const open = await fetch(server!.health);
@@ -336,7 +339,7 @@ test("a locked-out operator resets a password on a stopped, held install", async
   await backupTo(output);
   await stopServer();
   restoreInto(output, dataDir);
-  const seeded = new Database(join(dataDir, "iglo-email.db"));
+  const seeded = new Database(join(dataDir, "projects", "main", "iglo-email.db"));
   seeded
     .query("UPDATE users SET twofa_type = 'totp', twofa_key = ? WHERE username = 'second-admin'")
     .run("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP");
@@ -365,7 +368,10 @@ test("a locked-out operator resets a password on a stopped, held install", async
   const second = await resetPassword(`${fresh}\r\n`, "--user", "second-admin");
   expect(second.exitCode).toBe(0);
 
-  const verified = await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")]);
+  const verified = await runBackup(executable, [
+    "--verify",
+    join(dataDir, "projects", "main", "iglo-email.db"),
+  ]);
   expect(verified.stdout).toMatch(/Hold: held since /);
   await restart(authorization);
   expect((await fetch(server!.health)).headers.get(HOLD_HEADER)).not.toBeNull();
@@ -479,7 +485,7 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
   await stopServer();
   restoreInto(output, dataDir);
   // A campaign the snapshot caught running.
-  const seeded = new Database(join(dataDir, "iglo-email.db"));
+  const seeded = new Database(join(dataDir, "projects", "main", "iglo-email.db"));
   seeded.query("UPDATE campaigns SET status = 'running' WHERE id = ?").run(running.id);
   seeded.close();
   const before = sink!.messages.length;
@@ -623,7 +629,7 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
     "opt-in",
     () => String(sink!.messages.length),
   );
-  expect(readdirSync(dataDir)).toContain("iglo-email.db");
+  expect(readdirSync(join(dataDir, "projects", "main"))).toContain("iglo-email.db");
 });
 
 test("the emailer's last gate refuses a push and a test before any connection", async () => {

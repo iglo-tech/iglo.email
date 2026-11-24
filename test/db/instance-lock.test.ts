@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openDatabase, withStoppedDatabase } from "@/db/connection";
 import { holdDataDirectory } from "@/db/instance-lock";
+import { registerProjects } from "@/test/projects/fixture";
 
 const directories: Array<string> = [];
 afterEach(() => {
@@ -23,7 +24,9 @@ function dataDir() {
 /** A directory with a database that has a schema version, as a server leaves it. */
 function stopped() {
   const dir = dataDir();
-  const db = openDatabase(dir);
+  // B138b: the stopped work acts on the primary project's database (D151).
+  registerProjects(dir, [{ slug: "main", name: "Main", hostname: "127.0.0.1", primary: true }]);
+  const db = openDatabase(join(dir, "projects", "main"));
   db.run("PRAGMA user_version = 1");
   db.close(true);
   return dir;
@@ -79,7 +82,7 @@ test("a server holding the lock refuses the stopped work before it opens the dat
 
 test("a database that something else has open is refused with 'stop what has it open first', and the lock is let go", () => {
   const dir = stopped();
-  const other = new Database(join(dir, "iglo-email.db"), { readwrite: true });
+  const other = new Database(join(dir, "projects", "main", "iglo-email.db"), { readwrite: true });
   other.run("BEGIN IMMEDIATE");
   try {
     let ran = false;

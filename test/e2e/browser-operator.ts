@@ -138,7 +138,7 @@ process.exitCode = await withStack(async ({ origin, dataDir, errors }) => {
     // The thirty-day retention pass cannot run inside a browser pass, so the marketing message Ana was
     // sent loses its payload as that pass leaves it (the same column, cleared): the row a retained
     // send shows, with its address and its status kept.
-    const journal = new Database(join(dataDir, "iglo-email.db"));
+    const journal = new Database(join(dataDir, "projects", "main", "iglo-email.db"));
     try {
       journal.run(
         "UPDATE sends SET payload = NULL WHERE subscriber_id = ? AND kind = 'transactional' AND status = 'sent' AND source = 'sequence'",

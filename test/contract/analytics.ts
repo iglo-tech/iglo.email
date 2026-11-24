@@ -523,7 +523,7 @@ export async function runAnalyticsContract(target: {
         check(posted.status === 200, `bounce-${posted.status}`);
         return;
       }
-      const db = new Database(join(target.dataDir!, "iglo-email.db"));
+      const db = new Database(join(target.dataDir!, "projects", "main", "iglo-email.db"));
       try {
         db.run("PRAGMA busy_timeout = 5000");
         db.run(

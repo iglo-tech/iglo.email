@@ -90,10 +90,10 @@ function secondServer(dataDir: string, options?: { cwd?: string }) {
   );
 }
 
-/** The database as it stands on disk. */
+/** The database as it stands on disk: the primary project's (B138b layout). */
 const fileBytes = (dataDir: string) =>
   ["iglo-email.db", "iglo-email.db-wal"].map((name) =>
-    Bun.hash(readFileSync(join(dataDir, name))).toString(),
+    Bun.hash(readFileSync(join(dataDir, "projects", "main", name))).toString(),
   );
 
 async function logIn(origin: string, password: string) {
@@ -237,7 +237,9 @@ test.skipIf(process.getuid?.() === 0)("a lock file it cannot write stops the ser
   const refused = await secondServer(data);
   expect(refused.exitCode).toBe(1);
   expect(refused.stderr).toStartWith(`Cannot lock ${lock}: `);
-  expect(existsSync(join(data, "iglo-email.db"))).toBe(false);
+  // B138b layout: neither the instance database nor the primary project's was created.
+  expect(existsSync(join(data, "instance.db"))).toBe(false);
+  expect(existsSync(join(data, "projects", "main", "iglo-email.db"))).toBe(false);
 });
 
 test("two data directories run side by side", async () => {
@@ -308,7 +310,7 @@ test("a command leaves a directory without a database as it found it", async () 
     stdin: "a-long-password",
   });
   expect(result.exitCode).toBe(1);
-  expect(result.stderr).toBe(`No database at ${join(missing, "iglo-email.db")}\n`);
+  expect(result.stderr).toBe(`No database at ${join(missing, "instance.db")}\n`);
   expect(statSync(missing, { throwIfNoEntry: false })).toBeUndefined();
 });
 

@@ -1,12 +1,17 @@
 // Connection responsibility adapted from listmonk's cmd/init.go: initDB.
 import { Database } from "bun:sqlite";
 import { mkdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { holdDataDirectory } from "@/db/instance-lock";
+import { primaryProjectDirectory } from "@/projects/registry";
 
-export function openDatabase(dataDir: string): Database {
-  mkdirSync(dataDir, { recursive: true });
-  const db = new Database(join(dataDir, "iglo-email.db"), {
+/**
+ * Opens `file` in `directory` with the required pragmas: a project's `iglo-email.db` by default,
+ * or the instance's `instance.db` (14-projects section 1: the same pragmas for both).
+ */
+export function openDatabase(directory: string, file = "iglo-email.db"): Database {
+  mkdirSync(directory, { recursive: true });
+  const db = new Database(join(directory, file), {
     create: true,
     strict: true,
     safeIntegers: true,
@@ -45,13 +50,16 @@ export function openDatabase(dataDir: string): Database {
  * Work that only a stopped server allows. The instance lock refuses a server and keeps one from
  * starting meanwhile. EXCLUSIVE locking also fails while any other connection has the database
  * open, such as a running backup, and holds until this connection closes.
+ *
+ * The database is the primary project's (D151), until these commands learn about projects (B140,
+ * B144); the lock stays the data directory's one lock.
  */
 export function withStoppedDatabase<T>(
   dataDir: string,
   supportedVersion: number,
   work: (db: Database) => T,
 ): T {
-  const path = join(resolve(dataDir), "iglo-email.db");
+  const path = join(primaryProjectDirectory(dataDir), "iglo-email.db");
   if (!statSync(path, { throwIfNoEntry: false })) {
     throw new Error(`No database at ${path}`);
   }
