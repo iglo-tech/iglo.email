@@ -7,6 +7,8 @@ import { runSettingsNewItems } from "@/test/contract/settings-new-items";
 import { runSettingsCouncilFinal } from "@/test/contract/settings-council-final";
 import { runSettingsBinding } from "@/test/contract/settings-binding";
 import {
+  acceptedWrite,
+  assertReloadable,
   invalidSettingsReadEnd,
   settingsFetch,
   upstreamLogSize,
@@ -94,16 +96,18 @@ export async function runSettingsContract(target: {
         JSON.stringify({ message: "at least one `from` address is required" }),
     "form-no-tags",
   );
-  const xml = await settingsFetch(
-    `${target.baseUrl}/api/settings`,
-    {
-      method: "PUT",
-      headers: { Authorization: authorization, "Content-Type": "application/xml" },
-      // AppLang, UploadProvider and the SMTP pool fields stay set: upstream stores a missing one as "" and exits on the next reload
-      // (app.lang panic at cmd/main.go:211, "unknown provider" fatal at cmd/init.go:852, invalid duration at cmd/init.go:747, MaxConns at cmd/init.go:777).
-      body: "<Settings><AppLang>en</AppLang><UploadProvider>filesystem</UploadProvider><AppFromEmail>sender@example.invalid</AppFromEmail><AppBatchSize>9223372036854775807</AppBatchSize><SMTP><Enabled>true</Enabled><MaxConns>1</MaxConns><IdleTimeout>15s</IdleTimeout><WaitTimeout>5s</WaitTimeout></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
-    },
-    target.mode === "reference",
+  const xml = await acceptedWrite(target, "xml-full-write", () =>
+    settingsFetch(
+      `${target.baseUrl}/api/settings`,
+      {
+        method: "PUT",
+        headers: { Authorization: authorization, "Content-Type": "application/xml" },
+        // AppLang, UploadProvider and the SMTP pool fields stay set: upstream stores a missing one as "" and exits on the next reload
+        // (app.lang panic at cmd/main.go:211, "unknown provider" fatal at cmd/init.go:852, invalid duration at cmd/init.go:747, MaxConns at cmd/init.go:777).
+        body: "<Settings><AppLang>en</AppLang><UploadProvider>filesystem</UploadProvider><AppFromEmail>sender@example.invalid</AppFromEmail><AppBatchSize>9223372036854775807</AppBatchSize><SMTP><Enabled>true</Enabled><MaxConns>1</MaxConns><IdleTimeout>15s</IdleTimeout><WaitTimeout>5s</WaitTimeout></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
+      },
+      target.mode === "reference",
+    ),
   );
   check(xml.status === 200, "xml-full-write");
   check(
@@ -142,7 +146,9 @@ export async function runSettingsContract(target: {
   candidate["bounce.mailboxes"] = asBody<Array<Record<string, unknown>>>(
     candidate["bounce.mailboxes"],
   ).map((item) => ({ ...item, password: "" }));
-  const write = await request("/api/settings", "PUT", JSON.stringify(candidate));
+  const write = await acceptedWrite(target, "full-write", () =>
+    request("/api/settings", "PUT", JSON.stringify(candidate)),
+  );
   check(
     write.status === 200 && JSON.stringify(await write.json()) === '{"data":true}',
     "full-write",
@@ -186,7 +192,10 @@ export async function runSettingsContract(target: {
     timeout: "5s",
     max_msg_retries: 1,
   };
-  check((await messengerPut([postback])).status === 200, "messenger-add");
+  check(
+    (await acceptedWrite(target, "messenger-add", () => messengerPut([postback]))).status === 200,
+    "messenger-add",
+  );
   let listed = await messengerGet();
   check(
     listed.length === 1 &&
@@ -199,7 +208,11 @@ export async function runSettingsContract(target: {
     "messenger-projection",
   );
   const kept = { ...listed[0], password: "", timeout: "7s" } as Record<string, any>;
-  check((await messengerPut([kept])).status === 200, "messenger-keep-password");
+  check(
+    (await acceptedWrite(target, "messenger-keep-password", () => messengerPut([kept]))).status ===
+      200,
+    "messenger-keep-password",
+  );
   listed = await messengerGet();
   check(
     listed.length === 1 &&
@@ -209,8 +222,11 @@ export async function runSettingsContract(target: {
     "messenger-keep-password-projection",
   );
   check(
-    (await messengerPut([{ ...kept, password: "longer-secret" }])).status === 200 &&
-      (await messengerGet())[0]!.password === "•".repeat("longer-secret".length),
+    (
+      await acceptedWrite(target, "messenger-change-password", () =>
+        messengerPut([{ ...kept, password: "longer-secret" }]),
+      )
+    ).status === 200 && (await messengerGet())[0]!.password === "•".repeat("longer-secret".length),
     "messenger-change-password",
   );
   for (const [label, names] of [
@@ -228,18 +244,32 @@ export async function runSettingsContract(target: {
     (await messengerGet()).length === 1 && (await messengerGet())[0]!.uuid === kept.uuid,
     "messenger-refusal-atomic",
   );
-  check((await messengerPut([{ ...kept, name: "Renamed" }])).status === 200, "messenger-rename");
+  check(
+    (
+      await acceptedWrite(target, "messenger-rename", () =>
+        messengerPut([{ ...kept, name: "Renamed" }]),
+      )
+    ).status === 200,
+    "messenger-rename",
+  );
   listed = await messengerGet();
   check(
     listed.length === 1 && listed[0]!.name === "renamed" && listed[0]!.uuid === kept.uuid,
     "messenger-rename-projection",
   );
-  check((await messengerPut([])).status === 200, "messenger-remove");
+  check(
+    (await acceptedWrite(target, "messenger-remove", () => messengerPut([]))).status === 200,
+    "messenger-remove",
+  );
   check((await messengerGet()).length === 0, "messenger-removed");
   const addressCandidate = structuredClone(updated);
   addressCandidate["app.from_email"] = ['"Display, Name" <"quoted local"@example.invalid>'];
   check(
-    (await request("/api/settings", "PUT", JSON.stringify(addressCandidate))).status === 200,
+    (
+      await acceptedWrite(target, "quoted-from-address", () =>
+        request("/api/settings", "PUT", JSON.stringify(addressCandidate)),
+      )
+    ).status === 200,
     "quoted-from-address",
   );
   check(
@@ -257,7 +287,11 @@ export async function runSettingsContract(target: {
     "Group: sender@example.invalid;",
   ];
   check(
-    (await request("/api/settings", "PUT", JSON.stringify(addressMatrix))).status === 200,
+    (
+      await acceptedWrite(target, "from-matrix-write", () =>
+        request("/api/settings", "PUT", JSON.stringify(addressMatrix)),
+      )
+    ).status === 200,
     "from-matrix-write",
   );
   check(
@@ -375,30 +409,52 @@ export async function runSettingsContract(target: {
   );
   cronCandidate["app.cache_slow_queries_interval"] = "0 3 L * MON-FRI";
   check(
-    (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200,
+    (
+      await acceptedWrite(target, "valid-enabled-cron", () =>
+        request("/api/settings", "PUT", JSON.stringify(cronCandidate)),
+      )
+    ).status === 200,
     "valid-enabled-cron",
   );
   cronCandidate["app.cache_slow_queries"] = false;
   cronCandidate["app.cache_slow_queries_interval"] = "invalid but unused";
   check(
-    (await request("/api/settings", "PUT", JSON.stringify(cronCandidate))).status === 200,
+    (
+      await acceptedWrite(target, "disabled-unused-cron", () =>
+        request("/api/settings", "PUT", JSON.stringify(cronCandidate)),
+      )
+    ).status === 200,
     "disabled-unused-cron",
   );
   check(
-    (await request("/api/settings/app.check_updates", "PUT", "false")).status === 200,
+    (
+      await acceptedWrite(target, "check-updates-false", () =>
+        request("/api/settings/app.check_updates", "PUT", "false"),
+      )
+    ).status === 200,
     "check-updates-false",
   );
-  const invalidDuration = await request("/api/settings/security.session_duration", "PUT", '"0s"');
+  const invalidDuration = await acceptedWrite(target, "duration-d45", () =>
+    request("/api/settings/security.session_duration", "PUT", '"0s"'),
+  );
   check(invalidDuration.status === (target.mode === "reference" ? 200 : 400), "duration-d45");
   check(
-    (await request("/api/settings/security.session_duration", "PUT", '"7d"')).status === 200,
+    (
+      await acceptedWrite(target, "duration-restore", () =>
+        request("/api/settings/security.session_duration", "PUT", '"7d"'),
+      )
+    ).status === 200,
     "duration-restore",
   );
   const ordered = JSON.stringify(updated).replace(
     /"app.site_name":"[^"]*"/,
     '"app.site_name":"first","APP.SITE_NAME":"second","app.site_name":null',
   );
-  check((await request("/api/settings", "PUT", ordered)).status === 200, "ordered-write");
+  check(
+    (await acceptedWrite(target, "ordered-write", () => request("/api/settings", "PUT", ordered)))
+      .status === 200,
+    "ordered-write",
+  );
   check(
     asBody<{ data: Record<string, any> }>(await (await request("/api/settings")).json()).data[
       "app.site_name"
@@ -409,7 +465,14 @@ export async function runSettingsContract(target: {
     /"app.batch_size":\d+/,
     '"app.batch_size":9007199254740993',
   );
-  check((await request("/api/settings", "PUT", integerCandidate)).status === 200, "int64-write");
+  check(
+    (
+      await acceptedWrite(target, "int64-write", () =>
+        request("/api/settings", "PUT", integerCandidate),
+      )
+    ).status === 200,
+    "int64-write",
+  );
   const integerProjection = await (await request("/api/settings")).text();
   check(
     /"app.batch_size"\s*:\s*9007199254740993(?:[,}])/.test(integerProjection),
@@ -426,9 +489,11 @@ export async function runSettingsContract(target: {
   }
   for (const integer of ["9223372036854775807", "-9223372036854775808"]) {
     const body = integerCandidate.replace("9007199254740993", integer);
+    const boundary = `int64-boundary-${integer.startsWith("-") ? "min" : "max"}`;
     check(
-      (await request("/api/settings", "PUT", body)).status === 200,
-      `int64-boundary-${integer.startsWith("-") ? "min" : "max"}`,
+      (await acceptedWrite(target, boundary, () => request("/api/settings", "PUT", body)))
+        .status === 200,
+      boundary,
     );
     check(
       (await (await request("/api/settings")).text()).includes(`"app.batch_size":${integer}`),
@@ -440,23 +505,27 @@ export async function runSettingsContract(target: {
     check((await request("/api/settings", "PUT", body)).status === 400, `int64-invalid-${integer}`);
   }
   check(
-    (await request("/api/settings", "PUT", JSON.stringify(updated))).status === 200,
+    (
+      await acceptedWrite(target, "int64-restore", () =>
+        request("/api/settings", "PUT", JSON.stringify(updated)),
+      )
+    ).status === 200,
     "int64-restore",
   );
-  const key = await request(
-    "/api/settings/app.site_name",
-    "PUT",
-    JSON.stringify("Synthetic settings"),
+  const key = await acceptedWrite(target, "key-write", () =>
+    request("/api/settings/app.site_name", "PUT", JSON.stringify("Synthetic settings")),
   );
   check(key.status === 200 && JSON.stringify(await key.json()) === '{"data":true}', "key-write");
-  const xmlKey = await settingsFetch(
-    `${target.baseUrl}/api/settings/app.site_name`,
-    {
-      method: "PUT",
-      headers: { Authorization: authorization, "Content-Type": "application/xml" },
-      body: '<value>"XML value"</value>',
-    },
-    target.mode === "reference",
+  const xmlKey = await acceptedWrite(target, "key-xml-write", () =>
+    settingsFetch(
+      `${target.baseUrl}/api/settings/app.site_name`,
+      {
+        method: "PUT",
+        headers: { Authorization: authorization, "Content-Type": "application/xml" },
+        body: '<value>"XML value"</value>',
+      },
+      target.mode === "reference",
+    ),
   );
   check(
     xmlKey.status === 200 && JSON.stringify(await xmlKey.json()) === '{"data":true}',
@@ -487,8 +556,11 @@ export async function runSettingsContract(target: {
     "key-form-bad-request",
   );
   check(
-    (await request("/api/settings/app.site_name", "PUT", JSON.stringify("Synthetic settings")))
-      .status === 200,
+    (
+      await acceptedWrite(target, "key-restore", () =>
+        request("/api/settings/app.site_name", "PUT", JSON.stringify("Synthetic settings")),
+      )
+    ).status === 200,
     "key-restore",
   );
   check(
@@ -497,12 +569,18 @@ export async function runSettingsContract(target: {
     ] === "Synthetic settings",
     "key-read",
   );
-  const unknown = await request("/api/settings/unknown.setting", "PUT", "true");
+  const unknown = await acceptedWrite(target, "unknown-key-d44", () =>
+    request("/api/settings/unknown.setting", "PUT", "true"),
+  );
   check(unknown.status === (target.mode === "reference" ? 200 : 400), "unknown-key-d44");
   // The reference log's size before the invalid write: its exit line is searched for after this (B114).
   const logFrom = upstreamLogSize();
   const malformedKey = await request("/api/settings/app.batch_size", "PUT", '"not-an-integer"');
   check(malformedKey.status === (target.mode === "reference" ? 200 : 400), "invalid-key-d44");
+  if (target.mode === "reference") {
+    // The last write, not awaited: its accepted reload exits on the stored value by design (below).
+    await assertReloadable("invalid-key-d44");
+  }
   if (target.mode === "reference") {
     // Last reference step. Upstream's accepted write schedules a reload that exits on the
     // stored invalid value, so the read is a race: accept only its two documented end states.

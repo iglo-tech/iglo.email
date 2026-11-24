@@ -1,5 +1,96 @@
 import { readFileSync, statSync } from "node:fs";
 import { asBody } from "@/test/read-body";
+import type { Mode } from "@/test/contract/types";
+import { upstreamSetting } from "@/test/reference/upstream-db";
+
+// Go's time.ParseDuration grammar: "0", or signed runs of number and unit (ns, us, \u00b5s, \u03bcs, ms, s, m, h).
+const GO_DURATION = /^(?:[-+]?(?:(?:\d+\.?\d*|\.\d+)(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h))+|0)$/;
+
+// The build string that every listmonk process logs first, in init() (cmd/main.go:109, log flag
+// file:line). A settings reload execs a new process, so this line marks it in the reference log.
+const RELOAD_BANNER = "main.go:109: v7.0.0-beta.1 (";
+const RELOAD_TIMEOUT_MS = 20_000;
+
+/**
+ * After an accepted settings write, upstream's stored SMTP items must reload. An enabled item whose
+ * idle_timeout or wait_timeout is not a Go duration makes the reloaded process exit at boot
+ * (cmd/init.go:747, lo.Fatalf). The stored value is read from the reference's own database, not from
+ * the HTTP projection, so the failure names the write that left it behind (B118k).
+ */
+export async function assertReloadable(label: string): Promise<void> {
+  const items = await upstreamSetting("smtp", label);
+  if (!Array.isArray(items)) {
+    throw new Error(`FAIL settings-reload-${label} (smtp is not a list)`);
+  }
+  for (const [index, item] of items.entries()) {
+    const entry = asBody<Record<string, unknown>>(item);
+    if (entry.enabled !== true) {
+      continue;
+    }
+    for (const field of ["idle_timeout", "wait_timeout"]) {
+      const value = entry[field];
+      if (typeof value !== "string" || !GO_DURATION.test(value)) {
+        throw new Error(`FAIL settings-reload-${label} (smtp[${index}].${field})`);
+      }
+    }
+  }
+}
+
+/**
+ * Runs one settings write. For a reference write that upstream accepted, checks the stored SMTP items
+ * under `label`, then waits for the reload the write schedules before the next request is sent.
+ * Upstream reloads 500 ms after each accepted write (cmd/settings.go handleSettingsRestart): it shuts
+ * the listener down and execs itself. A request in that window is reset or refused, so the wait is
+ * on the state upstream exposes, not a retry or a fixed delay. `from` is the reference log's size
+ * before the write, so only the reload this write caused can answer.
+ */
+export async function acceptedWrite(
+  target: { mode: Mode; baseUrl: string },
+  label: string,
+  send: () => Promise<Response>,
+): Promise<Response> {
+  const from = upstreamLogSize();
+  const response = await send();
+  if (target.mode === "reference" && response.ok) {
+    await assertReloadable(label);
+    await awaitUpstreamReload(target.baseUrl, from, label);
+  }
+  return response;
+}
+
+async function awaitUpstreamReload(baseUrl: string, from: number, label: string): Promise<void> {
+  const deadline = Date.now() + RELOAD_TIMEOUT_MS;
+  // The new process logs its banner only after the old listener has closed and exec has run.
+  while (!upstreamLogHas(RELOAD_BANNER, from)) {
+    if (Date.now() >= deadline) {
+      throw new Error(`FAIL settings-reload-${label} (no reload banner${upstreamLogTail()})`);
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25);
+    });
+  }
+  // The new listener binds after its banner; poll its health on a fresh connection until it answers.
+  for (;;) {
+    try {
+      const response = await fetch(`${baseUrl}/health`, {
+        headers: { Connection: "close" },
+        signal: AbortSignal.timeout(1000),
+      });
+      await response.text();
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Refused until the new listener binds.
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`FAIL settings-reload-${label} (health)`);
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25);
+    });
+  }
+}
 
 // Last lines of the reference's own log, on one printable line, without credentials.
 function upstreamLogTail(): string {
@@ -35,10 +126,15 @@ export async function settingsFetch(
   const started = Date.now();
   const deadline = started + 5000;
   let attempts = 0;
+  // Against the reference, each request gets its own connection: a pooled socket from before a
+  // reload is closed by the old process, and reusing it is a reset that no retry should hide.
+  const headers = new Headers(init.headers);
+  headers.set("Connection", "close");
+  const sent: RequestInit = reference ? { ...init, headers } : init;
   for (;;) {
     attempts++;
     try {
-      const response = await fetch(url, init);
+      const response = await fetch(url, sent);
       const method = /^(GET|PUT|POST|DELETE)$/.test(init.method ?? "GET")
         ? (init.method ?? "GET")
         : "OTHER";
