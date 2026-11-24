@@ -1,5 +1,5 @@
 // B37: One shared send-rate cap for SES (D92).
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { BrandSite } from "@/public/brand";
 import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -57,6 +57,10 @@ import { startSink } from "@/test/tx/sink";
 import { waitWall } from "@/test/wait";
 import type { WaitOptions } from "@/test/wait";
 import { asBody } from "@/test/read-body";
+
+// The progress waits below run up to 25 s of real time (untilProgress), so the tests get the 30 s that
+// `bun run test` gives them. Without this, a single-file run stops each test at bun's 5 s default first.
+setDefaultTimeout(30_000);
 
 const admin = { user: "rate-admin", password: "rate-admin-password" };
 const root = "http://fixture.test";

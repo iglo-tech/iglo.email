@@ -1,10 +1,14 @@
 // M2.4 marketing consent, frequency cap, unsubscribe and tracking through POST /api/tx,
 // the public /m/:sendUUID pages and a loopback SMTP sink.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { permissions } from "@/roles/roles";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { asBody } from "@/test/read-body";
+
+// `until` waits up to 15 s of real time, so the tests get the 30 s that `bun run test` gives them. Without
+// this, a single-file run stops each test at bun's 5 s default first.
+setDefaultTimeout(30_000);
 
 const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
