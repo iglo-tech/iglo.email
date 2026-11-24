@@ -11,6 +11,7 @@ import { analyticsChildArgument, runAnalyticsChild } from "@/analytics/reader";
 import { backupHelp, runBackup } from "@/backup/cli";
 import { flushChildArgument, runFlushChild } from "@/backup/snapshot";
 import { resetPasswordHelp, resetTotpHelp, runResetPassword, runResetTotp } from "@/users/cli";
+import { recoverAdmin } from "@/projects/admin-recovery";
 import { openInstance } from "@/projects/instance";
 import type { Instance, InstanceConfig } from "@/projects/instance";
 import { oldLayoutMessage, usesOldLayout } from "@/projects/layout";
@@ -48,10 +49,10 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     return runBackup(process.argv.slice(3), process.env);
   }
   if (process.argv[2] === "reset-password") {
-    return runResetPassword(process.argv.slice(3), process.env);
+    return runResetPassword(process.argv.slice(3), process.env, recoverAdmin);
   }
   if (process.argv[2] === "reset-totp") {
-    return runResetTotp(process.argv.slice(3), process.env);
+    return runResetTotp(process.argv.slice(3), process.env, recoverAdmin);
   }
   const bootstrap = parseBootstrap(process.argv.slice(2), process.env);
   if (bootstrap.help) {

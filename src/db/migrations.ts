@@ -37,7 +37,9 @@ import sendStatusOrder from "@/migrations/0028_send_status_order.sql" with { typ
 import exitCondition from "@/migrations/0029_exit_condition.sql" with { type: "text" };
 import sampleTemplateBrand from "@/migrations/0030_sample_template_brand.sql" with { type: "text" };
 import sendNames from "@/migrations/0031_send_names.sql" with { type: "text" };
+import adminCopy from "@/migrations/0032_admin_copy.sql" with { type: "text" };
 import instanceRegistry from "@/migrations/instance/0001_registry.sql" with { type: "text" };
+import adminAccount from "@/migrations/instance/0002_admin_account.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -77,10 +79,14 @@ export const productionMigrations: ReadonlyArray<Migration> = [
   { version: 29, sql: exitCondition },
   { version: 30, sql: sampleTemplateBrand },
   { version: 31, sql: sendNames },
+  { version: 32, sql: adminCopy },
 ];
 
 /** The instance database's own manifest (D142, 14-projects section 1), applied by the same runner. */
-export const instanceMigrations: ReadonlyArray<Migration> = [{ version: 1, sql: instanceRegistry }];
+export const instanceMigrations: ReadonlyArray<Migration> = [
+  { version: 1, sql: instanceRegistry },
+  { version: 2, sql: adminAccount },
+];
 
 /** Where a pre-migration snapshot goes and what its file is called. */
 export interface SnapshotPlace {

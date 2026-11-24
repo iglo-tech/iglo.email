@@ -12,6 +12,36 @@ const apiTokenFormat = /^[0-9A-Za-z]{48}$/;
 const usernameFormat = /^[a-zA-Z0-9_\-.@]+$/;
 
 /**
+ * The environment's first administrator, checked as a first start always checked it: both values or
+ * neither. Null when neither is set. The instance admin account is created from it (B140).
+ */
+export function initialAdmin(
+  input: BootstrapConfig["initialAdmin"],
+  api: BootstrapConfig["initialApi"] = { user: undefined, token: undefined },
+): { username: string; password: string } | null {
+  if (input.user === undefined && input.password === undefined) {
+    return null;
+  }
+  const username = input.user?.trim() ?? "";
+  const password = input.password ?? "";
+  if (!username || !password) {
+    throw new Error(
+      "Initial administrator requires both IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD",
+    );
+  }
+  if (!strHasLen(username, 3, 2000) || !usernameFormat.test(username)) {
+    throw new Error("Invalid initial administrator username");
+  }
+  if (!validPassword(password)) {
+    throw new Error("Invalid initial administrator password");
+  }
+  if (api.user !== undefined && api.user.trim() === username) {
+    throw new Error("IGLO_EMAIL_API_USER must differ from IGLO_EMAIL_ADMIN_USER");
+  }
+  return { username, password };
+}
+
+/**
  * Creates the first administrator and the first API user, when no users exist. Each pair is read
  * on its own: both or neither. Both rows are written in one transaction, so a start never leaves
  * one of them behind.

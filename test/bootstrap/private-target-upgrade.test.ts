@@ -140,6 +140,9 @@ async function earlierRelease(): Promise<string> {
     // Migration 31 (B117d) names each send, and schema 23 has no such columns.
     db.run("ALTER TABLE sends DROP COLUMN template_name");
     db.run("ALTER TABLE sends DROP COLUMN sequence_name");
+    // Migration 32 (B140) marks the admin's copy; the earlier schema has no such column.
+    db.run("DROP INDEX users_one_admin_copy");
+    db.run("ALTER TABLE users DROP COLUMN admin_copy");
     db.run("UPDATE settings SET value = 'false' WHERE key = ?", [key]);
     db.run("INSERT INTO webhooks (id, url, secret, events) VALUES (1, ?, 'secret', '[]')", [
       "http://127.0.0.1:9/hook",
@@ -175,7 +178,7 @@ test("an upgrade turns the stored false on, and every restart names the refused 
   ).toBe(true);
   // The public webhook, id 2, is never named.
   expect(await stopped(upgraded.child)).toEqual([refusedLine]);
-  expect(userVersion(dataDir)).toBe(31);
+  expect(userVersion(dataDir)).toBe(32);
 
   // A restart, with the target still refused: named again.
   const restarted = await up(dataDir);

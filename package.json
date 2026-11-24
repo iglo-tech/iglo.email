@@ -44,6 +44,7 @@
     "contract:roles:reference": "bun run reference:run -- bun test/contract/roles.ts reference",
     "roles:measure": "bun run build && bun test/users/measure-roles.ts",
     "contract:lists": "bun run build && bun test/contract/cli.ts owned lists && bun test ./test/lists/restart.ts",
+    "contract:projects": "bun run build && bun test ./test/projects",
     "contract:lists:reference": "bun run reference:run -- bun test/contract/lists.ts reference",
     "lists:measure": "bun run build && bun test/lists/measure.ts dist/iglo.email candidate",
     "contract:subscribers": "bun run build && bun test/contract/cli.ts owned subscribers",

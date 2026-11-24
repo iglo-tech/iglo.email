@@ -18,6 +18,8 @@ export interface UserRow {
   loggedin_at: string | null;
   created_at: string | null;
   updated_at: string | null;
+  /** 1 for the instance admin's copy (B140, D153); never sent to a client. */
+  admin_copy: bigint;
 }
 
 export interface Identity {

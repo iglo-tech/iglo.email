@@ -442,6 +442,7 @@ export default defineConfig({
         "src/subscribers/store.ts", // SQL rows and stored attributes JSON
         "src/templates/store.ts", // SQL rows
         "src/unsubscribe/tracking.ts", // SQL rows
+        "src/users/account.ts", // SQL rows
         "src/users/store.ts", // SQL rows
         "src/webhooks/store.ts", // SQL rows
       ],

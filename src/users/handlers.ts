@@ -11,6 +11,7 @@ import { readBody } from "@/users/input";
 import { validPassword } from "@/users/password";
 import { projectUser } from "@/users/models";
 import type { Identity } from "@/users/models";
+import { CopyProtectedError, UsernameReservedError } from "@/users/store";
 import type { UserFields, UserStore } from "@/users/store";
 
 interface Input {
@@ -185,11 +186,21 @@ function current(context: RequestContext): Identity {
 function needSuper(context: RequestContext): never {
   throw new HttpError(400, context.app.i18n.T("users.needSuper"));
 }
+/** B140: the instance admin's copy is protected (403) and its username reserved (409). */
+function copyRefusal(error: unknown): void {
+  if (error instanceof CopyProtectedError) {
+    throw new HttpError(403, error.message);
+  }
+  if (error instanceof UsernameReservedError) {
+    throw new HttpError(409, error.message);
+  }
+}
 function storageFailure(
   error: unknown,
   action: "creating" | "updating",
   fields: Pick<UserFields, "username" | "email">,
 ): never {
+  copyRefusal(error);
   if (error instanceof Error) {
     for (const column of ["username", "email"] as const) {
       if (error.message.includes(`UNIQUE constraint failed: users.${column}`)) {
@@ -410,8 +421,16 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     }
     return ok(projectUser(updated, roles));
   };
+  const remove = (ids: Array<bigint>): boolean => {
+    try {
+      return store.delete(ids);
+    } catch (error) {
+      copyRefusal(error);
+      throw error;
+    }
+  };
   const deleteUser: Handler = (context) => {
-    if (!store.delete([BigInt(getID(context))])) {
+    if (!remove([BigInt(getID(context))])) {
       needSuper(context);
     }
     return ok(true);
@@ -431,7 +450,7 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
       }
       ids.push(id);
     }
-    if (!store.delete(ids)) {
+    if (!remove(ids)) {
       needSuper(context);
     }
     return ok(true);
