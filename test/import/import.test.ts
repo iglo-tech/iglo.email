@@ -17,7 +17,9 @@ import { listensOn, startOnFreePort } from "@/test/serve-port";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
 
-// A 30 s stall fails by name before this timeout, not after a single-file run's 5 s default.
+// A 30 s stall fails by name before this timeout, not after a single-file run's 5 s default. A
+// file-level setDefaultTimeout overrides `bun run test`'s --timeout too, so this file gets 40 s
+// there as well (B118e).
 setDefaultTimeout(40_000);
 
 const subscribe = (lists: number) => ({ mode: "subscribe", delim: ",", lists: [lists] });

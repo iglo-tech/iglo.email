@@ -10,12 +10,20 @@ sleeps that are the thing under test, with a reason. The count is `grep -rn "Bun
 | | Lines | Files |
 |---|---|---|
 | `main` at 5fa94ac1 | 252 | 108 |
-| B118d head | 154 | 75 |
+| B118d head (as recorded in #207) | 154 | 75 |
+| `main` at d5bef8d5 (measured again in B118e with `git grep`) | 156 | 77 |
+| B118e head (`Bun.sleep` lines, `git grep`) | 154 | 77 |
 
-Net: 98 fewer lines. More calls were converted than that, because the new `untilState` calls
-replaced several loops with one call each. The 154 remaining lines are: 134 kept with a reason
-(the table below; some rows group several lines), and 20 state waits still deferred (listed
-under "Deferred"). The counts are `grep` lines on both sides.
+Net: 98 fewer lines from `main` at 5fa94ac1. More calls were converted than that, because the new
+`untilState` calls replaced several loops with one call each. The B118d head was recorded as 154
+lines in 75 files; measured on merged `main` it is 156 in 77. That two-line, two-file difference
+is not traced here: it is in the merged head, not in the B118e change.
+
+B118e converts the two readiness polls that run in `bun run check` (`test/serve-port.ts` and
+`test/bootstrap/cli.test.ts`), which were 2 of the 20 deferred state waits. The 154 remaining lines
+are the kept sleeps (the table below; some rows group several lines), the 18 deferred state waits
+(under "Deferred"), and a few lines the table does not name; B118e did not reconcile those few
+line by line. The counts are `git grep` lines on each side.
 
 ## Helpers
 
@@ -26,11 +34,15 @@ under "Deferred"). The counts are `grep` lines on both sides.
   own test is `test/wait.test.ts` (four cases, two mutants shown).
 - Stall windows of 10 s and 15 s (and 30 s in `import.test.ts`) would outlast a single-file run's
   5 s default before they fail by name. The files that wait that long call `setDefaultTimeout`
-  (30 s; 40 s in `import.test.ts`), so the wait's label is reported first. `bun run test` passes
-  30 s and is unchanged.
+  (30 s; 40 s in `import.test.ts`), so the wait's label is reported first. A file-level
+  `setDefaultTimeout` overrides the CLI `--timeout` (probed in `oven/bun:1.4.5`, B118e), so under
+  `bun run test` those files keep their own value: 30 s, and 40 s for `import.test.ts`, not the
+  gate's 30 s.
 - The drains in `test/public/fixture.ts` and `test/tx/fixture.ts` are not `untilState` waits: they
-  advance the injected clock at most 200 steps of 1 s, and return the sends still open (0 when
-  drained). The bound is in injected time, so it is the same window on every host.
+  advance the injected clock at most 200 steps of 1 s, and fail by name unless exactly
+  `drain(expectOpen)` sends are still open (B118e; `expectOpen` defaults to 0), so a send left open
+  cannot pass a no-mail check. Before B118e they returned the count and no caller read it. The
+  bound is in injected time, so it is the same window on every host.
 - `waitWall` (unchanged): a wait on an injected clock or on microtasks, with `advance` for clock steps.
 - Where a check's last value is the only progress signal (webhook and retention `until` helpers),
   the value's JSON is the progress. Where no signal exists (`/health` answering after a reference
@@ -155,19 +167,20 @@ absence is asserted); **Y** event-loop yield between steps; **S** settle with no
 | test/messaging/test-send-log.test.ts:121, 125 | — | **deferred item 2**: the "delivered test send logs nothing" settle. Left as it is (see "Deferred") |
 | test/scheduler/measure.ts:27 | M | pacing |
 | test/retention/measure.ts:212, measure-events.ts:84, 124 | M | due-time pacing; 5 s settle |
-| test/bootstrap/cli.test.ts (readiness poll, startThroughCli) | — | see "Deferred" |
+| test/bootstrap/cli.test.ts (readiness poll, startThroughCli) | — | converted in B118e (`untilState`, see "Deferred") |
 | test/reference/smoke.ts:429 | K | the 35 s stop budget of the reference runner, in real time |
-| test/serve-port.ts:220 | — | see "Deferred" |
+| test/serve-port.ts:220 | — | converted in B118e (`healthWhenReady`, `untilState`, see "Deferred") |
 
 ## Deferred: state waits not converted here
 
-These still wait on a state with a sleep. The first bullet is the exception: both of its polls run
-in `bun run check`, so no Docker, opt-in or browser run is needed to change them. They are B118e's
-first items, with the rest of the sweep. The other bullets each need their own run to verify (a
-Docker reference, an opt-in harness, or a browser pass), so none was changed without one.
+These still wait on a state with a sleep. The first bullet's two polls ran in `bun run check`, so no
+Docker, opt-in or browser run was needed to change them: B118e converted both (`healthWhenReady` in
+`test/serve-port.ts`, and the readiness wait in `startThroughCli`, `test/bootstrap/cli.test.ts`).
+Readiness has no progress signal, so each uses `untilState` with a constant progress and a stall
+window equal to its old budget: it fails by name with the last observation, and the bound is the
+same 15 s (or the caller's timeout). The other bullets each need their own run to verify (a Docker
+reference, an opt-in harness, or a browser pass), so B118e did not change them. They stay deferred.
 
-- `test/serve-port.ts:220` (readiness poll of the start helper) and `test/bootstrap/cli.test.ts:216`
-  (readiness poll inside `startThroughCli`, raced against the exit). B118e.
 - `test/sends/production.ts:198` (readiness poll, `sends:production`, Docker).
 - `test/worked-example/harness.ts:92, 181`, `test/worked-example/run.ts:267, 278, 398` (enrollment
   and mail polls of the worked example; run with the production build).

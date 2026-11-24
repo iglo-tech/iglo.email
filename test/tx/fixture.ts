@@ -603,16 +603,20 @@ export async function txFixture(
     /**
      * Advances the injected clock a second per step, at most 200 steps, while a send is open. The
      * bound is in injected time, so every host sees the same window: a send that never settles uses
-     * all 200 steps. Returns the sends still open (0 when drained).
+     * all 200 steps. Fails by name unless exactly `expectOpen` (default 0) sends are still open.
      */
-    async drain() {
-      let open = openSends();
+    async drain(expectOpen = 0) {
+      let open = Number(openSends());
       for (let i = 0; i < 200 && open > 0; i++) {
         testClock.advance(1000);
         await Bun.sleep(5);
-        open = openSends();
+        open = Number(openSends());
       }
-      return Number(open);
+      if (open !== expectOpen) {
+        throw new Error(
+          `drain: ${open} send(s) still queued or sending after 200 steps (expected ${expectOpen})`,
+        );
+      }
     },
     async close() {
       await delivery?.halt();

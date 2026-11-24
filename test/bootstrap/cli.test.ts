@@ -22,6 +22,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { startDbFixture } from "@/test/db/fixture";
 import { startSchemaFixture } from "@/test/schema/fixture";
 import { readJson } from "@/test/read-body";
+import { untilState } from "@/test/wait";
 
 const repository = resolve(import.meta.dir, "../..");
 const defaultTimeoutMs = 15_000;
@@ -194,9 +195,11 @@ async function startThroughCli(port: number, dataDir: string) {
   const exited = run.then((result) => {
     throw new Error(`Server exited before it became ready: ${result.stderr}`);
   });
-  const listening = (async () => {
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline) {
+  // Readiness has no progress signal, so the stall window is the whole 15 s budget (as in
+  // `healthWhenReady`). After an exit the wait never settles: the exit alone decides the start.
+  let last = "no answer yet";
+  const listening = untilState(
+    async () => {
       if (child.exitCode !== null || child.signalCode !== null) {
         return new Promise<never>(() => {});
       }
@@ -208,15 +211,23 @@ async function startThroughCli(port: number, dataDir: string) {
         // Another server can hold the port and answer first: ready only when this child listens on it.
         if (child.pid !== undefined && listensOn(child.pid, port)) {
           await response.body?.cancel();
-          return;
+          return true;
         }
+        last = `answered ${response.status} but this process is not listening`;
       } catch {
-        // Not listening yet: the poll goes on until the deadline.
+        // Not listening yet: the wait goes on until the stall window ends.
+        last = "no answer";
       }
-      await Bun.sleep(25);
-    }
-    throw new Error("Server did not become ready within 15000 ms");
-  })();
+      return false;
+    },
+    {
+      label: "Server ready",
+      progress: () => "starting",
+      stallMs: 15_000,
+      intervalMs: 25,
+      describe: () => last,
+    },
+  );
   try {
     await Promise.race([exited, listening]);
   } catch (error) {
