@@ -53,7 +53,7 @@ The port is split into tasks in `docs/design/11-work-plan.md`. A task's worker f
 
 ## Verification
 
-D90/D93/D145 owner policy (amends D68/D73): workers, fixers, testers and helpers use Claude Opus 5.5 medium (D145, 2026-11-25, replaced Haiku 5.5); the lead uses Opus 5.5 medium and only plans and checks, writing no code; one fresh Opus 5.5 high reviewer. No other model or provider. During a task, roles run only the tests and checks the change can affect; the full acceptance runs once on the approved head before the merge, and the release commit runs the whole gate (D145). CI is manual-only and not a merge gate. See `docs/chief-of-staff.md`.
+D90/D93/D145/D146 owner policy (amends D68/D73): workers, fixers, testers and helpers use Claude Opus 5.5 medium (D145, 2026-11-25, replaced Haiku 5.5); the lead uses Opus 5.5 medium and only plans and checks, writing no code; one fresh Gemini 4 Neon (high) reviewer per round (D146). No other model or provider. During a task, roles run only the tests and checks the change can affect; the full acceptance runs once on the approved head before the merge, and the release commit runs the whole gate (D145). CI is manual-only and not a merge gate. See `docs/chief-of-staff.md`.
 
 Run the local checks with:
 
