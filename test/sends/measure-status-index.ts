@@ -3,10 +3,10 @@
 // and migrated, one to schema 27 and one to schema 28, then filled with the same sends. Each repetition
 // inserts a batch of queued sends in one transaction, claims each one (queued -> sending) and settles it
 // (sending -> sent), one transaction per claim and per settle, as the send path does, with
-// synchronous=FULL. The claim and the settle are the production `createSends` functions (`claim` and
-// `finish`, B118g), and migration 0029 is timed with its production SQL. Serial, opt-in, not a CI
-// threshold; the results are stored in
-// docs/perf/B127-operator-views.md.
+// synchronous=FULL. The claim and the settle are the production `createSends` functions (B118j item 3):
+// `claimBatch` at the outbox's batch size, one write transaction per claimed batch as the outbox loop
+// runs it, and `finishAll`, one commit per batch. Migration 0029 is timed with its production SQL.
+// Serial, opt-in, not a CI threshold; the results are stored in docs/perf/B127-operator-views.md.
 // Usage: bun test/sends/measure-status-index.ts [sends] [batch] [repetitions]
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,10 +15,13 @@ import { createAnalyticsStore } from "@/analytics/store";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
+import { writeTransaction } from "@/db/transaction";
 import { must } from "@/invariant";
 import { createListReferences } from "@/lists/references";
 import type { Outcome } from "@/messaging/email";
+import { encodePayload } from "@/messaging/payload";
 import { createSends } from "@/messaging/sends";
+import type { Claimed } from "@/messaging/sends";
 import { createSubscriberStore } from "@/subscribers/store";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -27,6 +30,8 @@ const [sendsArg, batchArg, repsArg] = process.argv.slice(2);
 const sends = Number(sendsArg ?? 1_000_000);
 const batch = Number(batchArg ?? 20_000);
 const repetitions = Number(repsArg ?? 3);
+// The outbox's batch size (src/messaging/outbox.ts, `batchSize`): one loop item claims this many rows.
+const outboxBatch = 10;
 const clock = createRealClock();
 const root = mkdtempSync(join(tmpdir(), "iglo-status-index-"));
 
@@ -109,10 +114,25 @@ function measure(version: number) {
     const insert = db.query(
       `INSERT INTO sends (uuid, source, kind, subscriber_id, to_email, status, smtp_message_id,
          payload, created_at)
-       VALUES (?1, 'tx', 'transactional', ?2, ?3, 'queued', ?4, '{}', ?5)`,
+       VALUES (?1, 'tx', 'transactional', ?2, ?3, 'queued', ?4, ?5, ?6)`,
     );
-    // The send path's own claim and settle (src/messaging/sends.ts): `claim` takes the lowest due
-    // row, and `finish` journals an accepted outcome, so the writes measured are the production ones.
+    // A payload admission accepts (src/messaging/sends.ts `admit`): one per subscriber, encoded before
+    // any timing starts. The row's subscriber and address must be the subscriber's own.
+    const payloads = Array.from({ length: 5000 }, (_, k) =>
+      encodePayload(
+        {
+          from: "Measure <noreply@measure.test>",
+          to: [`subscriber${k + 1}@example.test`],
+          subject: "Measure",
+          contentType: "plain",
+          body: new TextEncoder().encode("Measure"),
+        },
+        `sub-${k + 1}`,
+      ),
+    );
+    // The outbox's own claim and settle (src/messaging/sends.ts): `claimBatch` claims and admits up to
+    // the outbox's batch size inside the caller's write transaction, and `finishAll` journals a batch of
+    // accepted outcomes in one commit, so the writes measured are the production ones.
     const journal = createSends({
       db,
       clock,
@@ -128,41 +148,65 @@ function measure(version: number) {
     };
     const timings = {
       insert: [] as Array<number>,
-      claim: [] as Array<number>,
-      settle: [] as Array<number>,
+      claimBatch: [] as Array<number>,
+      finishAll: [] as Array<number>,
     };
     for (let rep = 0; rep < repetitions; rep++) {
       const now = clock.now().toISOString();
       const insertStart = performance.now();
       db.transaction(() => {
         for (let i = 0; i < batch; i++) {
+          const subscriber = 1 + (i % 5000);
           insert.run(
             `queued-${version}-${rep}-${i}-${now}`,
-            1 + (i % 5000),
-            `q${i}@example.test`,
+            subscriber,
+            `subscriber${subscriber}@example.test`,
             `q-${i}`,
+            payloads[subscriber - 1]!,
             now,
           );
         }
       })();
       timings.insert.push(ms(insertStart));
 
-      const claimed: Array<Parameters<typeof journal.finish>[0]> = [];
+      // Each call is one outbox loop item: a write transaction that claims up to the batch size, then
+      // the batch is settled. The loop ends at the first empty claim.
+      const claimed: Array<Array<Claimed>> = [];
+      let claimedTotal = 0;
       const time = clock.now();
       const lease = new Date(time.getTime() + 60_000);
       const claimStart = performance.now();
-      for (let i = 0; i < batch; i++) {
-        db.transaction(() => {
-          claimed.push(...journal.claim(time, lease));
-        })();
+      for (;;) {
+        const rows = writeTransaction(db, () => journal.claimBatch(time, lease, outboxBatch));
+        if (rows.length === 0) {
+          break;
+        }
+        claimed.push(rows);
+        claimedTotal += rows.length;
       }
-      timings.claim.push(ms(claimStart));
+      timings.claimBatch.push(ms(claimStart));
+      if (claimedTotal !== batch) {
+        throw new Error(`claimed ${claimedTotal} of ${batch} queued sends`);
+      }
+      // A row admission refuses is settled by admission, not by the outcome; it would make the settle
+      // below a no-op, so every claimed row must have been admitted.
+      if (!claimed.every((rows) => rows.every(({ message }) => message !== null))) {
+        throw new Error("a claimed send was not admitted");
+      }
 
       const settleStart = performance.now();
-      for (const row of claimed) {
-        db.transaction(() => journal.finish(row, accepted))();
+      for (const rows of claimed) {
+        journal.finishAll(rows.map(({ row }) => ({ row, outcome: accepted })));
       }
-      timings.settle.push(ms(settleStart));
+      timings.finishAll.push(ms(settleStart));
+      const settled = db
+        .query<{ n: number }, [string]>(
+          "SELECT count(*) AS n FROM sends WHERE status = 'sent' AND uuid LIKE ?",
+        )
+        .get(`queued-${version}-${rep}-%`);
+      if (Number(settled?.n) !== batch) {
+        throw new Error(`${Number(settled?.n)} of ${batch} claimed sends settled as sent`);
+      }
     }
 
     // After the write timings, so the enrollment rows do not change them.
