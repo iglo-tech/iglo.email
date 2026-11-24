@@ -6,6 +6,7 @@ import { expect, test } from "bun:test";
 import { silentServer } from "@/test/messaging/silent-server";
 import { asBody } from "@/test/read-body";
 import { txFixture } from "@/test/tx/fixture";
+import { untilState } from "@/test/wait";
 
 test("a marketing send to a server that never greets ends failed, and is not resent", async () => {
   const silent = await silentServer("1s");
@@ -36,16 +37,21 @@ test("a marketing send to a server that never greets ends failed, and is not res
       );
 
     // Settles when the greeting timer ends the dispatch: the clock is advanced so the loops run.
-    const deadline = performance.now() + 20_000;
     let current = await row();
-    while (
-      (current.status === "queued" || current.status === "sending") &&
-      performance.now() < deadline
-    ) {
-      f.clock.advance(1000);
-      await Bun.sleep(50);
-      current = await row();
-    }
+    await untilState(
+      async () => {
+        f.clock.advance(1000);
+        await Bun.sleep(0);
+        current = await row();
+        return current.status !== "queued" && current.status !== "sending";
+      },
+      {
+        label: "greeting timer ends the dispatch",
+        progress: () => current.status,
+        stallMs: 20_000,
+        intervalMs: 50,
+      },
+    );
     expect(current).toMatchObject({ status: "failed", error: "temporary_rejection" });
     expect(silent.bytesReceived()).toBe(0);
     expect(silent.connections()).toBe(1);
