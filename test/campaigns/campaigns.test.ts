@@ -427,6 +427,51 @@ test("the campaign redirect follows only links that campaign's content registere
   expect((await f.json(`/api/campaigns/${other.id}`)).body.data.clicks).toBe(0);
 });
 
+test("with tracking disabled, the redirect still refuses another campaign's link with a 404, and records nothing", async () => {
+  const f = await openRunner();
+  const news = await f.list("news");
+  await f.member("ada@example.test", [news]);
+  const own = await f.campaign({
+    name: "own",
+    subject: "own",
+    lists: [news],
+    content_type: "html",
+    body: '<a href="{{ "https://example.test/own" | track_link }}">x</a>',
+  });
+  const other = await f.campaign({
+    name: "other",
+    subject: "other",
+    lists: [news],
+    content_type: "html",
+    body: '<a href="{{ "https://attacker.example/phish" | track_link }}">x</a>',
+  });
+  await f.status(own.id, "running");
+  await f.status(other.id, "running");
+  f.start();
+  await f.until(own.id, "finished");
+  await f.until(other.id, "finished");
+  const linkOf = (subject: string) =>
+    /http:\/\/fixture\.test(\/link\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36})/.exec(
+      Buffer.from(f.pushes.find((p) => p.message.subject === subject)!.message.body).toString(),
+    )![1]!;
+  const ownLink = linkOf("own");
+  const otherLink = linkOf("other");
+  const dummy = "00000000-0000-0000-0000-000000000000";
+  const replayed = `/link/${otherLink.split("/")[2]}/${own.uuid}/${dummy}`;
+  // Tracking is switched off after the sends (the public routes read these settings).
+  f.publicSettings.disableTracking = true;
+  // The campaign's own link still redirects, without a click.
+  const followed = await f.request(ownLink);
+  expect(followed.status).toBe(307);
+  expect(followed.headers.get("location")).toBe("https://example.test/own");
+  // Another campaign's link under this campaign's UUID is refused, whatever tracking is set to.
+  const refused = await f.request(replayed);
+  expect(refused.status).toBe(404);
+  expect(refused.headers.get("location")).toBeNull();
+  expect((await f.json(`/api/campaigns/${own.id}`)).body.data.clicks).toBe(0);
+  expect((await f.json(`/api/campaigns/${other.id}`)).body.data.clicks).toBe(0);
+});
+
 test("all parts of a test message share one render budget", async () => {
   const f = await open();
   const news = await f.list("news");

@@ -1,5 +1,5 @@
 // B37: One shared send-rate cap for SES (D92).
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { BrandSite } from "@/public/brand";
 import { fixturePageSite } from "@/test/public/site";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -57,6 +57,10 @@ import { startSink } from "@/test/tx/sink";
 import { waitWall } from "@/test/wait";
 import type { WaitOptions } from "@/test/wait";
 import { asBody } from "@/test/read-body";
+
+// The progress waits below run up to 25 s of real time (untilProgress), so the tests get the 30 s that
+// `bun run test` gives them. Without this, a single-file run stops each test at bun's 5 s default first.
+setDefaultTimeout(30_000);
 
 const admin = { user: "rate-admin", password: "rate-admin-password" };
 const root = "http://fixture.test";
@@ -156,6 +160,8 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     stop: () => inner.stop(),
     wake: () => inner.wake(),
   });
+  // A granted send that never reaches the sink (it failed) stays in flight, so `moveClock` never steps the
+  // clock again: the drive then stops with its state rather than moving on without the send.
   const inFlight = () => grants - cleared - sink.messages.length;
 
   // Wiring matching src/main.ts: one settings listener for the process, which wakes whichever
@@ -467,14 +473,17 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   // iteration can take seconds of real time while the sends still move. A stall (a wait budget with
   // no grant, receipt or send-status change) still fails it, with the same message.
   const progressMark = () => `${grants}|${cleared + sink.messages.length}|${sendRows()}`;
+  // The progress loop has a total deadline of its own, under the test's 30 s timeout: progress that keeps
+  // coming ends the wait with its state, rather than running into the next test's fixture.
   const untilProgress = async (done: () => boolean | Promise<boolean>, options: WaitOptions) => {
+    const deadline = Date.now() + 25_000;
     for (;;) {
       const before = progressMark();
       try {
         await waitWall(done, options);
         return;
       } catch (error) {
-        if (progressMark() === before) {
+        if (progressMark() === before || Date.now() >= deadline) {
           throw error;
         }
       }

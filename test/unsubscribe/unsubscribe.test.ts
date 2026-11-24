@@ -1,10 +1,14 @@
 // M2.4 marketing consent, frequency cap, unsubscribe and tracking through POST /api/tx,
 // the public /m/:sendUUID pages and a loopback SMTP sink.
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { permissions } from "@/roles/roles";
 import { txFixture } from "@/test/tx/fixture";
 import type { TxFixture } from "@/test/tx/fixture";
 import { asBody } from "@/test/read-body";
+
+// `until` waits up to 15 s of real time, so the tests get the 30 s that `bun run test` gives them. Without
+// this, a single-file run stops each test at bun's 5 s default first.
+setDefaultTimeout(30_000);
 
 const fixtures: Array<TxFixture> = [];
 afterEach(async () => {
@@ -79,6 +83,24 @@ const membership = async (f: TxFixture, subscriber: number, list: number) =>
   asBody<Array<{ id: number; subscription_status: string }>>(
     (await f.json(`/api/subscribers/${subscriber}`)).body.data.lists,
   ).find((l) => l.id === list)?.subscription_status;
+/**
+ * Waits until `check` holds, so a test reads a send after its outbox write, not at a fixed point. The
+ * sink can hold a message before the send row is written (the row says `sending` until then), so a
+ * single read after the sink count is not the settled state. Fails after 15 s without the state.
+ */
+async function until(f: TxFixture, check: () => Promise<boolean>, label: string) {
+  const deadline = Date.now() + 15_000;
+  while (!(await check())) {
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${label}`);
+    }
+    // The outbox's pauses run on the injected clock.
+    f.clock.advance(0);
+    await Bun.sleep(5);
+  }
+}
+const settledStatus = async (f: TxFixture, id: number) =>
+  asBody<{ status: string }>((await f.json(`/api/sends/${id}`)).body.data).status;
 
 test("marketing consent follows list membership and opt-in type", async () => {
   const f = await open();
@@ -272,8 +294,12 @@ test("failed marketing does not count; resend respects the cap and rechecks cons
   // A manual resend is the same intended message, so its own lineage is not counted.
   const first = await f.json(`/api/sends/${failedId}/resend`, "POST");
   expect(first.status).toBe(200);
-  await Bun.sleep(100);
-  expect((await f.json(`/api/sends/${first.body.data.id}`)).body.data.status).toBe("sent");
+  await until(
+    f,
+    async () => !["queued", "sending"].includes(await settledStatus(f, first.body.data.id)),
+    "resend settled",
+  );
+  expect(await settledStatus(f, first.body.data.id)).toBe("sent");
   // Now a delivered marketing message is inside the window for any other send.
   expect(await row(f, await marketing(f, ada, template, news, "s"))).toMatchObject({
     status: "skipped",
@@ -295,12 +321,11 @@ test("failed marketing does not count; resend respects the cap and rechecks cons
     target_list_ids: [news],
   });
   f.restartOutbox();
-  for (let i = 0; i < 50; i++) {
-    if ((await f.json(`/api/sends/${resend.body.data.id}`)).body.data.status !== "queued") {
-      break;
-    }
-    await Bun.sleep(20);
-  }
+  await until(
+    f,
+    async () => (await settledStatus(f, resend.body.data.id)) !== "queued",
+    "queued resend admitted",
+  );
   expect((await f.json(`/api/sends/${resend.body.data.id}`)).body.data).toMatchObject({
     status: "skipped",
     skip_reason: "unsubscribed",
@@ -348,11 +373,12 @@ test("marketing has one SMTP recipient: request copies are 400, server copies ar
     list_id: news,
     async: true,
   });
-  for (let i = 0; i < 50 && f.sink.messages.length < 2; i++) {
-    // The loop's post-item pause runs on the injected clock.
-    f.clock.advance(0);
-    await Bun.sleep(20);
-  }
+  // The row is read once it has settled: the sink holds the message before the row's `sent` write.
+  await until(
+    f,
+    async () => !["queued", "sending"].includes((await row(f, queued)).status),
+    "queued marketing settled",
+  );
   expect((await row(f, queued)).status).toBe("sent");
   // Manual resend.
   reject = true;
@@ -361,11 +387,7 @@ test("marketing has one SMTP recipient: request copies are 400, server copies ar
   reject = false;
   const resend = await f.json(`/api/sends/${failed.body.data.sends[0].id}/resend`, "POST");
   expect(resend.status).toBe(200);
-  for (let i = 0; i < 50 && f.sink.messages.length < 3; i++) {
-    // The loop's post-item pause runs on the injected clock.
-    f.clock.advance(0);
-    await Bun.sleep(20);
-  }
+  await until(f, async () => f.sink.messages.length >= 3, "resend delivered");
   expect(f.sink.messages).toHaveLength(3);
   for (const message of f.sink.messages) {
     expect(message.to).toEqual(["ada@example.test"]);
