@@ -47,8 +47,10 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
     () => rmSync(dataDir, { recursive: true, force: true }),
     () => rmSync(directory, { recursive: true, force: true }),
   );
-  const before = openDatabase(dataDir);
-  runMigrations(before, dataDir, new TestClock(), productionMigrations.slice(0, 18));
+  // B138b layout: the earlier database is the primary project's, which a first start adopts.
+  const project = join(dataDir, "projects", "main");
+  const before = openDatabase(project);
+  runMigrations(before, project, new TestClock(), productionMigrations.slice(0, 18));
   before.run("INSERT OR REPLACE INTO settings (key, value) VALUES ('bounce.mailgun', ?)", [
     JSON.stringify({ enabled: true, key: legacySecret }),
   ]);
@@ -131,7 +133,7 @@ test("2. Upgraded database drops stored bounce.mailgun row, GET /api/settings om
   // Migration 0019 removed the stored row, and nothing wrote it back.
   expect(await stopChild(child)).toBe(0);
   expect(await new Response(child.stderr).text()).not.toContain(legacySecret);
-  const after = openDatabase(dataDir);
+  const after = openDatabase(project);
   expect(after.query("SELECT key FROM settings WHERE key = 'bounce.mailgun'").get()).toBeNull();
   after.close(true);
 }, 120_000);

@@ -42,7 +42,7 @@ export async function runEventsContract(target: {
   const post = (body: unknown, headers?: Record<string, string>) =>
     call("/api/subscriber-events", "POST", body, headers);
   const stored = () => {
-    const db = new Database(join(target.dataDir, "iglo-email.db"), {
+    const db = new Database(join(target.dataDir, "projects", "main", "iglo-email.db"), {
       readonly: true,
       safeIntegers: true,
     });

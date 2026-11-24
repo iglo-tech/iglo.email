@@ -182,7 +182,7 @@ async function startServer(directory: string) {
   return {
     origin,
     pid: child.pid!,
-    database: join(directory, "data", "iglo-email.db"),
+    database: join(directory, "data", "projects", "main", "iglo-email.db"),
     get stderr() {
       return stderr;
     },

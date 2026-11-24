@@ -576,7 +576,9 @@ async function crash(point: "after-commit" | "mid-batch" | "batch-end" | "unheld
       } else {
         await waitFor(() => sink.held > 0, 120_000, "a held message");
       }
-      const reader = new Database(join(directory, "data/iglo-email.db"), { readonly: true });
+      const reader = new Database(join(directory, "data/projects/main/iglo-email.db"), {
+        readonly: true,
+      });
       const cursorAtKill = asBody<{ c: number }>(
         reader.query("SELECT last_subscriber_id AS c FROM campaigns WHERE id = ?").get(id),
       ).c;

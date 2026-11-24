@@ -43,7 +43,13 @@ export default defineConfig({
     // Application code logs errors and attention lines through the error logger in src/app.ts (AGENTS.md).
     // CLI command modules and the scripts print their own command output.
     {
-      files: ["src/app.ts", "src/main.ts", "src/**/cli.ts", "scripts/**/*.ts"],
+      files: [
+        "src/app.ts",
+        "src/main.ts",
+        "src/projects/logger.ts",
+        "src/**/cli.ts",
+        "scripts/**/*.ts",
+      ],
       rules: { "no-console": "off" },
     },
     // Exception, for the lead to decide at review: these files test `instanceof` for their own error classes and
@@ -325,8 +331,8 @@ export default defineConfig({
     // record, to typed parameters.
     {
       files: [
-        "src/main.ts",
         "src/media/routes.ts",
+        "src/projects/compose.ts",
         "src/public/settings.ts",
         "src/settings/routes.ts",
         "src/settings/validate.ts",
@@ -352,9 +358,9 @@ export default defineConfig({
     // validates before the message is returned, and the SMTP test body is checked where it is read.
     {
       files: [
-        "src/main.ts",
         "src/messaging/payload.ts",
         "src/messaging/test.ts",
+        "src/projects/compose.ts",
         "src/public/settings.ts",
         "src/settings/validate.ts",
       ],
@@ -364,7 +370,7 @@ export default defineConfig({
     // a per-key schema is a separate design); these files assign single settings values or the settings record.
     {
       files: [
-        "src/main.ts",
+        "src/projects/compose.ts",
         "src/public/settings.ts",
         "src/settings/routes.ts",
         "src/settings/validate.ts",
@@ -487,8 +493,8 @@ export default defineConfig({
         "src/db/instance-lock.ts", // the shape of a thrown SQLite error (code and message)
         "src/db/transaction.ts", // the callback's result type F, pinned by test/db/typecheck.ts
         "src/loops/loop.ts", // the claim callback's result, checked for length before use
-        "src/main.ts", // a settings value (any per key, D132)
         "src/messaging/email.ts", // the Nodemailer envelope boundary (see the no-chained-type-assertions exception)
+        "src/projects/compose.ts", // a settings value (any per key, D132)
         "src/public/routes.tsx", // the layout's children, typed as never by the JSX runtime (D132)
         "src/settings/json.ts", // ordered settings JSON
         "src/settings/validate.ts", // settings record and shapes (D132)
@@ -496,11 +502,11 @@ export default defineConfig({
       ],
       rules: { "typescript/no-unsafe-type-assertion": "off" },
     },
-    // Exceptions, for the lead to decide at review (no-unsafe-return). `main.ts` returns single settings values
+    // Exceptions, for the lead to decide at review (no-unsafe-return). `compose.ts` returns single settings values
     // (`Record<string, any>`, one type per key: D132's per-key schema is a separate design). `validate.ts` binds a
     // settings value to its shape, which is `any` by design.
     {
-      files: ["src/main.ts", "src/settings/validate.ts"],
+      files: ["src/projects/compose.ts", "src/settings/validate.ts"],
       rules: { "typescript/no-unsafe-return": "off" },
     },
   ],

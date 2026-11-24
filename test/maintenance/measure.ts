@@ -152,7 +152,7 @@ const running: { stop?: () => Promise<void> } = {};
 try {
   await (async () => {
     const authorization = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
-    const file = join(dataDir, "iglo-email.db");
+    const file = join(dataDir, "projects", "main", "iglo-email.db");
     const db = new Database(file);
     const seeded = seed(db);
     console.log(`seeded in ${seeded} s, ${Math.round(statSync(file).size / 1_048_576)} MiB`);

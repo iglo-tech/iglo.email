@@ -20,11 +20,26 @@ export function createRouter(hold: () => RestoreHold | null = () => null): Route
   return router;
 }
 
+/** One app on its own router: the fixtures' server. Production serves an instance (serveRouted). */
 export function startServer(app: App, router: Router = createRouter()) {
+  return serveRouted({ host: app.bootstrap.host, port: app.bootstrap.port }, (request, peer) =>
+    router.handle(app, request, peer),
+  );
+}
+
+/**
+ * The routing seam (14-projects section 2): one `Bun.serve` on the instance's port, which hands
+ * every request and its peer address to `dispatch`. The instance picks the project by `Host`.
+ */
+export function serveRouted(
+  listen: { readonly host: string; readonly port: number },
+  dispatch: (request: Request, peerAddress: string) => Promise<Response>,
+) {
   return Bun.serve({
-    hostname: app.bootstrap.host,
-    port: app.bootstrap.port,
-    fetch: (request, server) =>
-      router.handle(app, request, server.requestIP(request)?.address ?? "unknown"),
+    hostname: listen.host,
+    port: listen.port,
+    fetch: (request, server) => dispatch(request, server.requestIP(request)?.address ?? "unknown"),
   });
 }
+
+export type RoutedServer = ReturnType<typeof serveRouted>;

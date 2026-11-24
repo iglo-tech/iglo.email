@@ -43,7 +43,10 @@ test("the server's first retention pass runs every owner's purge", async () => {
     const subscriber = (await readJson<{ data: { id: number } }>(created)).data.id;
     await first.stop();
 
-    const db = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });
+    const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+      readwrite: true,
+      strict: true,
+    });
     db.run("PRAGMA foreign_keys = ON");
     try {
       const sessions = db.prepare("INSERT INTO sessions (id, data, created_at) VALUES (?, ?, ?)");
@@ -82,7 +85,10 @@ test("the server's first retention pass runs every owner's purge", async () => {
     }
 
     const second = await startServer(executable, dataDir);
-    const reader = new Database(join(dataDir, "iglo-email.db"), { readonly: true, strict: true });
+    const reader = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+      readonly: true,
+      strict: true,
+    });
     try {
       const gone = () =>
         count(reader, "sessions WHERE id IN ('old-expired', 'old-legacy')") === 0 &&

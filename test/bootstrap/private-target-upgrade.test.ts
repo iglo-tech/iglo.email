@@ -18,7 +18,8 @@ setDefaultTimeout(60_000);
 const key = "webhooks.block_private_addresses";
 /** The buffer's fixed text for the notice (src/webhooks/delivery.ts REFUSED_NOTICE). */
 const fixed = "A webhook target is refused by the private-address block";
-const refusedLine = `Webhook 1 target 127.0.0.1:9 is refused by ${key} (D122)`;
+// B138b: every stderr line names its project (14-projects section 9).
+const refusedLine = `[main] Webhook 1 target 127.0.0.1:9 is refused by ${key} (D122)`;
 const tokenAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const apiUser = "upgrade-api";
 const token = Array.from(
@@ -120,7 +121,10 @@ async function earlierRelease(): Promise<string> {
   const dataDir = join(temporaryDirectory, crypto.randomUUID());
   const first = await up(dataDir);
   await stopChild(first.child);
-  const db = new Database(join(dataDir, "iglo-email.db"), { readwrite: true, strict: true });
+  const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"), {
+    readwrite: true,
+    strict: true,
+  });
   try {
     // Schema 23 has neither the campaign delivery reason nor its index (migration 25, B116), nor the
     // rotated-secret columns (migration 26, D130), so the upgrade must add all of them.
@@ -151,7 +155,7 @@ async function earlierRelease(): Promise<string> {
 }
 
 function userVersion(dataDir: string): number {
-  const db = new Database(join(dataDir, "iglo-email.db"), { readonly: true });
+  const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"), { readonly: true });
   try {
     return Number(
       db.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version,

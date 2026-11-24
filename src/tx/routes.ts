@@ -23,6 +23,7 @@ import { createMessageBudget, RenderCapacityError, RenderFaultError } from "@/te
 import type { TemplateRenderer } from "@/templates/renderer";
 import { plainText } from "@/messaging/plain";
 import type { Authentication } from "@/users/auth";
+import type { Clock } from "@/clock";
 import { createByteGate } from "@/tx/gate";
 import type { ByteGate, Reservation } from "@/tx/gate";
 import { BODY_LIMIT, readTxMessage, TxInputError } from "@/tx/input";
@@ -111,6 +112,16 @@ function subscriberContext(row: SubscriberRow | null, email: string) {
   };
 }
 
+/** The production attachment budget, built once per process and passed to every project (D151). */
+export function createAttachmentGate(clock: Clock): ByteGate {
+  return createByteGate({
+    clock,
+    maxBytes: MAX_ATTACHMENT_BYTES_IN_FLIGHT,
+    maxHolders: MAX_ATTACHMENT_SENDS,
+    waitMs: ATTACHMENT_WAIT_MS,
+  });
+}
+
 const busy = () =>
   new HttpError(429, "Too many sends with attachments in progress.", {
     "Retry-After": "1",
@@ -136,10 +147,15 @@ export function registerTxRoutes(
       waitMs?: number;
       maxOvertakes?: number;
     };
+    /**
+     * The process's one attachment budget (14-projects invariant 7), shared by every project's
+     * routes. Without it the routes build their own from `limits` on first use.
+     */
+    gate?: ByteGate;
   },
 ) {
   const budget = deps.limits?.maxBytes ?? MAX_ATTACHMENT_BYTES_IN_FLIGHT;
-  let gate: ByteGate | undefined;
+  let gate: ByteGate | undefined = deps.gate;
   /** Gives the handler its reservation slot and releases whatever it still holds on any exit. */
   const guarded =
     (

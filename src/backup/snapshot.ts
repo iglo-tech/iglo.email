@@ -52,6 +52,7 @@ import { withStoppedDatabase } from "@/db/connection";
 import { writeTransaction } from "@/db/transaction";
 import { uploadRoot } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
+import { primaryProjectDirectory } from "@/projects/registry";
 import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hold";
 import type { HoldRecord } from "@/settings/hold";
 import { storedUploadPath, writeUploadPath } from "@/settings/stored";
@@ -696,11 +697,14 @@ function sealSnapshot(path: string, since: string, data: string): string {
 export function createBackup(options: BackupOptions): Inspection & { path: string } {
   const { clock, warn } = options;
   const dataDir = resolve(options.dataDir);
-  const databasePath = join(dataDir, DATABASE);
+  // B138b (D151): the primary project's database and uploads, until backup learns about projects
+  // (B144). A backup with no --output still goes to the instance's backups/.
+  const projectDir = primaryProjectDirectory(dataDir);
+  const databasePath = join(projectDir, DATABASE);
   if (!statSync(databasePath, { throwIfNoEntry: false })) {
     throw new Error(`No database at ${databasePath}`);
   }
-  const data = realpathSync(dataDir);
+  const data = realpathSync(projectDir);
   // The identity of the live data directory, taken before anything can move: see stepAside.
   const live = statSync(data);
   const wanted = resolve(options.output ?? join(dataDir, "backups", backupName(clock)));

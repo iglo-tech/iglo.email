@@ -36,6 +36,7 @@ import {
   uploadFile,
 } from "@/test/backup/fixture";
 import type { Client, Server } from "@/test/backup/fixture";
+import { registerProjects } from "@/test/projects/fixture";
 import { asBody, readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
 
@@ -47,6 +48,8 @@ let publishEntry = "";
 let build = "";
 let base = "";
 let dataDir = "";
+/** B138b layout: the primary project's directory, which backup and restore act on. */
+const project = () => join(dataDir, "projects", "main");
 let authorization = "";
 let server: Server | undefined;
 
@@ -69,7 +72,7 @@ afterEach(async () => {
 async function live() {
   base = temporaryDirectory();
   dataDir = join(base, "data");
-  mkdirSync(join(dataDir, "uploads"), { recursive: true });
+  mkdirSync(join(project(), "uploads"), { recursive: true });
   server = await startServer(executable, dataDir);
   authorization = await provisionAuthorization(server.origin);
   return apiClient(server.origin, authorization);
@@ -161,7 +164,7 @@ test("a backup under write load restores, opens and holds what was committed", a
 test("a failure exits nonzero and leaves no file", async () => {
   const client = await live();
   await uploadFile(client, "unreadable.txt", "bytes");
-  chmodSync(join(dataDir, "uploads", "unreadable.txt"), 0o000);
+  chmodSync(join(project(), "uploads", "unreadable.txt"), 0o000);
   const destination = join(base, "destination");
   mkdirSync(destination);
   const result = await runBackup(executable, [
@@ -170,7 +173,7 @@ test("a failure exits nonzero and leaves no file", async () => {
     "--output",
     join(destination, "backup"),
   ]);
-  chmodSync(join(dataDir, "uploads", "unreadable.txt"), 0o644);
+  chmodSync(join(project(), "uploads", "unreadable.txt"), 0o644);
   expect(result.exitCode).toBe(1);
   expect(result.stderr).not.toBe("");
   expect(names(destination)).toEqual([]);
@@ -220,14 +223,14 @@ test("an existing backup is replaced only when told, and only a backup", async (
 
   const self = await runBackup(executable, ["--data-dir", dataDir, "--output", dataDir, "--force"]);
   expect(self.exitCode).toBe(1);
-  expect(existsSync(join(dataDir, "iglo-email.db"))).toBe(true);
+  expect(existsSync(join(project(), "iglo-email.db"))).toBe(true);
 });
 
 test("a file with no row is harmless, and a row with no file is reported and stays missing", async () => {
   const client = await live();
   await uploadFile(client, "gone.txt", "gone");
   await uploadFile(client, "kept.txt", "kept");
-  writeFileSync(join(dataDir, "uploads", "orphan.txt"), "crash orphan");
+  writeFileSync(join(project(), "uploads", "orphan.txt"), "crash orphan");
   const output = join(base, "backup");
   expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
     0,
@@ -281,8 +284,8 @@ test("an upload directory named by the settings is backed up at its place", asyn
 test("an upload directory reached through an alias is served after a restore", async () => {
   base = temporaryDirectory();
   dataDir = join(base, "data");
-  mkdirSync(join(dataDir, "media"), { recursive: true });
-  symlinkSync("media", join(dataDir, "uploads"));
+  mkdirSync(join(project(), "media"), { recursive: true });
+  symlinkSync("media", join(project(), "uploads"));
   server = await startServer(executable, dataDir);
   authorization = await provisionAuthorization(server.origin);
   const client = apiClient(server.origin, authorization);
@@ -336,7 +339,7 @@ test("--verify looks where the restored setting does, not only where the manifes
 test("backed-up media is closed to everyone but its owner", async () => {
   const client = await live();
   await uploadFile(client, "private.txt", "private");
-  chmodSync(join(dataDir, "uploads", "private.txt"), 0o664);
+  chmodSync(join(project(), "uploads", "private.txt"), 0o664);
   const output = join(base, "backup");
   expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
     0,
@@ -462,22 +465,23 @@ test("a kill at publication leaves nothing at the name, and a retry works", asyn
 test("a pre-migration snapshot is held, and the install it came from is not", async () => {
   base = temporaryDirectory();
   dataDir = join(base, "data");
-  const older = openDatabase(dataDir);
-  runMigrations(older, dataDir, createRealClock(), productionMigrations.slice(0, version - 1));
+  const older = openDatabase(project());
+  runMigrations(older, project(), createRealClock(), productionMigrations.slice(0, version - 1));
   older.close(true);
 
   server = await startServer(executable, dataDir);
   expect((await fetch(server.health)).headers.get(HOLD_HEADER)).toBeNull();
   await stopped();
-  const [snapshot] = names(join(dataDir, "backups"));
-  const path = join(dataDir, "backups", snapshot!);
+  // B138b layout: the instance keeps pre-migration snapshots in backups/pre-migration/.
+  const [snapshot] = names(join(dataDir, "backups", "pre-migration"));
+  const path = join(dataDir, "backups", "pre-migration", snapshot!);
   expect((await runBackup(executable, ["--verify", path])).stdout).toMatch(/Hold: held since /);
 
   // Put back as the guide says, it starts held and keeps migrating.
   copyFileSync(path, join(base, "snapshot.db"));
   removeDirectory(dataDir);
-  mkdirSync(dataDir);
-  copyFileSync(join(base, "snapshot.db"), join(dataDir, "iglo-email.db"));
+  mkdirSync(project(), { recursive: true });
+  copyFileSync(join(base, "snapshot.db"), join(project(), "iglo-email.db"));
   server = await startServer(executable, dataDir);
   expect((await fetch(server.health)).headers.get(HOLD_HEADER)).not.toBeNull();
 });
@@ -507,9 +511,11 @@ test("a migration that fails rolls back on its own: the live database stays unhe
 test("a newer executable migrates a restored backup", async () => {
   base = temporaryDirectory();
   dataDir = join(base, "data");
-  mkdirSync(join(dataDir, "uploads"), { recursive: true });
-  const older = openDatabase(dataDir);
-  runMigrations(older, dataDir, createRealClock(), productionMigrations.slice(0, version - 1));
+  // B138b layout: an instance whose primary project holds the older database.
+  registerProjects(dataDir, [{ slug: "main", name: "Main", hostname: "127.0.0.1", primary: true }]);
+  mkdirSync(join(project(), "uploads"), { recursive: true });
+  const older = openDatabase(project());
+  runMigrations(older, project(), createRealClock(), productionMigrations.slice(0, version - 1));
   older
     .query("INSERT INTO lists (uuid, name, type, optin) VALUES (?, 'kept', 'public', 'single')")
     .run(crypto.randomUUID());
@@ -531,8 +537,8 @@ test("a newer executable migrates a restored backup", async () => {
   // The migration keeps the restore hold the backup placed.
   expect((await fetch(server.health)).headers.get(HOLD_HEADER)).not.toBeNull();
   await stopped();
-  expect(names(join(dataDir, "backups"))).toHaveLength(1);
-  const after = await runBackup(executable, ["--verify", join(dataDir, "iglo-email.db")]);
+  expect(names(join(dataDir, "backups", "pre-migration"))).toHaveLength(1);
+  const after = await runBackup(executable, ["--verify", join(project(), "iglo-email.db")]);
   expect(after.stdout).toContain(`Schema version: ${version}`);
 });
 
@@ -578,7 +584,7 @@ test("--verify reports a damaged file and changes nothing", async () => {
   expect(result.stderr).not.toBe("");
 
   expect((await runBackup(executable, ["--verify", join(base, "absent")])).exitCode).toBe(1);
-  const dataDirectory = await runBackup(executable, ["--verify", dataDir]);
+  const dataDirectory = await runBackup(executable, ["--verify", project()]);
   expect(dataDirectory.exitCode).toBe(1);
   expect(dataDirectory.stderr).toContain("not a backup");
 });
@@ -586,7 +592,7 @@ test("--verify reports a damaged file and changes nothing", async () => {
 test("nothing is created for a directory without a database or a bad command line", async () => {
   base = temporaryDirectory();
   dataDir = join(base, "data");
-  mkdirSync(join(dataDir, "uploads"), { recursive: true });
+  mkdirSync(join(project(), "uploads"), { recursive: true });
   const empty = join(base, "empty");
   const result = await runBackup(executable, ["--data-dir", empty]);
   expect(result.exitCode).toBe(1);
@@ -620,8 +626,10 @@ test("on an empty, freshly started data directory, backup --output creates missi
 test("a backup refused for no schema creates none of the folders its output would need", async () => {
   base = temporaryDirectory();
   dataDir = join(base, "data");
-  mkdirSync(dataDir);
-  new Database(join(dataDir, "iglo-email.db")).close();
+  // B138b layout: an instance whose primary project has an empty database.
+  registerProjects(dataDir, [{ slug: "main", name: "Main", hostname: "127.0.0.1", primary: true }]);
+  mkdirSync(project(), { recursive: true });
+  new Database(join(project(), "iglo-email.db")).close();
   const result = await runBackup(executable, [
     "--data-dir",
     dataDir,
@@ -639,11 +647,11 @@ test("a backup refused for an output inside the uploads creates none of the fold
     "--data-dir",
     dataDir,
     "--output",
-    join(dataDir, "uploads", "a", "b", "c", "out"),
+    join(project(), "uploads", "a", "b", "c", "out"),
   ]);
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toContain("is inside the upload directory");
-  expect(existsSync(join(dataDir, "uploads", "a"))).toBe(false);
+  expect(existsSync(join(project(), "uploads", "a"))).toBe(false);
 });
 
 test("a backup refused for too little space creates none of the folders its output would need", async () => {
@@ -671,7 +679,7 @@ test("a refusal keeps the folders that already existed, and what is in them", as
   expect(exists.stderr).toContain("already exists");
   expect(readFileSync(join(taken, "keep.txt"), "utf-8")).toBe("kept");
 
-  const kept = join(dataDir, "uploads", "kept");
+  const kept = join(project(), "uploads", "kept");
   mkdirSync(kept);
   writeFileSync(join(kept, "keep.txt"), "kept too");
   const inside = await runBackup(executable, [
@@ -751,7 +759,7 @@ test("a parent that is a symlink loop is named as one, not reported as a raw ELO
 
 test("a symlink planted in a folder the backup is about to create is refused, not followed", async () => {
   await live();
-  const uploads = join(dataDir, "uploads");
+  const uploads = join(project(), "uploads");
   const before = names(uploads);
   // The hook runs after the checks and before the folders are made: the race the checks cannot see.
   const planted = () => {
@@ -776,7 +784,7 @@ test("a symlink planted in a folder the backup is about to create is refused, no
 test("a symlink planted above the data directory is refused, and --force never replaces the live data", async () => {
   await live();
   const before = names(dataDir);
-  const size = statSync(join(dataDir, "iglo-email.db")).size;
+  const size = statSync(join(project(), "iglo-email.db")).size;
   // The hook plants `a` as an alias of the parent, so `a/data` would be the live data directory.
   const planted = () => {
     symlinkSync(base, join(base, "a"));
@@ -794,13 +802,13 @@ test("a symlink planted above the data directory is refused, and --force never r
     }),
   ).toThrow(`${join(base, "a")} changed meanwhile`);
   expect(names(dataDir)).toEqual(before);
-  expect(statSync(join(dataDir, "iglo-email.db")).size).toBe(size);
+  expect(statSync(join(project(), "iglo-email.db")).size).toBe(size);
   expect(names(base)).toEqual(["a", "data"]);
 });
 
 test("an existing parent swapped for a symlink during the checks is refused, not followed", async () => {
   await live();
-  const uploads = join(dataDir, "uploads");
+  const uploads = join(project(), "uploads");
   const before = names(uploads);
   mkdirSync(join(base, "x"));
   // `x` existed when it was checked. The hook runs after the checks and before the folders are made.
@@ -826,7 +834,7 @@ test("an existing parent swapped for a symlink during the checks is refused, not
 test("--force to a path whose existing parent is swapped for an alias of the base is refused, and the live data is intact", async () => {
   await live();
   const before = names(dataDir);
-  const size = statSync(join(dataDir, "iglo-email.db")).size;
+  const size = statSync(join(project(), "iglo-email.db")).size;
   mkdirSync(join(base, "x"));
   const swapped = () => {
     renameSync(join(base, "x"), join(base, "x-moved"));
@@ -845,21 +853,22 @@ test("--force to a path whose existing parent is swapped for an alias of the bas
     }),
   ).toThrow(`${join(base, "x")} changed meanwhile: it no longer resolves to`);
   expect(names(dataDir)).toEqual(before);
-  expect(statSync(join(dataDir, "iglo-email.db")).size).toBe(size);
+  expect(statSync(join(project(), "iglo-email.db")).size).toBe(size);
   expect(names(base)).toEqual(["data", "x", "x-moved"]);
   expect(names(join(base, "x-moved"))).toEqual([]);
 });
 
 test("--force refuses to move the live data directory aside, even when the output came to name it", async () => {
   await live();
-  const before = names(dataDir);
-  const size = statSync(join(dataDir, "iglo-email.db")).size;
+  // B138b layout: the live directory that holds the database is the primary project's.
+  const before = names(project());
+  const size = statSync(join(project(), "iglo-email.db")).size;
   const output = join(base, "x", "data");
   mkdirSync(join(base, "x"));
   // After the checks, the live data directory is moved to the path the output names. The output is
   // then the live directory itself: it holds a database, so `replaceable` would accept it, and a
   // replacement without the identity check would move it aside and delete it.
-  const moved = () => renameSync(dataDir, output);
+  const moved = () => renameSync(project(), output);
   expect(() =>
     createBackup({
       dataDir,
@@ -873,7 +882,7 @@ test("--force refuses to move the live data directory aside, even when the outpu
   ).toThrow(`${output} is the live data directory; not replacing it`);
   expect(names(output)).toEqual(before);
   expect(statSync(join(output, "iglo-email.db")).size).toBe(size);
-  expect(names(base)).toEqual(["x"]);
+  expect(names(base)).toEqual(["data", "x"]);
   expect(names(join(base, "x"))).toEqual(["data"]);
 });
 
@@ -900,7 +909,7 @@ test("a successful backup into new nested folders creates each one 0700", async 
 test("a failure after folders were created removes exactly those, and keeps what existed", async () => {
   const client = await live();
   await uploadFile(client, "unreadable.txt", "bytes");
-  chmodSync(join(dataDir, "uploads", "unreadable.txt"), 0o000);
+  chmodSync(join(project(), "uploads", "unreadable.txt"), 0o000);
   const kept = join(base, "keep");
   mkdirSync(kept);
   writeFileSync(join(kept, "keep.txt"), "kept");
@@ -910,7 +919,7 @@ test("a failure after folders were created removes exactly those, and keeps what
     "--output",
     join(kept, "f2", "out"),
   ]);
-  chmodSync(join(dataDir, "uploads", "unreadable.txt"), 0o644);
+  chmodSync(join(project(), "uploads", "unreadable.txt"), 0o644);
   expect(result.exitCode).toBe(1);
   expect(names(kept)).toEqual(["keep.txt"]);
   expect(readFileSync(join(kept, "keep.txt"), "utf-8")).toBe("kept");

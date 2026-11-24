@@ -560,7 +560,8 @@ describe("compiled executable", () => {
         expect(await shutDown(child, "SIGTERM")).toBe(0);
       }
       if (i === 0) {
-        const seed = startSchemaFixture(dataDir);
+        // B138b layout: the primary project's database.
+        const seed = startSchemaFixture(join(dataDir, "projects", "main"));
         try {
           const result = await fetch(seed.origin, {
             method: "POST",
@@ -572,7 +573,7 @@ describe("compiled executable", () => {
         }
       }
     }
-    const fixture = startSchemaFixture(dataDir);
+    const fixture = startSchemaFixture(join(dataDir, "projects", "main"));
     try {
       const response = await fetch(fixture.origin, {
         method: "POST",
@@ -891,7 +892,8 @@ describe("compiled executable", () => {
     const stderr = await new Response(child.stderr).text();
     expect(stderr.split("\n").filter((line) => line.includes("X-Forwarded-For"))).toEqual([
       expect.stringMatching(
-        /^X-Forwarded-For from \S+ was ignored: that address is not in security\.trusted_proxies\. /,
+        // B138b: every stderr line names its project (14-projects section 9).
+        /^\[main\] X-Forwarded-For from \S+ was ignored: that address is not in security\.trusted_proxies\. /,
       ),
     ]);
     expect(stderr).not.toMatch(/^\s+at /m);

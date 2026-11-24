@@ -192,7 +192,7 @@ describe("one server", () => {
     lists: [lists],
     ...extra,
   });
-  const leftovers = () => readdirSync(join(dataDir, TEMPORARY));
+  const leftovers = () => readdirSync(join(dataDir, "projects", "main", TEMPORARY));
   const set = (value: Array<string>) =>
     c.call("/api/settings/privacy.domain_blocklist", "PUT", value);
   const gone = async () => {
@@ -591,7 +591,7 @@ describe("process lifecycle", () => {
     const { child, c } = await running(dataDir);
     child.kill("SIGTERM");
     expect(await child.exited).toBe(0);
-    expect(readdirSync(join(dataDir, TEMPORARY))).toEqual([]);
+    expect(readdirSync(join(dataDir, "projects", "main", TEMPORARY))).toEqual([]);
     const next = await serve(dataDir);
     const again = await client(next.origin, {
       user: "m13-contract-api",
@@ -606,9 +606,9 @@ describe("process lifecycle", () => {
     const { child, c } = await running(dataDir);
     child.kill("SIGKILL");
     await child.exited;
-    expect(readdirSync(join(dataDir, TEMPORARY))).toHaveLength(1);
+    expect(readdirSync(join(dataDir, "projects", "main", TEMPORARY))).toHaveLength(1);
     const next = await serve(dataDir);
-    expect(readdirSync(join(dataDir, TEMPORARY))).toEqual([]);
+    expect(readdirSync(join(dataDir, "projects", "main", TEMPORARY))).toEqual([]);
     const again = await client(next.origin, {
       user: "m13-contract-api",
       token: tokenOf(c),

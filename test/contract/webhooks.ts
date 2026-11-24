@@ -57,7 +57,9 @@ export async function runWebhooksContract(target: {
   const receiver = startReceiver();
   const sink = await startSink({ reject: () => true });
   const stored = () => {
-    const reader = new Database(join(target.dataDir, "iglo-email.db"), { readonly: true });
+    const reader = new Database(join(target.dataDir, "projects", "main", "iglo-email.db"), {
+      readonly: true,
+    });
     try {
       return reader
         .query("SELECT payload FROM webhook_deliveries ORDER BY id")
@@ -448,7 +450,7 @@ export async function runWebhooksContract(target: {
     // Deliberate difference (07): a bulk action over the delivery budget writes nothing.
     const blockedBefore = (await call("/api/subscribers?per_page=1&status=blocklisted")).body.data
       .total;
-    const writer = new Database(join(target.dataDir, "iglo-email.db"));
+    const writer = new Database(join(target.dataDir, "projects", "main", "iglo-email.db"));
     writer.run(
       `WITH RECURSIVE i(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM i WHERE n < 50001)
        INSERT INTO subscribers (uuid, email, name)

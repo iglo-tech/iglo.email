@@ -90,10 +90,10 @@ function secondServer(dataDir: string, options?: { cwd?: string }) {
   );
 }
 
-/** The database as it stands on disk. */
+/** The database as it stands on disk: the primary project's (B138b layout). */
 const fileBytes = (dataDir: string) =>
   ["iglo-email.db", "iglo-email.db-wal"].map((name) =>
-    Bun.hash(readFileSync(join(dataDir, name))).toString(),
+    Bun.hash(readFileSync(join(dataDir, "projects", "main", name))).toString(),
   );
 
 async function logIn(origin: string, password: string) {
@@ -308,7 +308,7 @@ test("a command leaves a directory without a database as it found it", async () 
     stdin: "a-long-password",
   });
   expect(result.exitCode).toBe(1);
-  expect(result.stderr).toBe(`No database at ${join(missing, "iglo-email.db")}\n`);
+  expect(result.stderr).toBe(`No database at ${join(missing, "instance.db")}\n`);
   expect(statSync(missing, { throwIfNoEntry: false })).toBeUndefined();
 });
 

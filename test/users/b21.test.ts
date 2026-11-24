@@ -1,5 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { rmSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { registerProjects } from "@/test/projects/fixture";
 import { openDatabase } from "@/db/connection";
 import { recoverTotp } from "@/users/cli";
 import { productionMigrations } from "@/db/migrations";
@@ -79,13 +81,20 @@ test("an operator clears a user's TOTP from the CLI and their sessions end", asy
   const dataDir = f.persisted.dataDir;
   await f.close(true);
   fixtures.length = 0;
+  // B138b: the CLI acts on an instance's primary project, so the fixture's database moves into one.
+  const project = join(dataDir, "instance", "projects", "main");
+  registerProjects(join(dataDir, "instance"), [
+    { slug: "main", name: "Main", hostname: "127.0.0.1", primary: true },
+  ]);
+  mkdirSync(project, { recursive: true });
+  renameSync(join(dataDir, "iglo-email.db"), join(project, "iglo-email.db"));
   await recoverTotp({
-    dataDir,
+    dataDir: join(dataDir, "instance"),
     username: f.admin.user,
     clock: new TestClock(),
     supportedVersion: productionMigrations.length,
   });
-  const db = openDatabase(dataDir);
+  const db = openDatabase(project);
   const row = asBody<Record<string, any>>(
     db.query("SELECT twofa_type, twofa_key FROM users WHERE id = ?").get(id),
   );
