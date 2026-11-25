@@ -38,6 +38,8 @@ let ses: ReturnType<typeof Bun.serve>;
 let port = 0;
 let operator: InstanceSession;
 let sentLast24Hours = 3000;
+/** When set, the stand-in refuses every read with this AWS message. */
+let refusal: string | null = null;
 const keys = new Map<string, string>();
 const openapi = asBody<Document>(JSON.parse(buildDocument()));
 
@@ -46,11 +48,16 @@ beforeAll(async () => {
     port: 0,
     hostname: "127.0.0.1",
     fetch: () =>
-      Response.json({
-        SendQuota: { Max24HourSend: 50_000, MaxSendRate: 20, SentLast24Hours: sentLast24Hours },
-        ProductionAccessEnabled: true,
-        SendingEnabled: true,
-      }),
+      refusal
+        ? Response.json(
+            { message: refusal },
+            { status: 403, headers: { "x-amzn-errortype": "AccessDeniedException:" } },
+          )
+        : Response.json({
+            SendQuota: { Max24HourSend: 50_000, MaxSendRate: 20, SentLast24Hours: sentLast24Hours },
+            ProductionAccessEnabled: true,
+            SendingEnabled: true,
+          }),
   });
   const admin = await adminCredentials();
   dataDir = await mkdtemp(join(tmpdir(), "iglo-email-b145a-capacity-"));
@@ -450,9 +457,47 @@ test("over the quota: the answer says so and never refuses; the outside share is
   await instanceCall(port, PRIMARY, operator, "POST", "/api/instance/settings/ses/check");
 });
 
+test("a failed read shows project users a plain message; AWS's text stays with the instance admin", async () => {
+  const arn = "arn:aws:iam::123456789012:user/iglo-ses-read";
+  refusal = `User: ${arn} is not authorized to perform: ses:GetAccount`;
+  try {
+    const check = await instanceCall(
+      port,
+      PRIMARY,
+      operator,
+      "POST",
+      "/api/instance/settings/ses/check",
+    );
+    expect(asBody<{ data: { error: string } }>(await check.json()).data.error).toBe(
+      `SES GetAccount answered 403 AccessDeniedException: ${refusal}`,
+    );
+    for (const host of [PRIMARY, A, B]) {
+      const { status, body, text } = await capacity(host, "?count=100");
+      expect(status).toBe(200);
+      // The last good snapshot still gives a forecast.
+      expect(body.available).toBe(true);
+      expect(body.error).toBe(
+        "The SES account could not be read. The instance admin can check why.",
+      );
+      expect(text).not.toContain("123456789012");
+      expect(text).not.toContain("arn:aws");
+    }
+  } finally {
+    refusal = null;
+    await instanceCall(port, PRIMARY, operator, "POST", "/api/instance/settings/ses/check");
+  }
+  expect((await capacity(A, "?count=100")).body.error).toBeNull();
+});
+
 test("a bad candidate is a 400; an unknown campaign a 404", async () => {
   for (const query of [
     "?at=tomorrow",
+    // RFC 3339 only (D136): no zone (read in the server's zone otherwise), an impossible date
+    // (rolled over to 2 March otherwise) and an offset without its colon are all refused.
+    "?at=2026-11-26T09:00",
+    "?at=2026-11-26T09:00:00",
+    "?at=2026-02-30T10:00:00Z",
+    "?at=2026-11-26T09:00:00%2B0200",
     "?count=-1",
     "?count=1.5",
     "?campaign_id=0",
@@ -462,6 +507,9 @@ test("a bad candidate is a 400; an unknown campaign a 404", async () => {
     expect({ query, status }).toEqual({ query, status: 400 });
   }
   expect((await capacity(PRIMARY, "?campaign_id=999")).status).toBe(404);
+  const offset = await capacity(PRIMARY, "?count=1&at=2030-01-02T12:00:00.5%2B02:00");
+  expect(offset.status).toBe(200);
+  expect(offset.body.forecast?.start).toBe("2030-01-02T10:00:00.500Z");
 });
 
 test("MCP tools/call of get_sending_capacity works with a project token and names no project", async () => {
@@ -496,4 +544,34 @@ test("MCP tools/call of get_sending_capacity works with a project token and name
     .instructions;
   expect(instructions).toContain('serves only the project "Beta Brand"');
   expect(instructions).toContain("`get_sending_capacity`");
+});
+
+test("a long project name is cut in the MCP instructions on a whole character, never inside one", async () => {
+  const admin = await adminCredentials();
+  const cases = [
+    // A cut at 39 UTF-16 units would keep only the first half of the emoji's surrogate pair.
+    { slug: "gamma", name: `${"x".repeat(38)}😀😀`, quoted: `${"x".repeat(38)}…` },
+    // A family emoji is one character of several code points joined by ZWJ: kept whole or dropped.
+    { slug: "delta", name: `${"y".repeat(36)}👩‍👩‍👧zz`, quoted: `${"y".repeat(36)}…` },
+  ];
+  for (const { slug, name, quoted } of cases) {
+    const host = `${slug}.example.test`;
+    await instance.add({ slug, name, hostname: host });
+    const key = await createApiUser(port, host, await logIn(port, host, admin), "capacity");
+    const init = await api(port, host, key, "POST", "/api/mcp", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: "t", version: "1" },
+      },
+    });
+    expect(init.status).toBe(200);
+    const instructions = asBody<{ result: { instructions: string } }>(JSON.parse(init.text)).result
+      .instructions;
+    expect(instructions.isWellFormed()).toBe(true);
+    expect(instructions).toContain(`serves only the project "${quoted}"`);
+  }
 });

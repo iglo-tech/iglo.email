@@ -975,7 +975,10 @@ export const schemas = {
   SendingCapacity: object({
     available: { ...boolean, description: "False without SES API credentials or a read." },
     reason: { type: ["string", "null"], enum: ["not_configured", "not_read", null] },
-    error: { ...nullable(string), description: "The last SES read's error while reads fail." },
+    error: {
+      ...nullable(string),
+      description: "Set while SES reads fail; the instance admin's check shows AWS's text.",
+    },
     rate: object({ setting: number, ses: nullable(number), effective: number }),
     account: nullable(
       object({

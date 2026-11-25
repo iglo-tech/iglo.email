@@ -17,14 +17,30 @@ const LATEST_PROTOCOL_VERSION = SUPPORTED_VERSIONS[0];
 export const INSTRUCTIONS_NAME_LIMIT = 40;
 
 /**
+ * The longest run of whole graphemes that fits INSTRUCTIONS_NAME_LIMIT − 1 UTF-16 units, so the cut
+ * never splits a surrogate pair or a combined emoji or accent.
+ */
+function cutName(flat: string): string {
+  let cut = "";
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+    flat,
+  )) {
+    if (cut.length + segment.length > INSTRUCTIONS_NAME_LIMIT - 1) {
+      break;
+    }
+    cut += segment;
+  }
+  return cut;
+}
+
+/**
  * What an agent reads first, in the initialize result (D108). About 1,500 characters at most, with
  * a project name of up to INSTRUCTIONS_NAME_LIMIT characters (D159). Every tool named here exists
  * in tools/list for an admin credential (test/mcp/agent-guidance.test.ts).
  */
 export function instructions(project: string): string {
   const flat = project.replaceAll(/[\p{Cc}"\s]+/gu, " ").trim() || "this project";
-  const name =
-    flat.length > INSTRUCTIONS_NAME_LIMIT ? `${flat.slice(0, INSTRUCTIONS_NAME_LIMIT - 1)}…` : flat;
+  const name = flat.length > INSTRUCTIONS_NAME_LIMIT ? `${cutName(flat)}…` : flat;
   return [
     `iglo.email is an email server. This endpoint serves only the project "${name}", for an agent working for a person; applications use the REST API (/api/openapi.json) with the same permissions; this endpoint omits what the last paragraph names.`,
     "Before writing Liquid, read `template_reference`.",

@@ -10,6 +10,14 @@ import type { SesAccount, SesSnapshot } from "@/messaging/ses-account";
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
+/**
+ * What a project's users see while SES reads fail. AWS's own text can carry the IAM user's ARN and
+ * so the AWS account ID: instance infrastructure, kept for the instance admin's "Check SES
+ * account" button and the attention line (D159).
+ */
+const READ_FAILED = "The SES account could not be read. The instance admin can check why.";
+const projectError = (error: string | null) => (error === null ? null : READ_FAILED);
+
 /** Starts after the 24 hours' start (`day`) and after the window's start (`window`). */
 export interface StartCounts {
   readonly day: number;
@@ -232,7 +240,7 @@ export function createCapacity(deps: {
         return {
           available: false,
           reason: state.configured ? "not_read" : "not_configured",
-          error: state.error,
+          error: projectError(state.error),
           rate,
           account: null,
           forecast: null,
@@ -262,7 +270,7 @@ export function createCapacity(deps: {
       return {
         available: true,
         reason: null,
-        error: state.error,
+        error: projectError(state.error),
         rate,
         account: accountView(snapshot, now),
         forecast: {

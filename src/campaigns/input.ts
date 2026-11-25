@@ -100,7 +100,7 @@ const sendAtPattern =
  * rolls an impossible day (2030-02-29) or hour (T24:00) over to the next valid one, so each field is
  * checked against its own range first, as Go's time parse does.
  */
-function sendAtInstant(raw: string): number | undefined {
+export function sendAtInstant(raw: string): number | undefined {
   const match = sendAtPattern.exec(raw);
   if (!match) {
     return undefined;

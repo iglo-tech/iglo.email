@@ -35,6 +35,7 @@ import {
   emptyCampaign,
   mergeCampaign,
   readCampaignBody,
+  sendAtInstant,
   slug,
   validateCampaign,
 } from "@/campaigns/input";
@@ -1073,9 +1074,11 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       const id = single(params, "campaign_id");
       let start: Date | null = null;
       if (at !== undefined) {
-        const parsed = Date.parse(at);
-        if (!/^\d{4}-\d{2}-\d{2}T/.test(at) || Number.isNaN(parsed)) {
-          throw new HttpError(400, "Invalid at: use an RFC 3339 time.");
+        // The same strict parse as a campaign's send_at (D136): a zone is required and an
+        // impossible date is refused, so the answer never depends on the server's time zone.
+        const parsed = sendAtInstant(at);
+        if (parsed === undefined) {
+          throw new HttpError(400, "Invalid at: use an RFC 3339 time with a zone.");
         }
         start = new Date(parsed);
       }

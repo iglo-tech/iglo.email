@@ -127,6 +127,42 @@ function parseBody(text: string): GetAccountBody | null {
   }
 }
 
+/** The most of a `GetAccount` answer read; a real one is well under 1 KiB. */
+const ANSWER_LIMIT = 64 * 1024;
+
+/**
+ * The answer's text, reading at most `limit` bytes of it: the stream is cancelled past the limit,
+ * so a long or endless answer never sits in memory whole. `over` says the limit was passed.
+ */
+async function readCapped(
+  response: Response,
+  limit: number,
+): Promise<{ readonly text: string; readonly over: boolean }> {
+  if (!response.body) {
+    return { text: "", over: false };
+  }
+  const reader = response.body.getReader();
+  const chunks: Array<Uint8Array> = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel().catch(() => {});
+        return { text: "", over: true };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { text: new TextDecoder().decode(Buffer.concat(chunks)), over: false };
+}
+
 /** One signed `GET /v2/email/account`. Throws with SES's own message on a refusal. */
 export async function getAccount(
   credentials: SesCredentials,
@@ -158,7 +194,22 @@ export async function getAccount(
       { cause: error },
     );
   }
-  const body = parseBody((await response.text()).slice(0, 64 * 1024));
+  let read: { readonly text: string; readonly over: boolean };
+  try {
+    read = await readCapped(response, ANSWER_LIMIT);
+  } catch (error) {
+    if (timeout.aborted) {
+      throw new Error("SES GetAccount did not answer within 10 seconds", { cause: error });
+    }
+    throw new Error(
+      `SES GetAccount failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  if (response.ok && read.over) {
+    throw new Error("SES GetAccount answered more than 64 KiB");
+  }
+  const body = read.over ? null : parseBody(read.text);
   if (!response.ok) {
     const message = body?.message ?? body?.Message;
     const kind = (response.headers.get("x-amzn-errortype") ?? "").split(":")[0];

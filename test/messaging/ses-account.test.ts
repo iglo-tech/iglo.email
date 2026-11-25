@@ -10,6 +10,8 @@ interface Answer {
   status: number;
   body: unknown;
   headers?: Record<string, string>;
+  /** Answer this status with a body that never ends: 16 KiB chunks for as long as it is read. */
+  endless?: boolean;
 }
 
 const calls: Array<{ path: string; authorization: string; date: string }> = [];
@@ -36,6 +38,21 @@ beforeAll(() => {
         authorization: request.headers.get("authorization") ?? "",
         date: request.headers.get("x-amz-date") ?? "",
       });
+      if (answer.endless) {
+        const chunk = new TextEncoder().encode(" ".repeat(16 * 1024));
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"SendQuota":'));
+          },
+          pull(controller) {
+            controller.enqueue(chunk);
+          },
+        });
+        return new Response(body, {
+          status: answer.status,
+          headers: { "content-type": "application/json", ...answer.headers },
+        });
+      }
       return Response.json(answer.body, { status: answer.status, headers: answer.headers ?? {} });
     },
   });
@@ -245,6 +262,32 @@ test("on demand: a forecast reads again when the snapshot is older than a minute
   expect(calls).toHaveLength(2);
   expect(state.snapshot?.sentLast24Hours).toBe(300);
   expect(state.snapshot?.readAt).toBe("2026-01-02T03:05:05.001Z");
+});
+
+test("an answer longer than 64 KiB is read only to the limit and fails the read at once", async () => {
+  answer = quota(50_000, 100);
+  const { account, clock } = setup();
+  account.start();
+  await clock.whenSleeping();
+  for (const status of [200, 403]) {
+    answer = {
+      status,
+      body: null,
+      endless: true,
+      headers: status === 200 ? {} : { "x-amzn-errortype": "AccessDeniedException:" },
+    };
+    const started = performance.now();
+    const checked = await account.check();
+    // Well inside the 10-second timeout: the client stops reading, it does not wait it out.
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(checked.error).toBe(
+      status === 200
+        ? "SES GetAccount answered more than 64 KiB"
+        : "SES GetAccount answered 403 AccessDeniedException",
+    );
+    // The snapshot from the good read is kept.
+    expect(checked.snapshot?.sentLast24Hours).toBe(100);
+  }
 });
 
 test("the check button reads now and shows the AWS error; new credentials drop the old snapshot", async () => {
