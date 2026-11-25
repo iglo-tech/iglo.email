@@ -73,9 +73,12 @@ for (const signal of ["SIGKILL", "SIGTERM"] as const) {
       () => {
         const found = names(destination).find((name) => name.startsWith(PARTIAL));
         // The folder exists before its database file does: a missing or empty file is not ready yet.
+        // B144a layout (D158): a whole backup holds the primary project at projects/main/.
         const size =
           found &&
-          statSync(join(destination, found, "iglo-email.db"), { throwIfNoEntry: false })?.size;
+          statSync(join(destination, found, "projects", "main", "iglo-email.db"), {
+            throwIfNoEntry: false,
+          })?.size;
         if (size) {
           partial = found;
         }

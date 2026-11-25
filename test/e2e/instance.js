@@ -235,9 +235,11 @@ export async function restoredInstance(executable, sourceDataDir) {
       throw new Error(`backup exited ${made.code}: ${made.stderr}`);
     }
     const dataDir = join(directory, "data");
-    // B138b layout (docs/operations.md, Restore): a backup is the primary project's directory and
-    // is restored as projects/main/ of the new data directory.
-    await cp(snapshot, join(dataDir, "projects", "main"), { recursive: true });
+    // B144a layout (docs/operations.md, Restore): a whole backup holds the primary project at
+    // projects/main/, which is restored alone as projects/main/ of the new data directory.
+    await cp(join(snapshot, "projects", "main"), join(dataDir, "projects", "main"), {
+      recursive: true,
+    });
     return await startInstance(executable, dataDir, directory);
   } catch (error) {
     await rm(directory, { recursive: true, force: true });
@@ -245,11 +247,16 @@ export async function restoredInstance(executable, sourceDataDir) {
   }
 }
 
-/** The release of the hold on a stopped data directory: `backup --release-hold --consent-reconciled`. */
+/**
+ * The release of the restored primary project's hold on a stopped data directory:
+ * `backup --release-hold --consent-reconciled --project main` (D158).
+ */
 export function releaseHold(executable, dataDir) {
   return backupCommand(executable, [
     "--release-hold",
     "--consent-reconciled",
+    "--project",
+    "main",
     "--data-dir",
     dataDir,
   ]);

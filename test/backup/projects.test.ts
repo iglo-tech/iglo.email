@@ -1,0 +1,211 @@
+// B144a (14-projects sections 12 and 15 "CLI", D158): `backup` of instance.db and every project,
+// `backup --project <slug>`, and the restore hold per database, on the compiled executable with
+// three projects: the primary on the instance host (127.0.0.1), `a` and `b` on their own hostnames.
+// Every request names its project by an explicit Host header.
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { cpSync, existsSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { runBackup } from "@/test/backup/fixture";
+import {
+  adminCredentials,
+  logIn,
+  prepareExecutable,
+  registerProjects,
+  request,
+  sessionHeaders,
+  startInstance,
+} from "@/test/projects/fixture";
+import type { Credentials } from "@/test/projects/fixture";
+
+setDefaultTimeout(60_000);
+
+const PRIMARY = "127.0.0.1";
+const A = "a.example.test";
+const B = "b.example.test";
+const HOSTS = [PRIMARY, A, B];
+
+let prepared: Awaited<ReturnType<typeof prepareExecutable>>;
+let admin: Credentials;
+let server: Awaited<ReturnType<typeof startInstance>> | undefined;
+let base = "";
+let dataDir = "";
+
+const whole = () => join(base, "whole");
+const onlyA = () => join(base, "only-a");
+const names = (directory: string) => readdirSync(directory).sort();
+const backup = (...args: Array<string>) =>
+  runBackup(prepared.executable, ["--data-dir", dataDir, ...args]);
+const release = (...args: Array<string>) =>
+  backup("--release-hold", "--consent-reconciled", ...args);
+
+async function start() {
+  server = await startInstance(prepared.executable, dataDir, admin);
+  return server.port;
+}
+
+async function stop() {
+  const running = server;
+  server = undefined;
+  if (running) {
+    const { code, stderr } = await running.stop();
+    expect(code, stderr).toBe(0);
+  }
+}
+
+/**
+ * Whether each host's sending is held, as an operator sees it: the hold header on `/health` and a
+ * resend refused with 503 before its ID is looked at. Both must agree.
+ */
+async function heldHosts(port: number): Promise<Array<string>> {
+  const held: Array<string> = [];
+  for (const host of HOSTS) {
+    const health = await request(port, host, "/health");
+    expect(health.status).toBe(200);
+    const session = await logIn(port, host, admin);
+    const resend = await request(port, host, "/api/sends/1/resend", {
+      method: "POST",
+      headers: sessionHeaders(session),
+      body: "{}",
+    });
+    const header = health.headers.get("x-iglo-email-hold") !== null;
+    expect(resend.status === 503, `${host}: resend ${resend.status}, header ${header}`).toBe(
+      header,
+    );
+    if (header) {
+      held.push(host);
+    }
+  }
+  return held;
+}
+
+beforeAll(async () => {
+  prepared = await prepareExecutable();
+  admin = await adminCredentials();
+  base = join(prepared.directory, "work");
+  dataDir = join(base, "data");
+  registerProjects(dataDir, [
+    { slug: "main", name: "Main", hostname: PRIMARY, primary: true },
+    { slug: "a", name: "A", hostname: A },
+    { slug: "b", name: "B", hostname: B },
+  ]);
+  const port = await start();
+  expect(await heldHosts(port)).toEqual([]);
+});
+
+afterAll(async () => {
+  await server?.stop();
+  await prepared?.cleanup();
+});
+
+test("backup without --project holds instance.db and every project, checked as one", async () => {
+  const result = await backup("--output", whole());
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stderr).toBe("");
+  expect(names(whole())).toEqual(["iglo-email-backup.json", "instance.db", "projects"]);
+  expect(names(join(whole(), "projects"))).toEqual(["a", "b", "main"]);
+  for (const slug of ["a", "b", "main"]) {
+    expect(existsSync(join(whole(), "projects", slug, "iglo-email.db"))).toBe(true);
+  }
+
+  const verified = await runBackup(prepared.executable, ["--verify", whole()]);
+  expect(verified.exitCode, verified.stderr).toBe(0);
+  const headings = verified.stdout.split("\n").filter((line) => line && !line.startsWith(" "));
+  expect(headings).toEqual([
+    "instance.db",
+    "projects/a",
+    "projects/b",
+    "projects/main",
+    "Integrity: ok",
+  ]);
+  expect(verified.stdout.match(/Hold: held since /g)).toHaveLength(4);
+  expect(verified.stdout).toContain("sends nothing in any project until released");
+});
+
+test("backup --project holds that project only, shaped like its directory", async () => {
+  const result = await backup("--project", "a", "--output", onlyA());
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(names(onlyA())).toContain("iglo-email.db");
+  expect(names(onlyA())).not.toContain("instance.db");
+  expect(names(onlyA())).not.toContain("projects");
+
+  const verified = await runBackup(prepared.executable, ["--verify", onlyA()]);
+  expect(verified.exitCode, verified.stderr).toBe(0);
+  expect(verified.stdout).not.toContain("instance.db");
+  expect(verified.stdout.match(/Hold: held since /g)).toHaveLength(1);
+  expect(verified.stdout).toContain("Integrity: ok");
+});
+
+test("an unknown project slug fails and writes nothing", async () => {
+  const before = names(base);
+  const output = join(base, "unknown");
+  const result = await backup("--project", "nope", "--output", output);
+  expect(result.exitCode).not.toBe(0);
+  expect(result.stderr).toContain("No project nope");
+  expect(result.stdout).toBe("");
+  expect(existsSync(output)).toBe(false);
+  expect(names(base)).toEqual(before);
+});
+
+test("--output inside the projects directory is refused with a plain message", async () => {
+  const projects = join(dataDir, "projects");
+  const inA = names(join(projects, "a"));
+  for (const output of [join(projects, "x"), join(projects, "a", "backup")]) {
+    const result = await backup("--output", output);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(`is inside ${projects}, where the projects are read from`);
+    expect(existsSync(output)).toBe(false);
+  }
+  expect(names(projects)).toEqual(["a", "b", "main"]);
+  expect(names(join(projects, "a"))).toEqual(inA);
+});
+
+test("a restored project database holds only that project, and only its release ends it", async () => {
+  await stop();
+  const project = join(dataDir, "projects", "a");
+  renameSync(project, join(base, "a.before-restore"));
+  cpSync(onlyA(), project, { recursive: true });
+
+  expect(await heldHosts(await start())).toEqual([A]);
+  await stop();
+
+  const other = await release("--project", "b");
+  expect(other.exitCode, other.stderr).toBe(0);
+  expect(other.stdout).toContain("No hold on project b");
+  expect(other.stdout).toContain("Still held: project a");
+  const instance = await release();
+  expect(instance.exitCode, instance.stderr).toBe(0);
+  expect(instance.stdout).toContain("No hold on instance.db");
+  expect(instance.stdout).toContain("Still held: project a");
+  expect(await heldHosts(await start())).toEqual([A]);
+  await stop();
+
+  const released = await release("--project", "a");
+  expect(released.exitCode, released.stderr).toBe(0);
+  expect(released.stdout).toMatch(/^Hold released on project a at \S+\n/);
+  expect(released.stdout).toContain("Nothing is held; sending starts with the server");
+  expect(await heldHosts(await start())).toEqual([]);
+});
+
+test("a restored instance.db holds every project until its own release", async () => {
+  await stop();
+  for (const suffix of ["", "-wal", "-shm"]) {
+    rmSync(join(dataDir, `instance.db${suffix}`), { force: true });
+  }
+  cpSync(join(whole(), "instance.db"), join(dataDir, "instance.db"));
+
+  expect(await heldHosts(await start())).toEqual(HOSTS);
+  await stop();
+
+  const project = await release("--project", "a");
+  expect(project.exitCode, project.stderr).toBe(0);
+  expect(project.stdout).toContain("No hold on project a");
+  expect(project.stdout).toContain("instance.db is still held, which holds every project");
+  expect(await heldHosts(await start())).toEqual(HOSTS);
+  await stop();
+
+  const released = await release();
+  expect(released.exitCode, released.stderr).toBe(0);
+  expect(released.stdout).toMatch(/^Hold released on instance.db at \S+\n/);
+  expect(released.stdout).toContain("Nothing is held; sending starts with the server");
+  expect(await heldHosts(await start())).toEqual([]);
+});
