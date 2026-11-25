@@ -193,8 +193,9 @@ const backupTo = async (output: string) => {
   expect(result.exitCode).toBe(0);
   return result;
 };
+/** B144a (D158): the restored database here is the primary project's, released by its slug. */
 const release = (...args: Array<string>) =>
-  runBackup(executable, ["--release-hold", "--data-dir", dataDir, ...args]);
+  runBackup(executable, ["--release-hold", "--project", "main", "--data-dir", dataDir, ...args]);
 const restart = async (authorization: string) => {
   server = await startServer(executable, dataDir);
   return apiClient(server.origin, authorization);
