@@ -46,7 +46,8 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
     return runFlushChild();
   }
   if (process.argv[2] === "backup") {
-    return runBackup(process.argv.slice(3), process.env);
+    process.exitCode = runBackup(process.argv.slice(3), process.env);
+    return;
   }
   if (process.argv[2] === "reset-password") {
     return runResetPassword(process.argv.slice(3), process.env, recoverAdmin);

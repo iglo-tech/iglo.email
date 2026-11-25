@@ -21,9 +21,17 @@ Write a consistent backup of a data directory, while the server runs or not:
                          instance.db's, or with --project that project's
   --consent-reconciled   Required with --release-hold: states that opt-outs and deliveries
                          after the backup were reconciled (docs/operations.md, Restore)
+
+--release-hold exits 3 when a database it did not release is still held, and names it.
 `;
 
 type Environment = Record<string, string | undefined>;
+
+/**
+ * The exit code of a `--release-hold` that ran, but left a database held: instance.db or a project.
+ * Not 1, which is a refusal or failure with nothing released (D166).
+ */
+export const STILL_HELD = 3;
 
 interface BackupArguments {
   help: boolean;
@@ -152,11 +160,11 @@ export function runBackup(
   args: Array<string>,
   env: Environment,
   hooks: Pick<BackupOptions, "beforePublish"> = {},
-): void {
+): number {
   const parsed = parseArguments(args);
   if (parsed.help) {
     process.stdout.write(backupHelp);
-    return;
+    return 0;
   }
   const clock = createRealClock();
   const supportedVersion = productionMigrations.length;
@@ -190,16 +198,19 @@ export function runBackup(
         `Still held: ${projects.map((slug) => `project ${slug}`).join(", ")}; ` +
           "release each with --release-hold --project <slug>\n",
       );
-    } else if (!held.includes("instance.db")) {
-      process.stdout.write("Nothing is held; sending starts with the server\n");
     }
-    return;
+    if (held.length > 0) {
+      // A script sees from the code alone that sending has not started (D166).
+      return STILL_HELD;
+    }
+    process.stdout.write("Nothing is held; sending starts with the server\n");
+    return 0;
   }
   if (parsed.verify !== undefined) {
     const databases = inspectBackup(parsed.verify, clock, supportedVersion);
     print(databases);
     verdict(databases);
-    return;
+    return 0;
   }
   const report = createBackup({
     dataDir,
@@ -213,4 +224,5 @@ export function runBackup(
   });
   process.stdout.write(`Backup: ${report.path}\n`);
   print(report.databases);
+  return 0;
 }
