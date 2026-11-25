@@ -71,9 +71,13 @@ export interface InstanceRouteDeps {
 }
 
 /** The SES rate line's inputs from the account as it is now (B145b). */
-function sesRateLine(ses: Pick<SesAccount, "current">): SesRateLine {
+function sesRateLine(ses: Pick<SesAccount, "current" | "setting">): SesRateLine {
   const state = ses.current();
-  return { configured: state.configured, maxSendRate: state.snapshot?.maxSendRate ?? null };
+  return {
+    configured: state.configured,
+    maxSendRate: state.snapshot?.maxSendRate ?? null,
+    setting: ses.setting(),
+  };
 }
 
 /** The instance Settings page (B139, D154): the instance keys, in the instance layout. */

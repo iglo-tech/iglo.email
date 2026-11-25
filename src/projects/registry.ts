@@ -35,12 +35,14 @@ export interface ProjectChange {
 }
 
 /**
- * A refused registry change, with the HTTP status the instance API answers it with: 400 for input
- * that is invalid, 404 for a slug no project has, 409 for one that conflicts with another project.
+ * A refused or failed lifecycle change, with the HTTP status the instance API answers it with: 400
+ * for input that is invalid, 404 for a slug no project has, 409 for one that conflicts with another
+ * project, 500 for a delete that stopped part way (B149a: delete it again to finish), 503 for a
+ * create during shutdown.
  */
 export class RegistryError extends Error {
   constructor(
-    readonly status: 400 | 404 | 409,
+    readonly status: 400 | 404 | 409 | 500 | 503,
     message: string,
   ) {
     super(message);

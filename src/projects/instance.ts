@@ -23,7 +23,7 @@ import type { Dispatcher } from "@/messaging/dispatcher";
 import type { SMTPServer } from "@/messaging/email";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
 import { archiveDeleted } from "@/projects/deleted";
-import type { DeletedProject } from "@/projects/deleted";
+import type { ArchiveProgress, DeletedProject } from "@/projects/deleted";
 import {
   INSTANCE_DATABASE,
   PROJECTS,
@@ -80,6 +80,12 @@ export const PRIMARY_SLUG = "main";
 /** The Projects page's "sent" window. */
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * How long a delete waits for the project's requests in flight (B149a, D164): the sender's close
+ * bound (`SENDER_CLOSE_MS`). A request still running then is cut: its database closes under it.
+ */
+export const DRAIN_MS = 5000;
+
 export interface InstanceConfig {
   readonly dataDir: string;
   /** `--root-url`: its host is the instance host, and the primary project's root URL is it. */
@@ -104,6 +110,21 @@ interface Entry {
   idle: (() => void) | undefined;
   /** Off the routing table, being deleted: a loop's failure no longer stops the process. */
   removed: boolean;
+}
+
+/**
+ * A delete that stopped after the project left the routing table (B149a, D164): not served, listed
+ * with its error, and finished by the next delete from the step that failed.
+ */
+interface StuckDelete {
+  readonly entry: Entry;
+  /** The project closed: a retry does not close it again. */
+  closed: boolean;
+  /** Its registry rows are gone: a restart would find a leftover directory. */
+  unregistered: boolean;
+  /** The final snapshot's finished steps: a retry neither claims another name nor tars again. */
+  readonly archive: ArchiveProgress;
+  error: string;
 }
 
 /**
@@ -207,6 +228,10 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   const down = new Set<string>();
   /** Slugs whose directory a create or a delete is working on: not leftovers. */
   const busy = new Set<string>();
+  /** Deletes that stopped part way, by slug: not served, not leftovers, finished by a new delete. */
+  const stuck = new Map<string, StuckDelete>();
+  /** Set by stop(): a create no longer starts (B149a, D164). */
+  let stopping = false;
   // The instance's own lines: stderr and the buffer the instance Logs page shows (D157).
   const instanceLogs = createInstanceLogBuffer(clock);
   const { logger: instanceLogger, attention } = createInstanceLogger(instanceLogs);
@@ -300,6 +325,14 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       await entry.project.close();
     }
     entries.length = 0;
+    // A delete that stopped before its close: tried once more, as a delete would. Its registry rows
+    // decide what the next start does (served again, or a leftover).
+    for (const { entry, closed } of stuck.values()) {
+      if (!closed) {
+        await entry.project.close().catch(() => {});
+      }
+    }
+    stuck.clear();
     // Last in the shutdown order (14-projects section 7): every project has stopped asking for
     // slots and drained; the pools close. After stop() this is the same, already settled close.
     await dispatcher?.close();
@@ -396,6 +429,11 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
    */
   const add = (input: NewProject): Promise<ProjectRecord> =>
     serial(async () => {
+      // A create after the shutdown began is refused before anything is made (B149a, D164); one
+      // already wiring finishes, is registered, and is not started (the next start serves it).
+      if (stopping) {
+        throw new RegistryError(503, "The instance is shutting down: nothing was created");
+      }
       if (!SLUG_PATTERN.test(input.slug)) {
         throw new RegistryError(400, `Invalid project slug: ${input.slug}`);
       }
@@ -412,7 +450,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         throw new RegistryError(400, "The primary project's hostname is the instance host");
       }
       checkInstanceHost({ primary: input.primary ?? false, hostname, extra });
-      if (entries.some((entry) => entry.record.slug === input.slug)) {
+      if (entries.some((entry) => entry.record.slug === input.slug) || stuck.has(input.slug)) {
         throw new RegistryError(409, `A project named ${input.slug} exists`);
       }
       const directory = projectDirectory(root, input.slug);
@@ -455,7 +493,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         }
         entries.push(entry);
         rebuild();
-        if (fail) {
+        if (fail && !stopping) {
           startProject(entry);
         }
         return record;
@@ -485,15 +523,21 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
 
   /**
    * Deletes a project (14-projects section 10): it leaves the routing table, its sending stops,
-   * its in-flight requests finish against its open database, its loops stop under today's deadlines
-   * (its sends in SMTP flight under the sender's 5 s close deadline), it closes, its
-   * registry rows go, then its database moves to `backups/deleted/` with a tarball of its other
-   * files, and its directory is removed. A crash before the rows go serves it again at the next
-   * start; a crash after leaves a directory with no row, reported and never served, with nothing
-   * lost. Returns null for a slug no project has.
+   * its in-flight requests finish against its open database for at most DRAIN_MS, its loops stop
+   * under today's deadlines (its sends in SMTP flight under the sender's 5 s close deadline), it
+   * closes, its registry rows go, then its database moves to `backups/deleted/` with a tarball of
+   * its other files, and its directory is removed. A crash before the rows go serves it again at the
+   * next start; a crash after leaves a directory with no row, reported and never served, with
+   * nothing lost. A failure after the routing table keeps the project off it and listed with the
+   * error, and the next delete finishes from the failed step (B149a, D164). Returns null for a slug
+   * no project has.
    */
   const remove = (slug: string): Promise<DeletedProject | null> =>
     serial(async () => {
+      const left = stuck.get(slug);
+      if (left) {
+        return finishDelete(left);
+      }
       const index = entries.findIndex((entry) => entry.record.slug === slug);
       if (index === -1) {
         return null;
@@ -507,29 +551,82 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         // claims handed back, and no slot request is answered while its HTTP requests drain. Pushes
         // in SMTP flight get the sender's 5 s close deadline; the shared pools are never cut.
         const sending = entry.project.stopSending();
-        await drain(entry);
+        const cut = await drain(entry);
+        if (cut > 0) {
+          attention(
+            `Deleting project ${slug}: ${cut} request${cut === 1 ? "" : "s"} still running after ` +
+              `${DRAIN_MS / 1000} s ${cut === 1 ? "was" : "were"} cut; its database closes under ` +
+              `${cut === 1 ? "it" : "them"}`,
+          );
+        }
         await Promise.allSettled([sending, ...entry.project.stop()]);
-        await entry.project.close();
-        down.delete(slug);
-        registered.remove(slug);
-        return await archiveDeleted(root, slug, clock);
       } finally {
         busy.delete(slug);
       }
+      return finishDelete({ entry, closed: false, unregistered: false, archive: {}, error: "" });
     });
+
+  /**
+   * A delete's steps after the loops stopped: close, registry rows, final snapshot. Each step done
+   * is remembered, so a delete that stopped part way is finished by the next one from that step.
+   */
+  async function finishDelete(state: StuckDelete): Promise<DeletedProject> {
+    const slug = state.entry.record.slug;
+    busy.add(slug);
+    try {
+      if (!state.closed) {
+        await state.entry.project.close();
+        state.closed = true;
+        down.delete(slug);
+      }
+      if (!state.unregistered) {
+        registered.remove(slug);
+        state.unregistered = true;
+      }
+      const deleted = await archiveDeleted(root, slug, clock, state.archive);
+      stuck.delete(slug);
+      return deleted;
+    } catch (error) {
+      const step = !state.closed
+        ? "its close"
+        : !state.unregistered
+          ? "its registry rows"
+          : "its archive";
+      state.error = `${step}: ${error instanceof Error ? error.message : String(error)}`;
+      stuck.set(slug, state);
+      const message = `Deleting project ${slug} stopped at ${state.error}. It is not served; delete it again to finish`;
+      attention(message);
+      throw new RegistryError(500, message);
+    } finally {
+      busy.delete(slug);
+    }
+  }
 
   const projects: InstanceProjects = {
     list: (): Array<ProjectSummary> => {
       const since = new Date(clock.now().getTime() - DAY_MS);
-      return entries.map((entry) => ({
-        ...entry.record,
-        rootUrl: options(entry.record).rootUrl,
-        activity: entry.project.activity(since),
-      }));
+      return [
+        ...entries.map((entry) => ({
+          ...entry.record,
+          rootUrl: options(entry.record).rootUrl,
+          activity: entry.project.activity(since),
+          deleteError: null,
+        })),
+        // A delete that stopped part way: its database may be closed, so it has no counts.
+        ...[...stuck.values()].map(({ entry, error }) => ({
+          ...entry.record,
+          rootUrl: options(entry.record).rootUrl,
+          activity: null,
+          deleteError: error,
+        })),
+      ];
     },
     leftovers: () =>
       projectDirectories(root).filter(
-        (name) => !busy.has(name) && !entries.some((entry) => entry.record.slug === name),
+        (name) =>
+          !busy.has(name) &&
+          !stuck.has(name) &&
+          !entries.some((entry) => entry.record.slug === name),
       ),
     create: add,
     update,
@@ -695,11 +792,39 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
      * that drain (5 s, then it cancels the sockets), as each project's own emailer did before B141.
      */
     stop(): Array<unknown> {
+      stopping = true;
       const stops = [
         ...entries.toReversed().flatMap((entry) => entry.project.stop()),
         sesAccount.stop(),
       ];
       return dispatcher ? [...stops, dispatcher.close()] : stops;
+    },
+    /**
+     * The HTTP stop main() appends (B149a, D164): the attached server stops taking requests, and
+     * those in flight get at most DRAIN_MS on the instance clock, a delete's drain bound, before
+     * their connections are cut and the databases close under them. A stalled upload no longer
+     * holds the shutdown until Bun's own idle timeout.
+     */
+    async stopServer(): Promise<void> {
+      const bound = server;
+      if (!bound) {
+        return;
+      }
+      const deadline = new AbortController();
+      const expired = clock.sleep(DRAIN_MS, deadline.signal).then(
+        () => true,
+        () => false,
+      );
+      const cut = await Promise.race([bound.stop().then(() => false), expired]);
+      deadline.abort();
+      if (cut) {
+        const running = bound.pendingRequests;
+        attention(
+          `Stopping: ${running} request${running === 1 ? "" : "s"} still running after ` +
+            `${DRAIN_MS / 1000} s ${running === 1 ? "was" : "were"} cut`,
+        );
+        await bound.stop(true);
+      }
     },
     close: closeAll,
     add,
@@ -720,13 +845,26 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     }
   }
 
-  /** Resolves once the project's counted requests have all answered. */
-  function drain(entry: Entry): Promise<void> {
-    return entry.requests === 0
-      ? Promise.resolve()
-      : new Promise<void>((resolve) => {
-          entry.idle = resolve;
-        });
+  /**
+   * Waits until the project's counted requests have all answered, for at most DRAIN_MS on the
+   * instance clock. Returns how many were still running at the deadline (0 when all answered).
+   */
+  async function drain(entry: Entry): Promise<number> {
+    if (entry.requests === 0) {
+      return 0;
+    }
+    const deadline = new AbortController();
+    const idle = new Promise<"idle">((resolve) => {
+      entry.idle = () => resolve("idle");
+    });
+    const expired = clock.sleep(DRAIN_MS, deadline.signal).then(
+      () => "cut" as const,
+      () => "idle" as const,
+    );
+    const outcome = await Promise.race([idle, expired]);
+    deadline.abort();
+    entry.idle = undefined;
+    return outcome === "cut" ? entry.requests : 0;
   }
 
   function startProject(entry: Entry): void {
