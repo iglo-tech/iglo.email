@@ -15,6 +15,12 @@ import { HttpError } from "@/server/response";
 import { settingSides } from "@/settings/keys";
 import type { SettingKey } from "@/settings/keys";
 import { normalizePreferenceFields, preferenceFieldShape } from "@/public/preference-fields";
+import {
+  grantRuleShape,
+  normalizePrivateHosts,
+  normalizeSource,
+  scalarShape,
+} from "@/sources/settings";
 
 export type Settings = Record<string, any>;
 
@@ -96,6 +102,7 @@ export const shapes: Record<string, unknown> = {
   "security.oidc": { ...defaults["security.oidc"], roles: [oidcRoleShape] },
   "bounce.actions": { "*": { count: 0, action: "" } },
   "privacy.preference_fields": [preferenceFieldShape],
+  "source.grant_lists": [grantRuleShape],
 };
 const arrays = new Set([
   "app.from_email",
@@ -111,8 +118,11 @@ const arrays = new Set([
   "messengers",
   "bounce.mailboxes",
   "privacy.preference_fields",
+  "sources.private_hosts",
+  "source.grant_lists",
 ]);
 const strings = new Set([
+  "sources.private_hosts",
   "app.from_email",
   "app.notify_emails",
   "privacy.exportable",
@@ -190,7 +200,30 @@ export function bodyFields(value: unknown): Array<[string, string | undefined]> 
   }
   return entries(value).map(([name]) => [name, lookup(shapes, name)]);
 }
+/** A source grant rule's `data.*` value (B150a, D170): text, a finite number or a boolean. */
+function jsonScalar(value: unknown): string | number | boolean {
+  if (typeof value === "string") {
+    return value.toWellFormed();
+  }
+  if (typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
+    return value;
+  }
+  const source = (value as { rawJSON?: unknown } | null)?.rawJSON;
+  const number = typeof source === "string" ? Number(source) : Number.NaN;
+  // A whole number past 2^53 would change on the way through a double, so it is refused.
+  if (
+    !Number.isFinite(number) ||
+    (/^-?\d+$/.test(String(source)) && !Number.isSafeInteger(number))
+  ) {
+    return fail("Invalid data: a value is text, a number or true/false.");
+  }
+  return number;
+}
 function bind(value: unknown, shape: any, previous: any = zero(shape)): any {
+  // Before the null rule below: a scalar value has no zero to fall back to, so null is refused.
+  if (shape === scalarShape) {
+    return jsonScalar(value);
+  }
   if (value === null) {
     return shape === null ||
       Array.isArray(shape) ||
@@ -499,6 +532,9 @@ export function normalizeProject(next: Settings, current: Settings, now: number)
       return fail("Invalid security.public_rate_limit: use whole requests per minute.");
     }
   }
+  // B150a (D170): the external source; its list IDs are checked against the project's lists by the
+  // settings route's check (src/sources/routes.ts), which can read them.
+  normalizeSource(next, current);
   next["app.root_url"] = current["app.root_url"];
   return next;
 }
@@ -679,6 +715,8 @@ export function normalizeInstance(next: Settings, current: Settings, now: number
       return fail(`Invalid data: invalid trusted proxy: ${proxy}`);
     }
   }
+  // B150a (D169 amended, D170): source hosts that may resolve to a private address.
+  next["sources.private_hosts"] = normalizePrivateHosts(next);
   next["bounce.ses_topic_arns"] = next["bounce.ses_topic_arns"]
     .map((v: string) => trimSpace(v ?? ""))
     .filter(Boolean);
@@ -769,6 +807,7 @@ export function masked(settings: Settings): Settings {
     "upload.s3.aws_secret_access_key",
     "bounce.sendgrid_key",
     "ses.api_secret_access_key",
+    "source.password",
   ]) {
     if (out[key]) {
       out[key] = mask(out[key]);

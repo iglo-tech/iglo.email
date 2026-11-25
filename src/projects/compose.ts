@@ -43,6 +43,7 @@ import { createSettings } from "@/settings/store";
 import type { InstanceSettingsReader } from "@/settings/instance";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
+import { registerSourceRoutes, sourceListsCheck } from "@/sources/routes";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
 import type { Dispatcher, Sender } from "@/messaging/dispatcher";
 import { createSMTPTest } from "@/messaging/test";
@@ -589,7 +590,13 @@ export async function createProject(
     // the reason is logged here, and each media operation refuses with it (D64).
     await files.sweep().catch((error: unknown) => app.logger.error(error));
     const smtpTest = createSMTPTest(settings, emailer, app.i18n, renderer);
-    registerSettingsRoutes(router, settings, auth, smtpTest, uploadPathCheck(directory, media));
+    const uploadCheck = uploadPathCheck(directory, media);
+    const grantCheck = sourceListsCheck({ name: (id) => must(lists, "lists").name(id) });
+    registerSettingsRoutes(router, settings, auth, smtpTest, (next, current) => {
+      uploadCheck(next, current);
+      grantCheck(next, current);
+    });
+    registerSourceRoutes(router, { settings, auth, clock });
     const marketing = () => marketingSettings(must(settings, "settings").read());
     const pages = () => publicSettings(must(settings, "settings").read());
     // Each limit is the process's one table for its kind; this project's peers are its own in it.

@@ -31,6 +31,7 @@ const smtpTemplates = {
 const lineKeys = [
   'app.from_email', 'privacy.domain_blocklist', 'privacy.domain_allowlist',
   'security.trusted_urls', 'security.trusted_proxies', 'bounce.ses_topic_arns',
+  'sources.private_hosts',
 ];
 
 function isDummy(pwd) {
@@ -83,6 +84,13 @@ function component() {
 
     if ('app.notify_emails' in d) {
       d['app.notify_emails'] = (d['app.notify_emails'] || []).join(', ');
+    }
+
+    // B150a (D170): the source's grant rules are edited as JSON text.
+    if ('source.grant_lists' in d) {
+      d['source.grant_lists'] = (d['source.grant_lists'] || []).length
+        ? JSON.stringify(d['source.grant_lists'], null, 2)
+        : '';
     }
 
     return d;
@@ -189,6 +197,36 @@ function component() {
         return 'No SES API credentials are saved: there is no capacity forecast.';
       }
       return this.sesCheck.error || '';
+    },
+
+    // "Test connection" (B150a): each step of the check, or the request's error.
+    sourceTest: null,
+    get sourceTestLines() {
+      const r = this.sourceTest;
+      if (!r) {
+        return [];
+      }
+      if (r.error) {
+        return [r.error];
+      }
+      return r.steps.map((s) => `${s.ok ? 'OK' : 'Failed'}: ${s.step}: ${s.message}`);
+    },
+
+    // The form's source keys, unsaved: a masked password goes as blank, which keeps the saved one.
+    async doSourceTest() {
+      this.sourceTest = null;
+      const body = {};
+      Object.keys(this.form).filter((key) => key.startsWith('source.') && key !== 'source.grant_lists').forEach((key) => {
+        body[key] = this.form[key];
+      });
+      if (isDummy(body['source.password'])) {
+        body['source.password'] = '';
+      }
+      try {
+        this.sourceTest = await api('settings.testSource', `${base}/source/test`, 'POST', body);
+      } catch (err) {
+        this.sourceTest = { error: err.message, steps: [] };
+      }
     },
 
     async doSESCheck() {
@@ -525,6 +563,7 @@ function component() {
       secret(form, 'upload.s3.aws_secret_access_key', 's3');
       secret(form, 'bounce.sendgrid_key', 'sendgrid');
       secret(form, 'ses.api_secret_access_key', 'ses');
+      secret(form, 'source.password', 'source');
       secret(form['bounce.azure'], 'shared_secret', 'azure shared secret');
       secret(form['security.captcha']?.hcaptcha, 'secret', 'captcha');
       secret(form['security.oidc'], 'client_secret', 'oidc');
@@ -556,6 +595,16 @@ function component() {
         f.required = f.type === 'boolean' ? false : !!f.required;
         delete f.strOptions;
       });
+
+      if ('source.grant_lists' in form) {
+        try {
+          const text = (form['source.grant_lists'] || '').trim();
+          form['source.grant_lists'] = text ? JSON.parse(text) : [];
+        } catch {
+          u.toast('Grant lists: the rules are not valid JSON.', 'warning');
+          return;
+        }
+      }
 
       if ('app.notify_emails' in form) {
         form['app.notify_emails'] = typeof form['app.notify_emails'] === 'string'

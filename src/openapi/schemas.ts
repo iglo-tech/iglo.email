@@ -178,6 +178,34 @@ const settings = (): Schema =>
     "appearance.brand.header": string,
     "appearance.public.custom_css": string,
     "appearance.public.custom_js": string,
+    // B150a (D170): the project's external source (15-external-sources section 2); the password is
+    // masked, and an empty URL is no source.
+    "source.url": string,
+    "source.auth_collection": string,
+    "source.identity": string,
+    "source.password": string,
+    "source.events": object({
+      collection: string,
+      user: string,
+      name: string,
+      data: string,
+      occurred_at: string,
+      key: string,
+    }),
+    "source.recipients": object({
+      collection: string,
+      email: string,
+      name: string,
+      opt_out: string,
+    }),
+    "source.users": object({ collection: string, leaving_filter: string }),
+    "source.grant_lists": array(
+      object({
+        event: string,
+        where: map({ type: ["string", "number", "boolean"] }),
+        lists: array(integer),
+      }),
+    ),
     "app.root_url": string,
   });
 
@@ -1166,4 +1194,21 @@ export const schemas = {
   },
   Settings: settings(),
   SettingsInput: settings(),
+  SourceTestInput: {
+    type: "object",
+    additionalProperties: true,
+    description:
+      "Optional unsaved `source.*` keys tested over the saved ones. A password is used only when given, or kept for the saved URL and identity.",
+  },
+  SourceTestReport: object({
+    ok: boolean,
+    steps: array(
+      object({
+        step: choice("auth", "recipients", "events", "users"),
+        ok: boolean,
+        message: string,
+        missing: array(string),
+      }),
+    ),
+  }),
 } satisfies Record<string, Schema>;

@@ -1,5 +1,6 @@
 // Defaults adapted from listmonk schema.sql at 6fcd95f.
 import type { PreferenceField } from "@/public/preference-fields";
+import { sourceDefaults } from "@/sources/settings";
 
 export const defaults = {
   "app.site_name": "Mailing list",
@@ -47,6 +48,12 @@ export const defaults = {
   // Native: refuse webhook targets outside public unicast, checked after DNS resolution. On by
   // default (D122). Migration 24 turns a stored false on once, and an operator's later false is kept.
   "webhooks.block_private_addresses": true,
+  // Native (B150a, D169 amended, D170): host names whose source URL may resolve to a private,
+  // loopback, link-local or unique-local address while the block above is on. Webhooks never use it.
+  "sources.private_hosts": [] as Array<string>,
+  // Native (B150a, D170): the project's external source (15-external-sources section 2). An empty URL
+  // is no source; the password is masked as the SES secret is.
+  ...sourceDefaults,
   "security.captcha": {
     altcha: {
       enabled: false,

@@ -8,6 +8,7 @@
     "test": "bun test/production-build.ts && IGLO_TEST_PREBUILT=1 bun test --parallel=4 --timeout=30000 --timings=test/timings.json",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build",
     "db:measure": "bun test/db/measure.ts",
+    "pocketbase:download": "bun test/sources/pocketbase-binary.ts",
     "auth:measure": "bun run build && bun test/users/measure.ts",
     "schema:measure": "bun test/schema/measure.ts",
     "backup:measure": "bun test/backup/measure.ts",

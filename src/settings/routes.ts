@@ -24,13 +24,28 @@ const bodyMedia = new Set([
   "multipart/form-data",
 ]);
 
-/** The native keys a listmonk client's full write leaves out; a full write without one keeps it. */
+/**
+ * The native keys a listmonk client's full write leaves out; a full write without one keeps it.
+ * `source.password` is not one: left out it is blank, which keeps the stored password only for the
+ * same source URL and identity (src/sources/settings.ts), so it never follows a new URL.
+ */
 const nativeKeys: Record<SettingsSide, ReadonlyArray<string>> = {
-  project: ["marketing.min_interval", "security.public_rate_limit"],
+  project: [
+    "marketing.min_interval",
+    "security.public_rate_limit",
+    "source.url",
+    "source.auth_collection",
+    "source.identity",
+    "source.events",
+    "source.recipients",
+    "source.users",
+    "source.grant_lists",
+  ],
   instance: [
     "messaging.max_send_rate",
     "bounce.ses_topic_arns",
     "webhooks.block_private_addresses",
+    "sources.private_hosts",
     "security.trusted_proxies",
     "ses.api_region",
     "ses.api_access_key_id",
@@ -173,6 +188,11 @@ export function settingsHandlers(api: SettingsApi) {
       }
       api.update((current) => {
         const next = bindKey(current, key, body);
+        // B150a (D170): a one-key write of another source key carries no password, so a stored one
+        // is kept only for the same URL and identity, as in a full write.
+        if (key.startsWith("source.") && key !== "source.password") {
+          next["source.password"] = "";
+        }
         api.check?.(next, current);
         return next;
       });
