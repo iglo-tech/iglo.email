@@ -98,12 +98,31 @@ export function streamReads(parts: StreamReadParts): StreamSource {
   const itemOf = (kind: StreamKind, record: SourceObject) =>
     kind === "event" ? eventItem(record) : userItem(record);
 
-  /** Reads one page, and again in smaller pages while it is too large to read. */
-  async function read(kind: StreamKind, filter: string, perPage: number, call: CallOptions) {
+  /**
+   * Reads one page, and again in smaller pages while it is too large to read. With `refusal`, a
+   * permanent error of the read itself (a `400` for a renamed filter field, a `404` collection, a
+   * `403` lost access, a refused sign-in) is a `SettingsMismatch`: the source refuses the read, the
+   * record is not at fault. A single record over the response limit stays a plain permanent error.
+   */
+  async function read(
+    kind: StreamKind,
+    filter: string,
+    perPage: number,
+    call: CallOptions,
+    refusal = false,
+  ) {
     const collection = kind === "event" ? ev.collection : users;
     const sort = kind === "event" ? "created,id" : "updated,id";
     for (let size = perPage; ; size = Math.max(1, Math.floor(size / 4))) {
-      const items = await parts.page(collection, { filter, sort, perPage: size }, call);
+      let items: ReadonlyArray<SourceObject> | null;
+      try {
+        items = await parts.page(collection, { filter, sort, perPage: size }, call);
+      } catch (error) {
+        if (refusal && isSourceError(error) && error.kind === "permanent") {
+          throw new SettingsMismatch(error.message);
+        }
+        throw error;
+      }
       if (items) {
         return { items: items.map((record) => itemOf(kind, record)), more: items.length === size };
       }
@@ -197,7 +216,7 @@ export function streamReads(parts: StreamReadParts): StreamSource {
         kind === "event"
           ? `${present} && id = ${textLiteral(id)}`
           : `(${leaving}) && id = ${textLiteral(id)}`;
-      const { items } = await read(kind, filter, 1, call);
+      const { items } = await read(kind, filter, 1, call, true);
       return items[0] ?? null;
     },
   };

@@ -604,6 +604,41 @@ test("the retry queue: a settings mismatch waits past 72 hours and does not use 
   expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
 });
 
+test("the retry queue: a re-read the source refuses waits past 72 hours, then delivers once", async () => {
+  const events = await eventsCollection();
+  const name = unique("retryread");
+  const s = stream({ config: events.settings, names: () => [name] });
+  await s.live();
+  const user = await pb.user();
+  const id = recordId();
+  s.fail.set(id, ["transient"]);
+  await pb.create(events.name, { id, user: user.id, name, occurredAt: stamp(0), data: {} });
+  await s.until(() => s.stream.retries().length === 1, "the queued record");
+  const handlerCalls = s.attempts.get(id);
+  // The re-read filters on `occurredAt`: renamed, PocketBase refuses the read with a 400.
+  await pb.renameField(events.name, "occurredAt", "when");
+  const attemptsOf = () => s.stream.retries()[0]?.attempts ?? 0n;
+  const start = s.clock.now().getTime();
+  while (s.clock.now().getTime() - start <= RETRY_WINDOW_MS + 3_600_000) {
+    const tries = attemptsOf();
+    s.clock.advance(2 * 3_600_000);
+    s.stream.wakeRetries();
+    await s.until(() => attemptsOf() > tries, "a retry");
+  }
+  expect(s.attempts.get(id)).toBe(handlerCalls);
+  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n }]);
+  expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
+  expect(s.attention.filter((line) => line.startsWith(`${REFUSED}event ${id}:`))).toHaveLength(1);
+  // The field is back: the next retry delivers the record, once.
+  await pb.renameField(events.name, "when", "occurredAt");
+  s.clock.advance(3_600_000);
+  s.stream.wakeRetries();
+  await s.until(() => s.stream.retries().length === 0, "the queue to empty");
+  expect(s.attempts.get(id)).toBe((handlerCalls ?? 0) + 1);
+  expect(s.eventIds()).toEqual([id]);
+  expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
+});
+
 test("the subscribed names: active triggers, active or paused exits, and grant rules", () => {
   const sequences = [
     { status: "active", trigger: { event: "signup" }, exit_on: ["churned"] },

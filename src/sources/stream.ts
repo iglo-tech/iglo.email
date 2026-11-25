@@ -607,8 +607,9 @@ export function createSourceStream(options: SourceStreamOptions) {
       return;
     }
     const now = clock.now();
-    // A record lacking a configured field waits for the settings to be fixed, like the stream:
-    // never terminal, and its 72-hour window starts again, so the wait does not use it up.
+    // A record lacking a configured field, or a re-read the source refuses (`reread` raises both as
+    // `SettingsMismatch`), waits for the settings to be fixed, like the stream: never terminal, and
+    // its 72-hour window starts again, so the wait does not use it up.
     const mismatch = isSettingsMismatch(error);
     const permanent = isSourceError(error) && error.kind === "permanent";
     const terminal =

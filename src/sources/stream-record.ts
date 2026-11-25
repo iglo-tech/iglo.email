@@ -9,7 +9,9 @@ import type { CallOptions, SourceEvent } from "@/sources/source";
  * A record that lacks a field the source settings name (a misnamed or removed field): the
  * settings are wrong, not the record. It is a refusal of the whole stream: the stream stops at the
  * record without consuming it, writes one attention line, and tries again later, so fixing the
- * settings (or the source's schema) delivers every record. A retry keeps its row and waits.
+ * settings (or the source's schema) delivers every record. A retry keeps its row and waits. A
+ * retry's re-read that the source refuses outright (a permanent error of the read itself) is one
+ * too: the record is not at fault.
  */
 export class SettingsMismatch extends SourceError {
   readonly settingsMismatch = true;
@@ -109,6 +111,10 @@ export interface StreamSource {
   ): Promise<{ items: Array<StreamItem>; more: boolean }>;
   /** A realtime message's record as an item, or `null` for a record the stream does not act on. */
   item(kind: StreamKind, action: string, record: unknown): StreamItem | null;
-  /** One record again, for the retry queue: `null` when it is gone (or no longer leaving). */
+  /**
+   * One record again, for the retry queue: `null` when it is gone (or no longer leaving). A
+   * permanent error of the read itself is a `SettingsMismatch`; a record over the response limit
+   * stays a plain permanent error.
+   */
   reread(kind: StreamKind, id: string, call?: CallOptions): Promise<StreamItem | null>;
 }
