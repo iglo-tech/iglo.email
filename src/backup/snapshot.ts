@@ -64,7 +64,7 @@ import {
   projectDirectory,
   usesOldLayout,
 } from "@/projects/layout";
-import { createRegistry } from "@/projects/registry";
+import { SLUG_PATTERN, createRegistry } from "@/projects/registry";
 import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hold";
 import type { HoldRecord } from "@/settings/hold";
 import { storedUploadPath, writeUploadPath } from "@/settings/stored";
@@ -248,6 +248,14 @@ function inspectWhole(target: string, clock: Clock, supportedVersion: number): A
   };
   if (!Array.isArray(projects) || !projects.every((slug) => typeof slug === "string")) {
     throw new Error(`${join(target, MANIFEST)} names no projects: not a backup`);
+  }
+  // Each slug becomes a path below projects/, so one that is not a slug is refused before any is
+  // read: a hand-made manifest could otherwise point outside the backup (D166).
+  const invalid = projects.find((slug: string) => !SLUG_PATTERN.test(slug));
+  if (invalid !== undefined) {
+    throw new Error(
+      `${join(target, MANIFEST)} names ${JSON.stringify(invalid)}, which is not a project slug: not a backup`,
+    );
   }
   if (instance.schemaVersion <= instanceMigrations.length) {
     const db = openSnapshot(instanceFile);
@@ -919,13 +927,16 @@ export function createBackup(options: BackupOptions): BackupReport {
     const folders = missingFolders(dirname(wanted));
     const parent = resolvedParent(wanted, folders);
     const output = join(parent, basename(wanted));
+    // The places an output may never be come first, so each is refused by its own message: the
+    // projects directory itself holds every project, which checkDestination would call the data
+    // directory (D166).
+    const uploadDirectories = included.flatMap(({ uploads }) => (uploads ? [uploads] : []));
+    checkBoundaries(output, root, uploadDirectories);
     checkDestination(
       output,
       sources.map(({ data }) => data),
       options.force ?? false,
     );
-    const uploadDirectories = included.flatMap(({ uploads }) => (uploads ? [uploads] : []));
-    checkBoundaries(output, root, uploadDirectories);
     let needed = 0;
     for (const { db, uploads } of included) {
       const pages = single<bigint>(db, "page_count") - single<bigint>(db, "freelist_count");

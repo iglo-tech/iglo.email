@@ -35,14 +35,15 @@ against child processes that own their clock, so they stay.
 
 ## What changed
 
-1. `bun run test` = build once, then `bun test --parallel=4 --timeout=30000 --timings=test/timings.json`.
+1. `bun run test` = check the build once (D168), then `bun test --parallel=4 --timeout=30000 --timings=test/timings.json`.
    Bun 1.4.4 runs files in worker processes with `--parallel`; `timings.json` starts the slowest
    files first. `bun run check` uses it. Plain `bun test <path>` stays serial.
 2. Parallel runs exposed a race: four test files ran `bun run build`, which deletes and recreates
    `dist/assets` while in-process tests import it (58 failures,
    `Cannot find module '@/../dist/assets/admin/js/boot.js'`). `test/production-build.ts` replaces
-   them: `bun run test` builds once and sets `IGLO_TEST_PREBUILT=1`; without it the first caller
-   builds under a cross-process lock.
+   them: `bun run test` checks the build once and sets `IGLO_TEST_PREBUILT=1`; without it the
+   preload checks before each file. A build happens only when the inputs' content hash changed,
+   under a lock, in a staging copy whose files are renamed into place (D168).
 3. The 5 s default test timeout failed a process-spawning test once under parallel load. The
    script passes `--timeout=30000` (a `[test] timeout` key in `bunfig.toml` is ignored by Bun
    1.4.4). Tests that check timing still assert on the injected clock or a stated bound.

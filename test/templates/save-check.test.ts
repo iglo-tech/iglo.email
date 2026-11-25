@@ -55,6 +55,27 @@ test("a literal failure in the template's own text is refused at save, whatever 
   }
 });
 
+test("a literal URL track_link does not accept is refused at save; an empty one, an https one and one from data save", async () => {
+  const f = await open();
+  // A literal that does not parse or whose scheme is not http(s) fails for every message (B149e).
+  for (const url of ["not a url", "ftp://example.test/x", "javascript:alert(1)"]) {
+    const body = `<a href="{{ "${url}" | track_link }}">x</a>`;
+    const refused = await saveTx(f, body);
+    expect(refused.status, url).toBe(400);
+    expect(refused.body.message, url).toContain(
+      `it fails to render: "${url}" | track_link: Invalid URL`,
+    );
+  }
+  for (const body of [
+    '<a href="{{ "" | track_link }}">x</a>',
+    '<a href="{{ "https://example.test/x" | track_link }}">x</a>',
+    '<a href="{{ data.link | track_link }}">x</a>',
+  ]) {
+    const saved = await saveTx(f, body);
+    expect(saved.status, body).toBe(200);
+  }
+});
+
 test("a literal argument its filter cannot read is refused at save, naming the filter and the argument", async () => {
   const f = await open();
   // The argument is the template's own text, so the data does not matter (D134).

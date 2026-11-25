@@ -452,7 +452,11 @@ export const schemas = {
       name: string,
       type: choice("campaign", "tx"),
       subject: string,
-      body: string,
+      body: {
+        ...string,
+        description:
+          "Liquid. A save renders it once against the preview sample and answers 400 for a failure its own text causes, such as a literal URL `track_link` does not accept (not HTTP(S)); a value from data fails only the send.",
+      },
       body_source: nullable(string),
     },
     ["name"],

@@ -101,7 +101,9 @@ describe("document", () => {
 
   test("is OpenAPI 3.1 with the size the design states", () => {
     expect(document.openapi).toBe("3.1.0");
-    expect(Buffer.byteLength(buildDocument())).toBeLessThan(256 * 1024);
+    // D168: a guard against runaway growth (an inlined `$ref`, a duplicated schema), not a client
+    // budget; 384 KiB leaves room for about a hundred more operations at today's ~1 KB each.
+    expect(Buffer.byteLength(buildDocument())).toBeLessThan(384 * 1024);
   });
   test("is the same on every build and names no instance", () => {
     expect(buildDocument()).toBe(buildDocument());

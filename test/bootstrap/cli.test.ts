@@ -668,6 +668,11 @@ describe("compiled executable", () => {
       expect(result.stdout).toContain("127.0.0.1");
       expect(result.stdout).toContain("./data");
       expect(result.stderr).toBe("");
+      // Since B140 (D153) the admin variables apply while instance.db has no admin account (D166).
+      const text = result.stdout.replaceAll(/\s+/g, " ");
+      expect(text).toContain("on a start while instance.db has no admin account");
+      expect(text).toContain("in the primary project while that project has no users");
+      expect(text).not.toContain("only when no users exist");
     }
   });
 

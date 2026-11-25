@@ -1,0 +1,7 @@
+[test]
+# Test files live under test/ only. Scanning no other directory also keeps `bun test <filter>` from
+# reading src/ before the preload has generated src/server/asset-manifest.ts: Bun's resolver would
+# keep that listing and not find the new file (D168).
+root = "test"
+# Builds the embedded assets and the executable once per `bun test` run (test/production-build.ts).
+preload = ["./test/preload.ts"]

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "bun run assets:build && bun build --compile ./src/main.ts --outfile ./dist/iglo.email",
-    "test": "bun run build && IGLO_TEST_PREBUILT=1 bun test --parallel=4 --timeout=30000 --timings=test/timings.json",
+    "test": "bun test/production-build.ts && IGLO_TEST_PREBUILT=1 bun test --parallel=4 --timeout=30000 --timings=test/timings.json",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build",
     "db:measure": "bun test/db/measure.ts",
     "auth:measure": "bun run build && bun test/users/measure.ts",
