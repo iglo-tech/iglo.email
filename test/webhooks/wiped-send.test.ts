@@ -100,7 +100,9 @@ test("a restart ends a wiped in-flight send silently and an unrelated one with s
     });
   }
   const now = f.clock.now();
-  writeTransaction(f.db, () => f.sends.claimBatch(now, new Date(now.getTime() + 120_000), 2));
+  writeTransaction(f.db, () =>
+    f.sends.claimBatch(now, new Date(now.getTime() + 120_000), 2, "transactional"),
+  );
   wipe(f, gone, true);
   f.restartOutbox();
   await r.waitFor(2);
@@ -140,7 +142,9 @@ test("a wiped send whose lease expires in the running loop reports nothing; an u
   }
   // In flight under a claim no push of this process holds, as another holder's.
   const now = f.clock.now();
-  writeTransaction(f.db, () => f.sends.claimBatch(now, new Date(now.getTime() + 120_000), 2));
+  writeTransaction(f.db, () =>
+    f.sends.claimBatch(now, new Date(now.getTime() + 120_000), 2, "transactional"),
+  );
   wipe(f, gone, true);
   f.clock.advance(130_000);
   const sending = () => f.db.query("SELECT 1 FROM sends WHERE status = 'sending'").all().length;

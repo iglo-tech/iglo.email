@@ -30,7 +30,7 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
 import { registerUserRoutes } from "@/users/routes";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { createTemplateStore } from "@/templates/store";
 import { createRenderer } from "@/templates/renderer";
 import { registerTemplateRoutes } from "@/templates/routes";
@@ -120,7 +120,7 @@ export async function campaignsFixture(
   const templateReferences = createCampaignTemplateReferences(db);
   const templates = createTemplateStore(db, clock, renderer, templateReferences);
   templates.initialize();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock,
     settings: () => ({
       rootUrl: root,
@@ -250,9 +250,10 @@ export async function campaignsFixture(
       allowPreferences: false,
       allowExport: false,
       allowWipe: false,
+      preferenceFields: [],
     }),
     // The privacy answers are the public fixture's concern; here every path pairs nobody.
-    privacy: { export: () => null, wipe: () => null },
+    privacy: { export: () => null, wipe: () => null, signup: () => {} },
   });
   if (webhooks) {
     registerWebhookRoutes(router, { webhooks, auth });

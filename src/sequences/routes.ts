@@ -11,7 +11,7 @@ import type { Aggregate } from "@/events/aggregate";
 import type { EventStore } from "@/events/store";
 import { newMessageId } from "@/messaging/email";
 import type { Message } from "@/messaging/email";
-import type { createEmailer } from "@/messaging/email";
+import type { Sender } from "@/messaging/dispatcher";
 import type { Sends } from "@/messaging/sends";
 import type { TestSends } from "@/messaging/test-sends";
 import type { Roles } from "@/roles/roles";
@@ -196,7 +196,7 @@ export function registerSequenceRoutes(
     sends: Pick<Sends, "marketingReason" | "enrollmentSends" | "capFreeAt">;
     templates: Pick<TemplateStore, "get">;
     renderer: TemplateRenderer;
-    emailer: Pick<ReturnType<typeof createEmailer>, "push">;
+    emailer: Pick<Sender, "push">;
     /** Each test message's Message-ID, so a notice of it is named in the log (B108). */
     testSends: TestSends;
     tracking: Tracking;
@@ -616,7 +616,6 @@ export function registerSequenceRoutes(
           message,
           dispatch: deps.emailer.push(message, {
             copies: false,
-            priority: "outbox",
             testPool: true,
           }),
         }));

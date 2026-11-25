@@ -4,7 +4,7 @@ import { createRealClock } from "@/clock";
 import { dirname } from "node:path";
 import { INSTANCE_DATABASE } from "@/projects/layout";
 import { createInstanceSettings } from "@/settings/instance";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 
 const directory = process.env.M21_DATA_DIR,
   subject = process.env.M21_SUBJECT;
@@ -15,7 +15,7 @@ const clock = createRealClock();
 // B139 (D154): SMTP is an instance key, read from instance.db two levels above the project.
 const db = openDatabase(dirname(dirname(directory)), INSTANCE_DATABASE);
 const settings = createInstanceSettings(db, clock);
-const emailer = createEmailer({
+const emailer = fixtureEmailer({
   clock,
   settings: () => ({ smtp: settings.read().smtp, rootUrl: "https://example.test" }),
 });

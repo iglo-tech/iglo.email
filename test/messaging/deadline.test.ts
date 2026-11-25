@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
 import type { Socket } from "node:net";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { SMTPServer } from "@/messaging/email";
 import { TestClock } from "@/test/server/fixture";
 
@@ -97,7 +97,7 @@ describe("messaging absolute deadlines", () => {
     const sink = await peer();
     cleanup.push(sink.close);
     const clock = new TestClock();
-    const emailer = createEmailer({
+    const emailer = fixtureEmailer({
       settings: () => ({ smtp: [sink.server], rootUrl: "https://example.test" }),
       clock,
     });
@@ -125,7 +125,7 @@ describe("messaging absolute deadlines", () => {
     const sink = await peer();
     cleanup.push(sink.close);
     const clock = new TestClock();
-    const emailer = createEmailer({
+    const emailer = fixtureEmailer({
       settings: () => {
         clock.advance(60_000);
         return { smtp: [sink.server], rootUrl: "https://example.test" };
@@ -147,7 +147,7 @@ describe("messaging absolute deadlines", () => {
     cleanup.push(sink.close);
     sink.server.max_conns = 2;
     const clock = new TestClock();
-    const emailer = createEmailer({
+    const emailer = fixtureEmailer({
       settings: () => ({ smtp: [sink.server], rootUrl: "https://example.test" }),
       clock,
     });
@@ -165,7 +165,7 @@ describe("messaging absolute deadlines", () => {
     const sink = await peer();
     cleanup.push(sink.close);
     const clock = new TestClock();
-    const emailer = createEmailer({
+    const emailer = fixtureEmailer({
       settings: () => ({ smtp: [sink.server], rootUrl: "https://example.test" }),
       clock,
     });
@@ -199,7 +199,7 @@ describe("messaging absolute deadlines", () => {
     cleanup.push(old.close, replacement.close);
     const clock = new TestClock();
     let current = [old.server];
-    const emailer = createEmailer({
+    const emailer = fixtureEmailer({
       settings: () => ({ smtp: current, rootUrl: "https://example.test" }),
       clock,
     });
@@ -264,7 +264,7 @@ test("a temporary implicit TLS connection is physically closed at its deadline",
     from_addresses: [],
   };
   const clock = new TestClock();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     settings: () => ({ smtp: [], rootUrl: "https://example.test" }),
     clock,
   });
@@ -346,7 +346,7 @@ test("shutdown bounds an idle connection whose peer keeps its half open", async 
     email_headers: [],
     from_addresses: [],
   };
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     settings: () => ({ smtp: [config], rootUrl: "https://example.test" }),
     clock,
   });

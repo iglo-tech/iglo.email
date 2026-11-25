@@ -76,6 +76,11 @@ function component() {
       d[key] = (d[key] || []).join('\n');
     });
 
+    // B147 (D160): a preference field's allowed values are edited one per line.
+    (d['privacy.preference_fields'] || []).forEach((f) => {
+      f.strOptions = (f.options || []).join('\n');
+    });
+
     if ('app.notify_emails' in d) {
       d['app.notify_emails'] = (d['app.notify_emails'] || []).join(', ');
     }
@@ -153,6 +158,47 @@ function component() {
     smtpTestItem: null,
     testEmail: '',
     errMsg: '',
+    // "Check SES account" (B145a): the saved credentials' GetAccount values, or the AWS error.
+    sesCheck: null,
+
+    // The check's values as lines; the AWS error is shown on its own.
+    get sesCheckLines() {
+      const a = this.sesCheck?.account;
+      if (!a) {
+        return [];
+      }
+      const n = (v) => Number(v).toLocaleString();
+      const lines = [
+        `Max send rate: ${n(a.max_send_rate)}/s`,
+        `24-hour quota: ${a.max_24_hour_send < 0 ? 'no limit' : n(a.max_24_hour_send)}`,
+        `Sent in the last 24 hours: ${n(a.sent_last_24_hours)}`,
+        `Production access: ${a.production_access_enabled ? 'yes' : 'no (sandbox)'}`,
+        `Sending enabled: ${a.sending_enabled ? 'yes' : 'no'}`,
+        `Read at: ${new Date(a.read_at).toLocaleString()}`,
+      ];
+      if (this.sesCheck.setting > a.max_send_rate || (this.sesCheck.setting === 0 && a.max_send_rate > 0)) {
+        lines.push(`The send rate setting (${this.sesCheck.setting || 'no cap'}) is higher than SES's ${n(a.max_send_rate)}/s.`);
+      }
+      return lines;
+    },
+    get sesCheckError() {
+      if (!this.sesCheck) {
+        return '';
+      }
+      if (!this.sesCheck.configured) {
+        return 'No SES API credentials are saved: there is no capacity forecast.';
+      }
+      return this.sesCheck.error || '';
+    },
+
+    async doSESCheck() {
+      this.sesCheck = null;
+      try {
+        this.sesCheck = await api('settings.checkSES', `${base}/ses/check`, 'POST', {});
+      } catch (err) {
+        this.sesCheck = { configured: true, error: err.message, account: null };
+      }
+    },
 
     async init() {
       try {
@@ -256,6 +302,26 @@ function component() {
       this.form[group][n].open = open;
       (openState[group] ??= {})[n] = open;
       localStorage.setItem(OPEN_KEY, JSON.stringify(openState));
+    },
+
+    // ===============
+    // Preference center fields (B147, D160).
+    addPreferenceField() {
+      this.form['privacy.preference_fields'].push({
+        key: '', label: '', type: 'text', editable: true, required: false, min: null, max: null,
+        options: [], strOptions: '',
+      });
+      this.$nextTick(() => {
+        const items = document.querySelectorAll('.preference-field input[placeholder="city"]');
+        items[items.length - 1]?.focus();
+      });
+    },
+
+    async removePreferenceField(n) {
+      if (!(await u.confirm())) {
+        return;
+      }
+      this.form['privacy.preference_fields'].splice(n, 1);
     },
 
     // ===============
@@ -477,6 +543,18 @@ function component() {
       });
       ['privacy.domain_blocklist', 'privacy.domain_allowlist'].filter((key) => key in form).forEach((key) => {
         form[key] = form[key].map((v) => v.toLowerCase());
+      });
+
+      // B147 (D160): options back to an array; an empty bound is no bound; a bound or option a type
+      // does not take is dropped, so switching a field's type does not leave a value the API refuses.
+      (form['privacy.preference_fields'] || []).forEach((f) => {
+        const bounded = f.type === 'text' || f.type === 'number';
+        const bound = (v) => (bounded && v !== '' && v !== null && v !== undefined ? Number(v) : null);
+        f.min = bound(f.min);
+        f.max = bound(f.max);
+        f.options = f.type === 'select' ? lines(f.strOptions || '') : [];
+        f.required = f.type === 'boolean' ? false : !!f.required;
+        delete f.strOptions;
       });
 
       if ('app.notify_emails' in form) {

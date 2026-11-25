@@ -18,6 +18,9 @@ import { createAdminSync } from "@/projects/admin-sync";
 import { createInstanceBudgets } from "@/projects/budgets";
 import type { InstanceBudgets } from "@/projects/budgets";
 import { createProject } from "@/projects/compose";
+import { createDispatcher } from "@/messaging/dispatcher";
+import type { Dispatcher } from "@/messaging/dispatcher";
+import type { SMTPServer } from "@/messaging/email";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
 import { archiveDeleted } from "@/projects/deleted";
 import type { DeletedProject } from "@/projects/deleted";
@@ -56,6 +59,10 @@ import { initialAdmin } from "@/users/bootstrap";
 import { createHandoffTokens } from "@/users/handoff";
 import { createInstanceAuth } from "@/users/instance-auth";
 import { hashPassword } from "@/users/password";
+import { createCapacity } from "@/messaging/capacity";
+import type { Capacity } from "@/messaging/capacity";
+import { createSesAccount } from "@/messaging/ses-account";
+import type { SesAccount } from "@/messaging/ses-account";
 
 /** The paths the instance answers on the instance host and on an unclaimed one (section 2). */
 function instancePath(pathname: string): boolean {
@@ -83,6 +90,8 @@ export interface InstanceConfig {
    * the API user, seeded as before into the primary project while it has no users (D151).
    */
   readonly seed: ProjectOptions["seed"];
+  /** SES's API base URL for a region (B145a); AWS's own unless a test gives its stand-in. */
+  readonly sesEndpoint?: (region: string) => string;
 }
 
 interface Entry {
@@ -182,6 +191,12 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   let budgets: InstanceBudgets | undefined;
   let account: AdminAccountStore | undefined;
   let settings: InstanceSettingsStore | undefined;
+  /** The one dispatcher every project sends through (B141): its pools, rate and start schedule. */
+  let dispatcher: Dispatcher | undefined;
+  let unsubscribeRate: (() => void) | undefined;
+  /** The SES account snapshot and the capacity forecast over every project (B145a). */
+  let ses: SesAccount | undefined;
+  let capacity: Capacity | undefined;
   /** Wired projects in registration order (slug order at start). */
   const entries: Array<Entry> = [];
   /** The routing table: hostname to project, and the primary for every other host. */
@@ -221,6 +236,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
 
   const options = (record: ProjectRecord): ProjectOptions => ({
     slug: record.slug,
+    name: record.name,
     directory: projectDirectory(root, record.slug),
     // The primary project's root URL is `--root-url` itself, so one install's links are unchanged.
     rootUrl: record.primary ? config.rootUrl : projectRootUrl(config.rootUrl, record.hostname),
@@ -250,6 +266,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         clock,
         budgets: must(budgets, "budgets"),
         settings: must(settings, "instance settings").reader,
+        dispatcher: must(dispatcher, "dispatcher"),
         instanceRootUrl: config.rootUrl,
         listen: config.listen,
         admin: {
@@ -258,6 +275,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
           redeem: (slug, token) => tokens.redeem(slug, token),
         },
         projects: () => entries.map(({ record: r }) => ({ slug: r.slug, name: r.name })),
+        capacity: must(capacity, "capacity"),
       },
       options(record),
     );
@@ -283,6 +301,10 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       await entry.project.close();
     }
     entries.length = 0;
+    // Last in the shutdown order (14-projects section 7): every project has stopped asking for
+    // slots and drained; the pools close. After stop() this is the same, already settled close.
+    unsubscribeRate?.();
+    await dispatcher?.close();
     registry?.close();
     account?.close();
     settings?.close();
@@ -293,6 +315,37 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     registry = createRegistry(db, clock);
     settings = createInstanceSettings(db, clock);
     account = createAdminAccountStore(db, clock);
+    const instanceKeys = settings;
+    // The effective rate is messaging.max_send_rate until B145 adds SES's MaxSendRate (D155).
+    dispatcher = createDispatcher({
+      clock,
+      // Validated on save (src/settings/validate.ts): an array of servers and a whole number.
+      smtp: () => {
+        const servers: unknown = instanceKeys.read().smtp;
+        return Array.isArray(servers) ? servers.filter((s): s is SMTPServer => !!s) : [];
+      },
+      rate: () => {
+        const rate: unknown = instanceKeys.read()["messaging.max_send_rate"];
+        return typeof rate === "number" ? rate : 0;
+      },
+    });
+    const paced = dispatcher;
+    unsubscribeRate = settings.reader.subscribe((next, current) => {
+      if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
+        paced.wake();
+      }
+    });
+    ses = createSesAccount({
+      clock,
+      settings: settings.reader,
+      attention,
+      endpoint: config.sesEndpoint,
+    });
+    capacity = createCapacity({
+      clock,
+      account: ses,
+      sources: () => entries.map((entry) => entry.project.capacity),
+    });
     const directories = projectDirectories(root);
     // A fresh install, or one whose first start stopped before its registry row: register the
     // primary project. Its directory is created by its wiring, or used as it is (D151). An instance
@@ -490,6 +543,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   };
 
   const instanceSettings = must(settings, "instance settings");
+  const sesAccount = must(ses, "SES account");
   const instanceClientAddress = createClientAddress(
     () => instanceLoginSettings(instanceSettings.read()).trustedProxies,
     instanceLogger,
@@ -520,6 +574,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     projects,
     // The login limit's address honours security.trusted_proxies, as a project's login does.
     clientAddress: instanceClientAddress,
+    ses: sesAccount,
     smtpTest: () => {
       const project = primary?.project;
       return project && ((body, revalidate) => project.smtpTest(body, revalidate));
@@ -627,13 +682,23 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     /** Starts every project's loops, in registration order. A loop's failure calls `onFail`. */
     start(onFail: (failure?: unknown) => void): void {
       fail = onFail;
+      sesAccount.start();
       for (const entry of entries) {
         startProject(entry);
       }
     },
-    /** Every project's orderly stops, the last registered first. main() appends the HTTP stop. */
+    /**
+     * Every project's orderly stops, the last registered first, then the dispatcher's. main() appends
+     * the HTTP stop. The dispatcher stops in the same turn as the projects, not after they settle: a
+     * project's sender waits for its pushes in SMTP flight, and only the dispatcher's emailer bounds
+     * that drain (5 s, then it cancels the sockets), as each project's own emailer did before B141.
+     */
     stop(): Array<unknown> {
-      return entries.toReversed().flatMap((entry) => entry.project.stop());
+      const stops = [
+        ...entries.toReversed().flatMap((entry) => entry.project.stop()),
+        sesAccount.stop(),
+      ];
+      return dispatcher ? [...stops, dispatcher.close()] : stops;
     },
     close: closeAll,
     add,

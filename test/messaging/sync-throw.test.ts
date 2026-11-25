@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import nodemailer from "nodemailer";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { SMTPServer } from "@/messaging/email";
 import { TestClock } from "@/test/server/fixture";
 
@@ -44,7 +44,7 @@ describe("emailer failure after pool hand-off", () => {
       throw new Error("transport exploded");
     });
     restore.push(() => spy.mockRestore());
-    const emailer = createEmailer({
+    const emailer = fixtureEmailer({
       settings: () => ({ smtp: [server], rootUrl: "https://example.test" }),
       clock: new TestClock(),
     });

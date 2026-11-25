@@ -229,45 +229,24 @@ function General({ t, canUpload }: { t: Translation; canUpload: boolean }) {
 
 function Performance({ t, side }: { t: Translation; side: SettingsSide }) {
   const instance = side === "instance";
-  const windowOff = "!form['app.message_sliding_window']";
   const cacheOff = "!form['app.cache_slow_queries']";
   return (
     <div class="settings-items">
       <fieldset
         class="card"
-        data-keywords="performance concurrency message rate batch size errors threshold throughput sending speed workers"
+        data-keywords="performance send rate errors threshold throughput sending speed"
       >
         <legend>{t.T("globals.terms.performance")}</legend>
         {instance ? (
-          <>
-            <NumberField
-              model="form['app.concurrency']"
-              name="app.concurrency"
-              label={t.T("globals.fields.concurrency")}
-              hint={t.T("settings.performance.concurrencyHelp")}
-              min="1"
-              max="10000"
-              placeholder="5"
-            />
-            <NumberField
-              model="form['app.message_rate']"
-              name="app.message_rate"
-              label={t.T("settings.performance.messageRate")}
-              hint={t.T("settings.performance.messageRateHelp")}
-              min="1"
-              max="100000"
-              placeholder="5"
-            />
-            <NumberField
-              model="form['app.batch_size']"
-              name="app.batch_size"
-              label={t.T("globals.fields.batchSize")}
-              hint={t.T("settings.performance.batchSizeHelp")}
-              min="1"
-              max="100000"
-              placeholder="1000"
-            />
-          </>
+          <NumberField
+            model="form['messaging.max_send_rate']"
+            name="messaging.max_send_rate"
+            label={t.T("settings.performance.maxSendRate")}
+            hint={t.T("settings.performance.maxSendRateHelp")}
+            min="0"
+            max="10000"
+            placeholder="14"
+          />
         ) : (
           <NumberField
             model="form['app.max_send_errors']"
@@ -279,48 +258,8 @@ function Performance({ t, side }: { t: Translation; side: SettingsSide }) {
             placeholder="1999"
           />
         )}
-        {instance ? (
-          <NumberField
-            model="form['messaging.max_send_rate']"
-            name="messaging.max_send_rate"
-            label={t.T("settings.performance.maxSendRate")}
-            hint={t.T("settings.performance.maxSendRateHelp")}
-            min="0"
-            max="10000"
-            placeholder="14"
-          />
-        ) : null}
       </fieldset>
-      {instance ? (
-        <fieldset
-          class="card"
-          data-keywords="sliding window rate limit throttle duration cap sending"
-        >
-          <legend>{t.T("settings.performance.slidingWindow")}</legend>
-          <Switch
-            model="form['app.message_sliding_window']"
-            label={t.T("globals.buttons.enable")}
-            hint={t.T("settings.performance.slidingWindowHelp")}
-          />
-          <NumberField
-            model="form['app.message_sliding_window_rate']"
-            label={t.T("settings.performance.slidingWindowRate")}
-            hint={t.T("settings.performance.slidingWindowRateHelp")}
-            min="1"
-            max="10000000"
-            placeholder="25"
-            disabled={windowOff}
-          />
-          <TextField
-            model="form['app.message_sliding_window_duration']"
-            label={t.T("globals.fields.duration")}
-            hint={t.T("settings.performance.slidingWindowDurationHelp")}
-            maxlength="10"
-            placeholder="1h"
-            disabled={windowOff}
-          />
-        </fieldset>
-      ) : (
+      {instance ? null : (
         <fieldset
           class="card"
           data-keywords="marketing frequency cap minimum interval sends subscriber"
@@ -414,6 +353,108 @@ function Privacy({ t }: { t: Translation }) {
           hint={t.T("settings.privacy.allowWipeHelp")}
         />
       </fieldset>
+      <PreferenceFields t={t} />
+      <DomainLists t={t} />
+    </div>
+  );
+}
+
+/**
+ * B147 (D160): the preference center's profile fields, `privacy.preference_fields`. Each field names a
+ * subscriber attribute, its label and type, whether subscribers may edit it, and its rules.
+ */
+function PreferenceFields({ t }: { t: Translation }) {
+  const notBounded = "item.type !== 'text' && item.type !== 'number'";
+  return (
+    <fieldset
+      class="card preference-fields"
+      data-keywords="preference center profile fields attributes manage page subscriber details consent"
+    >
+      <legend>{t.T("settings.privacy.preferenceFields")}</legend>
+      <Hint>{t.T("settings.privacy.preferenceFieldsHelp")}</Hint>
+      <template x-for="(item, n) in form['privacy.preference_fields']" x-bind:key="n">
+        <div class="repeat-block preference-field">
+          <div class="row">
+            <div class="col-4">
+              <TextField
+                model="item.key"
+                label={t.T("settings.privacy.fieldKey")}
+                maxlength="64"
+                placeholder="city"
+              />
+            </div>
+            <div class="col-4">
+              <TextField
+                model="item.label"
+                label={t.T("settings.privacy.fieldLabel")}
+                maxlength="200"
+              />
+            </div>
+            <div class="col-4">
+              <label data-field="">
+                {t.T("settings.privacy.fieldType")}
+                <select x-model="item.type">
+                  <option value="text">text</option>
+                  <option value="number">number</option>
+                  <option value="boolean">boolean</option>
+                  <option value="date">date</option>
+                  <option value="select">select</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="hstack gap-6">
+            <Switch model="item.editable" label={t.T("settings.privacy.fieldEditable")} />
+            <Switch
+              model="item.required"
+              label={t.T("settings.privacy.fieldRequired")}
+              disabled="item.type === 'boolean'"
+            />
+          </div>
+          <div class="row">
+            <div class="col-6">
+              <NumberField
+                model="item.min"
+                label={t.T("settings.privacy.fieldMin")}
+                hint={t.T("settings.privacy.fieldMinMaxHelp")}
+                disabled={notBounded}
+              />
+            </div>
+            <div class="col-6">
+              <NumberField
+                model="item.max"
+                label={t.T("settings.privacy.fieldMax")}
+                disabled={notBounded}
+              />
+            </div>
+          </div>
+          <label data-field="" x-show="item.type === 'select'">
+            {t.T("settings.privacy.fieldOptions")}
+            <textarea rows="4" x-model="item.strOptions"></textarea>
+            <Hint>{t.T("settings.privacy.fieldOptionsHelp")}</Hint>
+          </label>
+          <button
+            type="button"
+            class="outline small"
+            data-variant="danger"
+            x-on:click="removePreferenceField(n)"
+          >
+            <Icon name="trash-2" /> {t.T("globals.buttons.delete")}
+          </button>
+        </div>
+      </template>
+      <p>
+        <button type="button" class="outline small" x-on:click="addPreferenceField">
+          <Icon name="plus" /> {t.T("globals.buttons.addNew")}
+        </button>
+      </p>
+    </fieldset>
+  );
+}
+
+function DomainLists({ t }: { t: Translation }) {
+  return (
+    <>
       <hr />
       <fieldset
         class="card"
@@ -449,7 +490,7 @@ function Privacy({ t }: { t: Translation }) {
           </div>
         </ot-tabs>
       </fieldset>
-    </div>
+    </>
   );
 }
 
@@ -999,15 +1040,19 @@ function Bounces({ t, side }: { t: Translation; side: SettingsSide }) {
   );
 }
 
-/** The SES account's API access (B139, D154): stored and masked; no sender reads it yet. */
+/**
+ * The SES account's API access (B139, D154): stored and masked. The capacity forecast reads the
+ * account with it (B145a); "Check SES account" reads it now with the saved keys.
+ */
 function Ses() {
   return (
     <div class="settings-items">
       <fieldset class="card" data-keywords="ses amazon aws api access key secret region account">
         <legend>Amazon SES API</legend>
         <p class="text-light">
-          API access to the SES account. Set all three or none. A saved secret stays masked; leave
-          it as it is to keep it.
+          API access to the SES account, for an IAM user allowed only ses:GetAccount. Set all three
+          or none. A saved secret stays masked; leave it as it is to keep it. Without them there is
+          no capacity forecast.
         </p>
         <TextField
           model="form['ses.api_region']"
@@ -1030,6 +1075,29 @@ function Ses() {
           type="password"
           maxlength="128"
         />
+        <div class="hstack">
+          <button
+            type="button"
+            data-testid="ses-check"
+            x-bind:disabled="isLoading('settings.checkSES')"
+            {...{ "x-on:click.prevent": "doSESCheck()" }}
+          >
+            Check SES account
+          </button>
+          <span class="text-light">Reads the account with the saved keys.</span>
+        </div>
+        <template x-if="sesCheck">
+          <div data-testid="ses-check-result">
+            <template x-if="sesCheckError">
+              <p data-testid="ses-check-error" x-text="sesCheckError"></p>
+            </template>
+            <ul>
+              <template x-for="line in sesCheckLines">
+                <li x-text="line"></li>
+              </template>
+            </ul>
+          </div>
+        </template>
       </fieldset>
     </div>
   );

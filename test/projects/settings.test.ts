@@ -139,7 +139,7 @@ test("an instance key in a project PUT is a 400 that names it, and nothing is wr
   for (const [name, value] of [
     ["smtp", smtpAt(shared, first.port)],
     ["messaging.max_send_rate", 3],
-    ["app.concurrency", 1],
+    ["app.check_updates", false],
     ["ses.api_region", "eu-west-1"],
     ["security.session_duration", "1h"],
   ] as const) {
@@ -170,6 +170,37 @@ test("an instance key in a project PUT is a 400 that names it, and nothing is wr
   expect((await projectSettings(B))["app.site_name"]).not.toBe("Project A");
 });
 
+test("a removed campaign pacing key is a 400 that names it on either side, and nothing is written", async () => {
+  // B141 (D155): the dispatcher paces every send, so listmonk's per-campaign pacing keys are gone.
+  const before = await projectSettings(A);
+  const shared = await instanceSettings();
+  for (const [name, value] of [
+    ["app.concurrency", 1],
+    ["app.message_rate", 2],
+    ["app.batch_size", 100],
+    ["app.message_sliding_window", true],
+    ["app.message_sliding_window_duration", "1h"],
+    ["app.message_sliding_window_rate", 10],
+  ] as const) {
+    expect(name in before).toBe(false);
+    expect(name in shared).toBe(false);
+    const full = await api(port, A, key(A), "PUT", "/api/settings", { ...before, [name]: value });
+    expect({ name, status: full.status }).toEqual({ name, status: 400 });
+    expect(parse<{ message: string }>(full.text).message).toContain(name);
+    const one = await api(port, A, key(A), "PUT", `/api/settings/${name}`, value);
+    expect({ name, status: one.status }).toEqual({ name, status: 400 });
+    expect(parse<{ message: string }>(one.text).message).toContain(name);
+    const instance = await instanceCall(port, PRIMARY, operator, "PUT", "/api/instance/settings", {
+      ...shared,
+      [name]: value,
+    });
+    expect({ name, status: instance.status }).toEqual({ name, status: 400 });
+    expect(parse<{ message: string }>(await instance.text()).message).toContain(name);
+  }
+  expect(await projectSettings(A)).toEqual(before);
+  expect(await instanceSettings()).toEqual(shared);
+});
+
 test("the instance settings API takes the instance session and CSRF, never an API credential", async () => {
   for (const host of [PRIMARY, A]) {
     const credential = await api(port, PRIMARY, key(host), "GET", "/api/instance/settings");
@@ -184,7 +215,7 @@ test("the instance settings API takes the instance session and CSRF, never an AP
     const both = await request(
       port,
       PRIMARY,
-      `/api/instance/settings${body ? "/app.concurrency" : ""}`,
+      `/api/instance/settings${body ? "/messaging.max_send_rate" : ""}`,
       {
         method,
         headers: {
@@ -205,13 +236,15 @@ test("the instance settings API takes the instance session and CSRF, never an AP
   });
   expect(withProject.status).toBe(401);
   // A change needs the CSRF token.
-  const noCsrf = await request(port, PRIMARY, "/api/instance/settings/app.concurrency", {
+  const noCsrf = await request(port, PRIMARY, "/api/instance/settings/messaging.max_send_rate", {
     method: "PUT",
     headers: { cookie: operator.cookie, "content-type": "application/json" },
     body: "4",
   });
   expect(noCsrf.status).toBe(403);
-  expect((await instanceSettings())["app.concurrency"]).toBe(defaults["app.concurrency"]);
+  expect((await instanceSettings())["messaging.max_send_rate"]).toBe(
+    defaults["messaging.max_send_rate"],
+  );
   // A project's host does not serve the instance routes: they are that project's paths.
   const onProject = await instanceCall(port, A, operator, "GET", "/api/instance/settings");
   expect(onProject.status).toBe(404);
@@ -379,7 +412,7 @@ test("the instance Settings page needs the instance session; a project's page li
   expect(page.status).toBe(200);
   const html = await page.text();
   expect(html).toContain('data-testid="settings-instance"');
-  expect(html).toContain('name="app.concurrency"');
+  expect(html).toContain('name="messaging.max_send_rate"');
   expect(html).not.toContain('name="app.from_email"');
   const session = await logIn(port, A, admin);
   const project = await (
@@ -387,6 +420,6 @@ test("the instance Settings page needs the instance session; a project's page li
   ).text();
   expect(project).toContain('data-testid="settings-project"');
   expect(project).toContain('href="http://127.0.0.1/admin/instance/settings"');
-  expect(project).not.toContain("app.concurrency");
+  expect(project).not.toContain("messaging.max_send_rate");
   expect(project).not.toContain("form.smtp");
 });

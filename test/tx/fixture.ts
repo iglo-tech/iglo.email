@@ -36,7 +36,7 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
 import { registerUserRoutes } from "@/users/routes";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
 import { startOutbox } from "@/messaging/outbox";
@@ -100,7 +100,7 @@ export async function txFixture(
     effects?: UnsubscribeEffects;
     page?: () => PageOptions;
     /** The subscriber mail of the privacy routes (B123); unset, a privacy action here throws. */
-    mail?: () => Pick<SubscriberMail, "exportData">;
+    mail?: () => Pick<SubscriberMail, "exportData" | "acceptSignup">;
     /** Wire the production webhook owners, with this transport. */
     webhooks?: WebhookTransport;
     /** The provider route's rate limit, with `webhooks`. */
@@ -109,6 +109,10 @@ export async function txFixture(
     snsFetch?: SnsFetch;
     /** The emailer's last gate before a pool, as in production (the restore hold). */
     refuse?: () => void;
+    /** messaging.max_send_rate of the dispatcher; unpaced by default. */
+    rate?: () => number;
+    /** The dispatcher's hold on marketing and campaign grants (B145's quota guard). */
+    held?: () => boolean;
     /**
      * Holds each synchronous dispatch, as a stalled SMTP server does. It runs after the journal
      * commit and before the dispatch claims its rows, so the outbox loop may claim and send them
@@ -209,7 +213,7 @@ export async function txFixture(
     lists,
     enrollments: createEnrollments(db, clock),
   });
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock,
     settings: () => ({
       rootUrl: "http://fixture.test",
@@ -235,6 +239,8 @@ export async function txFixture(
     }),
     copyAllowed: (address) => !addressBlocklisted(subscribers, address),
     ...(options.refuse ? { refuse: options.refuse } : {}),
+    ...(options.rate ? { rate: options.rate } : {}),
+    ...(options.held ? { held: options.held } : {}),
   });
   // Production marketing settings defaults (settings/defaults.ts), mutable per test.
   const marketing: MarketingSettings = {
@@ -266,7 +272,7 @@ export async function txFixture(
     templateNames: (ids) => templates.names(ids),
   });
   const tracking = createTracking(db, clock);
-  let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+  let outbox = startOutbox({ db, clock, logger: app.logger, sends, sender: emailer });
   const router = createRouter();
   // As src/main.ts: the personal public pages' headers (B125).
   router.use(personalPageHeaders);
@@ -401,6 +407,7 @@ export async function txFixture(
       allowPreferences: false,
       allowExport: false,
       allowWipe: false,
+      preferenceFields: [],
     };
   // The subscriber mail, made with the public routes below when `webhooks` is set.
   let subscriberMail: SubscriberMail | undefined;
@@ -576,7 +583,7 @@ export async function txFixture(
     stopOutbox: () => outbox.stop(),
     /** A fresh outbox over the same journal, as after a process restart. */
     restartOutbox() {
-      outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+      outbox = startOutbox({ db, clock, logger: app.logger, sends, sender: emailer });
     },
     webhooks,
     bounces,

@@ -33,7 +33,7 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
 import { registerUserRoutes } from "@/users/routes";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
@@ -135,7 +135,7 @@ export async function schedulerFixture(
   const templateReferences = createCampaignTemplateReferences(db);
   const templates = createTemplateStore(db, clock, renderer, templateReferences);
   templates.initialize();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock,
     settings: () => ({
       rootUrl: "http://fixture.test",
@@ -194,7 +194,7 @@ export async function schedulerFixture(
   });
   const tracking = createTracking(db, clock);
   const testSends = createTestSends(db, clock);
-  const outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+  const outbox = startOutbox({ db, clock, logger: app.logger, sends, sender: emailer });
   const events = createEventStore(db, subscribers, {
     emailAllowed: (email) => allowedDomain(email, [], []),
     exitThenTrigger: enrollments.exitThenTrigger,
@@ -300,6 +300,7 @@ export async function schedulerFixture(
       allowPreferences: false,
       allowExport: false,
       allowWipe: false,
+      preferenceFields: [],
     }),
     // B124 (D125): a paired self-wipe is real here, so its suppression can be tested through HTTP.
     // Export is not wired: its mail is the public fixture's concern.
@@ -324,6 +325,7 @@ export async function schedulerFixture(
         allowPreferences: false,
         allowExport: false,
         allowWipe: true,
+        preferenceFields: [],
       }),
     }),
   });

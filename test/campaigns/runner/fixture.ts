@@ -1,5 +1,6 @@
 // The campaign runner wired over the M3.1 campaigns fixture as src/main.ts wires it, with a
-// controllable emailer that records each push on the injected clock.
+// controllable sender that stands in for the dispatcher (B141): it grants `control.grant` slots per
+// request, so that is the batch size, and records each push on the injected clock.
 import { campaignsFixture } from "@/test/campaigns/fixture";
 import type { JsonObject } from "@/test/json-object";
 import { createRunnerStore } from "@/campaigns/runner/store";
@@ -8,8 +9,10 @@ import type { RunnerSettings } from "@/campaigns/runner/runner";
 import type { Clock } from "@/clock";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import type { Message, Outcome } from "@/messaging/email";
+import type { Grant, GrantClass, SenderDelivery } from "@/messaging/dispatcher";
 import { WAIT_WALL_MS, waitWall } from "@/test/wait";
 import { asBody } from "@/test/read-body";
+import { fixtureGrant } from "@/test/messaging/sender";
 
 export interface Push {
   at: number;
@@ -30,10 +33,35 @@ export async function runnerFixture(
   const control = {
     hold: options.hold ?? false,
     outcome: "accepted" as Outcome["status"],
+    /** Slots granted per request: a batch claims at most this many recipients. */
+    grant: 1000,
+    /**
+     * While set, a batch waits after its claim commits and before any of it is pushed, so a test
+     * can change consent between the claim and the push. `claimed` resolves when one waits.
+     */
+    gate: null as Promise<void> | null,
   };
+  let claimed: (() => void) | undefined;
+  /** Resolves once a claimed batch waits at `control.gate`. */
+  const batchClaimed = () =>
+    new Promise<void>((resolve) => {
+      claimed = resolve;
+    });
+  /** The grants this sender handed out; a push with one uses one of its slots. */
+  const grants = new WeakMap<Grant, ReturnType<typeof fixtureGrant>>();
+  const used = (grant: Grant) => grants.get(grant)?.use();
   const emailer = {
     closed: false,
-    push(message: Message) {
+    request: (_cls: GrantClass, count: number) => {
+      const grant = fixtureGrant(Math.min(count, control.grant));
+      grants.set(grant, grant);
+      return Promise.resolve(grant);
+    },
+    push(message: Message, delivery?: SenderDelivery) {
+      const grant = delivery?.grant;
+      if (grant) {
+        used(grant);
+      }
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);
       let resolve!: (outcome: Outcome) => void;
@@ -63,13 +91,7 @@ export async function runnerFixture(
     },
   };
   const settings: RunnerSettings = {
-    batchSize: 1000,
-    concurrency: 10,
-    messageRate: 1000,
     maxSendErrors: 1000,
-    slidingWindow: false,
-    slidingWindowDuration: "1h",
-    slidingWindowRate: 10_000,
     rootUrl: "http://fixture.test",
     brand: {
       logoUrl: "",
@@ -103,9 +125,16 @@ export async function runnerFixture(
       templates: f.owners.templates,
       renderer: f.owners.renderer,
       tracking: f.owners.tracking,
-      emailer: options.realEmailer ? f.owners.emailer : emailer,
+      sender: options.realEmailer ? f.owners.emailer.sender : emailer,
       settings: () => settings,
-      attachments: f.owners.attachments,
+      attachments: async (ids, inline) => {
+        const gate = control.gate;
+        if (gate) {
+          claimed?.();
+          await gate;
+        }
+        return f.owners.attachments(ids, inline);
+      },
       embedImages: f.owners.embedImages,
       leaseMs,
     });
@@ -212,6 +241,7 @@ export async function runnerFixture(
     campaign,
     pushes,
     control,
+    batchClaimed,
     runnerStore: store,
     settings,
     /** The public routes' settings (the campaigns fixture's), read by the view pixel and the pages. */

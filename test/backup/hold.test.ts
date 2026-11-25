@@ -18,7 +18,7 @@ import {
 } from "@/test/backup/fixture";
 import type { Client, Server } from "@/test/backup/fixture";
 import { createRealClock } from "@/clock";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { HttpError } from "@/server/response";
 import { startSink } from "@/test/tx/sink";
 import { asBody, readJson } from "@/test/read-body";
@@ -623,7 +623,7 @@ test("while held every path is stopped, what was queued stays, and a refusal sti
 
 test("the emailer's last gate refuses a push and a test before any connection", async () => {
   sink = await startSink();
-  const server = asBody<Parameters<ReturnType<typeof createEmailer>["test"]>[0]>({
+  const server = asBody<Parameters<ReturnType<typeof fixtureEmailer>["test"]>[0]>({
     enabled: true,
     host: "127.0.0.1",
     port: sink.port,
@@ -631,7 +631,7 @@ test("the emailer's last gate refuses a push and a test before any connection", 
     tls_type: "none",
     max_conns: 1,
   });
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock: createRealClock(),
     settings: () => ({ smtp: [server], rootUrl: "http://localhost" }),
     refuse() {

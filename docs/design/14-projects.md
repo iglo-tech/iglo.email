@@ -308,6 +308,26 @@ An instance service in `src/messaging/`. It owns the emailer, its SMTP pools, th
   3. In-flight sends drain under today's deadlines.
   4. The dispatcher stops.
 
+### As built (B141)
+
+[D155](09-decisions.md#d155-the-dispatcher-b141-lead-2026-11-25) records the choices this section left open. Where this list and the text above differ, this list is the code.
+
+- **Modules.** `src/messaging/dispatcher.ts` is the instance service: `createDispatcher({ clock, smtp, rate, held?, onStart? })` builds the one emailer and hands each project a sender (`sender({ rootUrl, copyAllowed, refuse })`). `src/projects/instance.ts` builds the one dispatcher, wakes it when `messaging.max_send_rate` changes, passes it to `createProject` as a service, and closes it after every project. `src/messaging/rate.ts` (the limiter) is gone.
+- **Per-push context.** `createEmailer` (`src/messaging/email.ts`) takes no root URL, copy policy or hold any more: each push carries them (`PushContext`: the Message-ID domain, `copyAllowed`, `refuse`) and its start wait. The sender fills them from its project on every push.
+- **The interface (B145 builds on it).**
+  - `request(class, count, signal?)` → `Grant`: up to `count` slots of `marketing` or `campaign`, resolved as soon as at least one is granted; rejected when the signal aborts or the sender stops. No transaction is open while it waits.
+  - `Grant`: `count` (unused slots), `keep(n)` (returns the unused rest at once), `release()` (returns every slot not started; a push still waiting in one ends not-started, so its claim is handed back).
+  - `push(message, { copies?, testPool?, grant? })`: with a grant the message takes one of its slots and acquires nothing else; without one it is transactional and takes the next start ahead of every granted one. `test(server, message, rootUrl)`: the SMTP settings test, transactional, waiting at most 10 s.
+  - The effective rate is the `rate()` input (`messaging.max_send_rate` today), re-read on `wake()`. B145 passes the lower of it and SES's `MaxSendRate`.
+  - `held()` is the hold predicate: while it is true no marketing or campaign slot is granted, transactional starts are not affected, and `wake()` resumes granting. B145's guard fills it; nothing sets it yet.
+- **Schedule.** One start every `1000 / rate` ms. A start is taken by the first waiting transactional push, else by the next ready granted push of `marketing`, else of `campaign`, round-robin across projects within a class. A push whose start is free (rate `0`, or a transactional push with its tick come and none ahead) starts in the same turn. The first start after the dispatcher starts waits one interval (B118a, unchanged).
+- **Grants.** Free room is the horizon (`floor(2 × rate)` slots, at least one; 200 at rate `0`) minus the slots reserved and not started, minus the waiting transactional starts, and at rate `0` minus the granted pushes still in flight. It is granted marketing first, then campaign, one slot per project per turn, and no project holds more than its share of the horizon (the horizon divided by the projects of that class with a request or a reservation, rounded up). A request is answered as soon as it holds one slot: it never waits for more. Slots a batch does not use go back at once.
+- **Outbox.** Two loops per project: the transactional loop claims up to 10 due transactional rows at once (as before, with lease expiry); the marketing loop only looks for a due marketing row, asks for up to 10 slots, then claims at most that many in one commit and pushes each in its slot. Each claim names its kind (migration 34 adds `idx_sends_due_kind`). A synchronous `POST /api/tx` claims its transactional rows at once; for its marketing rows it waits at most `HORIZON_MS + 5000` for a grant, and without one returns with the rows `queued`.
+- **Campaign runner.** The loop's claim only opens due campaigns; while a pipe is open it asks for up to `MAX_CLAIM` = 100 campaign slots (chosen by measurement, D155), then claims at most the granted recipients from the next pipe in rotation in one commit and advances the cursor over them only. Every recipient is pushed in its slot at once. After each outcome the status is reread; a pause, cancel, error pause or shutdown releases the grant, so the pushes still waiting end not-started and return to the cursor. The process-wide one-batch slot is gone.
+- **Shutdown.** A project's `stop()` stops its loops and closes its sender together: open requests are rejected, unused slots and waiting pushes go back (not-started, their claims handed back: outbox rows return to `queued`, campaign recipients to the cursor), and the pushes in SMTP flight drain under their deadlines. The instance closes the dispatcher (and its pools, 5 s) after every project.
+- **Removed keys.** `app.concurrency`, `app.message_rate`, `app.batch_size`, `app.message_sliding_window`, `…_duration` and `…_rate`: a write naming one is the `400` of any unknown key, on either side (07).
+- **Tests.** `test/messaging/dispatcher.test.ts` (priority and fairness, two campaigns within ±1, no double pacing, rate `0`), `test/tx/dispatcher.test.ts` (mixed claim, synchronous marketing under a backlog) and `test/projects/dispatcher-crash.test.ts` (SIGKILL and SIGTERM mid-wait on the compiled executable, in `contract:projects`). Measurements: `docs/perf/projects-B141.md`.
+
 ### SES account and capacity planning
 
 The SES account already knows its limits, so the app reads them instead of having them typed in, and shows them when a campaign is planned.
@@ -359,6 +379,18 @@ The SES account already knows its limits, so the app reads them instead of havin
   - No pause, no notification, no counter of the app's own.
   - Transactional is never held.
   - Without API credentials there is no forecast and no guard, and instance settings says so.
+
+### As built (B145a)
+
+[D159](09-decisions.md#d159-ses-account-and-forecast-b145a-lead-2026-11-25) splits B145 and records the choices this section left open. B145a built the account and the forecast; B145b feeds `MaxSendRate` into the dispatcher's rate and adds the guard, so until then `messaging.max_send_rate` alone paces sending. Where this list and the text above differ, this list is the code.
+
+- **Modules.** `src/messaging/sigv4.ts` (the signer), `src/messaging/ses-account.ts` (the client, the snapshot loop, `effectiveRate` and `refreshDelay`, all pure but the loop), `src/messaging/capacity.ts` (the forecast over every project's source), `src/campaigns/planned.ts` and `sends.starts` (each project's counts and send times, never rows). The instance (`src/projects/instance.ts`) owns one account and one forecast and gives each project its source; `InstanceConfig.sesEndpoint` points tests at a stand-in.
+- **Reading.** As above, with the refresh line using the effective rate, no fast refresh for an account without a daily limit, an on-demand read only when the last attempt (good or failed) is over a minute old, and a key change dropping the snapshot. The attention line is "SES GetAccount answered …; keeping the snapshot read at …", at once on the first failure and then hourly.
+- **Forecast.** As above, at exact times rather than hour buckets (a daily run at yesterday's hour is never counted twice), with the outside share and the baseline prorated by the exact past and future parts of the window and rounded up. Starts are `sends` rows `sending`, `sent` or `unknown` by their first push and campaign deliveries `claimed`, `sent` or `unknown`. A candidate by `campaign_id` takes its audience and send time and leaves it out of its own project's planned list; with rate 0 it takes no time; without a daily limit it always fits.
+- **API.** `GET /api/sending/capacity` with `at` (RFC 3339, zone required), `count` and `campaign_id`, `campaigns:get`; `available: false` with `reason` `not_configured` or `not_read` until a read succeeds. A failed read shows project users a fixed text, never AWS's message. OpenAPI component `SendingCapacity`; MCP tool `get_sending_capacity`. The MCP instructions name the project (to 40 characters) and say to check capacity before scheduling a large campaign.
+- **Pages.** The campaign page shows the line for a saved draft, paused or scheduled campaign at the form's send time and adds it to the confirmation when over. Instance settings, Amazon SES: "Check SES account" (`POST /api/instance/settings/ses/check`) shows the values or the AWS error, says when no keys are saved, and warns when the send-rate setting is higher than SES's rate.
+- **Cost.** About 28 ms for 100,000 sends and 100,000 deliveries, 250–280 ms for a million of each ([projects-B145a](../perf/projects-B145a.md)).
+- **Tests.** `test/messaging/sigv4.test.ts`, `test/messaging/ses-account.test.ts` (injected clock, stand-in server), `test/projects/capacity.test.ts` in `contract:projects` (three projects, hand-calculated windows, the MCP call). `test/projects/capacity-serve.ts` runs an instance with the stand-in for the `agent-browser` pass.
 
 ### What does not change
 

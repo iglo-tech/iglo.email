@@ -5,7 +5,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { createServer } from "node:net";
 import type { Socket } from "node:net";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { SMTPServer } from "@/messaging/email";
 import { TestClock } from "@/test/server/fixture";
 
@@ -144,7 +144,7 @@ test("a stalled test send does not cut real sends on the same server at its 60 s
   const sink = await holdingSink([STALLED, REAL]);
   cleanup.push(sink.close);
   const clock = new TestClock();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     settings: () => ({ smtp: [sink.server], rootUrl: "https://example.test" }),
     clock,
   });
@@ -169,7 +169,7 @@ test("shutdown waits five seconds for a stalled test send, then cancels it as un
   const sink = await holdingSink([STALLED]);
   cleanup.push(sink.close);
   const clock = new TestClock();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     settings: () => ({ smtp: [sink.server], rootUrl: "https://example.test" }),
     clock,
   });

@@ -28,7 +28,7 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
 import { registerUserRoutes } from "@/users/routes";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
@@ -124,7 +124,7 @@ export async function sequencesFixture(
   const templateReferences = createCampaignTemplateReferences(db);
   const templates = createTemplateStore(db, clock, renderer, templateReferences);
   templates.initialize();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock,
     settings: () => ({
       rootUrl: "http://fixture.test",
@@ -179,7 +179,7 @@ export async function sequencesFixture(
     }),
   });
   const tracking = createTracking(db, clock);
-  const outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+  const outbox = startOutbox({ db, clock, logger: app.logger, sends, sender: emailer });
   const events = createEventStore(db, subscribers, {
     emailAllowed: (email) => allowedDomain(email, [], []),
     exitThenTrigger: enrollments.exitThenTrigger,
@@ -236,9 +236,10 @@ export async function sequencesFixture(
       allowPreferences: false,
       allowExport: false,
       allowWipe: false,
+      preferenceFields: [],
     }),
     // The privacy answers are the public fixture's concern; here every path pairs nobody.
-    privacy: { export: () => null, wipe: () => null },
+    privacy: { export: () => null, wipe: () => null, signup: () => {} },
   });
   registerEventRoutes(router, events, auth, roles);
   const testSends = createTestSends(db, clock);

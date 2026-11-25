@@ -3,7 +3,7 @@
 // the outcome is proven not sent, and a transactional send may retry. Real time passes here: the
 // greeting timeout is nodemailer's own timer, not the injected clock.
 import { expect, test } from "bun:test";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { silentServer } from "@/test/messaging/silent-server";
 import { TestClock } from "@/test/server/fixture";
 
@@ -18,7 +18,7 @@ const message = {
 test("a server that never greets: nothing was written, so the send is proven not sent", async () => {
   const silent = await silentServer("1s");
   try {
-    const emailer = createEmailer({
+    const emailer = fixtureEmailer({
       settings: () => ({ smtp: [silent.server], rootUrl: "https://example.test" }),
       clock: new TestClock(),
     });

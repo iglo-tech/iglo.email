@@ -44,8 +44,7 @@ import type { InstanceSettingsReader } from "@/settings/instance";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
-import { createEmailer } from "@/messaging/email";
-import { createSendRateLimiter } from "@/messaging/rate";
+import type { Dispatcher, Sender } from "@/messaging/dispatcher";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
@@ -88,6 +87,9 @@ import { createMediaStore } from "@/media/store";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { createCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
+import { createPlannedCampaigns } from "@/campaigns/planned";
+import type { PlannedCampaigns } from "@/campaigns/planned";
+import type { CapacityAnswer, CapacitySource, Candidate } from "@/messaging/capacity";
 import { registerArchiveRoutes } from "@/public/archive";
 import { googleFontUrl } from "@/public/brand";
 import type { PageSite } from "@/public/layout";
@@ -130,6 +132,11 @@ export interface ProjectServices {
    * notifications. A project holds no copy of an instance key (invariant 5).
    */
   readonly settings: InstanceSettingsReader;
+  /**
+   * The instance's one dispatcher (B141, 14-projects section 7): its SMTP pools and start schedule
+   * are every project's. A project gets a sender from it and never builds an emailer of its own.
+   */
+  readonly dispatcher: Dispatcher;
   /** `--root-url`: the instance host, which the Settings page links to (B139). */
   readonly instanceRootUrl: string;
   /**
@@ -152,11 +159,20 @@ export interface ProjectServices {
    * admin's copy sees it, since the admin is the one account that is in every project.
    */
   readonly projects?: () => ReadonlyArray<{ readonly slug: string; readonly name: string }>;
+  /**
+   * The instance's capacity forecast (B145a): `GET /api/sending/capacity` on this project's host
+   * asks it with this project's own source. Without it (a fixture) the route is not served.
+   */
+  readonly capacity?: {
+    forecast(source: CapacitySource, candidate: Candidate | null): Promise<CapacityAnswer>;
+  };
 }
 
 /** What one project is wired from: its identity, its directory, its root URL and its seed. */
 export interface ProjectOptions {
   readonly slug: string;
+  /** The project's name in the registry, which the MCP instructions name (B145a); the slug if none. */
+  readonly name?: string;
   /** `projects/<slug>/`: the database, `uploads/` and `stage/` live here. */
   readonly directory: string;
   /** `--root-url` with the host replaced by the project's main hostname (14-projects section 2). */
@@ -185,6 +201,8 @@ export interface Project {
   readonly app: App;
   readonly db: Database;
   readonly router: Router;
+  /** This project's counts for the instance's capacity forecast (B145a). */
+  readonly capacity: CapacitySource;
   /** The bound server, read by the maintenance routes' keep-open and stopped by main(). */
   attach(server: ProjectServer): void;
   /**
@@ -240,7 +258,7 @@ export async function createProject(
   let roles: ReturnType<typeof createRoles> | undefined;
   let users: ReturnType<typeof createUserStore> | undefined;
   let settings: ReturnType<typeof createSettings> | undefined;
-  let emailer: ReturnType<typeof createEmailer> | undefined;
+  let sender: Sender | undefined;
   let sends: ReturnType<typeof createSends> | undefined;
   let templateReferences: ReturnType<typeof createCampaignTemplateReferences> | undefined;
   let templates: ReturnType<typeof createTemplateStore> | undefined;
@@ -257,6 +275,7 @@ export async function createProject(
   let mediaStore: ReturnType<typeof createMediaStore> | undefined;
   let runnerStore: ReturnType<typeof createRunnerStore> | undefined;
   let recipients: ReturnType<typeof createCampaignRecipients> | undefined;
+  let planned: PlannedCampaigns | undefined;
   let runner: ReturnType<typeof createCampaignRunner> | undefined;
   let mail: SubscriberMail | undefined;
   let signups: ReturnType<typeof createSignupMail> | undefined;
@@ -276,6 +295,14 @@ export async function createProject(
     server?: ProjectServer;
   }
   const serverRef: ServerRef = {};
+  /** This project's counts for the instance's forecast (B145a): counts and send times, no rows. */
+  const source: CapacitySource = {
+    starts: (day, from) => ({
+      campaign: must(planned, "planned").starts(day, from),
+      other: must(sends, "sends").starts(day, from),
+    }),
+    planned: () => must(planned, "planned").planned(),
+  };
   // The finally body of the composition: every store that exists is closed, the database last.
   // A wiring failure runs it before the error propagates, so nothing that was opened stays open.
   const closeAll: () => Promise<void> = async () => {
@@ -292,7 +319,7 @@ export async function createProject(
     await analyticsReader?.close();
     // A decision awaiting a condition finishes before the runner and connections close.
     await scheduling?.catch(() => {});
-    const closing = emailer?.close();
+    const closing = sender?.close();
     await running?.catch(() => {});
     await closing;
     await queryRunner?.close();
@@ -307,6 +334,7 @@ export async function createProject(
     bounces?.close();
     webhooks?.close();
     sequences?.close();
+    planned?.close();
     recipients?.close();
     runnerStore?.close();
     campaignStore?.close();
@@ -532,27 +560,15 @@ export async function createProject(
     });
     await importer.sweep().catch((error: unknown) => app.logger.error(error));
     registerImportRoutes(router, { importer, roles, auth });
-    const limiter = createSendRateLimiter({
-      clock,
-      rate: () => must(settings, "settings").read()["messaging.max_send_rate"],
-    });
-    settings.onUpdate((next, current) => {
-      if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
-        limiter.wake();
-      }
-    });
-    emailer = createEmailer({
-      clock,
-      limiter,
-      settings: () => {
-        const current = must(settings, "settings").read();
-        return { smtp: current.smtp, rootUrl: current["app.root_url"] };
-      },
+    // The per-push context the instance's one emailer receives from this project (B141).
+    sender = services.dispatcher.sender({
+      rootUrl: () => must(settings, "settings").read()["app.root_url"],
       copyAllowed: (address) =>
         !addressBlocklisted(must(subscriberStore, "subscriberStore"), address),
-      // Past every loop's and route's own check: nothing reaches SMTP from a held install (D67).
+      // Past every loop's and route's own check: nothing reaches SMTP from a held project (D67).
       refuse: () => refuseWhileHeld(db),
     });
+    const emailer = sender;
     mediaStore = createMediaStore(db, clock);
     const media = mediaStore;
     const files = createFilesystem(directory, () => {
@@ -623,7 +639,7 @@ export async function createProject(
     subscriberTracking = createSubscriberTracking(db);
     registerSendRoutes(router, sends, auth, roles);
     registerWebhookRoutes(router, { webhooks, auth });
-    outbox = createOutbox({ db, clock, logger: app.logger, sends, emailer });
+    outbox = createOutbox({ db, clock, logger: app.logger, sends, sender });
     const attachments = createAttachments(media, files);
     const embedImages = createEmbeds(media, app.logger);
     registerTxRoutes(router, {
@@ -732,6 +748,11 @@ export async function createProject(
       notify: notifier,
       // The runner is created after these routes (below), so the route reads it when called.
       wakeRunner: () => runner?.wake(),
+      // The forecast is the instance's; this project gives its own counts (B145a).
+      capacity: services.capacity && {
+        forecast: (candidate) => must(services.capacity, "capacity").forecast(source, candidate),
+        campaign: (id) => must(planned, "planned").campaign(id),
+      },
     });
     registerCampaignPublicRoutes(router, {
       db,
@@ -789,6 +810,11 @@ export async function createProject(
       bounceLimit: () => Math.max(budgets.bounceWebhookPerMinute, pages().rateLimits.unsubscribe),
     };
     recipients = createCampaignRecipients(db);
+    const measured = recipients;
+    planned = createPlannedCampaigns(db, {
+      recipients: measured,
+      listOptin: (id) => must(lists, "lists").subscriberMetadata(id)?.optin ?? null,
+    });
     const templateStore = templates;
     runner = createCampaignRunner({
       db,
@@ -804,20 +830,14 @@ export async function createProject(
       },
       renderer,
       tracking,
-      emailer,
+      sender,
       attachments,
       embedImages,
       settings: () => {
         const current = must(settings, "settings").read();
         const campaign = campaignSettings();
         return {
-          batchSize: current["app.batch_size"],
-          concurrency: current["app.concurrency"],
-          messageRate: current["app.message_rate"],
           maxSendErrors: current["app.max_send_errors"],
-          slidingWindow: current["app.message_sliding_window"],
-          slidingWindowDuration: current["app.message_sliding_window_duration"],
-          slidingWindowRate: current["app.message_sliding_window_rate"],
           rootUrl: campaign.rootUrl,
           messengers: campaign.messengers,
           unsubscribeHeader: campaign.unsubscribeHeader,
@@ -976,7 +996,7 @@ export async function createProject(
       roles,
       renderer,
       logger: app.logger,
-      send: (message) => must(emailer, "emailer").push(message, { priority: "outbox" }),
+      send: (message) => must(sender, "sender").push(message),
       site: () => {
         const current = pages();
         return {
@@ -1007,6 +1027,7 @@ export async function createProject(
     registerMcpRoutes(router, {
       auth,
       router,
+      project: options.name ?? options.slug,
     });
     summaryRefresh = createSummaryRefresh({
       clock,
@@ -1024,6 +1045,7 @@ export async function createProject(
       app,
       db,
       router,
+      capacity: source,
       ses: must(ses, "ses"),
       attach(server: ProjectServer) {
         serverRef.server = server;
@@ -1064,8 +1086,9 @@ export async function createProject(
         // An import stops at its next batch and uploads end, so nothing new reaches the writer.
         const importStop = must(importer, "importer").close();
         const maintenanceStop = must(maintenance, "maintenance").close();
-        // Stop campaign and sequence claims first. The campaign batch in flight finishes or
-        // is abandoned by the emailer's drain deadline; its unsent rest returns to the cursor.
+        // Stop campaign and sequence claims first, and this project's sending with them: its
+        // requests and unused slots go back, a push still waiting for its start ends not-started
+        // (its claim is handed back), and the pushes in SMTP flight drain under their deadlines.
         const runnerStop = must(runner, "runner").stop();
         const schedulerStop = must(scheduler, "scheduler").stop();
         const outboxStop = must(outbox, "outbox").stop();
@@ -1074,7 +1097,7 @@ export async function createProject(
         const deliveryStop = must(deliveries, "deliveries").stop();
         const summaryStop = must(summaryRefresh, "summaryRefresh").stop();
         const readerClose = must(analyticsReader, "analyticsReader").close();
-        const messagingClose = must(emailer, "emailer").close();
+        const messagingClose = must(sender, "sender").close();
         return [
           importStop,
           maintenanceStop,
