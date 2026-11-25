@@ -3,7 +3,7 @@
 // a page; see src/admin/routes.ts for how one is added.
 import { STATUS_CODES } from "node:http";
 import { renderAdminShell } from "@/admin/layout/shell";
-import type { JSONValue } from "@/admin/layout/shell";
+import type { JSONValue, ProjectSwitcher } from "@/admin/layout/shell";
 import { sidebar } from "@/admin/layout/sidebar";
 import { adminPolicy } from "@/admin/policy";
 import { render } from "@/jsx/render";
@@ -40,6 +40,35 @@ export interface AdminSite {
   readonly customJs: string;
   /** The instance host's root URL, for the Settings page's link to the instance settings (B139). */
   readonly instanceUrl?: string;
+  /** This project's slug and every served project, for the admin's switcher (B143a, D157). */
+  readonly switcher?:
+    | {
+        readonly current: string;
+        readonly projects: ReadonlyArray<{ readonly slug: string; readonly name: string }>;
+      }
+    | undefined;
+}
+
+/**
+ * The header's project switcher, for the admin's copy only: the one account in every project.
+ * Each link opens its project through the instance host's handoff (B140).
+ */
+function switcherFor(identity: Identity, site: AdminSite): ProjectSwitcher | undefined {
+  const { switcher, instanceUrl } = site;
+  if (identity.user.admin_copy !== 1n || !switcher || !instanceUrl) {
+    return undefined;
+  }
+  const base = instanceUrl.replace(/\/+$/, "");
+  const current = switcher.projects.find((project) => project.slug === switcher.current);
+  return {
+    name: current?.name ?? switcher.current,
+    projects: switcher.projects.map((project) => ({
+      name: project.name,
+      href: `${base}/admin/instance/open/${encodeURIComponent(project.slug)}?next=%2Fadmin`,
+      current: project.slug === switcher.current,
+    })),
+    instance: `${base}/admin/instance/projects`,
+  };
 }
 export interface AdminPage {
   readonly title: string;
@@ -174,6 +203,7 @@ export function createAdminPages(deps: {
           return page;
         }
         const hold = restoreHold(context.app.db);
+        const switcher = switcherFor(identity, current);
         const html = renderAdminShell({
           title: page.title,
           siteName: current.siteName,
@@ -183,6 +213,7 @@ export function createAdminPages(deps: {
           config: { root_url: current.rootUrl, ...page.config },
           navigation: sidebar(page.pageId, i18n, can, context.app.clock.now()),
           profile: { name: identity.user.username },
+          ...(switcher ? { switcher } : {}),
           customAssets: true,
           ...(current.faviconUrl ? { faviconUrl: current.faviconUrl } : {}),
           ...(page.script ? { script: page.script } : {}),

@@ -1,0 +1,174 @@
+// A deleted project's final snapshot (14-projects sections 1 and 10; B143a, D157). Native: listmonk
+// has no projects. The project is already stopped and its database closed: the database file moves
+// to `backups/deleted/<slug>-<timestamp>.db`, every other file of the directory (its uploads) goes
+// into `<slug>-<timestamp>.tar` beside it, and then the directory is removed.
+import { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
+import { lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
+import { join, relative } from "node:path";
+import type { Clock } from "@/clock";
+import { PROJECT_DATABASE, projectDirectory } from "@/projects/layout";
+
+/** Where the final snapshots of deleted projects go. */
+export function deletedDirectory(dataDir: string): string {
+  return join(dataDir, "backups", "deleted");
+}
+
+export interface DeletedProject {
+  /** The database snapshot, relative to the data directory. */
+  readonly database: string;
+  /** The tarball of the project's other files, relative to the data directory; null without any. */
+  readonly files: string | null;
+}
+
+/** The files of a project's database: the database, its WAL and shared-memory files. */
+const databaseFiles = new Set([
+  PROJECT_DATABASE,
+  `${PROJECT_DATABASE}-wal`,
+  `${PROJECT_DATABASE}-shm`,
+]);
+/** D62 staging: temporary copies, never kept. */
+const STAGE = "stage";
+
+/**
+ * Moves a closed project's database to its final snapshot, archives its other files, then removes
+ * its directory. The database is checkpointed first so the one file holds every committed write.
+ */
+export async function archiveDeleted(
+  dataDir: string,
+  slug: string,
+  clock: Clock,
+): Promise<DeletedProject> {
+  const directory = projectDirectory(dataDir, slug);
+  const target = deletedDirectory(dataDir);
+  await mkdir(target, { recursive: true });
+  const name = `${slug}-${clock.now().toISOString().replaceAll(":", "-")}`;
+  const source = join(directory, PROJECT_DATABASE);
+  const database = join(target, `${name}.db`);
+  if (existsSync(source)) {
+    const db = new Database(source, { strict: true });
+    try {
+      db.run("PRAGMA busy_timeout = 5000");
+      const result = db
+        .query<{ busy: number | bigint }, []>("PRAGMA wal_checkpoint(TRUNCATE)")
+        .get();
+      if (Number(result?.busy ?? 1) !== 0) {
+        throw new Error(`The database of ${slug} is still in use: nothing was moved`);
+      }
+    } finally {
+      db.close(true);
+    }
+  }
+  await rename(source, database);
+  const files = await tarFiles(directory, join(target, `${name}.tar`));
+  await rm(directory, { recursive: true, force: true });
+  return {
+    database: relative(dataDir, database),
+    files: files ? relative(dataDir, files) : null,
+  };
+}
+
+/** Every regular file and directory under `directory` except the database and staging. */
+async function* walk(directory: string, base = directory): AsyncGenerator<string> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    const inside = relative(base, path);
+    if (directory === base && (databaseFiles.has(entry.name) || entry.name === STAGE)) {
+      continue;
+    }
+    if (entry.isDirectory()) {
+      yield `${inside}/`;
+      yield* walk(path, base);
+    } else if (entry.isFile()) {
+      yield inside;
+    }
+  }
+}
+
+const BLOCK = 512;
+const encoder = new TextEncoder();
+
+function octal(header: Uint8Array, offset: number, length: number, value: number): void {
+  header.set(encoder.encode(value.toString(8).padStart(length - 1, "0")), offset);
+}
+
+/** One ustar header block; a name longer than its field is carried by a PAX record before it. */
+function header(name: string, type: "0" | "5" | "x", size: number, mtime: number): Uint8Array {
+  const block = new Uint8Array(BLOCK);
+  const short = encoder.encode(name).subarray(0, 100);
+  block.set(short, 0);
+  octal(block, 100, 8, type === "5" ? 0o755 : 0o644);
+  octal(block, 108, 8, 0);
+  octal(block, 116, 8, 0);
+  octal(block, 124, 12, size);
+  octal(block, 136, 12, Math.floor(mtime / 1000));
+  block.fill(0x20, 148, 156);
+  block[156] = type.charCodeAt(0);
+  block.set(encoder.encode("ustar\u000000"), 257);
+  const sum = block.reduce((total, byte) => total + byte, 0);
+  block.set(encoder.encode(`${sum.toString(8).padStart(6, "0")}\u0000 `), 148);
+  return block;
+}
+
+/** A PAX `path` record, for a name that does not fit the 100-byte field. */
+function paxPath(name: string): Uint8Array {
+  const body = ` path=${name}\n`;
+  const size = encoder.encode(body).length;
+  // The record's length counts its own digits.
+  let length = size + String(size).length;
+  length = size + String(length).length;
+  return encoder.encode(`${length}${body}`);
+}
+
+const padding = (size: number) => new Uint8Array((BLOCK - (size % BLOCK)) % BLOCK);
+
+/**
+ * Writes an uncompressed tar of the directory's files, one file at a time through a stream, so its
+ * memory is bounded whatever the uploads weigh (only the names are listed first). Returns its path,
+ * or null when there is no file: empty directories alone make no tarball.
+ */
+async function tarFiles(directory: string, path: string): Promise<string | null> {
+  const names = await Array.fromAsync(walk(directory));
+  if (names.every((name) => name.endsWith("/"))) {
+    return null;
+  }
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    for (const name of names) {
+      handle ??= await open(path, "wx", 0o600);
+      const full = join(directory, name);
+      const stat = await lstat(full);
+      const entry = name;
+      if (encoder.encode(entry).length > 100) {
+        const record = paxPath(entry);
+        await handle.write(header("PaxHeader", "x", record.length, stat.mtimeMs));
+        await handle.write(record);
+        await handle.write(padding(record.length));
+      }
+      if (entry.endsWith("/")) {
+        await handle.write(header(entry, "5", 0, stat.mtimeMs));
+        continue;
+      }
+      await handle.write(header(entry, "0", stat.size, stat.mtimeMs));
+      let written = 0;
+      for await (const chunk of Bun.file(full).stream()) {
+        await handle.write(chunk);
+        written += chunk.length;
+      }
+      if (written !== stat.size) {
+        throw new Error(`${name} changed while it was archived`);
+      }
+      await handle.write(padding(written));
+    }
+    if (!handle) {
+      return null;
+    }
+    await handle.write(new Uint8Array(BLOCK * 2));
+    await handle.sync();
+    return path;
+  } finally {
+    await handle?.close();
+  }
+}

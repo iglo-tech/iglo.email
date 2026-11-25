@@ -53,9 +53,9 @@ is no public first-account form. Without them `/health` works and login is denie
 
 **One admin account (B140).** The account lives in `instance.db` and every project holds a copy of
 it: a Super Admin user with the same name, password and TOTP. Log in on any project's
-`/admin/login` with it, or on the instance host's `/admin/instance/login`, which leads to
-`/admin/instance/account` (password and TOTP for every project at once) and opens a project with
-`/admin/instance/open/<slug>` without a second sign-in. A password or TOTP change made anywhere (a
+`/admin/login` with it, or on the instance host's `/admin/instance/login`, which leads to the
+Projects page ([Projects](#projects)); `/admin/instance/account` changes the password and TOTP for
+every project at once, and `/admin/instance/open/<slug>` opens a project without a second sign-in. A password or TOTP change made anywhere (a
 project's profile or 2FA, the reset mail, the Account page, the CLI) reaches the instance and every
 project, and ends the admin's other sessions. A project's Users page cannot delete, disable, rename
 or re-role the copy (`403`), and no other project user may take its name (`409`). The instance
@@ -257,6 +257,7 @@ breaks a rule stops the server at startup, and the message names the variable wi
       .iglo-email-import/  the file of a running import
   backups/              backups with no --output
     pre-migration/      snapshots taken before migrations, of instance.db and each project
+    deleted/            the final snapshot of each deleted project: <slug>-<time>.db and .tar
 ```
 
 The databases hold SMTP passwords, API tokens, password hashes, webhook secrets
@@ -315,6 +316,65 @@ service user.
 filesystems it may not reach other hosts or work at all, so two servers on two machines could both
 start. SQLite's WAL mode, which the database uses, needs one host in any case. Keep the data
 directory on a local disk; a mounted upload directory inside it is fine.
+
+## Projects
+
+One server runs several projects ([14-projects](design/14-projects.md), D142): each has its own
+database, subscribers, lists, campaigns, templates, users and API credentials, and its own hostnames.
+SMTP, the send rate and the SES account are the instance's ([Settings](#settings-instance-and-project)).
+A fresh install has one, the primary project `main`, on the root URL's host.
+
+**Adding a project** needs no restart. On the instance host, `/admin/instance/projects` (the
+Projects page, after the instance login) lists every project with its hostnames and its queued
+marketing mail, running campaigns and messages sent in the last 24 hours; **New project** takes:
+
+- a **slug**: lowercase letters, digits and hyphens, at most 40; it names the directory
+  `projects/<slug>/` and never changes;
+- a **name**, shown in the project's admin header;
+- a **hostname**: lowercase, no port; every new link and Message-ID of the project uses it, and it
+  never changes;
+- optional **extra hostnames**, which serve the project too but are never used for new links.
+
+The project is created, migrated and seeded as a fresh install (default templates and settings,
+and the admin's copy), and serves its hostname at once. Its root URL is the instance root URL with
+the host replaced: scheme, port and path are kept. Only the primary project may have the instance
+host, and there is at most one primary: a project can be made primary only when none exists, on
+the instance host. In each project's admin the header shows its name, and its menu opens any other
+project through the instance host without a second sign-in.
+
+**DNS and TLS per project.** Point each hostname at the server, either one record per project or a
+wildcard (`*.mail.example.com`) with a matching wildcard certificate, and give the reverse proxy a
+`server_name` for each (or the wildcard) that passes `Host` through. Each project's `from_email`
+domain needs its own SES identity.
+
+**Editing** renames a project and replaces its extra hostnames. Removing an extra hostname makes
+links in mail already sent from it stop working: the host then reaches the primary project, as any
+host no project claims. To move a project to a new domain, add the new name as an extra hostname
+first; the main hostname itself never changes.
+
+**Deleting** asks for the slug. The project leaves the routing table at once, the requests it is
+answering finish, its background work stops under the usual stop deadlines, and then its database
+moves to `backups/deleted/<slug>-<time>.db`, with `<slug>-<time>.tar` holding its uploads and any
+other file of its directory, before `projects/<slug>/` is removed. Its hostnames then answer as
+unclaimed hosts. To bring one back, create a project with the same slug and hostname, stop the
+server, replace `projects/<slug>/iglo-email.db` with the snapshot, unpack the tarball into
+`projects/<slug>/`, and start the server again. Deleting the primary project leaves the instance without one: hosts no
+project claims answer `404`, `/health` still answers, and `/admin` leads to the Projects page; a
+restart does not recreate `main`.
+
+The same actions are JSON routes for a script with the instance session
+([Settings](#settings-instance-and-project) shows how to sign in): `GET`/`POST
+/api/instance/projects`, `PUT /api/instance/projects/<slug>` with `name` and/or `extra`, and
+`DELETE /api/instance/projects/<slug>` with the body `{"confirm":"<slug>"}`. API credentials are
+refused (`401`), as on every instance route.
+
+**A directory without a project.** A directory under `projects/` that the registry does not name
+(a crash during a create or a delete, or a copy placed there by hand) is never served. Each start
+writes `[instance] projects/<name> has no registry row: it is not served`, and the Projects page
+lists it. Move it away, or bring it back as a deleted project is brought back.
+
+**Logs.** `/admin/instance/logs` shows the instance's own lines and the latest lines of every
+project, each labelled with its slug; a project's Logs page still shows only its own.
 
 ## Reverse proxy and TLS
 

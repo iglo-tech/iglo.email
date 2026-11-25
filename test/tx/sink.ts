@@ -11,7 +11,9 @@ export interface Captured {
 }
 /**
  * `pauseMs` stops reading after each chunk: an SMTP server on a slow link. `discardData` keeps
- * no message text, so a memory measurement does not count the sink's own copy (B26).
+ * no message text, so a memory measurement does not count the sink's own copy (B26). `hold` keeps a
+ * matching message's final reply back, with its connection open, until `release()`: a send in SMTP
+ * flight for as long as a test needs.
  */
 export async function startSink(
   options: {
@@ -19,10 +21,12 @@ export async function startSink(
     pauseMs?: number | undefined;
     discardData?: boolean | undefined;
     clock?: Clock | undefined;
+    hold?: ((to: Array<string>) => boolean) | undefined;
   } = {},
 ) {
   const messages: Array<Captured> = [];
   const sockets = new Set<Socket>();
+  const held: Array<{ message: Captured; socket: Socket }> = [];
   const server = createServer((socket) => {
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
@@ -46,8 +50,12 @@ export async function startSink(
             current.data = options.discardData ? "" : data.join("\r\n");
             current.at = options.clock ? options.clock.now().getTime() : Date.now();
             data = null;
-            messages.push(current);
-            socket.write("250 queued\r\n");
+            if (options.hold?.(current.to)) {
+              held.push({ message: current, socket });
+            } else {
+              messages.push(current);
+              socket.write("250 queued\r\n");
+            }
             current = { from: "", to: [], data: "" };
           } else if (!options.discardData) {
             data.push(line.startsWith("..") ? line.slice(1) : line);
@@ -94,6 +102,15 @@ export async function startSink(
   return {
     port: address.port,
     messages,
+    /** Held messages whose connection is still open: none was cut. */
+    heldOpen: () => held.filter((entry) => sockets.has(entry.socket)).length,
+    /** Answers every held message: it is accepted now and joins `messages`. */
+    release() {
+      for (const { message, socket } of held.splice(0)) {
+        messages.push(message);
+        socket.write("250 queued\r\n");
+      }
+    },
     async close() {
       for (const socket of sockets) {
         socket.destroy();

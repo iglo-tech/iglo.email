@@ -100,7 +100,11 @@ test("without a primary project: health answers, /admin redirects, anything else
         expect(admin.status).toBe(302);
         expect(admin.headers.get("location")).toBe("http://127.0.0.1/admin/instance/projects");
       }
-      for (const path of ["/api/lists", "/", "/subscription/form", "/admin/instance/projects"]) {
+      // The Projects page (B143a) is the instance's: without a session it goes to the login.
+      const projects = await request(server.port, host, "/admin/instance/projects");
+      expect(projects.status).toBe(307);
+      expect(projects.headers.get("location")).toStartWith("/admin/instance/login?");
+      for (const path of ["/api/lists", "/", "/subscription/form", "/admin/instance/nothing"]) {
         const missing = await request(server.port, host, path);
         expect(missing.status).toBe(404);
         expect(missing.headers.get("content-type")).toBe("text/plain; charset=utf-8");
@@ -158,7 +162,7 @@ test("a project added and removed while the instance runs is served, then answer
     });
     expect([401, 403]).toContain(onPrimary.status);
 
-    expect(await instance.remove("c")).toBe(true);
+    expect(await instance.remove("c")).not.toBeNull();
     // c's host now reaches the primary, which knows nothing of c's session.
     const after = await request(port, host, "/api/settings", { headers: sessionHeaders(session) });
     expect([401, 403]).toContain(after.status);
@@ -170,7 +174,7 @@ test("a project added and removed while the instance runs is served, then answer
       { "app.root_url": "http://127.0.0.1" },
     );
     expect(instance.projects().map((project) => project.slug)).toEqual(["main"]);
-    expect(await instance.remove("c")).toBe(false);
+    expect(await instance.remove("c")).toBeNull();
   } finally {
     if (instance) {
       await Promise.allSettled(instance.stop());
