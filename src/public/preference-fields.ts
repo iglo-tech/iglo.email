@@ -66,14 +66,18 @@ const fail = (message: string): never => {
   throw new HttpError(400, `Invalid privacy.preference_fields: ${message}.`);
 };
 const trimmed = (value: unknown) => (typeof value === "string" ? trimSpace(value) : "");
-/** A bound limit: a finite number, or null for none. */
+/**
+ * A bound limit: a whole number, or null for none. The settings binder already refuses any other number
+ * (its shape is a whole number or null); this keeps the rule where the field is checked, as the OpenAPI
+ * document's integer says (B149d, D167).
+ */
 const limit = (key: string, value: unknown): number | null => {
   if (value === null || value === undefined) {
     return null;
   }
-  return typeof value === "number" && Number.isFinite(value)
+  return typeof value === "number" && Number.isSafeInteger(value)
     ? value
-    : fail(`${key}: min and max are numbers`);
+    : fail(`${key}: min and max are whole numbers`);
 };
 const optionList = (value: unknown): Array<string> =>
   (Array.isArray(value) ? value : []).map(trimmed);
@@ -148,14 +152,19 @@ export function normalizePreferenceFields(
   });
 }
 
-/** Whether `value` is a calendar date written YYYY-MM-DD. */
+/**
+ * Whether `value` is a calendar date written YYYY-MM-DD: any proleptic Gregorian date from 0000-01-01 to
+ * 9999-12-31, as ISO 8601 writes it. `setUTCFullYear` takes the year as given; `Date.UTC` would read
+ * 0000–0099 as 1900–1999 and refuse them (B149d, D167).
+ */
 export function calendarDate(value: string): boolean {
   const match = datePattern.exec(value);
   if (!match) {
     return false;
   }
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  const date = new Date(Date.UTC(year, month - 1, day));
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
   return (
     date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
   );

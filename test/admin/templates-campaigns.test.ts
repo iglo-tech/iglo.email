@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { admin, get, login, userWith } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
+import { asBody } from "@/test/read-body";
 import { startUserFixture } from "@/test/users/fixture";
 
 // The fixture's password hashing and the whole file take 4 s of a 5 s default on an idle host.
@@ -163,6 +164,22 @@ test("a logged-out page asks for the session first", async () => {
   const response = await get(f, "/admin/campaigns/7/content");
   expect(response.status).toBe(307);
   expect(response.headers.get("location")).toContain("/admin/login?next=");
+});
+
+test("the campaign page carries the SES forecast lines in its language pack (B149d)", async () => {
+  // campaign.js builds the forecast line and the over-quota confirmation from these keys.
+  const html = await (await get(f, "/admin/campaigns/new", cookie)).text();
+  const bootstrap = /<script id="admin-bootstrap" type="application\/json">(.*?)<\/script>/s.exec(
+    html,
+  )?.[1];
+  const parsed = asBody<{ i18n: Record<string, string> }>(JSON.parse(bootstrap ?? "{}"));
+  expect(parsed.i18n).toMatchObject({
+    "campaigns.capacityFits": "Fits: {demand} of {quota} in the 24 h up to {until}",
+    "campaigns.capacityNoLimit":
+      "Fits: {demand} in the 24 h up to {until}; the SES account has no daily limit",
+    "campaigns.capacityOver": "Over the quota by {over} in the 24 h up to {until}",
+    "campaigns.capacityStartAnyway": "Start anyway?",
+  });
 });
 
 test("the campaign timestamp sort reads its direction in any case", async () => {

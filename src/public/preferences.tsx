@@ -15,6 +15,7 @@ import { readProfile, storedProfile, textLimit } from "@/public/preference-field
 import type { PreferenceField, ProfileValue } from "@/public/preference-fields";
 import type { Privacy } from "@/public/privacy";
 import { assetVersion } from "@/server/asset-manifest";
+import { HttpError } from "@/server/response";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 
@@ -227,7 +228,11 @@ export function subscriptionPage(
   // B147 (D160): a paired or transactional manage view is a preference center. It offers every active
   // public list the subscriber is not on (or left) to opt in to; a pending page offers none, and a
   // blocklisted or suppressed subscriber gets none. Profile fields follow the name: paired pages only.
-  const joinable = pending ? [] : subscribers.joinableLists(subscriber.id);
+  // B149d (D167): a transactional page, which a Cc or Bcc copy holder reads too, offers double opt-in
+  // lists only: their join waits for the subscriber's own confirmation, a single opt-in join would not.
+  const joinable = pending
+    ? []
+    : subscribers.joinableLists(subscriber.id).filter((list) => mayJoin(renames, list));
   const profileFields = renames ? options.preferenceFields : [];
   // B130 (D128): with no public list to manage, the page has no manage link and no preference form, and
   // the manage view keeps only the privacy actions. `privacy.allow_preferences` stays the explicit switch.
@@ -506,6 +511,14 @@ function unsubAll(e) {
 }
 
 /**
+ * Whether a manage view may join `list`. A paired page (the one that renames) joins any joinable public
+ * list; a transactional page, which a copy holder reads too, joins double opt-in lists only, so every
+ * join it makes waits for the subscriber's confirmation (B149d, D167).
+ */
+const mayJoin = (paired: boolean, list: { optin: string }): boolean =>
+  paired || list.optin === "double";
+
+/**
  * The manage branch of SubscriptionPrefs for a paired page. The name change, the profile fields, every
  * unsubscribe with its effects and every opt-in are one transaction; `current` re-reads the subscriber
  * inside it. B147 (D160): a checked public list the subscriber is not on is joined as a public signup
@@ -547,35 +560,53 @@ export function savePreferences(
     return failed(t.T("globals.messages.invalidFields").replaceAll("{name}", change.field.label));
   }
   const kept = new Set(form.lists.map((uuid) => uuid.toLowerCase()));
-  const saved = writeTransaction(deps.db, () => {
-    const subscriber = current();
-    if (!subscriber) {
-      return null;
-    }
-    if (rename) {
-      deps.subscribers.rename(subscriber.id, name);
-    }
-    if (change?.ok) {
-      deps.subscribers.setAttribs(subscriber.id, change.values, change.removed);
-    }
-    for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
-      if (kept.has(list.uuid) || list.subscriptionStatus === "unsubscribed") {
-        continue;
+  // B149d (D167): attributes that would grow past the stored size limit refuse the whole save. The store
+  // throws inside the transaction, which rolls everything back; the subscriber gets this page's 400.
+  let tooLarge = false;
+  const write = () =>
+    writeTransaction(deps.db, () => {
+      const subscriber = current();
+      if (!subscriber) {
+        return null;
       }
-      const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId);
-      deps.effects.unsubscribed({
-        subscriberId: subscriber.id,
-        listId: list.listId,
-        listIds,
-      });
+      if (rename) {
+        deps.subscribers.rename(subscriber.id, name);
+      }
+      if (change?.ok) {
+        try {
+          deps.subscribers.setAttribs(subscriber.id, change.values, change.removed);
+        } catch (error) {
+          tooLarge = error instanceof HttpError && error.status === 400;
+          throw error;
+        }
+      }
+      for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
+        if (kept.has(list.uuid) || list.subscriptionStatus === "unsubscribed") {
+          continue;
+        }
+        const listIds = deps.subscribers.unsubscribe(subscriber.id, list.listId);
+        deps.effects.unsubscribed({
+          subscriberId: subscriber.id,
+          listId: list.listId,
+          listIds,
+        });
+      }
+      const wanted = deps.subscribers
+        .joinableLists(subscriber.id)
+        .filter((list) => kept.has(list.uuid) && mayJoin(rename, list))
+        .map((list) => list.id);
+      const joined = wanted.length ? deps.subscribers.publicOptin(subscriber.id, wanted) : [];
+      return { id: subscriber.id, joined: joined.length > 0 };
+    });
+  let saved: ReturnType<typeof write>;
+  try {
+    saved = write();
+  } catch (error) {
+    if (tooLarge) {
+      return failed(t.T("public.profileTooLarge"));
     }
-    const wanted = deps.subscribers
-      .joinableLists(subscriber.id)
-      .filter((list) => kept.has(list.uuid))
-      .map((list) => list.id);
-    const joined = wanted.length ? deps.subscribers.publicOptin(subscriber.id, wanted) : [];
-    return { id: subscriber.id, joined: joined.length > 0 };
-  });
+    throw error;
+  }
   if (!saved) {
     return null;
   }

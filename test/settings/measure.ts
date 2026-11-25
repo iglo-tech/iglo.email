@@ -1,8 +1,10 @@
 // Bounded synthetic compiled HTTP workload for M1.2; no external services.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { instanceKeys } from "@/settings/keys";
 import { settingsRouter } from "@/test/contract/settings-split";
 import { readJson } from "@/test/read-body";
+import { instanceClient } from "@/test/settings/instance-client";
 
 const measure = async (count: number, warm: number, action: (i: number) => Promise<void>) => {
   const samples: Array<number> = [];
@@ -75,9 +77,33 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         snapshot[field][subfield] = "";
       }
       snapshot["security.captcha"].hcaptcha.secret = "";
+      // B149d (D167): the full PUT sample is the two halves' writes, each sent directly: the project
+      // keys to /api/settings and the instance keys to /api/instance/settings under a session made
+      // before the sample. The router's rollback GET and its instance login stay outside it, so the
+      // sample measures the writes one M1.2 PUT made, now as two requests.
+      const ownHalf = Object.fromEntries(
+        Object.entries(snapshot).filter(([name]) => !instanceKeys.has(name)),
+      );
+      const sharedHalf = Object.fromEntries(
+        Object.entries(snapshot).filter(([name]) => instanceKeys.has(name)),
+      );
+      const instance = await instanceClient(origin, admin);
       const full = await measure(20, 5, async (i) => {
-        snapshot["app.site_name"] = `measure-${i}`;
-        await request("/api/settings", "PUT", snapshot);
+        ownHalf["app.site_name"] = `measure-${i}`;
+        const project = await fetch(origin + "/api/settings", {
+          method: "PUT",
+          headers,
+          body: JSON.stringify(ownHalf),
+        });
+        if (project.status !== 200) {
+          throw new Error(`Unexpected project PUT status ${project.status}`);
+        }
+        await project.arrayBuffer();
+        const shared = await instance.call("/api/instance/settings", "PUT", sharedHalf);
+        if (shared.status !== 200) {
+          throw new Error(`Unexpected instance PUT status ${shared.status}`);
+        }
+        await shared.arrayBuffer();
       });
       const key = await measure(20, 5, async (i) => {
         await request("/api/settings/app.site_name", "PUT", `key-${i}`);

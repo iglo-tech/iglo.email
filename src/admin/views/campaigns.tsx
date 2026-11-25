@@ -20,6 +20,11 @@ import type { Translation } from "@/i18n/i18n";
 const statuses = ["draft", "scheduled", "running", "paused", "finished", "cancelled"];
 /** Keys campaigns.js and campaign.js read. */
 export const campaignKeys = [
+  // B149d (D167): the SES forecast line and the over-quota confirmation (B145a).
+  "campaigns.capacityFits",
+  "campaigns.capacityNoLimit",
+  "campaigns.capacityOver",
+  "campaigns.capacityStartAnyway",
   "campaigns.confirmSchedule",
   "editor.anchorName",
   "editor.showRemoteImagesConfirm",

@@ -136,7 +136,9 @@ test("the cancel form leaves a confirmed membership alone, and says so on the ne
 test("with no open membership, the page says already unsubscribed, on private and public lists alike", async () => {
   const f = await open({ siteName: "Brand Co" });
   const template = await receipt(f);
-  const news = await f.list("News", "public");
+  // B149d (D167): News is a double opt-in list, the kind a transactional view still offers to join; a
+  // single opt-in list is not offered there (the test after "never renames" below).
+  const news = await f.list("News", "public", "double");
   const members = await f.list("Members", "private");
   const ada = await f.subscriber("ada@example.test", "Ada", { lists: [news.id, members.id] });
   expect((await change(f, ada, "unsubscribe", [news.id, members.id])).status).toBe(200);
@@ -262,6 +264,40 @@ test("a transactional manage save never renames, with a Bcc copy of the send or 
     expect(subscriber.body.data.name).toBe(name);
     expect(await f.status(id, news.id)).toBe("confirmed");
     expect(await f.status(id, other.id)).toBe("unsubscribed");
+  }
+});
+
+test("a transactional manage view offers and joins double opt-in public lists only, with a Bcc copy or without (D167)", async () => {
+  // B149d (D167): a copy holder reads the same manage view as the subscriber. Joining a single opt-in
+  // list is active at once, a consent nobody confirms, so a transactional view never offers or joins
+  // one; a double opt-in list stays pending until the subscriber confirms the opt-in mail sent to the
+  // address on record. A paired (campaign or marketing) view still offers both (D160).
+  const f = await open({ siteName: "Brand Co" });
+  const template = await receipt(f);
+  const receipts = await f.list("Receipts", "public");
+  const weekly = await f.list("Weekly", "public", "single");
+  const digest = await f.list("Digest", "public", "double");
+  const ada = await f.subscriber("ada@example.test", "Ada", { lists: [receipts.id] });
+  const bob = await f.subscriber("bob@example.test", "Bob", { lists: [receipts.id] });
+  for (const id of [ada, bob]) {
+    expect((await change(f, id, "add", [receipts.id], "confirmed")).status).toBe(200);
+  }
+  const plain = await txPage(f, template, ada);
+  const copied = await txPage(f, template, bob, [{ Bcc: "hidden@third.example.test" }]);
+  for (const [link, id] of [
+    [plain, ada],
+    [copied, bob],
+  ] as const) {
+    const page = await (await f.request(`${link.page}?manage=true`)).text();
+    expect(page).toContain(`value="${receipts.uuid}" checked`);
+    expect(page).toContain(`value="${digest.uuid}"`);
+    expect(page).not.toContain(weekly.uuid);
+    // A crafted save that checks the single opt-in list joins only the double one, as pending.
+    const body = `manage=true&l=${receipts.uuid}&l=${weekly.uuid}&l=${digest.uuid}`;
+    expect((await f.fresh(link.page, body)).status).toBe(200);
+    expect(await f.status(id, receipts.id)).toBe("confirmed");
+    expect(await f.status(id, weekly.id)).toBeUndefined();
+    expect(await f.status(id, digest.id)).toBe("unconfirmed");
   }
 });
 
