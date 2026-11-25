@@ -125,6 +125,8 @@ export interface SchedulerContext {
   trigger_external_id: string | null;
   trigger_occurred_at: string | null;
   error_since: string | null;
+  /** When this enrollment's last source read failed transiently (D172). */
+  error_last: string | null;
   sequence_name: string;
   sequence_status: string;
   list_id: bigint | null;
@@ -746,7 +748,7 @@ export function createEnrollments(db: Database, clock: Clock) {
      * `completed` when none is left. A deleted step is passed without waiting again (the
      * current due time is kept) and does not count as a step that ran, so `updated_at`, which
      * conditions read as the last step time, changes only when a step ran. The caller holds
-     * the write and has checked `owns`. `error_since` (D172) is cleared unless `keepErrorSince`
+     * the write and has checked `owns`. `error_since` and `error_last` (D172) are cleared unless `keepErrorSince`
      * (a step passed without a source read deciding it, such as a late skip) or the step was
      * deleted.
      */
@@ -796,11 +798,12 @@ export function createEnrollments(db: Database, clock: Clock) {
     },
     /**
      * D172: release a claimed enrollment after a transient source failure, claimable again at
-     * `retryAt`, keeping `error_since` (the first failure, `now` when there was none).
+     * `retryAt`, with its outage window: `since` (the window's first failure) and `now` (this one).
      */
-    releaseSourceRetry(claim: Pick<Claim, "id" | "lease">, retryAt: Date, now: Date) {
+    releaseSourceRetry(claim: Pick<Claim, "id" | "lease">, retryAt: Date, since: Date, now: Date) {
       q.get("claimed-source-retry").run(
         retryAt.toISOString(),
+        since.toISOString(),
         now.toISOString(),
         claim.id,
         claim.lease,

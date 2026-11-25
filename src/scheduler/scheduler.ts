@@ -43,6 +43,11 @@ const BACKOFF_MIN_MS = 60_000;
 const BACKOFF_MAX_MS = 3_600_000;
 /** D172: transient source failures of one step are retried this long before `source_error`. */
 export const SOURCE_RETRY_MS = 72 * 3_600_000;
+/**
+ * D172: a transient source failure more than this long after the enrollment's previous one starts a
+ * fresh 72-hour window: twice the retry backoff cap, so retries within one outage never exceed it.
+ */
+const SOURCE_OUTAGE_GAP_MS = 2 * BACKOFF_MAX_MS;
 /** A deferred step is never due again sooner than this, so a capped row cannot spin. */
 const DEFER_MIN_MS = 60_000;
 /** Renderer capacity is shared with the HTTP producers; a full renderer retries soon. */
@@ -86,6 +91,18 @@ const sourceError = (error: unknown): ConditionError | undefined =>
         message: error.message,
       }
     : undefined;
+
+/**
+ * D172: the start of the enrollment's outage window that a source failure at `now` continues, or
+ * null when it starts a fresh one: none is open, or its last failed read is more than
+ * `SOURCE_OUTAGE_GAP_MS` earlier.
+ */
+const openWindow = (row: SchedulerContext, now: number): number | null =>
+  row.error_since !== null &&
+  row.error_last !== null &&
+  now - Date.parse(row.error_last) <= SOURCE_OUTAGE_GAP_MS
+    ? Date.parse(row.error_since)
+    : null;
 
 /** Create and start, for callers that decide at once. The server calls `createScheduler` (B52). */
 export function startScheduler(options: SchedulerOptions) {
@@ -215,17 +232,24 @@ export function createScheduler(options: SchedulerOptions) {
 
   /**
    * D172: a source failure of an external step. A transient one is retried with the condition
-   * backoff, keeping `error_since`, until 72 hours have passed since the enrollment's first failure;
-   * then, and at once for a permanent one, the enrollment ends `source_error`. Nothing is sent past
-   * an unread condition. A retry writes no attention line (the outage itself is the source's to
-   * report); only the ending does, once per enrollment.
+   * backoff until its outage window reaches 72 hours; then, and at once for a permanent one, the
+   * enrollment ends `source_error`. Nothing is sent past an unread condition. The window is one
+   * continuous outage as this enrollment's reads see it: it starts at a failure with no window
+   * open or more than `SOURCE_OUTAGE_GAP_MS` after the previous failed read (`error_last`), so an
+   * old outage left open by a late skip never shortens a later one. A retry writes no attention
+   * line (the outage itself is the source's to report); only the ending does, once per enrollment.
    */
   function sourceFailed(claim: Decision, row: SchedulerContext, error: ConditionError) {
     const now = clock.now().getTime();
-    const since = row.error_since === null ? now : Date.parse(row.error_since);
+    const since = openWindow(row, now) ?? now;
     if (error.kind === "source_transient" && now - since < SOURCE_RETRY_MS) {
       return commit(claim, () =>
-        enrollments.releaseSourceRetry(claim, new Date(now + lateBackoff(row)), clock.now()),
+        enrollments.releaseSourceRetry(
+          claim,
+          new Date(now + lateBackoff(row)),
+          new Date(since),
+          clock.now(),
+        ),
       );
     }
     if (end(claim, "exited", "source_error")) {
@@ -303,15 +327,12 @@ export function createScheduler(options: SchedulerOptions) {
     const late = maxLate === null ? undefined : parseDuration(maxLate);
     if (late !== undefined && now.getTime() > Date.parse(row.due_at) + late) {
       // D172: the 72-hour source window is the enrollment's, not the step's. A late step keeps
-      // `error_since`; once the window has passed, a source that still cannot be read ends the
-      // enrollment `source_error` rather than skipping step after step. A probe that reads the
-      // source restarts the window: the skip then clears `error_since`.
+      // `error_since` and `error_last`; once the window of a continuing outage has passed, a source
+      // that still cannot be read ends the enrollment `source_error` rather than skipping step after
+      // step. A probe that reads the source ends the outage: the skip then clears both.
       let read = false;
-      if (
-        row.source === "external" &&
-        row.error_since !== null &&
-        now.getTime() - Date.parse(row.error_since) >= SOURCE_RETRY_MS
-      ) {
+      const since = row.source === "external" ? openWindow(row, now.getTime()) : null;
+      if (since !== null && now.getTime() - since >= SOURCE_RETRY_MS) {
         const probe = await probeSource(row);
         if ("error" in probe) {
           return sourceFailed(claim, row, probe.error);

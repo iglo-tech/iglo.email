@@ -6,6 +6,8 @@ ALTER TABLE sequences ADD COLUMN source TEXT NOT NULL DEFAULT 'events' CHECK (so
 -- reschedule and windows read locally. `trigger_event_id` stays for pushed events.
 ALTER TABLE enrollments ADD COLUMN trigger_external_id TEXT CHECK (trigger_external_id IS NULL OR length(trigger_external_id) BETWEEN 1 AND 100);
 ALTER TABLE enrollments ADD COLUMN trigger_occurred_at TEXT;
--- When a source read for this enrollment's current step first failed transiently; cleared once the step
--- is decided. A step retried for 72 hours from it ends the enrollment with `source_error`.
+-- When this enrollment's source reads began failing transiently in one continuous outage, and when the
+-- last one failed. A failure more than 2 hours after the last starts a fresh window; a step decided by a
+-- successful read clears both. A window of 72 hours ends the enrollment with `source_error`.
 ALTER TABLE enrollments ADD COLUMN error_since TEXT;
+ALTER TABLE enrollments ADD COLUMN error_last TEXT;

@@ -83,7 +83,7 @@ UPDATE enrollments SET claimed_until = ?1
 -- name: scheduler-context
 SELECT e.id, e.sequence_id, e.subscriber_id, e.trigger_event_id, e.step_id, e.due_at, e.status,
     e.claimed_until, e.created_at, e.updated_at, e.test,
-    e.trigger_external_id, e.trigger_occurred_at, e.error_since,
+    e.trigger_external_id, e.trigger_occurred_at, e.error_since, e.error_last,
     s.name AS sequence_name, s.status AS sequence_status, s.list_id, s.source,
     st.uuid AS step_uuid, st.position, st.kind, st.template_id, st.subject, st.condition, st.aggregates,
     st.on_false, st.cap_policy, st.max_late, st.status AS step_status, st.updated_at AS step_updated_at
@@ -101,10 +101,12 @@ SELECT id, wait FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active'
 SELECT id, wait FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active' AND position >= ?2
   ORDER BY position LIMIT 1;
 -- name: claimed-advance
--- D172: `error_since` is per enrollment; a step passed without a source read (late, deleted) keeps it.
-UPDATE enrollments SET step_id = ?, due_at = ?, claimed_until = NULL, retry_at = NULL,
-    error_since = CASE WHEN ? THEN error_since END, updated_at = ?
-  WHERE id = ? AND status = 'active' AND claimed_until = ?;
+-- D172: `error_since` and `error_last` are per enrollment; a step passed without a source read (late,
+-- deleted) keeps them.
+UPDATE enrollments SET step_id = ?1, due_at = ?2, claimed_until = NULL, retry_at = NULL,
+    error_since = CASE WHEN ?3 THEN error_since END, error_last = CASE WHEN ?3 THEN error_last END,
+    updated_at = ?4
+  WHERE id = ?5 AND status = 'active' AND claimed_until = ?6;
 -- name: claimed-complete
 UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
@@ -112,12 +114,12 @@ UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, clai
 UPDATE enrollments SET status = ?, exit_reason = ?, exit_condition = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-defer
-UPDATE enrollments SET due_at = ?, claimed_until = NULL, retry_at = NULL, error_since = NULL WHERE id = ? AND status = 'active' AND claimed_until = ?;
+UPDATE enrollments SET due_at = ?, claimed_until = NULL, retry_at = NULL, error_since = NULL, error_last = NULL WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-release
 UPDATE enrollments SET claimed_until = NULL, retry_at = ? WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-source-retry
--- D172: a transient source failure releases the claim for a retry and keeps when the failures began.
-UPDATE enrollments SET claimed_until = NULL, retry_at = ?, error_since = coalesce(error_since, ?)
+-- D172: a transient source failure releases the claim for a retry and records its outage window.
+UPDATE enrollments SET claimed_until = NULL, retry_at = ?, error_since = ?, error_last = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: reschedule-batch
 -- B5: waiting enrollments of one step after a cursor, with the time that step's wait counts from.

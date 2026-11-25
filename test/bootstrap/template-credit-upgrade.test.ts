@@ -173,6 +173,7 @@ test("a seeded install from before this release takes the migrated bodies, and a
     db.run("ALTER TABLE enrollments DROP COLUMN trigger_external_id");
     db.run("ALTER TABLE enrollments DROP COLUMN trigger_occurred_at");
     db.run("ALTER TABLE enrollments DROP COLUMN error_since");
+    db.run("ALTER TABLE enrollments DROP COLUMN error_last");
     // Migration 32 (B140) marks the admin's copy; the earlier schema has no such column.
     db.run("DROP INDEX users_one_admin_copy");
     db.run("ALTER TABLE users DROP COLUMN admin_copy");

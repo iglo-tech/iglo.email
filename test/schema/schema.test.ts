@@ -223,6 +223,7 @@ test("fresh installation, persistence, constraints, deletion and transactional F
         "trigger_external_id",
         "trigger_occurred_at",
         "error_since",
+        "error_last",
       ],
       sends: [
         "id",
