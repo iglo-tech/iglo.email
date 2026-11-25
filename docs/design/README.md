@@ -16,14 +16,14 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 | 10 | [Open questions](10-open-questions.md) | What still needs the owner |
 | 11 | [Work plan](11-work-plan.md) | Tasks, briefs, council review and merge, run by agents |
 | 12 | [Completeness audit](12-completeness-audit.md) | Audit against typical newsletter, lifecycle and transactional needs (D89) |
-| 14 | [Projects](14-projects.md) | Planned (D142): several projects in one instance, one configuration, one admin, a global send queue with SES quota planning, project-scoped API and MCP |
+| 14 | [Projects](14-projects.md) | Implemented (D142): several projects in one instance, one configuration, one admin, a global send queue with SES quota planning, project-scoped API and MCP |
 
 ## Decisions at a glance
 
 - Independent rewrite derived from listmonk **v7.0.0-beta.1** (`6fcd95f`), not an upstream-tracking fork.
 - **AGPL-3.0**, inherited from listmonk.
 - **Bun ≥ 1.4, TypeScript, one compiled executable.** Linux x86-64 and arm64 only, plus a multi-arch Docker image that wraps the executable (D89).
-- **SQLite only** (`bun:sqlite`, WAL), one process.
+- **SQLite only** (`bun:sqlite`, WAL), one process: an instance with `instance.db` and one database per project, routed by hostname ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)).
 - **Durable work is rows in SQLite** processed by in-process loops. No Postgres, Redis, BullMQ or workflow engine.
 - **listmonk's HTTP API is the starting point, not a constraint** ([D143](09-decisions.md#d143-listmonks-api-is-a-starting-point-not-a-constraint-owner-2026-11-23)): ported endpoints begin with listmonk's design and change whenever a feature, a simpler design or a better API needs it. Each change is listed as a deliberate difference. New features get new endpoints.
 - **Admin UI:** v7's server-rendered views ported to server-side TSX; v7's Alpine.js, Oat, CodeMirror and Squire assets reused.

@@ -7,6 +7,13 @@ a build of this branch, synthetic data and paths under a temporary directory in 
 throwaway user and mount namespace, so `/etc`, `/var/lib` and `/var/backups` there were temporary
 copies.
 
+One server is an **instance**: one process, one data directory, one SMTP (Amazon SES)
+configuration, one admin account and one send queue. It serves one or more **projects**, each an
+audience with its own database, users, API tokens and hostname ([14-projects](design/14-projects.md),
+D142). A fresh install is an instance with one project, the primary project `main`, on the root
+URL's host, and behaves as a single install did. Where this guide says "the server", it means the
+instance; [Projects](#projects) covers adding more.
+
 ## Install
 
 Each release on [GitHub](https://github.com/iglo-tech/iglo.email/releases) has one executable per
@@ -63,8 +70,9 @@ sessions are the `instance_session` and `instance_csrf` cookies, beside a projec
 `csrf` on the instance host.
 
 The same first start can also create an API user for a script or an app, with
-`IGLO_EMAIL_API_USER` and `IGLO_EMAIL_API_TOKEN`: it has the Super Admin role, and its token is the
-value you give. Set both or neither. Nothing is printed, so keep the token where you keep your
+`IGLO_EMAIL_API_USER` and `IGLO_EMAIL_API_TOKEN`: it is a user of the primary project, created
+while that project has no users, with the Super Admin role, and its token is the value you give.
+Like every API user it works only on its own project's host. Set both or neither. Nothing is printed, so keep the token where you keep your
 secrets. See [Environment variables](#environment-variables).
 
 A systemd unit, saved as `/etc/systemd/system/iglo.email.service`. On 2026-11-09 it ran as a service in a Debian 13 container with systemd as PID 1
@@ -137,8 +145,9 @@ docker run -d --name iglo-email --restart unless-stopped \
 ```
 
 Put the variables in an env file (`--env-file`) rather than on the command line, so that they stay
-out of your shell history. The admin and API variables are read only while no users exist: after the
-first start, recreate the container without them. Put the [reverse proxy](#reverse-proxy-and-tls) in front of the published
+out of your shell history. The admin variables are read only while the instance has no admin
+account, and the API variables only while the primary project has no users: after the first start,
+recreate the container without them. Put the [reverse proxy](#reverse-proxy-and-tls) in front of the published
 port. The image sets `IGLO_EMAIL_HOST=0.0.0.0` so that the published port reaches the server, so
 publish it only where it should be reachable. The image has no `HEALTHCHECK`, since it has no HTTP
 client: have the orchestrator or the proxy probe `GET /health` (`200` and `{"data":true}`).
@@ -192,8 +201,10 @@ tag.
 | | `IGLO_EMAIL_API_USER` | none |
 | | `IGLO_EMAIL_API_TOKEN` | none |
 
-Flags win over variables. The root URL goes into every link in every email: set it to the public
-URL, with its scheme (`https://news.example.com`). It is the one setting that needs a restart.
+Flags win over variables. The root URL goes into every link in every email of the primary project:
+set it to the public URL, with its scheme (`https://news.example.com`). Its host is the instance
+host. Every other project's root URL is the same URL with that project's hostname in place of the
+host, so scheme, port and path are shared. It is the one setting that needs a restart.
 Everything else is a setting, which applies at once ([Settings](#settings-instance-and-project)).
 
 ### Settings: instance and project
@@ -201,10 +212,10 @@ Everything else is a setting, which applies at once ([Settings](#settings-instan
 Settings come in two kinds ([14-projects](design/14-projects.md) section 4, D154):
 
 - **Instance settings** describe the server and the sending account: SMTP servers and DKIM,
-  `messaging.max_send_rate`, the SES API keys, bounce processing and its providers,
-  `security.trusted_proxies`, `security.session_duration`, `webhooks.block_private_addresses`,
-  maintenance, slow-query caching, the media provider, the admin appearance and the campaign pacing
-  keys. They are stored once, in `instance.db`, and every project uses them. Only the instance
+  `messaging.max_send_rate`, the SES API keys (`ses.api_region`, `ses.api_access_key_id`,
+  `ses.api_secret_access_key`), bounce processing and its providers, `security.trusted_proxies`,
+  `security.session_duration`, `webhooks.block_private_addresses`, maintenance, slow-query caching,
+  the media provider and the admin appearance. They are stored once, in `instance.db`, and every project uses them. Only the instance
   admin changes them: the instance Settings page at `<root URL>/admin/instance/settings`, or
   `/api/instance/settings` with the instance session. An API credential is refused there (`401`).
 - **Project settings** describe one project's audience and brand: the site name and URLs, the
@@ -212,6 +223,11 @@ Settings come in two kinds ([14-projects](design/14-projects.md) section 4, D154
   public rate limits, uploads and the public appearance. They are in the project's database:
   Settings in the project's admin, or `GET`/`PUT /api/settings` on its host with its API users.
   Naming an instance key there is a `400` that names it.
+
+listmonk's per-campaign pacing keys (`app.concurrency`, `app.message_rate`, `app.batch_size` and the
+`app.message_sliding_window*` keys) do not exist: the instance's send queue paces every message
+([Sending capacity](#sending-capacity-rate-quota-guard-and-forecast)), and a write naming one is a
+`400` on either API.
 
 A script reaches the instance settings with the admin's session. On the instance host (the root
 URL's), this signs in and defines `instance` for the calls below; `ADMIN_USER` and
@@ -237,8 +253,8 @@ needs `--root-url`, because the root URL is set before the bind. The admin pages
 an origin other than the root URL's, so a server on port 0 is for scripts and checks, not for an
 operator's browser: a browser must reach the server on the port the root URL names.
 
-The admin and API pairs are read only on the first start, while no users exist, and each pair is
-both or neither. The API token must be 48 letters and digits (`A-Z`, `a-z`, `0-9`), the format of a
+The admin pair is read only while the instance has no admin account, and the API pair only while
+the primary project has no users; each pair is both or neither. The API token must be 48 letters and digits (`A-Z`, `a-z`, `0-9`), the format of a
 generated token. Like one, it is stored only as a SHA-256 digest, and the server never prints it.
 The API user's name follows the admin's username rule and must differ from the admin's. A value that
 breaks a rule stops the server at startup, and the message names the variable without the value.
@@ -272,10 +288,9 @@ converts it (there is no upgrade path from it):
 /var/lib/iglo.email is a data directory from an earlier iglo.email: it has iglo-email.db at its root. The data directory layout changed and nothing is converted; start with an empty data directory. An earlier backup is restored into projects/main/ of the new data directory.
 ```
 
-`backup` snapshots `instance.db` and every project, or with `--project <slug>` one project, and
-`backup --release-hold` releases `instance.db`'s hold, or with `--project <slug>` that project's,
-under the one instance lock ([Backups](#backups), [Restore](#restore)). `reset-password` and `reset-totp` with the admin's name act on the admin account and its copy
-in every project, under the same lock; with any other name, on that user of the primary project.
+`instance.db` and each project's database are separate SQLite files. No transaction spans two of
+them, and every step that writes both has an order that is safe after a crash in between
+([14-projects](design/14-projects.md) section 3).
 
 **Stderr lines name their project.** Every line the server writes to stderr starts with
 `[<slug>] `, or `[instance] ` for the instance's own lines, such as `[main] X-Forwarded-For from …`.
@@ -317,6 +332,25 @@ filesystems it may not reach other hosts or work at all, so two servers on two m
 start. SQLite's WAL mode, which the database uses, needs one host in any case. Keep the data
 directory on a local disk; a mounted upload directory inside it is fine.
 
+## Command line
+
+One executable, one data directory per command (`--data-dir` or `IGLO_EMAIL_DATA_DIR`). Every
+command prints its own options with `--help`.
+
+| Command | What it does |
+|---|---|
+| `iglo.email [serve]` | Runs the instance: every registered project, the instance pages and the send queue |
+| `iglo.email backup [--project <slug>] [--output <path>] [--force]` | Snapshots `instance.db` and every project, or one project, beside a running server ([Backups](#backups)) |
+| `iglo.email backup --verify <path>` | Checks a backup read-only and prints its versions and holds |
+| `iglo.email backup --release-hold --consent-reconciled [--project <slug>]` | Ends a restored database's hold: `instance.db`'s, or that project's ([Restore](#restore)) |
+| `iglo.email reset-password --user <name>` | Sets a password read from stdin. The admin's name changes the admin account in `instance.db` and its copy in every project; any other name is a user of the primary project ([Locked out](#locked-out-of-a-restored-install)) |
+| `iglo.email reset-totp --user <name>` | Turns a user's TOTP off, with the same rule for the admin's name ([Lost TOTP device](#a-user-lost-their-totp-device)) |
+| `iglo.email --help`, `--version` | Print the help or the version |
+
+`reset-password`, `reset-totp` and `--release-hold` need the server stopped and take the instance
+lock while they work. A user of a project other than the primary has no command of its own: the
+admin resets it from that project's Users page, or the user takes the email reset.
+
 ## Projects
 
 One server runs several projects ([14-projects](design/14-projects.md), D142): each has its own
@@ -344,16 +378,37 @@ project through the instance host without a second sign-in.
 
 **DNS and TLS per project.** Point each hostname at the server, either one record per project or a
 wildcard (`*.mail.example.com`) with a matching wildcard certificate, and give the reverse proxy a
-`server_name` for each (or the wildcard) that passes `Host` through. Each project's `from_email`
-domain needs its own SES identity.
+`server_name` for each (or the wildcard) that passes `Host` through
+([Reverse proxy](#reverse-proxy-and-tls)). Each project's `app.from_email` domain must be a verified
+identity in the instance's SES account ([Sending with Amazon SES](#sending-with-amazon-ses) steps
+1–3), since every project sends through the one SMTP configuration. The SNS topic for bounces stays
+one for the whole account ([Amazon SES bounces](#amazon-ses-bounces)).
+
+**What is the instance's and what is a project's.** The instance host (the root URL's) serves the
+instance pages after their own login, `/admin/instance/login`:
+
+| Page | Path | What |
+|---|---|---|
+| Projects | `/admin/instance/projects` | Every project, create, rename, extra hostnames, delete |
+| Sending | `/admin/instance/sending` | The effective rate, the SES account, the quota guard and the 24-hour forecast ([Sending capacity](#sending-capacity-rate-quota-guard-and-forecast)) |
+| Settings | `/admin/instance/settings` | The instance settings ([Settings](#settings-instance-and-project)) |
+| Logs | `/admin/instance/logs` | The instance's lines and every project's ([Logs](#logs)) |
+| Account | `/admin/instance/account` | The admin's password and TOTP, for every project at once |
+
+Everything else (subscribers, lists, campaigns, templates, sequences, sends, webhooks, media, users,
+roles, the project's settings and its API and MCP) belongs to one project and is on its host.
 
 **Editing** renames a project and replaces its extra hostnames. Removing an extra hostname makes
 links in mail already sent from it stop working: the host then reaches the primary project, as any
 host no project claims. To move a project to a new domain, add the new name as an extra hostname
 first; the main hostname itself never changes.
 
-**Deleting** asks for the slug. The project leaves the routing table at once, the requests it is
-answering finish, its background work stops under the usual stop deadlines, and then its database
+**Deleting** asks for the slug. The project leaves the routing table at once and its sending
+stops: slots it reserved go to the other projects, and a message of it still waiting for its start
+goes back to its queue unsent (it is kept in the final snapshot). The requests it is answering
+finish, a message already handed to SMTP gets at most 5 seconds and is otherwise recorded as
+`unknown`, never resent, and its other background work stops under the usual stop deadlines. Then
+its database
 moves to `backups/deleted/<slug>-<time>.db`, with `<slug>-<time>.tar` holding its uploads and any
 other file of its directory, before `projects/<slug>/` is removed. Its hostnames then answer as
 unclaimed hosts. To bring one back, create a project with the same slug and hostname, stop the
@@ -403,6 +458,11 @@ server {
 project a request belongs to by its `Host` header alone, lowercased and without the port; it ignores
 `X-Forwarded-Host`. A host that no project claims, including the address a health check calls, is
 served by the primary project, so a single install behaves as before whatever host reaches it.
+Without a primary project such a host serves only the instance (its pages, the SES webhook and
+`/health`), sends `/admin` to the Projects page, and gives every other path a plain
+`404 page not found`. A proxy that rewrites `Host` to the
+upstream's address sends every request to the primary project; one that passes `Host` for some
+`server_name`s only must cover every project's hostname and extra hostname.
 
 Behind a proxy every visitor arrives from the proxy's address, so one client's rate limit would
 stop all of them. List the proxy in `security.trusted_proxies` ([D60](design/09-decisions.md#d60-explicit-trusted-proxies-for-client-addresses)).
@@ -620,8 +680,10 @@ pages each step follows are listed under [References](#references); they were ch
    each send's latency, so two receipts can be closer together than their grants. A cap equal to SES's
    maximum leaves no margin for that. The code default is `14`
    (`src/settings/defaults.ts`). In the sandbox AWS allows one message per second, so set `1` there.
-   `0` turns the cap off. Every email (campaign, transactional and sequence) waits on this shared
-   limit, and outbox sends (transactional and sequence) go ahead of background campaign broadcasts.
+   `0` turns the cap off. Every email of every project (campaign, transactional and sequence) waits
+   on this one schedule: transactional mail first, then marketing mail, then campaigns. With the SES
+   API keys of step 8 the rate in force is the lower of this setting and the account's own, so the
+   setting can stay where it is when AWS raises or lowers the account's rate.
    SES counts both the 24-hour quota and the per-second rate per recipient, not per message, so one
    message to three addresses uses three.
 7. **Leave the sandbox.** A new account is in the SES sandbox: 200 messages per 24 hours, one per
@@ -630,6 +692,25 @@ pages each step follows are listed under [References](#references); they were ch
    follow the sandbox notice on the Account dashboard to request production access. AWS states that
    the first answer can take up to 96 hours. When it is granted, set `messaging.max_send_rate` to the
    production rate.
+8. **Give the app read-only API keys (recommended).** SES SMTP credentials cannot call the SES
+   API, so the account's limits need an IAM user of their own. Create one with only this policy,
+   then create an access key for it:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{ "Effect": "Allow", "Action": "ses:GetAccount", "Resource": "*" }]
+   }
+   ```
+
+   On the instance Settings page under Amazon SES, enter the region (the identity's, such as
+   `eu-west-1`), the access key ID (`AKIA…`) and the secret, which the page then masks, and press
+   **Check SES account**: it reads the account now and shows its rate, 24-hour quota, sent count,
+   production access and whether sending is enabled, or AWS's error. The three keys are saved
+   together or not at all; an empty secret keeps the stored one, and clearing the region and the
+   key ID removes all three. What they turn on is in
+   [Sending capacity](#sending-capacity-rate-quota-guard-and-forecast). The server needs outbound
+   HTTPS to `email.<region>.amazonaws.com`.
 
 ### Compatibility: signing in iglo.email
 
@@ -692,6 +773,60 @@ AWS documentation, checked 2026-11-08 (the last two entries checked 2026-11-13):
 - SNS topics for bounce and complaint feedback: <https://docs.aws.amazon.com/ses/latest/dg/configure-sns-notifications.html>
 - Virtual Deliverability Manager settings (engagement tracking): <https://docs.aws.amazon.com/ses/latest/dg/vdm-settings.html>
 - SES metrics FAQ (open and click tracking through event destinations): <https://docs.aws.amazon.com/ses/latest/DeveloperGuide/faqs-metrics.html>
+
+## Sending capacity: rate, quota guard and forecast
+
+All projects send through one queue in the instance, which never starts messages faster than the
+rate in force ([14-projects](design/14-projects.md) section 7, D155, D159, D161). It decides only
+who starts next; each project's queued mail and campaign progress stay in its own database.
+
+- **Order.** Transactional mail (receipts, password resets, opt-in mail, test sends) starts first
+  and never waits behind marketing work beyond about 2 seconds. Then marketing mail (marketing
+  sequence steps and marketing `POST /api/tx`), then campaigns. Within marketing, and within
+  campaigns, projects take turns, so one project's large campaign does not hold back another's.
+- **Bounded loss.** Marketing and campaign work takes a message from its queue only for a start
+  slot due within the next 2 seconds. A crash or `kill -9` therefore leaves at most twice the rate
+  of messages taken but not started (200 with no cap), across all projects, plus those already
+  handed to SMTP; they become `unknown` and, being marketing, are never resent. An orderly stop
+  puts the not-started ones back.
+- **The rate in force** is `messaging.max_send_rate`, or SES's `MaxSendRate` when the API keys are
+  saved and it is lower (or the setting is `0`). The instance Settings page shows SES's rate beside
+  the setting and warns while the setting is higher.
+
+With the SES API keys ([step 8](#sending-with-amazon-ses)) the instance reads the account with
+`GetAccount` at start, every 5 minutes, and every minute while the quota left is at most the larger
+of 10% of the 24-hour quota and 5 minutes at the rate in force. A failed read keeps the last
+values, shows their age, writes one `[instance]` attention line at once and then at most one an
+hour, and never stops sending. The values are held in memory only.
+
+- **Forecast.** One question: does the busiest 24 hours around a campaign fit the 24-hour quota?
+  The window ends when the campaign would finish at the rate in force. It counts what was sent in
+  the part of the window already past (the app's own sends at their times, and the account's other
+  senders' share spread over the day), the app's usual non-campaign mail for the part still ahead,
+  every scheduled campaign of every project that starts in the window, every running campaign's
+  remaining recipients, and the campaign itself. A campaign page shows "Fits: … of … in the 24 h up
+  to …" or "Over the quota by …" for a saved draft, paused or scheduled campaign at the form's send
+  time, and asks for a confirmation when it is over; it never refuses. Scripts and agents ask
+  `GET /api/sending/capacity` (`at`, `count`, `campaign_id`) on the project's host with
+  `campaigns:get`, or the MCP tool `get_sending_capacity`. The answer holds instance totals only,
+  never another project's name or campaigns.
+- **Quota guard.** A forecast can still be wrong. When SES's own count leaves at most the larger of
+  2% of the 24-hour quota and one minute at the rate in force (840 at 14/s), the queue stops
+  starting marketing mail and campaigns: queued rows stay `queued`, running campaigns stay
+  `running` with their place kept, nothing is paused, failed or retried, and transactional mail goes
+  on. It writes `[instance] SES quota guard: holding marketing and campaign sends: …` once, and
+  `… resuming …` once when a newer read is above the line, then everything continues by itself.
+  Changing the keys ends a hold until the new keys' first read. An account with no daily limit
+  never holds.
+- **Without the keys** the setting alone sets the rate, and there is no forecast and no guard.
+  `GET /api/sending/capacity` then answers `available: false`.
+
+**The Sending page** (`/admin/instance/sending`) shows all of this at once: the rate in force and
+which input sets it, the account's last read (quota, sent in 24 hours, what is left, sandbox,
+whether AWS has paused sending) with its age, or "Stale" with AWS's error while reads fail, whether
+the guard is holding with the line it holds at, and the forecast for the 24 hours up to now. It is
+rendered when opened; reload it for newer values. A sending-enabled `false` from AWS is shown there
+only: SES then refuses mail itself.
 
 ## Amazon SES bounces
 
@@ -765,12 +900,15 @@ that is not listed is refused with 400, a confirmation is not fetched and nothin
 
 Rules from [D64](design/09-decisions.md#d64-the-upload-directory-is-a-fixed-boundary-inside-the-data-directory):
 
-- The real path of `upload.filesystem.upload_path` must be a directory inside the real data
-  directory, with every symlink resolved. For other storage, mount it at that directory.
+- Uploads belong to a project. `upload.filesystem.upload_path` (a project setting, `uploads` by
+  default) resolves inside the project's directory, `projects/<slug>/`, and its real path must be a
+  directory inside that directory, with every symlink resolved. For other storage, mount it at that
+  directory.
 - A refused directory stops media and nothing else. The reason is logged at startup and shown in
   the API error, and campaigns with media pause.
 - A mounted upload directory is often owned by root, so after mounting it, the service user must own
-  it: run `chown iglo-email:iglo-email /var/lib/iglo.email/uploads` as root. Until then an upload
+  it: run `chown iglo-email:iglo-email /var/lib/iglo.email/projects/main/uploads` as root (or that
+  project's directory). Until then an upload
   fails with `500`, and the log shows `EACCES` on `mkdir`. On 2026-11-09 a file uploaded into a
   bind-mounted directory was served before and after `systemctl restart`, once the directory was
   owned by the service user.
@@ -1073,17 +1211,31 @@ device. The command refuses while anything has the database open. It does not ch
 and the restore hold stays as it is. TOTP is also dropped when an admin turns a user's password
 login off or converts the user to an API user, so an old key never comes back.
 
-From an archive, first unpack it with `tar -xzf` and verify what came out.
+### Restore details
 
-A backup is the primary project's directory: restore it as `projects/main/`, and keep
-`instance.db` and the lock where they are. The admin's password and TOTP come from `instance.db`:
-the next start writes them into the restored database's copy of the admin. After a restore the
-admin's password and TOTP are the instance account's, not the snapshot's: a TOTP device enrolled
-only in the restored data no longer works, and must be enrolled again on the Account page. On a new host, start the server once on an empty data
-directory first, stop it, then restore. Move the whole project directory, as here. A new database
-beside an old `iglo-email.db-wal` is corrupted by it. If the upload directory is a mount, restore into it with `cp -a monday/uploads/. <mount>/`. The
-extra `iglo-email-backup.json` in a restored directory is harmless. If `upload_path` is absolute
-and the data directory moved, media is refused until the path is right again.
+- **From an archive,** first unpack it with `tar -xzf` and verify what came out.
+- **Whole directories only.** Restore a project as its whole directory under `projects/<slug>/`,
+  and `instance.db` alone, as above; keep the lock where it is. A new database beside an old
+  `iglo-email.db-wal` or `instance.db-wal` is corrupted by it, which is why the commands move the
+  old files aside first.
+- **The admin after a project restore.** The admin's password and TOTP come from `instance.db`: the
+  next start writes them into the restored project's copy of the admin, so they are the instance
+  account's, not the snapshot's. A TOTP device enrolled only in the restored data no longer works;
+  enroll it again on the Account page.
+- **On a new host,** restore the whole backup: `instance.db` and every `projects/<slug>/`, into an
+  empty data directory, then start. A project needs a registry row to be served: `projects/main/`
+  alone in an empty data directory is adopted as the primary project at the first start (with the
+  admin variables set, as on any first start); any other slug is created on the Projects page with
+  its slug and hostname and then has its directory replaced, as for a [deleted project](#projects).
+- **Uploads.** If a project's upload directory is a mount, restore into it with
+  `cp -a monday/projects/<slug>/uploads/. <mount>/`. The extra `iglo-email-backup.json` in a
+  restored directory is harmless. If `upload_path` is absolute and the data directory moved, media
+  is refused until the path is right again.
+- **A backup from a release before projects** (one `iglo-email.db` with its uploads) is restored
+  into `projects/main/` of a new data directory, as the start's refusal message says. It is held,
+  as every backup is. Its migrations remove what are now instance settings (SMTP, the send rate,
+  bounce processing and the others under [Settings](#settings-instance-and-project)) without moving
+  them: set them again on the instance Settings page.
 
 Executable and backup versions:
 
@@ -1094,6 +1246,14 @@ Executable and backup versions:
   `Database version N is ahead of this executable`. Restore with that version or a newer one.
 
 ## Upgrades
+
+**From 1.x (before projects) there is no upgrade.** The data directory layout changed, and a data
+directory with `iglo-email.db` at its root is refused at start with nothing written
+([Data directory](#data-directory)). Start the new release on an empty data directory and set the
+instance up again. An old backup can be restored as the primary project
+([Restore details](#restore-details)), with the instance settings entered again.
+
+Between releases with projects:
 
 1. Take and verify a backup.
 2. Download and check the new release as in [Install](#install), or pull the new image tag as in
@@ -1152,7 +1312,8 @@ The block on private webhook targets (`webhooks.block_private_addresses`) is on 
 upgrade turns it on once, when it stored `false`: an earlier release stored `false` for every install,
 so the upgrade cannot tell a value nobody chose from one somebody did. An operator who chose `false`
 for a receiver on a private network sets it back to `false` after the upgrade, under Settings →
-Security, or with `PUT /api/settings/webhooks.block_private_addresses` and the body `false`. A later
+Security (since projects, the instance Settings page), or with
+`PUT /api/instance/settings/webhooks.block_private_addresses` and the body `false`. A later
 `false` is kept, and the upgrade does not run again. At every start while the block is on, the log
 and stderr name each enabled webhook whose target the block refuses, as
 `Webhook <id> target <host> is refused by webhooks.block_private_addresses`: the ID and the host
@@ -1164,8 +1325,10 @@ and `/campaign/` paths) answer with `Cache-Control: no-store`, `Referrer-Policy:
 embedded in an iframe. A person who asks for their data twice within ten minutes gets one data mail;
 the second request answers the same page and sends nothing.
 
-Migrations run at startup and are forward-only. With migrations pending, startup first writes a
-verified snapshot to `backups/` and refuses to migrate if it cannot. Those snapshots are plain
+Migrations run at startup and are forward-only, for `instance.db` (its own manifest) and for each
+project's database. With migrations pending, startup first writes a verified snapshot of that
+database to `backups/pre-migration/` (`instance-…` or `<slug>-…`) and refuses to migrate if it
+cannot. Those snapshots are plain
 `.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,
 restore the backup from step 1, and put back the old executable.
 
@@ -1327,6 +1490,11 @@ The helper is tested with the server's own deliveries, a rotation and a tampered
   routing unsubscribes here, and the response adds `X-Iglo-Email-Hold: <since>`. Alert on that
   header: nothing is being sent. Every signed-in admin page gives the reason. `/health` reads that
   one row and does not exercise the sending loops. `GET /api/health` needs an API user.
+- `/health` answers for the project whose host it is called on: on the instance host and on any
+  host no project claims, the primary project's. A held project answers with the header while the
+  others do not; a held `instance.db` adds it on every project. With no primary project, `/health`
+  on those hosts is the instance's own: `200 {"data":true}` while every project's loops run.
+  Probe each project's host to watch its hold.
 - A loop that fails for good stops the whole process, with a nonzero exit, so a supervisor with
   `Restart=on-failure` restarts it. Alert on restarts.
 - Watch free disk on the data directory and on the backup destination, and the age of the newest
@@ -1336,9 +1504,16 @@ The helper is tested with the server's own deliveries, a rotation and a tampered
 
 The server writes only errors and things that need attention, to stderr, with the whole error
 there: journald, with the unit above. An attention line is one plain line; an unexpected error
-keeps its stack. Treat that log as sensitive. `GET /api/logs` and the Logs screen hold the last
-5,000 lines in memory, each only a time and either a fixed message (an attention line) or, for an
-unexpected error, its class, because `settings:get` readers see them. For the detail, go to stderr.
+keeps its stack. Every stderr line starts with `[<slug>] ` for a project's line or `[instance] `
+for the instance's own (the send queue, the SES account and quota guard, unmatched SES notices,
+leftover project directories). Treat that log as sensitive.
+
+Each project keeps the last 5,000 of its own lines in memory, for its `GET /api/logs` and Logs
+screen, each only a time and either a fixed message (an attention line) or, for an unexpected
+error, its class, because that project's `settings:get` readers see them. The instance keeps its own
+5,000, with the whole text of its attention lines, since only the admin reads them. The instance
+Logs page (`/admin/instance/logs`) merges the instance's lines and every project's by time, each
+labelled with its source, newest 5,000; it is rendered when opened. For the detail, go to stderr.
 
 ## Sizes and capacity
 
@@ -1368,7 +1543,7 @@ Analytics and report reads have two further limits ([D62](design/09-decisions.md
   it without limit. An occasional report that takes a few seconds longer is the sign.
 
 Large subscriber selections (`per_page=all`, exports, bulk actions on a query) write the matching
-IDs to `stage/` in the data directory while they run, about 8 bytes each. The files are removed as
+IDs to `stage/` in the project's directory while they run, about 8 bytes each. The files are removed as
 the request ends, and any left by a killed server when it next starts.
 
 ## Retention
@@ -1561,12 +1736,12 @@ lists private if that API is not meant to be public.
 
 ## MCP (Model Context Protocol)
 
-The MCP endpoint at `POST /api/mcp` is the path for an agent working on an instance for a person (Claude Code, Cursor, Cline, etc.). Applications use the REST API with an API user of their own, as [above](#api-user-for-an-app-integration) describes ([D108](design/09-decisions.md#d108-mcp-is-the-agent-path-for-content-the-server-says-so-and-the-readme-links-to-it-lead-2026-11-17)). The agent can author and test content (templates, sequence steps, campaigns), upload media, inspect subscribers, events, sends and bounces, and change settings. It can do everything its credential's role allows, with the same permissions as the REST API, except the operations excluded as borderline dangerous or not agent actions: changes to users and roles (reading them is a tool), the caller's own login, two-factor setup, bulk deletes, deletes addressed by a query, bulk changes selected by a query, and replacing all settings at once. The hand-written tools of [D91](design/09-decisions.md#d91-mcp-endpoint-for-template-and-campaign-editing-lead-2026-11-07) are joined by one tool per remaining API operation; [D98](design/09-decisions.md#d98-mcp-covers-every-operation-except-a-short-exclusion-list-lead-2026-11-13) lists the exclusions and the rules. The server sends its own instructions with the connection, so an agent reads the authoring loop before its first call.
+The MCP endpoint at `POST /api/mcp` is the path for an agent working on a project for a person (Claude Code, Cursor, Cline, etc.). Each project serves its own, on its own host, with that project's API users: a token reaches only the project that created it, no tool takes a project argument or names another project, and the server's instructions name the project and say the endpoint serves only it. `get_sending_capacity` reports the instance's totals for the SES quota, never another project's campaigns, and the instructions tell the agent to check it before scheduling a large campaign. Applications use the REST API with an API user of their own, as [above](#api-user-for-an-app-integration) describes ([D108](design/09-decisions.md#d108-mcp-is-the-agent-path-for-content-the-server-says-so-and-the-readme-links-to-it-lead-2026-11-17)). The agent can author and test content (templates, sequence steps, campaigns), upload media, inspect subscribers, events, sends and bounces, and change settings. It can do everything its credential's role allows, with the same permissions as the REST API, except the operations excluded as borderline dangerous or not agent actions: changes to users and roles (reading them is a tool), the caller's own login, two-factor setup, bulk deletes, deletes addressed by a query, bulk changes selected by a query, and replacing all settings at once. The hand-written tools of [D91](design/09-decisions.md#d91-mcp-endpoint-for-template-and-campaign-editing-lead-2026-11-07) are joined by one tool per remaining API operation; [D98](design/09-decisions.md#d98-mcp-covers-every-operation-except-a-short-exclusion-list-lead-2026-11-13) lists the exclusions and the rules. The server sends its own instructions with the connection, so an agent reads the authoring loop before its first call.
 
 To connect an MCP client, use the Streamable HTTP transport with an API user authorization header:
 
 ```sh
-claude mcp add --transport http iglo https://<root>/api/mcp --header "Authorization: token <user>:<key>"
+claude mcp add --transport http iglo https://<project-host>/api/mcp --header "Authorization: token <user>:<key>"
 ```
 
 The same connection as a project `.mcp.json` is in the [README](../README.md#if-you-are-an-ai-agent). Do not commit a file that holds a real token.
@@ -1594,7 +1769,7 @@ A campaign follows the same loop with `update_campaign`, `preview_campaign`, `ca
 - Sample agent role, for an agent that should do nearly everything (D98): `bounces:get`, `bounces:manage`, `campaigns:get`, `campaigns:get_all`, `campaigns:get_analytics`, `campaigns:manage`, `campaigns:manage_all`, `campaigns:send`, `lists:get_all`, `lists:manage_all`, `media:get`, `media:manage`, `sends:get`, `sends:manage`, `sequences:get`, `sequences:manage`, `settings:get`, `settings:manage`, `subscriber_events:create`, `subscribers:get`, `subscribers:get_all`, `subscribers:import`, `subscribers:manage`, `templates:get`, `templates:manage`, `tx:send`, `webhooks:manage`. It is every permission that a non-excluded operation uses, except `users:*`, `roles:*`, `settings:maintain`, `suppressions:manage` (which removes a person's suppression, so it is a deliberate grant) and `webhooks:post_bounce`, which only the mail provider's bounce callback needs. Each job set in [API user for an app integration](#api-user-for-an-app-integration) is part of it. `list:get` and `list:manage` are list-role grants, not user-role permissions, so a list role adds them to narrow the agent to some lists. `subscribers:sql_query`, which allows raw SQL in subscriber queries and sequence conditions, is not in the set; add it only if the agent needs it. `campaigns:send` and `tx:send` let it send real email. `sends:manage` resends a message, `subscribers:manage` can send the opt-in mail, and `settings:manage` lets it change any setting, so give the role only to a credential you trust with those.
 - A path argument must be a value of its parameter: a numeric ID is a positive integer, an enumerated value is one of its values, and no value may be `.` or `..` (written or percent-encoded). Any other value is refused with a tool error and nothing is sent.
 - Every answer is capped at 1 MiB, JSON, CSV and HTML alike, and the cap is read before anything is parsed. An answer over it is not returned: the tool answers with an error. For a JSON list, such as `get_subscribers` with `per_page=all` on a large base, it says to narrow the answer with `page` and `per_page`, or to fetch it from the REST API. For a CSV or HTML answer, it names the REST endpoint, such as `GET /api/subscribers/export`. A JSON answer under the cap comes back as its parsed value and as compact text, both at most 1 MiB (D98). An upload is limited to 1 MiB decoded (D98).
-- The endpoint validates incoming `Origin` headers against the configured root URL and rejects foreign origins with HTTP 403.
+- The endpoint validates incoming `Origin` headers against the project's root URL and rejects foreign origins with HTTP 403.
 - Unauthenticated requests receive HTTP 401 before any JSON-RPC processing.
 - All operations are dispatched in-process with the caller's credentials and permissions; the MCP server owns no direct database tables.
 

@@ -4,9 +4,18 @@
 
 - **Runtime:** Bun ≥ 1.4, TypeScript, native ESM.
 - **HTTP:** `Bun.serve` with a small router. No Express or other framework.
-- **Database:** `bun:sqlite`, one database file, WAL mode, `foreign_keys = ON`, `synchronous = FULL`, `busy_timeout = 5000` and safe 64-bit integers.
-- **Distribution:** one executable from `bun build --compile`, with admin assets, public pages, default templates, i18n files and migrations embedded. Linux x86-64 and arm64 only (D89).
-- **No external services** apart from the SMTP server and, optionally, the provider sending bounce webhooks.
+- **Database:** `bun:sqlite`, WAL mode, `foreign_keys = ON`, `synchronous = FULL`, `busy_timeout = 5000` and safe 64-bit integers. One instance database (`instance.db`) and one database file per project, each opened with these pragmas ([Projects](14-projects.md) section 1). No SQLite transaction spans two files and nothing uses `ATTACH`.
+- **Distribution:** one executable from `bun build --compile`, with admin assets, public pages, default templates, i18n files and both migration manifests embedded. Linux x86-64 and arm64 only (D89).
+- **No external services** apart from the SMTP server (Amazon SES), optionally SES's `GetAccount` API with read-only keys ([Sending](04-sending.md#dispatcher)), and the SNS notifications SES sends for bounces.
+
+## Instance and projects
+
+One process is an **instance**: it owns `instance.db` (the project registry and hostnames, the instance settings, the admin account and its sessions), the routing table, the send dispatcher and the SES account snapshot. It serves one or more **projects**, each one audience with its own database holding the whole schema of [Data model](03-data-model.md) ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23), [Projects](14-projects.md)).
+
+- **Composition.** `openInstance` (`src/projects/instance.ts`) opens `instance.db`, then wires each registered project with `createProject` (`src/projects/compose.ts`), which opens that project's database and wires every store, route and loop for it, receiving the instance services as narrow functions (clock, shared budgets, the dispatcher's sender, the instance settings reader, the admin account, the forecast source). No project module sees the instance `Database` or another project's.
+- **Routing.** One `Bun.serve` dispatches by the `Host` header, lowercased and without its port (`X-Forwarded-Host` is ignored). A project's hostname or extra hostname reaches its router, which holds every route a single install had. The instance host (`--root-url`'s) serves the instance routes (`/admin/instance/**`, `/api/instance/**`, `/webhooks/service/ses`) and then the primary project; a host no project claims is treated as the instance host. Without a primary, it serves the instance routes, `/health` and a plain 404. The routing table is a field of the instance, updated at runtime when a project is created or deleted.
+- **What exists once.** SMTP pools and the send rate (the dispatcher), SES bounce processing, security settings, the admin account, and the process-wide budgets: public rate-limit tables, the ALTCHA key and replay table, the read-only helper children, the analytics egress budget, the tx attachment memory gate and the in-flight sending bound. Each project holds its own state inside them ([Projects](14-projects.md) invariant 7).
+- **What each project has.** Its database, upload and staging directories, routes, loops, users and API credentials, project settings, log buffer and health route. A project's root URL is `--root-url` with the host replaced by its hostname.
 
 ## Shared ground with other iglo.\* projects
 
@@ -22,12 +31,12 @@ These conventions are the same as [iglo.monitor](https://github.com/iglo-tech/ig
 
 ## Process model
 
-One server process runs everything that writes. Background work is a set of loops in that process, each owning one table of work. Slow or untrusted reads run in short-lived read-only helpers: the same executable re-run with an internal argument, one read each, owned and killed by the server. They hold no state and never write ([D62](09-decisions.md#d62-read-only-helper-processes-for-slow-reads)). A lock on the data directory, taken before the database opens, makes a second server refuse to start ([D69](09-decisions.md#d69-a-file-lock-enforces-one-process-per-data-directory)).
+One server process runs everything that writes, for every project. Background work is a set of loops in that process, each owning one table of work; each project runs its own copy of every loop below over its own database, and the instance adds the send dispatcher (which keeps no table: it schedules starts over the projects' rows) and the SES account loop, which reads `GetAccount` at start, every 5 minutes, and every minute near the quota ([Sending](04-sending.md#dispatcher)). Slow or untrusted reads run in short-lived read-only helpers: the same executable re-run with an internal argument, one read each, owned and killed by the server. They hold no state and never write ([D62](09-decisions.md#d62-read-only-helper-processes-for-slow-reads)). A lock on the data directory, taken before the database opens, makes a second server refuse to start ([D69](09-decisions.md#d69-a-file-lock-enforces-one-process-per-data-directory)).
 
 | Loop               | Interval                                                                                                | Work                                                                                                                                                                                                                  |
 | ------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Campaign runner    | 5 s scan, and at once when a start, resume or due schedule is set ([D97](09-decisions.md#d97-the-campaign-runner-wakes-on-start-lead-2026-11-13)); continuous while campaigns run | Starts due campaigns. Streams subscribers in ID order with a cursor stored on the campaign, renders and sends through the SMTP pool with rate limits                                                                  |
-| Outbox             | continuous, wakes on insert                                                                             | Sends queued transactional and sequence messages from `sends`                                                                                                                                                         |
+| Campaign runner    | 5 s scan, and at once when a start, resume or due schedule is set ([D97](09-decisions.md#d97-the-campaign-runner-wakes-on-start-lead-2026-11-13)); continuous while campaigns run | Starts due campaigns. Streams subscribers in ID order with a cursor stored on the campaign, claiming only as many as the dispatcher granted start slots for, and sends each in its slot                                                                  |
+| Outbox             | continuous, wakes on insert                                                                             | Sends queued transactional and sequence messages from `sends`: one loop claims transactional rows at once, a second claims marketing rows only against granted slots (B141)                                                                                                                                                         |
 | Sequence scheduler | 15 s                                                                                                    | Claims due enrollments, evaluates conditions, queues sends, advances steps                                                                                                                                            |
 | Webhook delivery   | continuous, wakes on insert                                                                             | Delivers queued outbound webhooks with retries                                                                                                                                                                        |
 | Maintenance        | hourly; every 250 ms while a backlog lasts                                                         | Purges old events, and in one paced loop expired sessions, finished webhook deliveries and the bodies of finished sends ([D70](09-decisions.md#d70-send-history-is-kept-and-its-bodies-are-dropped-retention-shares-one-paced-loop)) |
@@ -39,7 +48,7 @@ Rules for every loop:
 - **The database row is the state.** A loop holds nothing that cannot be rebuilt from tables after a restart.
 - **Claim with a lease.** A row is claimed by setting `claimed_until` inside a `BEGIN IMMEDIATE` transaction. If the process dies, the lease expires and the row is picked up again. Each loop decides what "picked up again" means for its work (see at-most-once in [Sending](04-sending.md)).
 - **Short write transactions.** SQLite has one writer at a time. Network calls (SMTP, webhooks) never run inside a transaction.
-- **Graceful shutdown.** On SIGTERM, loops stop claiming, in-flight sends finish or time out, then the process exits.
+- **Graceful shutdown.** On SIGTERM, loops stop claiming and stop asking for slots, granted messages that have not started go back to their queue, in-flight sends finish or time out, the dispatcher closes, then the process exits.
 
 This replaces listmonk's in-memory channels and Postgres row scanning with the same pattern everywhere. It also means no Redis, BullMQ or workflow engine. See [Decisions](09-decisions.md) D5.
 
@@ -57,7 +66,7 @@ advance. Empty claims retain the configured polling interval.
 
 ## Throughput target
 
-- 50 messages per second sustained for campaigns on one SMTP pool, which is above typical provider limits.
+- 50 messages per second sustained for campaigns on one SMTP pool, which is above typical provider limits. With several projects this is the instance's total: the dispatcher shares the one rate between them (measurements in `docs/perf/projects-*.md`).
 - 100 events per second on the events API without slowing sends.
 
 SQLite in WAL mode handles this with batched writes: the campaign runner records progress per batch, not per message. Any change to sending, scheduling or storage must include before/after measurements (same rule as iglo.monitor).
@@ -77,9 +86,10 @@ src/
   db/                connection, migrations runner, transaction helper
   subscribers/       store, segment queries, import, export
   lists/
-  campaigns/         store, runner (pipeline, rate limits, cursor)
+  projects/          instance: registry, layout, routing table, composition (createProject), lifecycle, admin sync, budgets
+  campaigns/         store, runner (pipeline, grants, cursor), planned counts for the forecast
   templates/         store, Liquid engine setup, built-in functions
-  messaging/         SMTP pool, message building, List-Unsubscribe, outbox
+  messaging/         SMTP pool, message building, List-Unsubscribe, outbox, dispatcher, SES account (SigV4, GetAccount), capacity forecast
   tx/                transactional API
   sequences/         definitions, conditions, scheduler, enrollments
   events/            events API, event store, retention
@@ -90,15 +100,15 @@ src/
   roles/             role ownership, lookup and permissions
   media/             filesystem provider
   public/            public pages (subscribe, opt-in, unsubscribe, preferences)
-  admin/             server-rendered admin views (TSX) and handlers
+  admin/             server-rendered admin views (TSX) and handlers; admin/instance/ the instance pages
   i18n/
   maintenance/
 assets/admin/        Alpine.js, Oat, CodeMirror, Squire, Chart.js (from listmonk v7)
-migrations/          numbered SQL files
+migrations/          numbered SQL files of a project database; migrations/instance/ those of instance.db
 test/
 ```
 
-Each module owns its tables and SQL. Other modules call its functions; they do not query its tables directly. Cross-module reads that matter for performance (segment queries, sequence conditions) go through the owning module's query builder.
+Each module owns its tables and SQL, in either kind of database: `src/projects/` owns the registry, `src/settings/` the instance settings table, `src/users/` the admin account. Other modules call its functions; they do not query its tables directly. Cross-module reads that matter for performance (segment queries, sequence conditions) go through the owning module's query builder.
 
 ## Application and request contracts (M0.3–M0.4)
 
@@ -145,8 +155,8 @@ process-global mutable request state. No language HTTP endpoint exists until aut
 
 ## Configuration
 
-- **Bootstrap settings come from flags and environment variables:** `--port`, `--host`, `--data-dir`, `--root-url`, an initial admin user (`IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD`), and an initial API user with the Super Admin role (`IGLO_EMAIL_API_USER` and `IGLO_EMAIL_API_TOKEN`, D106). Both pairs are used only when no users exist, and each is both or neither.
-- **Everything else lives in the `settings` table** and is edited in the admin UI, as in listmonk: SMTP servers, rate limits, privacy options, bounce settings, appearance.
+- **Bootstrap settings come from flags and environment variables:** `--port`, `--host`, `--data-dir`, `--root-url`, the admin account (`IGLO_EMAIL_ADMIN_USER` and `IGLO_EMAIL_ADMIN_PASSWORD`, used while `instance.db` has no account, [D153](09-decisions.md#d153-one-admin-b140-lead-2026-11-24)), and an initial API user of the primary project with the Super Admin role (`IGLO_EMAIL_API_USER` and `IGLO_EMAIL_API_TOKEN`, D106, used while the primary project has no users). Each pair is both or neither. `--root-url`'s host is the instance host.
+- **Everything else is a setting,** edited in the admin UI, as in listmonk, in one of two tables ([D154](09-decisions.md#d154-settings-split-b139-lead-2026-11-25)): instance settings in `instance.db` (SMTP servers, the send rate, the SES API keys, bounce processing, proxies and sessions, the admin appearance), changed on the instance host only; project settings in each project's database (site, sender, privacy, public pages, bounce actions, uploads, the public appearance). A project reads both, re-reading each on every call, so a change applies without a restart.
 - **No `config.toml`.** Secrets in settings (SMTP passwords, webhook secrets) are stored as given. The data directory must be protected by the host.
 
 ## Data directory
@@ -154,22 +164,22 @@ process-global mutable request state. No language HTTP endpoint exists until aut
 ```text
 data/
   iglo-email.lock      instance lock (D69); no data; one for the whole directory
-  instance.db          (+ -wal, -shm) the project registry (B138b, D151)
+  instance.db          (+ -wal, -shm) the project registry and hostnames, instance settings, admin account
   projects/
     <slug>/            one project; a fresh install has one, `main`, the primary project
       iglo-email.db    (+ -wal, -shm) the project's whole schema
       stage/           IDs of a running large subscriber selection (D62); empty at rest
       uploads/         media files
       .iglo-email-import/  the file of a running import
-  backups/
+  backups/             `backup` output by default: iglo-email-<time>/ with instance.db and projects/<slug>/
     pre-migration/     snapshots before migrations: `instance-…` and `<slug>-…`
-                       and `backup` output by default (the primary project, until B144)
+    deleted/           the final snapshot of a deleted project: <slug>-<time>.db and .tar
 ```
 
 A data directory with `iglo-email.db` at its root is the earlier layout: start refuses it with one
 message, writes nothing and converts nothing ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)).
-One instance serves several projects by `Host` ([14-projects](14-projects.md) sections 1–3); a
-fresh install is an instance with one primary project and behaves as one install did.
+One instance serves several projects by `Host` ([Instance and projects](#instance-and-projects)); a
+fresh install is an instance with one primary project, `main`, and behaves as one install did.
 
 Startup refuses the earlier layout, takes the instance lock, opens and migrates `instance.db` (its own
 manifest, `migrations/instance/`), then for each registered project opens its `iglo-email.db`,
@@ -180,12 +190,14 @@ start that cannot listen claims no send, campaign batch or webhook delivery and 
 The shutdown path stops whatever did start. It closes the connection after HTTP shutdown or a
 startup failure. A nonempty database with pending migrations gets one verified
 SQLite `VACUUM INTO` snapshot before the batch, held as a backup is. `iglo.email backup` takes a live
-snapshot from a separate read-only process, with a short-lived helper that syncs its
-output ([operations guide](../operations.md#backups)). A backup carries a
-restore hold: a database restored from one sends nothing until an operator
-releases it ([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)).
+snapshot of `instance.db` and every project (or one project with `--project`) from a separate
+read-only process, with a short-lived helper that syncs its output
+([operations guide](../operations.md#backups), [D158](09-decisions.md#d158-backup-and-restore-per-database-b144a-lead-2026-11-25)). A backup carries a
+restore hold per database: a restored project sends nothing until an operator releases it, and a
+restored `instance.db` holds every project until its own release ([D67](09-decisions.md#d67-a-restored-database-holds-all-sending-until-an-operator-releases-it)).
 `iglo.email reset-password` sets a password on a stopped server, under the same
-instance lock, reading it from stdin, so a locked-out operator need not end a hold to log in. Continuous replication
+instance lock, reading it from stdin, so a locked-out operator need not end a hold to log in; with
+the admin's name it writes `instance.db` and every project's copy of the admin. Continuous replication
 (for example Litestream) is an operator choice, not built in.
 
 ## Dependencies

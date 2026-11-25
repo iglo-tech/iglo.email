@@ -7,6 +7,7 @@
 3. **Make transactional email safe for marketing use:** unsubscribe links and headers, list status checks, a frequency cap, and a send log with message IDs.
 4. **Tell apps what happened:** outbound webhooks for unsubscribes, blocklisting and bounces, so apps can keep consent in sync.
 5. **One stack:** Bun, TypeScript, SQLite, one executable, shared conventions with other iglo.\* projects.
+6. **One instance for several projects** ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23), [Projects](14-projects.md)): one process serves several independent audiences, each with its own database and hostname, with one SES configuration, one admin account, one send queue planned against the SES account's limits, and API and MCP credentials scoped to one project.
 
 ## Platforms
 
@@ -22,6 +23,8 @@ Feature complete but not wide (D89): everything a typical newsletter, lifecycle 
 - Postgres or any other database.
 - A visual journey builder, lead scoring, CRM features, A/B testing.
 - Multi-node or horizontal scaling. One process per instance.
+- Multi-tenancy for different customers: billing, per-customer quotas, invitations or per-project roles for humans. Projects are one operator's ([14-projects](14-projects.md), Non-goals).
+- Sharing subscribers, lists, templates or campaigns between projects, moving them between projects, or SMTP settings per project.
 - Tracking upstream listmonk after the baseline. Fixes may be ported by hand when useful.
 - A public community project: no support process, no release promise, no community governance files (same stance as iglo.monitor).
 
@@ -34,11 +37,11 @@ Feature complete but not wide (D89): everything a typical newsletter, lifecycle 
 | Subscribers | CRUD, attributes (JSON), search, SQL segment queries (SQLite dialect), blocklist, bulk actions, subscriber data export | | |
 | Lists | public/private/temporary, single and double opt-in, tags | | |
 | Public pages | subscription form, opt-in confirmation, unsubscribe, manage preferences | campaign archive and RSS (B36 decides) | |
-| Campaigns | regular and opt-in campaigns, scheduling, test sends, pause/resume, throttling and sliding-window rate limits, view and click tracking | | |
+| Campaigns | regular and opt-in campaigns, scheduling, test sends, pause/resume, view and click tracking; pacing by the instance's send queue (B141) | | per-campaign throttling and sliding-window rate limits (`app.concurrency`, `app.message_rate`, `app.batch_size`, `app.message_sliding_window*`, removed by [D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)) |
 | Templates | campaign and transactional templates, rich text (Squire), HTML, Markdown, plain text; editing through MCP for AI agents (D89) | | visual (drag-and-drop) templates, Go template syntax (replaced by Liquid) |
 | Transactional API | `POST /api/tx`, attachments, custom headers | | |
 | Media | filesystem storage | thumbnails (B36 decides) | S3 storage |
-| Import | CSV import of subscribers | | ZIP import, listmonk Postgres importer |
+| Import | CSV import of subscribers | | ZIP import, listmonk Postgres importer (listmonk data is moved once through the API, [14-projects](14-projects.md) section 11) |
 | Bounces | bounce API, Amazon SES (SNS) webhooks, soft/hard/complaint actions | | Mailgun (removed), Postmark, SendGrid and other webhooks, POP3 mailbox scanning |
 | Analytics | campaign views, clicks, bounces, link stats, dashboard counts | unique-count graphs, list analytics (B36 decides) | |
 | Users | admin users, API users and tokens, user roles and list roles, TOTP 2FA | OIDC login (not now) | |
@@ -59,6 +62,9 @@ Feature complete but not wide (D89): everything a typical newsletter, lifecycle 
 | Send log with SMTP message IDs, returned by the transactional API | [Sending](04-sending.md) |
 | Outbound webhooks (signed) | [Sending](04-sending.md) |
 | Idempotency keys on events and transactional sends | [Sending](04-sending.md), [Sequences](05-sequences.md) |
+| Several projects in one instance, routed by hostname, with one admin account and project-scoped API and MCP credentials | [Projects](14-projects.md) |
+| One send queue for every project: transactional before marketing before campaigns, fair across projects | [Sending](04-sending.md#dispatcher), [Projects](14-projects.md#7-global-send-queue) |
+| SES account limits read with `GetAccount`, a quota forecast when a campaign is scheduled, and a last-resort quota guard | [Sending](04-sending.md#dispatcher), [Projects](14-projects.md#ses-account-and-capacity-planning) |
 
 ## First consumer
 
