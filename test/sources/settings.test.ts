@@ -171,6 +171,19 @@ test("a source is saved with its password masked; the mask keeps it only for the
     "source.url": `http://127.0.0.2:${pb.port}`,
   });
   expect(elsewhere.status).toBe(400);
+  // A full PUT that leaves source.password out, as a listmonk client does, keeps no password
+  // either: a new URL or identity that way is refused, and the stored source stays as it was.
+  const { "source.password": _masked, ...withoutPassword } = await settings();
+  for (const changes of [
+    { "source.url": `http://pocketbase.example:${pb.port}` },
+    { "source.identity": "other@example.com" },
+  ]) {
+    const response = await call("PUT", "/api/settings", { ...withoutPassword, ...changes });
+    expect(response.status).toBe(400);
+    const stored = await settings();
+    expect(stored["source.url"]).toBe(url);
+    expect(stored["source.identity"]).toBe(pb.service.identity);
+  }
   // A one-key PUT carries the stored password over: a new URL that way is refused too.
   const oneKey = await call(
     "PUT",
