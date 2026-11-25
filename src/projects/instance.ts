@@ -574,6 +574,8 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     // The login limit's address honours security.trusted_proxies, as a project's login does.
     clientAddress: instanceClientAddress,
     ses: sesAccount,
+    // The Sending page (B143b): the instance's forecast as no project, without a candidate.
+    forecast: () => must(capacity, "capacity").forecast(null, null),
     smtpTest: () => {
       const project = primary?.project;
       return project && ((body, revalidate) => project.smtpTest(body, revalidate));

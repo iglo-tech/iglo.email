@@ -34,6 +34,8 @@ import {
 import type { InstanceProjects } from "@/admin/instance/projects";
 import { RegistryError } from "@/projects/registry";
 import type { SesAccount } from "@/messaging/ses-account";
+import type { CapacityAnswer } from "@/messaging/capacity";
+import { SENDING_PATH, SendingBody } from "@/admin/instance/sending";
 
 export const ACCOUNT_PATH = "/admin/instance/account";
 export const SETTINGS_PATH = "/admin/instance/settings";
@@ -58,7 +60,12 @@ export interface InstanceRouteDeps {
    * The SES account (B145a): the instance Settings page's "Check SES account" button, and SES's
    * rate beside the send-rate setting (B145b).
    */
-  readonly ses: Pick<SesAccount, "check" | "setting" | "current">;
+  readonly ses: Pick<SesAccount, "check" | "setting" | "current" | "held">;
+  /**
+   * The instance's forecast without a candidate, the function `GET /api/sending/capacity` uses
+   * (B143b): the Sending page. It may read the account on demand, as that endpoint does.
+   */
+  readonly forecast: () => Promise<CapacityAnswer>;
   /** The primary project's SMTP test, or undefined without a primary project. */
   readonly smtpTest: () => ((body: unknown, revalidate: () => void) => Promise<void>) | undefined;
 }
@@ -97,6 +104,7 @@ export function instanceSettingsPage(
 function instanceNavigation(current: string): ReadonlyArray<NavigationLink> {
   return [
     { label: "Projects", href: PROJECTS_PATH, current: current === PROJECTS_PATH, icon: "grid" },
+    { label: "Sending", href: SENDING_PATH, current: current === SENDING_PATH, icon: "send" },
     { label: "Account", href: ACCOUNT_PATH, current: current === ACCOUNT_PATH, icon: "user" },
     {
       label: "Instance settings",
@@ -677,12 +685,43 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
     return new Response(html, { headers: htmlHeaders });
   });
 
+  const sendingView = page(async (context) => {
+    // The forecast first: it may read the account (older than a minute), and the page then shows
+    // that read's snapshot, error and hold.
+    const answer = await deps.forecast();
+    const account = deps.ses.current();
+    const html = renderAdminShell({
+      title: "Sending",
+      siteName: "iglo.email",
+      assetVersion,
+      i18n: context.app.i18n,
+      config: { root_url: deps.rootUrl },
+      navigation: instanceNavigation(SENDING_PATH),
+      children: (
+        <SendingBody
+          settingsHref={SETTINGS_PATH}
+          state={{
+            now: context.app.clock.now(),
+            configured: account.configured,
+            snapshot: account.snapshot,
+            error: account.error,
+            rate: answer.rate,
+            held: deps.ses.held(),
+            forecast: answer.forecast,
+          }}
+        />
+      ),
+    });
+    return new Response(html, { headers: htmlHeaders });
+  });
+
   router.route(
     "GET",
     "/admin/instance",
     () => new Response(null, { status: 302, headers: { Location: PROJECTS_PATH } }),
   );
   router.route("GET", PROJECTS_PATH, projectsView);
+  router.route("GET", SENDING_PATH, sendingView);
   router.route("GET", LOGS_PATH, logsView);
   router.route("GET", LOGIN_PATH, getLogin);
   router.route("POST", LOGIN_PATH, postLogin);

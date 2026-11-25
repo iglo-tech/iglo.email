@@ -225,8 +225,14 @@ export function createCapacity(deps: {
     return { all, other, inWindow };
   };
   return {
-    /** The answer for `asker` (the project the request reached), with an optional candidate. */
-    async forecast(asker: CapacitySource, candidate: Candidate | null): Promise<CapacityAnswer> {
+    /**
+     * The answer for `asker` (the project the request reached), with an optional candidate. The
+     * instance Sending page (B143b) asks as no project and without a candidate.
+     */
+    async forecast(
+      asker: CapacitySource | null,
+      candidate: Candidate | null,
+    ): Promise<CapacityAnswer> {
       const state = await deps.account.fresh();
       const now = deps.clock.now();
       const setting = deps.account.setting();
