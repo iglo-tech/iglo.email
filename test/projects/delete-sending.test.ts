@@ -13,7 +13,7 @@ import { serveRouted } from "@/server/server";
 import { instanceCall, instanceLogin } from "@/test/projects/admin-fixture";
 import type { InstanceSession } from "@/test/projects/admin-fixture";
 import { adminCredentials, logIn, request, sessionHeaders } from "@/test/projects/fixture";
-import type { Credentials } from "@/test/projects/fixture";
+import type { Credentials, Session } from "@/test/projects/fixture";
 import { asBody } from "@/test/read-body";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
@@ -142,8 +142,127 @@ function deleteGone(port: number, operator: InstanceSession) {
   return answer;
 }
 
+/** A request to `gone` whose body is held open, so the delete's drain waits for it. */
+function heldRequest(port: number, session: Session) {
+  const body = JSON.stringify({ email: "held@gone.example.test", name: "Held" });
+  const encoder = new TextEncoder();
+  let finish!: () => void;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(body.slice(0, 10)));
+      let done = false;
+      finish = () => {
+        if (done) {
+          return;
+        }
+        done = true;
+        controller.enqueue(encoder.encode(body.slice(10)));
+        controller.close();
+      };
+    },
+  });
+  const answered = request(port, GONE, "/api/subscribers", {
+    method: "POST",
+    headers: { ...sessionHeaders(session), "content-length": String(body.length) },
+    body: stream,
+  }).then((response) => response.text());
+  // Observed at once: a test that fails first stops the server under it.
+  answered.catch(() => {});
+  return { answered, finish: () => finish() };
+}
+
 const recipientsOf = (messages: ReadonlyArray<{ to: Array<string> }>, host: string) =>
   messages.filter((message) => message.to.some((to) => to.endsWith(`@${host}`))).length;
+
+test("a delete stops the project's slot requests first: while its requests drain, every start goes to the other project", async () => {
+  const sink = await startSink();
+  const clock = new TestClock();
+  // One start a second on the test clock: nothing starts unless the test advances it.
+  const fixture = await openFixture(sink, 1, clock);
+  const { port, admin, operator } = fixture;
+  let held: ReturnType<typeof heldRequest> | undefined;
+  try {
+    const gone = await runCampaign(port, GONE, admin, "g", 20);
+    await runCampaign(port, STAY, admin, "s", 20);
+    // Both campaigns send, taking turns at the start (D155).
+    const advance = () => {
+      clock.advance(100);
+    };
+    await untilState(
+      () => {
+        advance();
+        return recipientsOf(sink.messages, GONE) >= 2 && recipientsOf(sink.messages, STAY) >= 2;
+      },
+      { label: "both campaigns sending", progress: () => String(sink.messages.length) },
+    );
+    const goneBefore = recipientsOf(sink.messages, GONE);
+    const total = sink.messages.length;
+
+    // A request to gone holds the drain open; the delete starts and takes gone off the routing table.
+    held = heldRequest(port, gone.session);
+    await untilState(
+      async () =>
+        (await request(port, GONE, "/api/profile", { headers: sessionHeaders(gone.session) }))
+          .status === 200,
+      { label: "gone serving", progress: () => "" },
+    );
+    const deleted = deleteGone(port, operator);
+    await untilState(
+      async () =>
+        (await request(port, GONE, "/api/profile", { headers: sessionHeaders(gone.session) }))
+          .status !== 200,
+      { label: "gone off the routing table", progress: () => "" },
+    );
+
+    // Six more starts while gone's request is still draining: all of them are stay's.
+    await untilState(
+      () => {
+        advance();
+        return sink.messages.length >= total + 6;
+      },
+      { label: "six starts during the drain", progress: () => String(sink.messages.length) },
+    );
+    expect(recipientsOf(sink.messages, GONE)).toBe(goneBefore);
+
+    held.finish();
+    await held.answered;
+    const answer = await deleted;
+    expect(answer.status).toBe(200);
+    const { database } = asBody<{ data: { database: string } }>(JSON.parse(answer.text)).data;
+    // Its claims were handed back: sent rows are exactly what reached the sink, none is still
+    // claimed, and the rest of its audience is unsent.
+    const snapshot = new Database(join(fixture.dataDir, database), { readonly: true });
+    try {
+      const rows = snapshot
+        .query<{ status: string; n: number }, [number]>(
+          "SELECT status, count(*) AS n FROM campaign_deliveries WHERE campaign_id = ? GROUP BY status",
+        )
+        .all(gone.campaignId);
+      expect(Object.fromEntries(rows.map((row) => [row.status, row.n]))).toEqual({
+        sent: goneBefore,
+      });
+    } finally {
+      snapshot.close();
+    }
+    // Stay goes on sending after the delete.
+    const after = sink.messages.length;
+    await untilState(
+      () => {
+        advance();
+        return (
+          recipientsOf(sink.messages, STAY) > recipientsOf(sink.messages.slice(0, after), STAY)
+        );
+      },
+      { label: "stay sending after the delete", progress: () => String(sink.messages.length) },
+    );
+    expect(recipientsOf(sink.messages, GONE)).toBe(goneBefore);
+  } finally {
+    held?.finish();
+    await fixture.close();
+    await sink.close();
+  }
+  expect(fixture.failures).toEqual([]);
+});
 
 test("a delete waits at most 5 s for the project's send in SMTP flight, cuts no shared connection and never resends it", async () => {
   const stuck = "stuck0@gone.example.test";

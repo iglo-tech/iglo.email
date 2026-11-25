@@ -215,6 +215,13 @@ export interface Project {
    * they stop. Returns their results in that order; main() appends the HTTP stop after them.
    */
   stop(): Array<unknown>;
+  /**
+   * Stops this project's sending at once, as stop() does later (a delete, D157): its slot requests
+   * and unused slots go back, a push waiting for its start ends not-started (its claim is handed
+   * back), and no new request is answered. Resolves when the pushes in SMTP flight have settled, or
+   * after the sender's 5 s close deadline. stop() and close() then reuse the same close.
+   */
+  stopSending(): Promise<void>;
   /** Closes every store and the database. main() calls it last, after the lock is still held. */
   close(): Promise<void>;
   /** What the instance's SES route reaches of this project (B142). */
@@ -1112,6 +1119,7 @@ export async function createProject(
           messagingClose,
         ];
       },
+      stopSending: () => must(sender, "sender").close(),
       close: closeAll,
       syncAdmin(account: AdminAccount) {
         must(users, "users").syncCopy(account);

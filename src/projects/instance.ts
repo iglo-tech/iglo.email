@@ -490,8 +490,9 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     });
 
   /**
-   * Deletes a project (14-projects section 10): it leaves the routing table, its in-flight requests
-   * finish against its open database, its loops stop under today's deadlines, it closes, its
+   * Deletes a project (14-projects section 10): it leaves the routing table, its sending stops,
+   * its in-flight requests finish against its open database, its loops stop under today's deadlines
+   * (its sends in SMTP flight under the sender's 5 s close deadline), it closes, its
    * registry rows go, then its database moves to `backups/deleted/` with a tarball of its other
    * files, and its directory is removed. A crash before the rows go serves it again at the next
    * start; a crash after leaves a directory with no row, reported and never served, with nothing
@@ -508,8 +509,12 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       busy.add(slug);
       try {
         rebuild();
+        // Its sending stops first (D157): grants go back, waiting pushes end not-started with their
+        // claims handed back, and no slot request is answered while its HTTP requests drain. Pushes
+        // in SMTP flight get the sender's 5 s close deadline; the shared pools are never cut.
+        const sending = entry.project.stopSending();
         await drain(entry);
-        await Promise.allSettled(entry.project.stop());
+        await Promise.allSettled([sending, ...entry.project.stop()]);
         await entry.project.close();
         down.delete(slug);
         registered.remove(slug);
