@@ -3,11 +3,13 @@
 // its own subscriber for a late notice about mail the deleted project sent. An instance that has
 // only ever served one project keeps the lookup. Compiled executable, signed SNS through the tunnel.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { instanceMigrations, runMigrations } from "@/db/migrations";
+import { openInstanceDatabase } from "@/projects/instance";
+import { createRegistry } from "@/projects/registry";
 import { bounceMessage, envelope, TOPIC } from "@/test/bounces/ses-fixture";
 import { startSnsTunnel } from "@/test/bounces/sns-tunnel";
 import type { SnsTunnel } from "@/test/bounces/sns-tunnel";
@@ -402,3 +404,152 @@ test("an instance upgraded after it deleted a project drops the lookup: its snap
   expect(await statusOf(PRIMARY, kept.id)).toBe("enabled");
   expect(countLines(await stop(), UNMATCHED)).toBe(2);
 });
+
+/** A fresh install in its own data directory: the primary project alone, the SES keys on. */
+async function freshInstall(name: string) {
+  if (server) {
+    await stop();
+  }
+  dataDir = join(prepared.directory, name);
+  await start();
+  await configure();
+}
+/** The primary's transactional send to `email`: its Message-ID. */
+async function txMessageId(email: string) {
+  const templates = await call<Array<{ id: number; type: string }>>(
+    PRIMARY,
+    "GET",
+    "/api/templates",
+  );
+  await call(PRIMARY, "POST", "/api/tx", {
+    subscriber_email: email,
+    template_id: templates.find((item) => item.type === "tx")?.id,
+    async: true,
+  });
+  const sends = await call<{
+    results: Array<{ uuid: string; to_email: string }>;
+  }>(PRIMARY, "GET", "/api/sends?per_page=100");
+  return `<${must(sends.results.find((row) => row.to_email === email)).uuid}@${PRIMARY}>`;
+}
+/** A new API user for the primary project serving now (its key replaces the earlier one). */
+async function newPrimaryKey(name: string) {
+  keys.set(PRIMARY, await createApiUser(port, PRIMARY, await logIn(port, PRIMARY, admin), name));
+}
+
+test("deleting the only project and creating a new primary drops the lookup at once, with no restart", async () => {
+  await freshInstall("recreated");
+  await subscriber(PRIMARY, shared);
+  const old = await txMessageId(shared);
+  const operator = must((await instanceLogin(port, PRIMARY, admin)).session);
+  const deleted = await instanceCall(
+    port,
+    PRIMARY,
+    operator,
+    "DELETE",
+    "/api/instance/projects/main",
+    { confirm: "main" },
+  );
+  expect(deleted.status).toBe(200);
+  const created = await instanceCall(port, PRIMARY, operator, "POST", "/api/instance/projects", {
+    slug: "fresh",
+    name: "Fresh",
+    hostname: PRIMARY,
+    primary: true,
+  });
+  expect({ status: created.status, text: created.text }).toEqual({
+    status: 200,
+    text: created.text,
+  });
+  await newPrimaryKey("api-fresh");
+  const kept = await subscriber(PRIMARY, shared);
+  // The deleted primary's late notices, with and without a Message-ID: neither is fresh's.
+  expect(await deliver(notice(shared, old))).toBe(200);
+  expect(await deliver(notice(shared))).toBe(200);
+  expect(await statusOf(PRIMARY, kept.id)).toBe("enabled");
+  expect(await bounceCount(PRIMARY)).toBe(0);
+  expect(countLines(await stop(), UNMATCHED)).toBe(2);
+});
+
+test("a project removed and a new primary registered offline drop the lookup too", async () => {
+  await freshInstall("offline-recreated");
+  await stop();
+  // While the server is stopped: the primary's registry rows go, a new primary is registered.
+  const clock = createRealClock();
+  const db = openInstanceDatabase(dataDir, clock);
+  try {
+    const registry = createRegistry(db, clock);
+    try {
+      expect(registry.remove("main")).toBe(true);
+      registry.add({
+        slug: "fresh",
+        name: "Fresh",
+        hostname: PRIMARY,
+        primary: true,
+      });
+    } finally {
+      registry.close();
+    }
+  } finally {
+    db.close();
+  }
+  await start();
+  await newPrimaryKey("api-offline-fresh");
+  const kept = await subscriber(PRIMARY, shared);
+  expect(await deliver(notice(shared, `<${crypto.randomUUID()}@${PRIMARY}>`))).toBe(200);
+  expect(await deliver(notice(shared))).toBe(200);
+  expect(await statusOf(PRIMARY, kept.id)).toBe("enabled");
+  expect(countLines(await stop(), UNMATCHED)).toBe(2);
+});
+
+const UNLISTED = "[instance] backups/deleted cannot be listed";
+
+/** A start whose `backups/deleted` cannot be listed: it serves, and the lookup is off. */
+async function unlistable(
+  name: string,
+  prepare: (path: string) => void,
+  undo: (path: string) => void,
+) {
+  if (server) {
+    await stop();
+  }
+  dataDir = join(prepared.directory, name);
+  const path = join(dataDir, "backups", "deleted");
+  mkdirSync(join(dataDir, "backups"), { recursive: true });
+  prepare(path);
+  try {
+    await start();
+    await configure();
+    const kept = await subscriber(PRIMARY, shared);
+    expect(await deliver(notice(shared))).toBe(200);
+    expect(await statusOf(PRIMARY, kept.id)).toBe("enabled");
+    const stderr = await stop();
+    expect(countLines(stderr, UNMATCHED)).toBe(1);
+    expect(countLines(stderr, UNLISTED)).toBe(1);
+  } finally {
+    undo(path);
+  }
+}
+
+test("a regular file at backups/deleted fails no start and counts as several projects", async () => {
+  await unlistable(
+    "deleted-file",
+    (path) => writeFileSync(path, "not a directory"),
+    () => {},
+  );
+});
+
+// Root reads a mode-000 directory anyway, so the case cannot be made there.
+test.skipIf(process.getuid?.() === 0)(
+  "an unreadable backups/deleted fails no start and counts as several projects",
+  async () => {
+    await unlistable(
+      "deleted-unreadable",
+      (path) => {
+        mkdirSync(path);
+        writeFileSync(join(path, "x.txt"), "");
+        chmodSync(path, 0o000);
+      },
+      (path) => chmodSync(path, 0o700),
+    );
+  },
+);

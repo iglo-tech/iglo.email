@@ -205,6 +205,8 @@ export function createRegistry(db: Database, clock: Clock) {
           }
         }
         insertProject.run(input.slug, name, clock.now().toISOString(), input.primary ? 1n : 0n);
+        // A primary needs no row here: any project before it is a non-primary one (which wrote the
+        // row) or a removed one (`remove` wrote it), so a primary is only ever the first project.
         if (!input.primary) {
           insertSeveral.run();
         }
@@ -254,9 +256,10 @@ export function createRegistry(db: Database, clock: Clock) {
       );
     },
     /**
-     * B149b r2 (D165): whether the instance has ever served more than one project. Set when a
-     * project besides the primary is registered, or by `markSeveral`; never cleared, so it stays
-     * after a delete leaves one project.
+     * B149b r2/r3 (D165): whether the instance has ever had a project other than the one serving
+     * now. Set when a project besides the primary is registered, when any project is removed (so
+     * a primary created after it, or a slug used again, is never taken for the instance's first),
+     * and by `markSeveral`; never cleared.
      */
     servedSeveral(): boolean {
       return severalRow.get() !== null;
@@ -267,7 +270,14 @@ export function createRegistry(db: Database, clock: Clock) {
     },
     /** Removes a project's rows, its hostnames with it. Returns whether it was registered. */
     remove(slug: string): boolean {
-      return writeTransaction(db, () => deleteProject.run(slug).changes > 0);
+      return writeTransaction(db, () => {
+        const removed = deleteProject.run(slug).changes > 0;
+        if (removed) {
+          // B149b r3 (D165): its late notices may still come, whatever project is served next.
+          insertSeveral.run();
+        }
+        return removed;
+      });
     },
     /**
      * Points the primary project's main hostname at the instance host (D151: the primary follows

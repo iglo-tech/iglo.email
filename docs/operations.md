@@ -410,7 +410,10 @@ finish, a message already handed to SMTP gets at most 5 seconds and is otherwise
 `unknown`, never resent, and its other background work stops under the usual stop deadlines. Then
 its database
 moves to `backups/deleted/<slug>-<time>.db`, with `<slug>-<time>.tar` holding its uploads and any
-other file of its directory, before `projects/<slug>/` is removed. Its hostnames then answer as
+other file of its directory, before `projects/<slug>/` is removed. Keep those files even after a project is
+brought back: they also tell the server the instance has had several projects ([Restore](#restore)).
+A start that cannot list `backups/deleted` (a file there, or no permission) still serves, writes
+`[instance] backups/deleted cannot be listed`, and applies the rules for several projects. Its hostnames then answer as
 unclaimed hosts. To bring one back, create a project with the same slug and hostname, stop the
 server, replace `projects/<slug>/iglo-email.db` with the snapshot, unpack the tarball into
 `projects/<slug>/`, and start the server again. Deleting the primary project leaves the instance without one: hosts no
@@ -882,7 +885,7 @@ once; a repeated message is recorded once.
 instance, and every project's bounces arrive through them: do not create a topic per project. With
 one project, every notice goes to it, matched by its recipient address when its Message-ID names
 nothing. Once the instance has served a second project, even if it was deleted since, the rules for
-several projects apply for good, so a late bounce of a deleted project's mail never acts on the
+several projects apply for good (deleting the only project and creating another counts too), so a late bounce of a deleted project's mail never acts on the
 subscriber of the same address in a project that is left. With several, a notice goes to the one
 project whose own sends, campaign deliveries or test sends the IDs in its Message-ID name. The Message-ID's domain
 decides nothing: a hostname can move to another project, and a campaign test's Message-ID can be
@@ -1103,6 +1106,12 @@ To restore everything, do both, for every project the backup holds. The registry
 `instance.db` is the snapshot's: a project created since is not served (the start names its
 directory), and a project deleted since is registered again: restore its directory from the same
 backup.
+
+Keep `backups/deleted/` when you restore an older `instance.db`. `instance.db` records that the
+instance has had more than one project ([Amazon SES bounces](#amazon-ses-bounces)),
+and an `instance.db` from before the second project or the first delete has no such record; the
+deleted projects' snapshots there restore it at the next start. Without both, a late bounce of a
+deleted project's mail can act on a subscriber of the same address in the project that is left.
 
 `--verify` prints `Hold: held since <time>` for each held database. `/health` on a held project's
 host answers `200` and its usual body, with an `X-Iglo-Email-Hold: <time>` header, and its admin

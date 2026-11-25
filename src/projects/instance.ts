@@ -395,7 +395,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     registry.followInstanceHost(instanceHost);
     // B149b r2 (D165): a deleted project's snapshot is proof the instance served several projects,
     // for one that deleted it before the registry recorded that.
-    if (hasDeletedSnapshots(root)) {
+    if (hasDeletedSnapshots(root, attention)) {
       registry.markSeveral();
     }
     const records = registry.list();
