@@ -516,7 +516,11 @@ above has the same settings for nginx.
    a private network. Turn it off then, on the instance Settings page under Security, or with
    `PUT /api/instance/settings/webhooks.block_private_addresses` and the body `false` (an instance
    setting, [Settings](#settings-instance-and-project)). Each start names each webhook the block
-   refuses ([Upgrades](#upgrades)).
+   refuses ([Upgrades](#upgrades)). An external source URL goes through the same block; the instance
+   key `sources.private_hosts` names the host names a source URL may use to reach a private address
+   while the block stays on (webhooks never use it). List only host names whose DNS you control,
+   because a listed name may resolve to any private or link-local address, including the cloud
+   metadata address, on any port.
 4. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
 5. **One container per volume.** Each data directory has one server ([one process per data
    directory](#one-process-per-data-directory)). A rolling deploy that starts the new container
