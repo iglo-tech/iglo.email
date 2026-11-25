@@ -1,0 +1,50 @@
+{"run":1,"side":"before","kind":"load","load":"7.15 5.33 5.07"}
+{"label":"before","tx":2000,"txSeconds":5.49,"txPerSecond":364.2,"recipients":5000,"campaignSeconds":6.67,"campaignPerSecond":750}
+{"run":1,"side":"after","kind":"load","load":"9.54 5.99 5.29"}
+{"label":"after","tx":2000,"txSeconds":5.98,"txPerSecond":334.5,"recipients":5000,"campaignSeconds":4.71,"campaignPerSecond":1061.2}
+{"run":2,"side":"after","kind":"load","load":"10.12 6.24 5.38"}
+{"label":"after","tx":2000,"txSeconds":5.76,"txPerSecond":347.5,"recipients":5000,"campaignSeconds":5.12,"campaignPerSecond":977.5}
+{"run":2,"side":"before","kind":"load","load":"10.94 6.62 5.52"}
+{"label":"before","tx":2000,"txSeconds":4.94,"txPerSecond":405,"recipients":5000,"campaignSeconds":5.66,"campaignPerSecond":883.3}
+{"run":3,"side":"before","kind":"load","load":"11.00 6.85 5.62"}
+{"label":"before","tx":2000,"txSeconds":5.01,"txPerSecond":398.9,"recipients":5000,"campaignSeconds":4.81,"campaignPerSecond":1039.4}
+{"run":3,"side":"after","kind":"load","load":"10.47 6.93 5.67"}
+{"label":"after","tx":2000,"txSeconds":4.42,"txPerSecond":452.4,"recipients":5000,"campaignSeconds":3.45,"campaignPerSecond":1450.6}
+{"run":4,"side":"after","kind":"load","load":"9.69 6.89 5.66"}
+{"label":"after","tx":2000,"txSeconds":3.99,"txPerSecond":500.8,"recipients":5000,"campaignSeconds":3.5,"campaignPerSecond":1428.2}
+{"run":4,"side":"before","kind":"load","load":"8.81 6.79 5.64"}
+{"label":"before","tx":2000,"txSeconds":4.25,"txPerSecond":471.1,"recipients":5000,"campaignSeconds":4.09,"campaignPerSecond":1222.2}
+{"run":5,"side":"before","kind":"load","load":"8.96 6.90 5.69"}
+{"label":"before","tx":2000,"txSeconds":3.95,"txPerSecond":506.9,"recipients":5000,"campaignSeconds":5.33,"campaignPerSecond":938.9}
+{"run":5,"side":"after","kind":"load","load":"8.91 6.98 5.74"}
+{"label":"after","tx":2000,"txSeconds":5.96,"txPerSecond":335.4,"recipients":5000,"campaignSeconds":4.46,"campaignPerSecond":1121.8}
+{"run":1,"side":"before","kind":"load","load":"9.94 7.31 5.87"}
+{"label":"before","mode":"marketing","seconds":30,"transactional":60,"p50":4,"p99":10,"receipts":888,"perSecond":29.6,"share":{"main":60,"a":414,"b":414}}
+{"label":"before","mode":"campaign","seconds":30,"transactional":60,"p50":4,"p99":37,"receipts":890,"perSecond":29.7,"share":{"main":60,"a":415,"b":415}}
+{"run":1,"side":"after","kind":"load","load":"8.94 7.51 6.03"}
+{"label":"after","mode":"marketing","seconds":30,"transactional":60,"p50":40,"p99":75,"receipts":417,"perSecond":13.9,"share":{"main":60,"a":0,"b":357}}
+{"label":"after","mode":"campaign","seconds":30,"transactional":60,"p50":36,"p99":75,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":179,"b":177}}
+{"run":2,"side":"after","kind":"load","load":"4.60 6.48 5.77"}
+{"label":"after","mode":"marketing","seconds":30,"transactional":60,"p50":35,"p99":75,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":0,"b":356}}
+{"label":"after","mode":"campaign","seconds":30,"transactional":60,"p50":40,"p99":76,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":179,"b":177}}
+{"run":2,"side":"before","kind":"load","load":"3.45 5.74 5.56"}
+{"label":"before","mode":"marketing","seconds":30,"transactional":60,"p50":3,"p99":8,"receipts":888,"perSecond":29.6,"share":{"main":60,"a":414,"b":414}}
+{"label":"before","mode":"campaign","seconds":30,"transactional":60,"p50":3,"p99":25,"receipts":890,"perSecond":29.7,"share":{"main":60,"a":415,"b":415}}
+{"run":3,"side":"before","kind":"load","load":"4.76 5.69 5.55"}
+{"label":"before","mode":"marketing","seconds":30,"transactional":60,"p50":3,"p99":6,"receipts":890,"perSecond":29.7,"share":{"main":60,"a":415,"b":415}}
+{"label":"before","mode":"campaign","seconds":30,"transactional":60,"p50":3,"p99":22,"receipts":892,"perSecond":29.7,"share":{"main":60,"a":416,"b":416}}
+{"run":3,"side":"after","kind":"load","load":"3.15 5.06 5.35"}
+{"label":"after","mode":"marketing","seconds":30,"transactional":60,"p50":37,"p99":73,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":0,"b":356}}
+{"label":"after","mode":"campaign","seconds":30,"transactional":60,"p50":43,"p99":75,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":179,"b":177}}
+{"run":4,"side":"after","kind":"load","load":"2.95 4.60 5.17"}
+{"label":"after","mode":"marketing","seconds":30,"transactional":60,"p50":39,"p99":76,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":0,"b":356}}
+{"label":"after","mode":"campaign","seconds":30,"transactional":60,"p50":40,"p99":78,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":179,"b":177}}
+{"run":4,"side":"before","kind":"load","load":"4.99 4.64 5.13"}
+{"label":"before","mode":"marketing","seconds":30,"transactional":60,"p50":4,"p99":13,"receipts":889,"perSecond":29.6,"share":{"main":60,"a":415,"b":414}}
+{"label":"before","mode":"campaign","seconds":30,"transactional":60,"p50":3,"p99":31,"receipts":892,"perSecond":29.7,"share":{"main":60,"a":416,"b":416}}
+{"run":5,"side":"before","kind":"load","load":"3.85 4.48 5.05"}
+{"label":"before","mode":"marketing","seconds":30,"transactional":60,"p50":4,"p99":12,"receipts":888,"perSecond":29.6,"share":{"main":60,"a":414,"b":414}}
+{"label":"before","mode":"campaign","seconds":30,"transactional":60,"p50":6,"p99":45,"receipts":887,"perSecond":29.6,"share":{"main":60,"a":414,"b":413}}
+{"run":5,"side":"after","kind":"load","load":"7.12 5.28 5.28"}
+{"label":"after","mode":"marketing","seconds":30,"transactional":60,"p50":41,"p99":80,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":0,"b":356}}
+{"label":"after","mode":"campaign","seconds":30,"transactional":60,"p50":39,"p99":72,"receipts":416,"perSecond":13.9,"share":{"main":60,"a":179,"b":177}}

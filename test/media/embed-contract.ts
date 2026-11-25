@@ -135,7 +135,6 @@ try {
       const updated = await call("/api/settings", "PUT", {
         ...settings,
         "app.from_email": ["Embed <embed@example.test>"],
-        "app.concurrency": 1,
         smtp: [
           {
             ...settings.smtp[0],

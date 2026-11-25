@@ -58,7 +58,7 @@ for (let repetition = 1; repetition <= 3; repetition++) {
     clock,
     logger: { error() {}, attention() {} },
     sends,
-    emailer: asBody<never>(emailer),
+    sender: asBody<never>(emailer),
   });
   const count = () =>
     db.query<{ n: number }, []>("SELECT count(*) AS n FROM sends WHERE status='sent'").get()!.n;

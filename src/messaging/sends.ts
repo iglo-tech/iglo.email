@@ -197,6 +197,8 @@ export type BounceTarget = Pick<
   "id" | "uuid" | "source" | "kind" | "subscriber_id" | "list_id" | "to_email"
 >;
 const noop = () => {};
+/** What woke the outbox: the kinds of the rows just queued, or null when they are not known. */
+export type Woken = ReadonlyArray<SendKind> | null;
 const summary = (row: PublicRow): SendSummary => ({
   id: jsonBigint(row.id),
   uuid: row.uuid,
@@ -299,7 +301,7 @@ export function createSends(options: {
     }
     options.ended?.({ ...row, status, error });
   };
-  let wake = noop;
+  let wake: (kinds: Woken) => void = noop;
   const get = (id: bigint) => db.query<Row, [bigint]>("SELECT * FROM sends WHERE id = ?").get(id);
   const getPublic = (id: bigint) =>
     db.query<PublicRow, [bigint]>(`SELECT ${publicColumns} FROM sends WHERE id = ?`).get(id);
@@ -377,17 +379,18 @@ export function createSends(options: {
     }
     return null;
   }
-  function claimOne(time: Date, lease: Date): Row | null {
+  function claimOne(time: Date, lease: Date, kind: SendKind): Row | null {
     const row = db
-      .query<Row, [string]>(
-        // The lowest queued id that is new or due for retry. Each half reads idx_sends_due
-        // (status, next_attempt_at, id), so new rows are not sorted per claim.
+      .query<Row, [string, SendKind]>(
+        // The lowest queued id of `kind` that is new or due for retry. Each half reads
+        // idx_sends_due_kind (status, kind, next_attempt_at, id), so new rows are not sorted per
+        // claim and a backlog of the other kind is not scanned (B141).
         `SELECT * FROM sends WHERE id = (SELECT min(id) FROM (
-           SELECT min(id) AS id FROM sends WHERE status='queued' AND next_attempt_at IS NULL
+           SELECT min(id) AS id FROM sends WHERE status='queued' AND kind=?2 AND next_attempt_at IS NULL
            UNION ALL
-           SELECT min(id) FROM sends WHERE status='queued' AND next_attempt_at <= ?))`,
+           SELECT min(id) FROM sends WHERE status='queued' AND kind=?2 AND next_attempt_at <= ?1))`,
       )
-      .get(time.toISOString());
+      .get(time.toISOString(), kind);
     if (!row) {
       return null;
     }
@@ -613,7 +616,7 @@ export function createSends(options: {
         );
       return must(row, "inserted send").id;
     });
-    wake();
+    wake([input.kind]);
     return projectOne(must(getPublic(id), "queued send"));
   }
   /** A resend of a send the reader's scope does not cover answers `"forbidden"`, and writes nothing (B117d). */
@@ -666,7 +669,7 @@ export function createSends(options: {
       const resent = must(inserted, "resent send");
       return projectOne(must(getPublic(resent.id), "resent send"));
     });
-    wake();
+    wake(null);
     return result;
   }
   function replay(prefix: string, fingerprint: string): Array<PublicRow> | null {
@@ -837,7 +840,7 @@ export function createSends(options: {
       };
     });
     if (result.queued.length) {
-      wake();
+      wake([...new Set(input.sends.map((requested) => requested.send.kind))]);
     }
     return result;
   }
@@ -1074,23 +1077,33 @@ export function createSends(options: {
     recordSequence,
     /** Wake the outbox after a committed sequence send. */
     notify() {
-      wake();
+      wake(null);
     },
     summary(id: bigint) {
       const row = getPublic(id);
       return row ? summary(row) : null;
     },
     /**
-     * Claim specific queued rows for an awaited producer dispatch and admit them, all in one
-     * commit before any SMTP call. Rows already claimed by the loop are left to it.
+     * Claim specific queued rows of `kind` (at most `limit`, a marketing grant's slots) for an
+     * awaited producer dispatch and admit them, all in one commit before any SMTP call. Rows
+     * already claimed by the loop are left to it.
      */
-    claimQueued(ids: Array<bigint>, time: Date, lease: Date): Array<Claimed> {
+    claimQueued(
+      ids: Array<bigint>,
+      time: Date,
+      lease: Date,
+      kind: SendKind,
+      limit = ids.length,
+    ): Array<Claimed> {
       return writeTransaction(db, () => {
         const claimed: Array<Claimed> = [];
         for (const id of ids) {
+          if (claimed.length >= limit) {
+            break;
+          }
           const changed = db.run(
-            "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?3, claimed_until=?1, next_attempt_at=NULL WHERE id=?2 AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?3)",
-            [lease.toISOString(), id, time.toISOString()],
+            "UPDATE sends SET status='sending', attempts=attempts+1, attempted_at=?3, claimed_until=?1, next_attempt_at=NULL WHERE id=?2 AND kind=?4 AND status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?3)",
+            [lease.toISOString(), id, time.toISOString(), kind],
           );
           if (!changed.changes) {
             continue;
@@ -1222,21 +1235,40 @@ export function createSends(options: {
     expireLeases(time: Date, live: ReadonlyArray<bigint> = []) {
       interrupt(time.toISOString(), live);
     },
-    /** Claim the lowest due row inside the caller's write transaction. */
-    claim(time: Date, lease: Date): Array<Row> {
-      const row = claimOne(time, lease);
+    /** Claim the lowest due row of `kind` inside the caller's write transaction. */
+    claim(time: Date, lease: Date, kind: SendKind = "transactional"): Array<Row> {
+      const row = claimOne(time, lease, kind);
       return row ? [row] : [];
     },
+    /** Which of `ids` are queued rows of `kind`: a synchronous dispatch splits its claim by kind. */
+    queuedOfKind(ids: Array<bigint>, kind: SendKind): Array<bigint> {
+      return db
+        .query<{ id: bigint }, [string, SendKind]>(
+          "SELECT id FROM sends WHERE id IN (SELECT value FROM json_each(?1)) AND kind = ?2 AND status = 'queued' ORDER BY id",
+        )
+        .all(JSON.stringify(ids.map(Number)), kind)
+        .map((row) => row.id);
+    },
+    /** Whether a marketing row is due: the outbox then asks the dispatcher for slots (B141). */
+    marketingDue(time: Date): boolean {
+      const row = db
+        .query<{ due: number | bigint }, [string]>(
+          `SELECT EXISTS (SELECT 1 FROM sends WHERE status='queued' AND kind='marketing'
+             AND (next_attempt_at IS NULL OR next_attempt_at <= ?)) AS due`,
+        )
+        .get(time.toISOString());
+      return Number(row?.due) === 1;
+    },
     /**
-     * Claim up to `limit` due rows in id order and admit each, inside the caller's write
+     * Claim up to `limit` due rows of `kind` in id order and admit each, inside the caller's write
      * transaction, so the claims and every admission outcome commit together before SMTP.
      * Each row is admitted right after its claim, so a later row in the batch sees an
      * earlier one as `sending` for the marketing cap, as it would one batch later.
      */
-    claimBatch(time: Date, lease: Date, limit: number): Array<Claimed> {
+    claimBatch(time: Date, lease: Date, limit: number, kind: SendKind): Array<Claimed> {
       const claimed: Array<Claimed> = [];
       for (let i = 0; i < limit; i++) {
-        const row = claimOne(time, lease);
+        const row = claimOne(time, lease, kind);
         if (!row) {
           break;
         }
@@ -1263,7 +1295,8 @@ export function createSends(options: {
         }
       });
     },
-    onWake(fn: () => void) {
+    /** The outbox's wake after a commit queued rows: it wakes the loop of each kind queued. */
+    onWake(fn: (kinds: Woken) => void) {
       wake = fn;
     },
     close() {

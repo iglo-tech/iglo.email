@@ -273,8 +273,7 @@ test("a campaign that finishes and one that is cancelled each mail the admin lis
   const notify = address("admin");
   await change(page, "app.notify_emails", [notify]);
   // One message every half second, so a pause and a cancel land while the second campaign runs.
-  await change(page, "app.concurrency", 1);
-  await change(page, "app.message_rate", 2);
+  await change(page, "messaging.max_send_rate", 2);
 
   const { list } = await audience(page, 1);
   const done = await campaign(page, [list.id]);

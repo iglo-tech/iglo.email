@@ -141,7 +141,7 @@ function fixture() {
         attention: (message) => errors.push(new Error(message)),
       },
       sends: journal,
-      emailer: asBody<never>(emailer),
+      sender: asBody<never>(emailer),
     });
     open.push(async () => {
       for (const p of pushes) {
@@ -193,7 +193,9 @@ test("a row claimed by no live push here is moved to unknown once its lease expi
   const id = f.enqueue();
   // As if another process or an earlier run claimed it: nothing in this process is pushing it.
   const now = f.clock.now();
-  writeTransaction(f.db, () => f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1));
+  writeTransaction(f.db, () =>
+    f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1, "transactional"),
+  );
   expect(f.row(id).status).toBe("sending");
   await f.clock.whenSleeping();
   await untilProgress(
@@ -242,7 +244,12 @@ test("a send whose subscriber is deleted mid-send is skipped, not re-queued", ()
     message: message("gone@example.test"),
   });
   const now = f.clock.now();
-  const [claimed] = f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1);
+  const [claimed] = f.journal.claimBatch(
+    now,
+    new Date(now.getTime() + 120_000),
+    1,
+    "transactional",
+  );
   expect(claimed!.row.id).toBe(id);
   f.db.transaction(() =>
     createSendAnonymizer(f.db)([{ id: subscriber.id, email: subscriber.email }]),
@@ -254,7 +261,12 @@ test("a send whose subscriber is deleted mid-send is skipped, not re-queued", ()
   });
   f.clock.advance(60_000);
   expect(
-    f.journal.claimBatch(f.clock.now(), new Date(f.clock.now().getTime() + 120_000), 1),
+    f.journal.claimBatch(
+      f.clock.now(),
+      new Date(f.clock.now().getTime() + 120_000),
+      1,
+      "transactional",
+    ),
   ).toEqual([]);
   expect(f.ended).toEqual([]);
 });
@@ -282,7 +294,12 @@ for (const [name, outcome, status, error] of [
       message: message("wiped@example.test"),
     });
     const now = f.clock.now();
-    const [claimed] = f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1);
+    const [claimed] = f.journal.claimBatch(
+      now,
+      new Date(now.getTime() + 120_000),
+      1,
+      "transactional",
+    );
     f.db.transaction(() =>
       createSendAnonymizer(f.db)([{ id: subscriber.id, email: subscriber.email }]),
     )();
@@ -296,7 +313,12 @@ test("a send that is not anonymized still reports its end", () => {
   const f = fixture();
   const id = f.enqueue();
   const now = f.clock.now();
-  const [claimed] = f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 1);
+  const [claimed] = f.journal.claimBatch(
+    now,
+    new Date(now.getTime() + 120_000),
+    1,
+    "transactional",
+  );
   f.journal.finishAll([{ row: claimed!.row, outcome: permanent }]);
   expect(f.ended).toEqual([{ uuid: f.uuid(id), status: "failed", error: "not_accepted" }]);
 });
@@ -316,7 +338,9 @@ test("a wiped send whose lease expires in the outbox pass ends silently; an unre
   void outbox;
   // Claimed by no push of this process, as after another process's crash.
   const now = f.clock.now();
-  writeTransaction(f.db, () => f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 2));
+  writeTransaction(f.db, () =>
+    f.journal.claimBatch(now, new Date(now.getTime() + 120_000), 2, "transactional"),
+  );
   expect(f.row(wiped).status).toBe("sending");
   expect(f.row(other).status).toBe("sending");
   f.db.transaction(() =>

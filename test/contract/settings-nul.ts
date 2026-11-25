@@ -35,7 +35,7 @@ export async function runSettingsNul(target: {
   const before = await read();
   function candidate() {
     const out = withBlankPasswords(before);
-    out["app.batch_size"] = 11;
+    out["app.max_send_errors"] = 11;
     return out;
   }
   for (const [i, change] of [

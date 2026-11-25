@@ -3,7 +3,6 @@ import nodemailer from "nodemailer";
 import { createConnection, isIP } from "node:net";
 import type { Socket } from "node:net";
 import type { Clock } from "@/clock";
-import type { SendRateLimiter, SendPriority } from "@/messaging/rate";
 import { goDuration } from "@/settings/duration";
 import { requiredAuth } from "@/messaging/auth";
 import { parseAddress } from "@/settings/mail";
@@ -63,6 +62,23 @@ export interface Dispatch {
   messageId: string;
   result: Promise<Outcome>;
 }
+/**
+ * What one push carries that differs between projects (14-projects section 7): its Message-ID
+ * domain, its copy policy (that project's blocklist) and its hold check (its restore hold).
+ */
+export interface PushContext {
+  /** The host a generated Message-ID is named with. */
+  readonly domain: string;
+  /** Delivery policy for Cc/Bcc mailboxes, applied to message and server headers. */
+  copyAllowed(address: string): boolean;
+  /** Throws to stop a message before it reaches a pool: the restore hold (D67). */
+  refuse(): void;
+}
+/**
+ * The wait before a push starts: the dispatcher's start slot. It rejects when the push will not
+ * start (the wait was bounded or the sender stopped), and the push is then not-started.
+ */
+export type StartWait = () => Promise<void>;
 
 type SocketState = { stopped: boolean; waiting: Array<() => void>; onClose: () => void };
 type Transport = ReturnType<typeof makeTransport>;
@@ -220,8 +236,6 @@ function makeTransport(
   });
 }
 const safeValue = (value: string) => !/[\r\n\0]/.test(value);
-/** The SMTP settings test waits at most this long for a send-rate token (D92), then is not sent. */
-const smtpTestWaitMs = 10_000;
 const headerName = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 function bareAddress(value: string): string {
   const parsed = parseAddress(trimSpace(value));
@@ -376,16 +390,29 @@ function suppliedId(s: SMTPServer | undefined, m: Message): string | undefined {
   }
   return m.messageId || result || undefined;
 }
+/** What a push is given besides its message: its context, and its wait for a start slot. */
+export interface PushDelivery {
+  readonly context: PushContext;
+  /**
+   * `false` sends to `message.to` only: Cc/Bcc from the message and from the server's
+   * `email_headers` are dropped. Marketing sends use it (one admitted recipient).
+   */
+  readonly copies?: boolean;
+  /** A test send's own pool (B101). */
+  readonly testPool?: boolean;
+  /** The start slot; none starts at once. The 60 s push deadline (D49) begins after it. */
+  readonly wait?: StartWait;
+}
+
+/**
+ * The instance's one SMTP sender (14-projects section 7): its pools are shared by every project, and
+ * each push carries its project's context. Only the dispatcher builds one (src/messaging/dispatcher.ts).
+ */
 export function createEmailer(options: {
-  settings: () => { smtp: Array<SMTPServer>; rootUrl: string };
+  smtp: () => Array<SMTPServer>;
   clock: Clock;
-  limiter?: SendRateLimiter;
   select?: (count: number) => number;
   id?: () => string;
-  /** Delivery policy for Cc/Bcc mailboxes, applied to message and server headers. */
-  copyAllowed?: (address: string) => boolean;
-  /** Throws to stop a message before it reaches a pool: the restore hold (D67). */
-  refuse?: () => void;
 }) {
   const pools = new Map<string, Pool>();
   // Test sends (B101) use their own pools, keyed like real ones but apart from them, so a stalled
@@ -394,7 +421,6 @@ export function createEmailer(options: {
   const retired = new Set<Pool>();
   const selection = options.select ?? ((n: number) => Math.floor(Math.random() * n));
   const id = options.id ?? (() => crypto.randomUUID());
-  const copyAllowed = options.copyAllowed ?? (() => true);
   let closed = false;
   let closing: Promise<void> | undefined;
   function finishPool(pool: Pool) {
@@ -498,16 +524,15 @@ export function createEmailer(options: {
   function dispatch(
     server: SMTPServer | undefined,
     message: Message,
-    rootUrl: string,
+    delivery: PushDelivery,
     temporary = false,
     startedAt = options.clock.now().getTime(),
-    copies = true,
-    priority: SendPriority = "outbox",
-    waitBound?: number,
-    testPool = false,
   ): Dispatch {
+    const { context } = delivery;
+    const copies = delivery.copies ?? true;
+    const testPool = delivery.testPool ?? false;
     const serverId = suppliedId(server, message);
-    const messageId = serverId ?? `<${id()}@${rootDomain(rootUrl)}>`;
+    const messageId = serverId ?? `<${id()}@${context.domain}>`;
     const localOutcome = (): Outcome => ({
       messageId,
       status: "proven-not-accepted",
@@ -532,7 +557,14 @@ export function createEmailer(options: {
     }
     let data: ReturnType<typeof build>;
     try {
-      data = build(server, message, messageId, options.clock.now(), copyAllowed, copies);
+      data = build(
+        server,
+        message,
+        messageId,
+        options.clock.now(),
+        (address) => context.copyAllowed(address),
+        copies,
+      );
     } catch {
       return local();
     }
@@ -567,28 +599,16 @@ export function createEmailer(options: {
     };
 
     void (async () => {
-      if (options.limiter) {
-        // A bounded wait (the SMTP settings test) gives up with not-started; the wait itself is
-        // on the injected clock and ends as soon as the grant arrives. Any other wait needs no
-        // abort signal: the limiter's stop rejects it.
-        let bound: AbortController | undefined;
-        if (waitBound !== undefined) {
-          const limit = new AbortController();
-          bound = limit;
-          void options.clock.sleep(waitBound, limit.signal).then(
-            () => limit.abort(new Error("Send-rate wait bound reached")),
-            () => {},
-          );
-        }
+      if (delivery.wait) {
+        // The start slot (14-projects section 7). A wait that rejects (bounded, or its sender
+        // stopped) never started: the work is handed back.
         try {
-          await options.limiter.acquire(priority, bound?.signal);
+          await delivery.wait();
         } catch {
           if (!settled) {
             complete(notStartedOutcome());
           }
           return;
-        } finally {
-          bound?.abort();
         }
       }
       if (settled || closed) {
@@ -598,7 +618,7 @@ export function createEmailer(options: {
         return;
       }
       try {
-        options.refuse?.();
+        context.refuse();
       } catch {
         if (!settled) {
           complete(localOutcome());
@@ -778,22 +798,15 @@ export function createEmailer(options: {
     return { messageId, result };
   }
   /**
-   * `copies: false` sends to `message.to` only: Cc/Bcc from the message and from the
-   * server's `email_headers` are dropped. Marketing sends use it (one admitted recipient).
+   * Picks the message's server and sends it. The caller (the dispatcher's sender) runs the hold check
+   * before it; the emailer runs it again at the start, after the wait.
    */
-  function push(
-    message: Message,
-    delivery: { copies?: boolean; priority?: SendPriority; testPool?: boolean } = {},
-  ): Dispatch {
-    options.refuse?.();
+  function push(message: Message, delivery: PushDelivery): Dispatch {
     const startedAt = options.clock.now().getTime();
-    const copies = delivery.copies ?? true;
-    const priority = delivery.priority ?? "outbox";
     if (closed) {
-      return dispatch(undefined, message, "", false, startedAt, copies, priority);
+      return dispatch(undefined, message, delivery, false, startedAt);
     }
-    const current = options.settings();
-    const servers = structuredClone(current.smtp).filter((s) => s.enabled);
+    const servers = structuredClone(options.smtp()).filter((s) => s.enabled);
     reconcile(servers);
     let bucket =
       message.messenger && message.messenger !== "email"
@@ -813,33 +826,14 @@ export function createEmailer(options: {
       bucket = exact.length ? exact : domains.length ? domains : bucket;
     }
     const index = bucket.length ? selection(bucket.length) : -1;
-    return dispatch(
-      bucket[index],
-      message,
-      current.rootUrl,
-      false,
-      startedAt,
-      copies,
-      priority,
-      undefined,
-      delivery.testPool ?? false,
-    );
+    return dispatch(bucket[index], message, delivery, false, startedAt);
   }
   return {
     push,
-    test: (server: SMTPServer, message: Message, rootUrl: string) => {
-      options.refuse?.();
+    /** The SMTP settings test: a temporary pool for `server`, with Cc/Bcc kept. */
+    test: (server: SMTPServer, message: Message, delivery: PushDelivery) => {
       const startedAt = options.clock.now().getTime();
-      return dispatch(
-        structuredClone(server),
-        message,
-        rootUrl,
-        true,
-        startedAt,
-        true,
-        "outbox",
-        smtpTestWaitMs,
-      );
+      return dispatch(structuredClone(server), message, delivery, true, startedAt);
     },
     /** True once close() has begun: nothing new starts, and the loops claim nothing. */
     get closed() {
@@ -850,7 +844,6 @@ export function createEmailer(options: {
         return closing;
       }
       closed = true;
-      options.limiter?.stop();
       for (const pool of [...pools.values(), ...testPools.values()]) {
         retire(pool);
       }

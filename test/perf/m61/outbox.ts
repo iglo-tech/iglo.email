@@ -95,7 +95,12 @@ async function run(sequence: number) {
     for (let i = 0; i < 200; i++) {
       producer.db.run("BEGIN IMMEDIATE");
       const t = performance.now();
-      const batch = producer.sends.claimBatch(clock.now(), new Date(Date.now() + 60_000), 10);
+      const lease = new Date(Date.now() + 60_000);
+      const transactional = producer.sends.claimBatch(clock.now(), lease, 10, "transactional");
+      const batch = [
+        ...transactional,
+        ...producer.sends.claimBatch(clock.now(), lease, 10 - transactional.length, "marketing"),
+      ];
       batchClaimMs.push(performance.now() - t);
       producer.db.run("ROLLBACK");
       if (batch.length !== 10) {

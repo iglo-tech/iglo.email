@@ -229,45 +229,24 @@ function General({ t, canUpload }: { t: Translation; canUpload: boolean }) {
 
 function Performance({ t, side }: { t: Translation; side: SettingsSide }) {
   const instance = side === "instance";
-  const windowOff = "!form['app.message_sliding_window']";
   const cacheOff = "!form['app.cache_slow_queries']";
   return (
     <div class="settings-items">
       <fieldset
         class="card"
-        data-keywords="performance concurrency message rate batch size errors threshold throughput sending speed workers"
+        data-keywords="performance send rate errors threshold throughput sending speed"
       >
         <legend>{t.T("globals.terms.performance")}</legend>
         {instance ? (
-          <>
-            <NumberField
-              model="form['app.concurrency']"
-              name="app.concurrency"
-              label={t.T("globals.fields.concurrency")}
-              hint={t.T("settings.performance.concurrencyHelp")}
-              min="1"
-              max="10000"
-              placeholder="5"
-            />
-            <NumberField
-              model="form['app.message_rate']"
-              name="app.message_rate"
-              label={t.T("settings.performance.messageRate")}
-              hint={t.T("settings.performance.messageRateHelp")}
-              min="1"
-              max="100000"
-              placeholder="5"
-            />
-            <NumberField
-              model="form['app.batch_size']"
-              name="app.batch_size"
-              label={t.T("globals.fields.batchSize")}
-              hint={t.T("settings.performance.batchSizeHelp")}
-              min="1"
-              max="100000"
-              placeholder="1000"
-            />
-          </>
+          <NumberField
+            model="form['messaging.max_send_rate']"
+            name="messaging.max_send_rate"
+            label={t.T("settings.performance.maxSendRate")}
+            hint={t.T("settings.performance.maxSendRateHelp")}
+            min="0"
+            max="10000"
+            placeholder="14"
+          />
         ) : (
           <NumberField
             model="form['app.max_send_errors']"
@@ -279,48 +258,8 @@ function Performance({ t, side }: { t: Translation; side: SettingsSide }) {
             placeholder="1999"
           />
         )}
-        {instance ? (
-          <NumberField
-            model="form['messaging.max_send_rate']"
-            name="messaging.max_send_rate"
-            label={t.T("settings.performance.maxSendRate")}
-            hint={t.T("settings.performance.maxSendRateHelp")}
-            min="0"
-            max="10000"
-            placeholder="14"
-          />
-        ) : null}
       </fieldset>
-      {instance ? (
-        <fieldset
-          class="card"
-          data-keywords="sliding window rate limit throttle duration cap sending"
-        >
-          <legend>{t.T("settings.performance.slidingWindow")}</legend>
-          <Switch
-            model="form['app.message_sliding_window']"
-            label={t.T("globals.buttons.enable")}
-            hint={t.T("settings.performance.slidingWindowHelp")}
-          />
-          <NumberField
-            model="form['app.message_sliding_window_rate']"
-            label={t.T("settings.performance.slidingWindowRate")}
-            hint={t.T("settings.performance.slidingWindowRateHelp")}
-            min="1"
-            max="10000000"
-            placeholder="25"
-            disabled={windowOff}
-          />
-          <TextField
-            model="form['app.message_sliding_window_duration']"
-            label={t.T("globals.fields.duration")}
-            hint={t.T("settings.performance.slidingWindowDurationHelp")}
-            maxlength="10"
-            placeholder="1h"
-            disabled={windowOff}
-          />
-        </fieldset>
-      ) : (
+      {instance ? null : (
         <fieldset
           class="card"
           data-keywords="marketing frequency cap minimum interval sends subscriber"

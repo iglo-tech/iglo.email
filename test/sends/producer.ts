@@ -11,7 +11,7 @@ import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createRouter } from "@/server/server";
 import { ok } from "@/server/response";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
@@ -96,7 +96,7 @@ const smtp = {
   email_headers: [{ "Message-ID": "<server@example.test>" }],
   from_addresses: [],
 };
-const emailer = createEmailer({
+const emailer = fixtureEmailer({
   clock,
   settings: () => ({
     rootUrl: "http://fixture.test",
@@ -230,7 +230,7 @@ router.route("POST", "/fixture/start", async ({ request }) => {
       finish();
     },
   };
-  loop = startOutbox({ db, clock, sends: tracked, emailer: wrapped, logger: app.logger });
+  loop = startOutbox({ db, clock, sends: tracked, sender: wrapped, logger: app.logger });
   return ok(true);
 });
 router.route("GET", "/fixture/entered", async () => {

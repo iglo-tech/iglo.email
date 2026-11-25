@@ -77,7 +77,13 @@ function fixture() {
     BigInt(asBody<number>(journal.enqueue(input).id));
   const claim = (limit: number) => {
     const now = clock.now();
-    return journal.claimBatch(now, new Date(now.getTime() + 60_000), limit);
+    // The outbox claims each kind on its own (B141): transactional rows, then marketing rows.
+    const lease = new Date(now.getTime() + 60_000);
+    const transactional = journal.claimBatch(now, lease, limit, "transactional");
+    return [
+      ...transactional,
+      ...journal.claimBatch(now, lease, limit - transactional.length, "marketing"),
+    ];
   };
   return { clock, db, journal, subscriber, enqueue, row, claim };
 }

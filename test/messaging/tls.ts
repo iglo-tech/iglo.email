@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createRealClock } from "@/clock";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { SMTPServer } from "@/messaging/email";
 import { mailpitBinaryPath } from "@/test/reference/prepare";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
@@ -151,7 +151,7 @@ try {
         from_addresses: [],
       };
       let current = [server];
-      const emailer = createEmailer({
+      const emailer = fixtureEmailer({
         settings: () => ({ smtp: current, rootUrl: "https://example.test" }),
         clock: createRealClock(),
       });

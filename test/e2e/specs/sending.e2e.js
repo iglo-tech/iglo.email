@@ -30,11 +30,10 @@ const sleep = (ms) =>
     setTimeout(resolve, ms);
   });
 
-// Sending one message at a time, four a second, so a pause, a cancel or a schedule lands while
-// mail is still going out. The app's defaults (ten workers at ten a second) finish a 40-reader
-// send in under a second. The runner reads these when it picks a campaign up, so they are set
-// before each test's campaign starts; `afterEach` puts back what the server had.
-const SLOW = { "app.concurrency": 1, "app.message_rate": 4 };
+// Sending four messages a second, so a pause, a cancel or a schedule lands while mail is still
+// going out. The dispatcher paces every send at messaging.max_send_rate (B141), so it is set before
+// each test's campaign starts; `afterEach` puts back what the server had.
+const SLOW = { "messaging.max_send_rate": 4 };
 let original = {};
 
 test.beforeEach(async ({ page }) => {

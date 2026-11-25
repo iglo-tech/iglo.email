@@ -15,6 +15,9 @@ import { createAdminSync } from "@/projects/admin-sync";
 import { createInstanceBudgets } from "@/projects/budgets";
 import type { InstanceBudgets } from "@/projects/budgets";
 import { createProject } from "@/projects/compose";
+import { createDispatcher } from "@/messaging/dispatcher";
+import type { Dispatcher } from "@/messaging/dispatcher";
+import type { SMTPServer } from "@/messaging/email";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
 import {
   INSTANCE_DATABASE,
@@ -151,6 +154,9 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   let budgets: InstanceBudgets | undefined;
   let account: AdminAccountStore | undefined;
   let settings: InstanceSettingsStore | undefined;
+  /** The one dispatcher every project sends through (B141): its pools, rate and start schedule. */
+  let dispatcher: Dispatcher | undefined;
+  let unsubscribeRate: (() => void) | undefined;
   /** Wired projects in registration order (slug order at start). */
   const entries: Array<Entry> = [];
   /** The routing table: hostname to project, and the primary for every other host. */
@@ -203,6 +209,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         clock,
         budgets: must(budgets, "budgets"),
         settings: must(settings, "instance settings").reader,
+        dispatcher: must(dispatcher, "dispatcher"),
         instanceRootUrl: config.rootUrl,
         listen: config.listen,
         admin: {
@@ -230,6 +237,10 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       await entry.project.close();
     }
     entries.length = 0;
+    // Last in the shutdown order (14-projects section 7): every project has stopped asking for
+    // slots and drained; the pools close.
+    unsubscribeRate?.();
+    await dispatcher?.close();
     registry?.close();
     account?.close();
     settings?.close();
@@ -239,6 +250,26 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   try {
     registry = createRegistry(db, clock);
     settings = createInstanceSettings(db, clock);
+    const instanceKeys = settings;
+    // The effective rate is messaging.max_send_rate until B145 adds SES's MaxSendRate (D155).
+    dispatcher = createDispatcher({
+      clock,
+      // Validated on save (src/settings/validate.ts): an array of servers and a whole number.
+      smtp: () => {
+        const servers: unknown = instanceKeys.read().smtp;
+        return Array.isArray(servers) ? servers.filter((s): s is SMTPServer => !!s) : [];
+      },
+      rate: () => {
+        const rate: unknown = instanceKeys.read()["messaging.max_send_rate"];
+        return typeof rate === "number" ? rate : 0;
+      },
+    });
+    const paced = dispatcher;
+    unsubscribeRate = settings.reader.subscribe((next, current) => {
+      if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
+        paced.wake();
+      }
+    });
     const directories = existsSync(resolve(root, PROJECTS))
       ? readdirSync(resolve(root, PROJECTS), { withFileTypes: true })
           .filter((entry) => entry.isDirectory())

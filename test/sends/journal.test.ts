@@ -17,7 +17,7 @@ import { TestClock } from "@/test/server/fixture";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { Message } from "@/messaging/email";
 import { startOutbox } from "@/messaging/outbox";
 import { createConnection, createServer } from "node:net";
@@ -188,7 +188,7 @@ test("rejects malformed or oversized prepared messages atomically", async () => 
 
 test("explicit resend preserves the original and returns one current child", async () => {
   const f = await fixture();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock: f.clock,
     settings: () => ({ smtp: [], rootUrl: "http://fixture.test" }),
   });
@@ -198,7 +198,7 @@ test("explicit resend preserves the original and returns one current child", asy
       db: f.db,
       clock: f.clock,
       sends: f.journal,
-      emailer,
+      sender: emailer,
       logger: { error: () => {}, attention: () => {} },
     });
     await loop.stop();
@@ -218,7 +218,7 @@ test("explicit resend preserves the original and returns one current child", asy
       db: f.db,
       clock: f.clock,
       sends: f.journal,
-      emailer,
+      sender: emailer,
       logger: { error: () => {}, attention: () => {} },
     });
     await again.stop();
@@ -385,7 +385,7 @@ test("actual TCP refusal retries only at injected-clock deadlines and stops afte
     throw new Error(`Port ${port} does not refuse connections: ${direct}`);
   }
   const f = await fixture();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock: f.clock,
     settings: () => ({
       rootUrl: "http://fixture.test",
@@ -415,7 +415,7 @@ test("actual TCP refusal retries only at injected-clock deadlines and stops afte
       db: f.db,
       clock: f.clock,
       sends: f.journal,
-      emailer,
+      sender: emailer,
       logger: { error: () => {}, attention: () => {} },
     });
     await outbox.stop();
@@ -447,7 +447,7 @@ test("actual TCP refusal retries only at injected-clock deadlines and stops afte
 
 test("linked identity changes and unavailable marketing policy fail closed at dispatch", async () => {
   const f = await fixture();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock: f.clock,
     settings: () => ({ smtp: [], rootUrl: "http://fixture.test" }),
   });
@@ -456,7 +456,7 @@ test("linked identity changes and unavailable marketing policy fail closed at di
       db: f.db,
       clock: f.clock,
       sends: f.journal,
-      emailer,
+      sender: emailer,
       logger: { error: () => {}, attention: () => {} },
     });
     await loop.stop();
@@ -531,7 +531,7 @@ test("linked identity changes and unavailable marketing policy fail closed at di
 
 test("owned enqueue wakes an idle outbox without advancing its polling clock", async () => {
   const f = await fixture();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock: f.clock,
     settings: () => ({ smtp: [], rootUrl: "http://fixture.test" }),
   });
@@ -550,7 +550,7 @@ test("owned enqueue wakes an idle outbox without advancing its polling clock", a
     db: f.db,
     clock: f.clock,
     sends,
-    emailer,
+    sender: emailer,
     logger: { error: () => {}, attention: () => {} },
   });
   try {
@@ -567,7 +567,7 @@ test("owned enqueue wakes an idle outbox without advancing its polling clock", a
 
 test("permissions and live authority are rechecked after the resend body is drained", async () => {
   const f = await fixture();
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock: f.clock,
     settings: () => ({ smtp: [], rootUrl: "http://fixture.test" }),
   });
@@ -577,7 +577,7 @@ test("permissions and live authority are rechecked after the resend body is drai
       db: f.db,
       clock: f.clock,
       sends: f.journal,
-      emailer,
+      sender: emailer,
       logger: { error: () => {}, attention: () => {} },
     });
     await outbox.stop();

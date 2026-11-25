@@ -1,7 +1,7 @@
 // Labelled test-only caller of the production messaging owner, not a production route.
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomBytes, createPublicKey } from "node:crypto";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { SMTPServer, Message } from "@/messaging/email";
 import { createRealClock } from "@/clock";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
@@ -49,7 +49,7 @@ const server: SMTPServer = {
   dkim: { domain_name: "fixture.example.test", key_selector: "m08", private_key: privateKey },
 };
 let servers = [server];
-const emailer = createEmailer({
+const emailer = fixtureEmailer({
   settings: () => ({ smtp: servers, rootUrl: "https://example.test" }),
   clock: createRealClock(),
   select: () => 0,

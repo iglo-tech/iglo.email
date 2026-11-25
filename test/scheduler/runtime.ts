@@ -10,7 +10,7 @@ import { createTranslation } from "@/i18n/i18n";
 import { createListReferences } from "@/lists/references";
 import { createSubscriberStore } from "@/subscribers/store";
 import { createQueryRunner, openReadOnly } from "@/subscribers/query-runner";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { createCampaignTemplateReferences } from "@/campaigns/template-references";
@@ -79,7 +79,7 @@ export function startRuntime(options: {
     individualTracking: false,
     disableTracking: false,
   };
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock,
     settings: () => ({
       rootUrl: "http://scheduler.test",
@@ -114,7 +114,9 @@ export function startRuntime(options: {
   });
   const tracking = createTracking(db, clock);
   const outbox =
-    options.outbox === false ? undefined : startOutbox({ db, clock, logger, sends, emailer });
+    options.outbox === false
+      ? undefined
+      : startOutbox({ db, clock, logger, sends, sender: emailer });
   const events = createEventStore(db, subscribers, {
     emailAllowed: () => true,
     exitThenTrigger: enrollments.exitThenTrigger,

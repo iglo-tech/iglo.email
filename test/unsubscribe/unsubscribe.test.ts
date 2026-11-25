@@ -437,7 +437,7 @@ test("a delayed marketing send recovered as unknown counts from its attempt", as
   // Delivered on Jan 10; the process dies after SMTP acceptance, before the outcome commit.
   f.clock.advance(8 * day);
   const now = f.clock.now();
-  const [claimed] = f.sends.claim(now, new Date(now.getTime() + 60_000));
+  const [claimed] = f.sends.claim(now, new Date(now.getTime() + 60_000), "marketing");
   const message = f.sends.admit(claimed!)!;
   expect((await f.emailer.push(message, { copies: false }).result).status).toBe("accepted");
   // Restart: recovery marks the row unknown.

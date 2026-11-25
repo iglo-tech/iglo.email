@@ -115,7 +115,7 @@ try {
     const claimed = [];
     const claimStart = performance.now();
     for (let i = 0; i < queuedIds.length; i++) {
-      const [claim] = journal.claimBatch(now, lease, 1);
+      const [claim] = journal.claimBatch(now, lease, 1, "transactional");
       if (claim) {
         claimed.push(claim);
       }

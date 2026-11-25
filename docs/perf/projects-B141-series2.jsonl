@@ -1,0 +1,38 @@
+{"run":1,"side":"before","kind":"load","load":"4.49 4.91 5.15"}
+{"label":"before","tx":2000,"txSeconds":3.65,"txPerSecond":548,"recipients":5000,"campaignSeconds":3.46,"campaignPerSecond":1443.9}
+{"run":1,"side":"after","kind":"load","load":"4.27 4.84 5.13"}
+{"label":"after","tx":2000,"txSeconds":3.87,"txPerSecond":516.3,"recipients":5000,"campaignSeconds":3.22,"campaignPerSecond":1551.3}
+{"run":2,"side":"after","kind":"load","load":"4.48 4.87 5.13"}
+{"label":"after","tx":2000,"txSeconds":3.71,"txPerSecond":539,"recipients":5000,"campaignSeconds":3.42,"campaignPerSecond":1464.1}
+{"run":2,"side":"before","kind":"load","load":"4.55 4.87 5.13"}
+{"label":"before","tx":2000,"txSeconds":4.07,"txPerSecond":491.7,"recipients":5000,"campaignSeconds":3.86,"campaignPerSecond":1296.6}
+{"run":3,"side":"before","kind":"load","load":"6.25 5.22 5.24"}
+{"label":"before","tx":2000,"txSeconds":3.77,"txPerSecond":530.7,"recipients":5000,"campaignSeconds":3.8,"campaignPerSecond":1316.5}
+{"run":3,"side":"after","kind":"load","load":"8.09 5.66 5.39"}
+{"label":"after","tx":2000,"txSeconds":3.55,"txPerSecond":564,"recipients":5000,"campaignSeconds":2.87,"campaignPerSecond":1743.2}
+{"run":4,"side":"after","kind":"load","load":"7.46 5.60 5.37"}
+{"label":"after","tx":2000,"txSeconds":3.22,"txPerSecond":621.3,"recipients":5000,"campaignSeconds":2.81,"campaignPerSecond":1777.2}
+{"run":4,"side":"before","kind":"load","load":"6.85 5.53 5.35"}
+{"label":"before","tx":2000,"txSeconds":3.07,"txPerSecond":651.4,"recipients":5000,"campaignSeconds":3.25,"campaignPerSecond":1537.3}
+{"run":5,"side":"before","kind":"load","load":"6.46 5.47 5.33"}
+{"label":"before","tx":2000,"txSeconds":2.96,"txPerSecond":676.5,"recipients":5000,"campaignSeconds":3.07,"campaignPerSecond":1629}
+{"run":5,"side":"after","kind":"load","load":"5.62 5.33 5.28"}
+{"label":"after","tx":2000,"txSeconds":3.06,"txPerSecond":652.9,"recipients":5000,"campaignSeconds":2.68,"campaignPerSecond":1866.5}
+{"run":1,"side":"claim50","kind":"load","load":"5.13 5.23 5.25"}
+{"label":"claim50-claim","tx":200,"txSeconds":0.41,"txPerSecond":484.3,"recipients":5000,"campaignSeconds":2.84,"campaignPerSecond":1762.2}
+{"run":1,"side":"after","kind":"load","load":"4.88 5.18 5.24"}
+{"label":"after-claim","tx":200,"txSeconds":0.4,"txPerSecond":503,"recipients":5000,"campaignSeconds":2.81,"campaignPerSecond":1776.5}
+{"run":1,"side":"claim200","kind":"load","load":"4.65 5.12 5.22"}
+{"label":"claim200-claim","tx":200,"txSeconds":0.41,"txPerSecond":484.3,"recipients":5000,"campaignSeconds":2.75,"campaignPerSecond":1820.3}
+{"run":2,"side":"claim50","kind":"load","load":"4.35 5.06 5.20"}
+{"label":"claim50-claim","tx":200,"txSeconds":0.44,"txPerSecond":453.1,"recipients":5000,"campaignSeconds":3.08,"campaignPerSecond":1625.6}
+{"run":2,"side":"after","kind":"load","load":"4.33 5.04 5.19"}
+{"label":"after-claim","tx":200,"txSeconds":0.43,"txPerSecond":469.2,"recipients":5000,"campaignSeconds":2.78,"campaignPerSecond":1796.4}
+{"run":2,"side":"claim200","kind":"load","load":"4.46 5.05 5.19"}
+{"label":"claim200-claim","tx":200,"txSeconds":0.43,"txPerSecond":469.6,"recipients":5000,"campaignSeconds":2.85,"campaignPerSecond":1753.2}
+{"run":3,"side":"claim50","kind":"load","load":"4.34 5.02 5.18"}
+{"label":"claim50-claim","tx":200,"txSeconds":0.46,"txPerSecond":438.4,"recipients":5000,"campaignSeconds":3.01,"campaignPerSecond":1660.2}
+{"run":3,"side":"after","kind":"load","load":"4.23 4.99 5.17"}
+{"label":"after-claim","tx":200,"txSeconds":0.41,"txPerSecond":487.5,"recipients":5000,"campaignSeconds":2.87,"campaignPerSecond":1742.2}
+{"run":3,"side":"claim200","kind":"load","load":"3.97 4.90 5.14"}
+{"label":"claim200-claim","tx":200,"txSeconds":0.45,"txPerSecond":442.5,"recipients":5000,"campaignSeconds":2.99,"campaignPerSecond":1674}

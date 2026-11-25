@@ -732,17 +732,6 @@ export function normalizeInstance(next: Settings, current: Settings, now: number
   // not block saving anything else.
   const changed = (...keys: Array<string>) =>
     keys.some((key) => JSON.stringify(next[key]) !== JSON.stringify(current[key]));
-  if (
-    next["app.message_sliding_window"] &&
-    changed("app.message_sliding_window", "app.message_sliding_window_duration")
-  ) {
-    // The campaign runner slides its window only when it is longer than one second (runner.ts).
-    if (!(goDuration(next["app.message_sliding_window_duration"]) > 1000)) {
-      return fail(
-        "Invalid app.message_sliding_window_duration: use a Go duration longer than one second, such as 1h.",
-      );
-    }
-  }
   if (next["maintenance.db"]?.vacuum && changed("maintenance.db")) {
     const error = cronError(next["maintenance.db"].vacuum_cron_interval);
     if (error) {

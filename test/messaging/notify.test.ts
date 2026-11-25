@@ -29,7 +29,7 @@ import { createFilesystem } from "@/media/filesystem";
 import { createAttachments } from "@/media/attachments";
 import { createEmbeds } from "@/media/embed";
 import { createFixtureSettings } from "@/test/settings/instance-fixture";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { createSends } from "@/messaging/sends";
 import { registerSendRoutes } from "@/messaging/routes";
 import { startOutbox } from "@/messaging/outbox";
@@ -91,6 +91,8 @@ async function createNotifyFixture(
   options: {
     notifyEmails?: Array<string>;
     sinkReject?: (to: string) => boolean;
+    /** messaging.max_send_rate; unpaced by default. */
+    rate?: number;
   } = {},
 ): Promise<Fixture> {
   const directory = mkdtempSync(join(tmpdir(), "iglo-notify-"));
@@ -162,8 +164,9 @@ async function createNotifyFixture(
     ended: effects.sendEnded,
   });
 
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     clock,
+    rate: () => options.rate ?? 0,
     settings: () => ({
       rootUrl: root,
       smtp: [
@@ -193,7 +196,7 @@ async function createNotifyFixture(
     clock,
     logger: app.logger,
     sends,
-    emailer,
+    sender: emailer,
   });
 
   const tracking = createTracking(db, clock);
@@ -380,17 +383,11 @@ async function createNotifyFixture(
       },
       renderer,
       tracking,
-      emailer,
+      sender: emailer,
       attachments,
       embedImages,
       settings: () => ({
-        batchSize: 1000,
-        concurrency: 10,
-        messageRate: 1000,
         maxSendErrors: 1000,
-        slidingWindow: false,
-        slidingWindowDuration: "1h",
-        slidingWindowRate: 10_000,
         rootUrl: root,
         brand: {
           logoUrl: "",
@@ -1163,6 +1160,9 @@ describe("B38 admin notification mails", () => {
 
   test("11. A second auto-pause after a resume sends a second Paused", async () => {
     f = await createNotifyFixture({
+      // Paced (B141): both recipients are pushed in their slots at once, and the first failure
+      // pauses the campaign before the second slot, whose push is handed back for the resume.
+      rate: 1,
       notifyEmails: ["ops@example.com"],
       sinkReject: (to) => !to.includes("ops@example.com"),
     });
@@ -1201,7 +1201,7 @@ describe("B38 admin notification mails", () => {
     const campaignId = BigInt(createRes.data.data.id);
     await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
 
-    let runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
+    let runner = f.startRunner({ maxSendErrors: 1 });
     await f.waitUntil(
       () => f.runnerStore.state(campaignId)?.status === "paused",
       "the campaign to be paused",
@@ -1218,7 +1218,7 @@ describe("B38 admin notification mails", () => {
 
     // Resume campaign
     await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
-    runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
+    runner = f.startRunner({ maxSendErrors: 1 });
     await f.waitUntil(
       () => f.runnerStore.state(campaignId)?.status === "paused",
       "the campaign to be paused",
@@ -1290,7 +1290,7 @@ describe("B38 admin notification mails", () => {
     campaignId = BigInt(createRes.data.data.id);
     await f.json(`/api/campaigns/${campaignId}/status`, "PUT", { status: "running" });
 
-    const runner = f.startRunner({ maxSendErrors: 1, concurrency: 1 });
+    const runner = f.startRunner({ maxSendErrors: 1 });
     await f.waitUntil(() => cancelled, "the cancel to be issued", 50);
     if (cancel.promise) {
       await cancel.promise;

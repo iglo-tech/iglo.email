@@ -127,7 +127,7 @@ async function run(variant: "idle" | "before" | "after") {
     sends.enqueue(asBody<never>({ source: "tx", kind: "transactional", message }));
     const claimed = writeTransaction(db, () => {
       const time = new Date();
-      return sends.claimBatch(time, new Date(time.getTime() + 60_000), 1);
+      return sends.claimBatch(time, new Date(time.getTime() + 60_000), 1, "transactional");
     });
     sends.finishAll(
       claimed.map(({ row }) => ({
