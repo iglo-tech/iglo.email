@@ -172,6 +172,12 @@ test("a seeded install from before this release takes the migrated bodies, and a
     db.run("DROP TABLE source_stream_retries");
     db.run("DROP TABLE source_stream_seen");
     db.run("DROP TABLE source_stream_markers");
+    // Migration 37 (B150c) adds the sequence source and the external trigger columns.
+    db.run("ALTER TABLE sequences DROP COLUMN source");
+    db.run("ALTER TABLE enrollments DROP COLUMN trigger_external_id");
+    db.run("ALTER TABLE enrollments DROP COLUMN trigger_occurred_at");
+    db.run("ALTER TABLE enrollments DROP COLUMN error_since");
+    db.run("ALTER TABLE enrollments DROP COLUMN error_last");
     // Migration 32 (B140) marks the admin's copy; the earlier schema has no such column.
     db.run("DROP INDEX users_one_admin_copy");
     db.run("ALTER TABLE users DROP COLUMN admin_copy");
@@ -184,7 +190,7 @@ test("a seeded install from before this release takes the migrated bodies, and a
   const second = await up(dataDir);
   try {
     const after = await templates(second.port);
-    expect(userVersion(dataDir)).toBe(36);
+    expect(userVersion(dataDir)).toBe(37);
     expect(after.get(names.campaign)?.body).toBe(seeded.get(names.campaign)?.body);
     expect(after.get(names.archive)?.body).toBe(seeded.get(names.archive)?.body);
     expect(after.get(names.sample)?.body).toBe(seeded.get(names.sample)?.body);

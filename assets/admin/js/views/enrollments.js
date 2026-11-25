@@ -144,6 +144,17 @@ function enrollmentView() {
     },
 
     entryLabel(entry) {
+      if (entry.type === 'trigger' && entry.external_id) {
+        // An external sequence's trigger is a source record (D172), read when the timeline is.
+        const id = entry.external_id;
+        if (entry.unavailable === 'missing') {
+          return i18n.ts('sequences.entry.triggerMissing', { id });
+        }
+        if (entry.unavailable) {
+          return i18n.ts('sequences.entry.triggerUnavailable', { id });
+        }
+        return i18n.ts('sequences.entry.triggerRecord', { id, name: entry.name });
+      }
       if (entry.type === 'trigger') {
         return i18n.ts('sequences.entry.trigger', { name: entry.name });
       }

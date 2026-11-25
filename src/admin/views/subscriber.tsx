@@ -784,6 +784,8 @@ const keys = [
   "sequences.exit.conditionText",
   "sequences.exit.event",
   "sequences.exit.eventAt",
+  "sequences.exit.source_error",
+  "sequences.exit.trigger_missing",
   "sequences.heldByCap",
 ];
 

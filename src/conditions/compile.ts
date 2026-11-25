@@ -60,6 +60,10 @@ export function compile(condition: Condition): CompiledCondition {
       }
       return attributeSQL(c.attr, c.op, c.value);
     }
+    if ("recipient" in c) {
+      // Only external sequences accept `recipient`, and they never compile to SQL (D172).
+      throw new Error("A recipient condition reads the source, not SQLite");
+    }
     const input: Parameters<typeof eventCountSQL<Slot>>[0] = {
       subscriber,
       name: c.event,

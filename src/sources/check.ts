@@ -85,6 +85,31 @@ async function fields(
   };
 }
 
+/**
+ * D172: a collection a guest can read fails the check. PocketBase reads a revoked token as a guest,
+ * and the adapter confirms its token only after a short or empty answer, so a guest-readable
+ * collection could answer a revoked token with a full page of what guests see.
+ */
+async function guestCheck(
+  source: PocketBaseSource,
+  result: CheckStep,
+  collection: string,
+  authCollection: string,
+): Promise<CheckStep> {
+  if (!result.ok) {
+    return result;
+  }
+  const guest = await source.guestProbe(collection, { timeoutMs: TIMEOUT_MS });
+  if (guest.status === 200 && guest.rows > 0) {
+    return {
+      ...result,
+      ok: false,
+      message: `Guests can read ${collection}: set its list and view rules so that only the service account can read it (for example @request.auth.collectionName = "${authCollection}").`,
+    };
+  }
+  return result;
+}
+
 export async function checkSource(
   config: PocketBaseConfig,
   clock: Clock,
@@ -114,22 +139,32 @@ export async function checkSource(
       steps.push({ step, ok: false, message: errorText(error), missing: [] });
     }
   };
-  await run("recipients", () =>
-    fields(
+  await run("recipients", async () =>
+    guestCheck(
       source,
-      "recipients",
+      await fields(
+        source,
+        "recipients",
+        recipients.collection,
+        [recipients.email, recipients.name, recipients.optOut].filter(Boolean),
+      ),
       recipients.collection,
-      [recipients.email, recipients.name, recipients.optOut].filter(Boolean),
+      config.authCollection,
     ),
   );
-  await run("events", () =>
-    fields(
+  await run("events", async () =>
+    guestCheck(
       source,
-      "events",
-      events.collection,
-      [events.user, events.name, events.data, events.occurredAt, events.key, "created"].filter(
-        Boolean,
+      await fields(
+        source,
+        "events",
+        events.collection,
+        [events.user, events.name, events.data, events.occurredAt, events.key, "created"].filter(
+          Boolean,
+        ),
       ),
+      events.collection,
+      config.authCollection,
     ),
   );
   if (users.collection) {

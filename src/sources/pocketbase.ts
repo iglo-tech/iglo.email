@@ -726,6 +726,26 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         message: reason(answer),
       };
     },
+    /**
+     * D172: one page of a collection read as a guest (no token), for the settings check: the
+     * status and the number of rows. The events and recipients collections must not be readable by
+     * guests, because a revoked token reads as a guest and only short answers are confirmed.
+     */
+    async guestProbe(
+      collection: string,
+      call: CallOptions = {},
+    ): Promise<{ status: number; rows: number }> {
+      const search = new URLSearchParams({ page: "1", perPage: "1", skipTotal: "1", fields: "id" });
+      const answer = await send(
+        "GET",
+        `api/collections/${fieldName(collection)}/records?${search}`,
+        "",
+        undefined,
+        call,
+      );
+      const items = member(answer.body, "items");
+      return { status: answer.status, rows: isSourceList(items) ? items.length : 0 };
+    },
     /** The realtime stream's reads and subscription (src/sources/stream-reads.ts, B150b). */
     stream: streamReads({
       events: ev,
@@ -763,7 +783,12 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         );
       },
     }),
-  } satisfies ExternalSource & { authenticate: unknown; probe: unknown; stream: unknown };
+  } satisfies ExternalSource & {
+    authenticate: unknown;
+    probe: unknown;
+    guestProbe: unknown;
+    stream: unknown;
+  };
   return source;
 }
 export type PocketBaseSource = ReturnType<typeof createPocketBaseSource>;

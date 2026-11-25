@@ -267,6 +267,36 @@ test("Test connection: each step, and the fields a collection lacks", async () =
   expect(wrong.body.data.steps).toEqual([expect.objectContaining({ step: "auth", ok: false })]);
 });
 
+test("Test connection fails a collection guests can read (D172), naming it and its rule", async () => {
+  const user = await pb.user();
+  await pb.event(user.id, "visit");
+  const rules = async (collection: string, rule: string | null) =>
+    void (await pb.api("PATCH", `/api/collections/${collection}`, {
+      listRule: rule,
+      viewRule: rule,
+    }));
+  const service = '@request.auth.collectionName = "services"';
+  for (const [collection, step] of [
+    ["events", "events"],
+    ["recipients", "recipients"],
+  ] as const) {
+    await rules(collection, "");
+    try {
+      const answer = await call("POST", "/api/settings/source/test", {});
+      const steps = Object.fromEntries(stepsOf(answer).steps.map((s) => [s.step, s]));
+      expect(answer.body.data.ok).toBe(false);
+      expect(steps[step]?.ok).toBe(false);
+      expect(steps[step]?.message).toContain(`Guests can read ${collection}`);
+      expect(steps[step]?.message).toContain("list and view rules");
+      expect(steps.auth?.ok).toBe(true);
+    } finally {
+      await rules(collection, service);
+    }
+  }
+  // With the fixture's rules back, every step passes again.
+  expect((await call("POST", "/api/settings/source/test", {})).body.data.ok).toBe(true);
+});
+
 test("the private-address block: an unlisted host is refused, and a webhook to the listed host still is", async () => {
   const unlisted = await call(
     "POST",

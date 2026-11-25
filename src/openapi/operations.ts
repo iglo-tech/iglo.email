@@ -963,13 +963,13 @@ const sending: Array<Operation> = [
     tag: "Sequences",
     summary: "Render one step's subject and body as a send would, with real or sample data.",
     description:
-      "Context: `subscriber_id` names a readable subscriber (else the dummy one), `trigger_event_id` one of its events under the sequence's trigger name (else its latest such event), and aggregates are read for that subscriber as a send reads them. `sample` replaces the named parts. Writes nothing; the answer's `context` is the data rendered (D105).",
+      "Context: `subscriber_id` names a readable subscriber (else the dummy one), `trigger_event_id` one of its events under the sequence's trigger name (else its latest such event), and aggregates are read for that subscriber as a send reads them. `sample` replaces the named parts. Writes nothing; the answer's `context` is the data rendered (D105). On an external sequence (D172) the trigger is `trigger_external_id`'s source record (else the subscriber's latest one) and the aggregates read the source: an unreachable source answers 503, a refusal 502, and a project without a source 409.",
     native: true,
     permissions: ["sequences:get"],
     path: { step: { type: "integer", minimum: 1 } },
     body: ref("StepPreviewInput"),
     data: ref("StepPreview"),
-    errors: [400, 404, 409, 429],
+    errors: [400, 404, 409, 429, 502, 503],
   },
   {
     route: "POST /api/sequences/{id}/steps/{step}/test",
@@ -985,7 +985,7 @@ const sending: Array<Operation> = [
     path: { step: { type: "integer", minimum: 1 } },
     body: ref("StepTestInput"),
     data: yes,
-    errors: [400, 404, 409, 429],
+    errors: [400, 404, 409, 429, 502, 503],
   },
   {
     route: "POST /api/conditions/validate",
@@ -994,7 +994,17 @@ const sending: Array<Operation> = [
     summary: "Check a condition as a save would, without writing anything.",
     native: true,
     permissions: ["sequences:manage"],
-    body: object({ condition: {}, field: string }),
+    description:
+      "`source` is where the condition runs (D172): `events` (default) or `external`, which takes `recipient` and refuses `sql`. `trigger: true` checks an external sequence's `trigger.condition` (only `event` and `recipient`, `since` a duration); with `events` it is a 400.",
+    body: object(
+      {
+        condition: {},
+        field: string,
+        source: { type: "string", enum: ["events", "external"] },
+        trigger: { type: "boolean" },
+      },
+      ["source", "trigger"],
+    ),
     data: object({
       ok: { type: "boolean" },
       errors: { type: "array", items: object({ field: string, message: string }) },
@@ -1033,12 +1043,12 @@ const sending: Array<Operation> = [
     tag: "Sequences",
     summary: "Enroll a subscriber by hand.",
     description:
-      "A subscriber the caller cannot read under `GET /api/subscribers/{id}`'s rule answers `404 Subscriber not found`, exactly as an absent one does, and nothing is written (D103).",
+      "A subscriber the caller cannot read under `GET /api/subscribers/{id}`'s rule answers `404 Subscriber not found`, exactly as an absent one does, and nothing is written (D103). An external sequence (D172) starts from `trigger_external_id`, a source record of the subscriber's `external_id` under the trigger's name, else its latest such record (none: the enrollment counts from its start); the record is read before anything is written. A subscriber without an `external_id`, or a project without a source, is a 409; an unreachable source a 503, a refusal a 502.",
     native: true,
     permissions: ["sequences:manage"],
     body: ref("EnrollmentInput"),
     data: ref("Enrollment"),
-    errors: [404, 409],
+    errors: [404, 409, 502, 503],
   },
   {
     route: "GET /api/enrollments/{id}",

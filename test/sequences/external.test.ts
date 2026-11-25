@@ -1,0 +1,744 @@
+// B150c (15-external-sources section 6, D172): sequences on a project's source, observed through the
+// sequences and enrollments APIs, the scheduler loop with an injected clock, the SMTP sink and the
+// real PocketBase 0.40.5 binary.
+import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { must } from "@/invariant";
+import type { ExternalSource } from "@/sources/source";
+import { adapter, enableBatch } from "@/test/conditions/source-fixture";
+import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
+import { day, hour, schedulerFixture } from "@/test/scheduler/fixture";
+import type { SchedulerFixture } from "@/test/scheduler/fixture";
+import { startPocketBase } from "@/test/sources/pocketbase";
+import type { PocketBase } from "@/test/sources/pocketbase";
+
+setDefaultTimeout(120_000);
+
+let pb: PocketBase;
+beforeAll(async () => {
+  pb = await startPocketBase();
+  await enableBatch(pb);
+});
+afterAll(async () => {
+  await pb?.close();
+});
+const fixtures: Array<SchedulerFixture> = [];
+const instances: Array<PocketBase> = [];
+afterEach(async () => {
+  for (const f of fixtures.splice(0)) {
+    await f.close();
+  }
+  for (const own of instances.splice(0)) {
+    await own.close();
+  }
+});
+/** A scheduler fixture whose project source is `source` (none when null). */
+async function open(source: ExternalSource | null = adapter(pb)) {
+  const f = await schedulerFixture({ source: () => source });
+  fixtures.push(f);
+  return f;
+}
+const tx = (template: number, extra: JsonObject = {}) => ({
+  wait: "PT0S",
+  kind: "transactional",
+  template_id: template,
+  ...extra,
+});
+const iso = (f: SchedulerFixture, plus = 0) =>
+  new Date(f.clock.now().getTime() + plus).toISOString();
+/** An external sequence with these steps, active. */
+const external = (steps: Array<JsonObject>, extra: JsonObject = {}): JsonObject => ({
+  source: "external",
+  trigger: { event: "order_paid" },
+  steps,
+  ...extra,
+});
+const enroll = (
+  f: SchedulerFixture,
+  sequence: number,
+  subscriber: number,
+  extra: JsonObject = {},
+) =>
+  f.json("/api/enrollments", "POST", {
+    sequence_id: sequence,
+    subscriber_id: subscriber,
+    ...extra,
+  });
+function decoded(data: string) {
+  const at = data.indexOf("\r\n\r\n");
+  return data
+    .slice(at + 4)
+    .replaceAll("=\r\n", "")
+    .replaceAll(/=([0-9A-F]{2})/g, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
+}
+const attention = (f: SchedulerFixture) => f.errors.map(String).join("\n");
+
+test("an external sequence needs a source; sql, trigger.where conditions and pushed trigger.condition are refused", async () => {
+  const none = await open(null);
+  const template = await none.template();
+  const refused = await none.json("/api/sequences", "POST", {
+    name: "No source",
+    ...external([tx(template)]),
+  });
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain("source");
+
+  const f = await open();
+  const t = await f.template();
+  const post = (definition: JsonObject) =>
+    f.json("/api/sequences", "POST", {
+      name: "Source",
+      reentry: "always",
+      ...definition,
+    });
+  const refusals: Array<[JsonObject, string]> = [
+    [external([tx(t, { condition: { sql: "1 = 1" } })]), "steps.0.condition.sql"],
+    [
+      external([tx(t)], {
+        trigger: { event: "order_paid", where: { event: "visit" } },
+      }),
+      "trigger.where",
+    ],
+    [
+      {
+        trigger: {
+          event: "order_paid",
+          condition: { event: "order_paid", count: { gte: 2 } },
+        },
+        steps: [tx(t)],
+      },
+      "trigger.condition",
+    ],
+    [
+      external([tx(t)], {
+        trigger: {
+          event: "order_paid",
+          condition: { attr: "plan", op: "eq", value: "x" },
+        },
+      }),
+      "trigger.condition.attr",
+    ],
+    [
+      external([tx(t)], {
+        trigger: {
+          event: "order_paid",
+          condition: { event: "order_paid", since: "trigger" },
+        },
+      }),
+      "trigger.condition.since",
+    ],
+    [
+      {
+        trigger: { event: "order_paid" },
+        steps: [tx(t, { condition: { recipient: "name", op: "exists" } })],
+      },
+      "steps.0.condition",
+    ],
+    [external([tx(t)], { source: "elsewhere" }), "source"],
+  ];
+  for (const [definition, field] of refusals) {
+    const answer = await post(definition);
+    expect(answer.status).toBe(400);
+    expect(String(answer.body.message)).toContain(field);
+  }
+
+  // The data.* equality form of trigger.where, trigger.condition and recipient conditions are kept.
+  const condition = {
+    event: "order_paid",
+    since: "P180D",
+    where: { "data.product": "prepaid" },
+    count: { gte: 2 },
+  };
+  const saved = await post(
+    external([tx(t, { condition: { recipient: "optOut", op: "eq", value: false } })], {
+      trigger: {
+        event: "order_paid",
+        where: { "data.plan": "pro" },
+        condition,
+      },
+    }),
+  );
+  expect(saved.status).toBe(200);
+  expect(saved.body.data).toMatchObject({
+    source: "external",
+    trigger: { event: "order_paid", where: { "data.plan": "pro" }, condition },
+  });
+  // A sequence without `source` stays on pushed events; an update without it keeps the stored one.
+  const pushed = await post({
+    trigger: { event: "order_paid" },
+    steps: [tx(t)],
+  });
+  expect(pushed.body.data.source).toBe("events");
+  const kept = await f.json(`/api/sequences/${saved.body.data.id}`, "PUT", {
+    name: "Renamed",
+    trigger: { event: "order_paid" },
+    reentry: "always",
+    steps: [tx(t)],
+  });
+  expect(kept.body.data).toMatchObject({ name: "Renamed", source: "external" });
+
+  // The condition check answers for either place.
+  const check = (body: JsonObject) => f.json("/api/conditions/validate", "POST", body);
+  expect(
+    (
+      await check({
+        condition: { recipient: "name", op: "exists" },
+        source: "external",
+      })
+    ).body.data,
+  ).toEqual({ ok: true, errors: [] });
+  expect((await check({ condition: { recipient: "name", op: "exists" } })).body.data.ok).toBe(
+    false,
+  );
+  expect(
+    (await check({ condition: { sql: "1 = 1" }, source: "external" })).body.data.errors[0].field,
+  ).toBe("condition.sql");
+  expect(
+    (
+      await check({
+        condition: { attr: "plan", op: "exists" },
+        source: "external",
+        trigger: true,
+      })
+    ).body.data.ok,
+  ).toBe(false);
+  expect((await check({ condition: { event: "x" }, trigger: true })).status).toBe(400);
+});
+
+test("a step reads its condition, aggregates and trigger data from the source", async () => {
+  const f = await open();
+  const ada = await pb.user({ name: "Ada" });
+  const other = await pb.user();
+  await pb.event(ada.id, "order_paid", { plan: "basic" }, { occurredAt: iso(f, -3 * day) });
+  const paid = await pb.event(ada.id, "order_paid", { plan: "pro" }, { occurredAt: iso(f, -day) });
+  await pb.event(ada.id, "download", { items: 3 }, { occurredAt: iso(f, -hour) });
+  await pb.event(ada.id, "download", { items: "4" }, { occurredAt: iso(f, -hour) });
+  const foreign = await pb.event(other.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template(
+    "<p>plan {{ trigger.data.plan }}|items {{ aggregates.items }}|orders {{ aggregates.orders }}</p>",
+  );
+  const seq = await f.sequence(
+    external([
+      tx(template, {
+        condition: {
+          all: [
+            { event: "download", since: "trigger", where: { "data.items": 3 } },
+            { recipient: "name", op: "eq", value: "Ada" },
+          ],
+        },
+        aggregates: {
+          items: {
+            event: "download",
+            since: "trigger",
+            fn: "sum",
+            field: "data.items",
+          },
+          orders: { event: "order_paid", fn: "count" },
+        },
+      }),
+    ]),
+  );
+  const subscriber = await f.subscriber("ada@example.test", {
+    external_id: ada.id,
+  });
+  // A record of another user, or a pushed event ID, is refused.
+  expect((await enroll(f, seq.id, subscriber, { trigger_external_id: foreign.id })).status).toBe(
+    400,
+  );
+  expect((await enroll(f, seq.id, subscriber, { trigger_external_id: "bad id" })).status).toBe(400);
+  // Without a record named, the subscriber's latest under the trigger's name.
+  const started = await enroll(f, seq.id, subscriber);
+  expect(started.status).toBe(200);
+  expect(started.body.data).toMatchObject({
+    trigger_event_id: null,
+    trigger_external_id: paid.id,
+    trigger_occurred_at: new Date(String(paid.occurredAt).replace(" ", "T")).toISOString(),
+    error_since: null,
+  });
+
+  // The preview reads the same record and totals.
+  const preview = await f.json(
+    `/api/sequences/${seq.id}/steps/${seq.steps[0]!.id}/preview`,
+    "POST",
+    {
+      subscriber_id: subscriber,
+      trigger_external_id: paid.id,
+    },
+  );
+  expect(preview.status).toBe(200);
+  expect(preview.body.data.body).toContain("plan pro|items 3|orders 2");
+
+  await f.pass(0);
+  await f.until(() => f.sink.messages.length === 1, "one message");
+  expect(decoded(f.sink.messages[0]!.data)).toContain("plan pro|items 3|orders 2");
+  const id = asBody<number>(started.body.data.id);
+  await f.until(async () => (await f.enrollment(id)).status === "completed", "completed");
+  const entries = (await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries;
+  expect(entries[0]).toMatchObject({
+    type: "trigger",
+    name: "order_paid",
+    data: { plan: "pro" },
+    external_id: paid.id,
+    unavailable: null,
+  });
+
+  // A pushed event never starts an external sequence.
+  const pushed = await f.event("ada@example.test", "order_paid");
+  expect(pushed.enrollments.started).toEqual([]);
+});
+
+test("a step whose condition is false on the source follows on_false; a missing trigger record ends trigger_missing", async () => {
+  const f = await open();
+  const ada = await pb.user();
+  const record = await pb.event(ada.id, "order_paid", { plan: "x" }, { occurredAt: iso(f, -day) });
+  const template = await f.template("<p>{{ trigger.data.plan }}</p>");
+  const seq = await f.sequence(
+    external([
+      tx(template, { condition: { event: "never_sent" }, on_false: "skip" }),
+      tx(template, { wait: "P1D" }),
+    ]),
+  );
+  const subscriber = await f.subscriber("gone@example.test", {
+    external_id: ada.id,
+  });
+  const started = await enroll(f, seq.id, subscriber, {
+    trigger_external_id: record.id,
+  });
+  const id = asBody<number>(started.body.data.id);
+  await f.pass(0);
+  await f.until(async () => (await f.enrollment(id)).step_id === seq.steps[1]!.id, "skipped");
+  expect(f.sink.messages).toHaveLength(0);
+
+  await pb.remove("events", record.id);
+  await f.pass(day);
+  await f.until(async () => (await f.enrollment(id)).status !== "active", "ended");
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "exited",
+    exit_reason: "trigger_missing",
+  });
+  expect(f.sink.messages).toHaveLength(0);
+  // The subscriber stays.
+  expect((await f.json(`/api/subscribers/${subscriber}`)).status).toBe(200);
+  const entries = (await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries;
+  expect(entries[0]).toMatchObject({
+    type: "trigger",
+    external_id: record.id,
+    unavailable: "missing",
+  });
+});
+
+test("a transient source failure is retried with backoff for 72 hours, then ends source_error; nothing is sent", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const seq = await f.sequence(
+    external([tx(template, { wait: "PT1H", condition: { event: "order_paid" } })]),
+  );
+  const subscriber = await f.subscriber("down@example.test", {
+    external_id: ada.id,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  await own.stop();
+
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[0]!.id,
+    error_since: new Date(failedAt).toISOString(),
+  });
+  // A retry writes no attention line: the outage is the source's to report (D169, D172).
+  expect(attention(f)).not.toContain(`enrollment ${id}`);
+  // Retried within the window: still active, still the first failure's time.
+  while (f.clock.now().getTime() + hour < failedAt + 72 * hour) {
+    await f.pass(hour);
+  }
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    error_since: new Date(failedAt).toISOString(),
+  });
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).status !== "active", "source_error");
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "exited",
+    exit_reason: "source_error",
+  });
+  // One attention line for the enrollment, written when it ends.
+  expect(f.errors.map(String).filter((line) => line.includes(`enrollment ${id}`))).toHaveLength(1);
+  expect(attention(f)).toContain(`Sequence enrollment ${id} ended with source_error`);
+  expect(f.sink.messages).toHaveLength(0);
+  expect((await f.sendLog()).filter((s) => s.enrollment_id === id)).toEqual([]);
+});
+
+/** A marketing sequence on `own`'s source whose steps each need an `order_paid` record. */
+async function marketingOnSource(own: PocketBase, email: string) {
+  const f = await open(adapter(own));
+  const news = await f.list("News");
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const step = (wait: string) => ({
+    wait,
+    kind: "marketing",
+    template_id: template,
+    condition: { event: "order_paid" },
+  });
+  const seq = await f.sequence({
+    list_id: news,
+    ...external([step("PT1H"), step("PT0S"), tx(template, { wait: "P1D" })]),
+  });
+  const subscriber = await f.subscriber(email, {
+    external_id: ada.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  return { f, seq, id };
+}
+
+test("the 72-hour source window is the enrollment's: a late marketing step keeps error_since and the next step ends source_error", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const { f, seq, id } = await marketingOnSource(own, "outage@example.test");
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+
+  // Past max_late (P2D) the first step is skipped late, never sent; the second step inherits the
+  // window rather than starting a fresh one.
+  while ((await f.enrollment(id)).step_id === seq.steps[0]!.id) {
+    await f.pass(hour);
+  }
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[1]!.id,
+    error_since: new Date(failedAt).toISOString(),
+  });
+  const skips = (await f.sendLog()).filter((s) => s.enrollment_id === id);
+  expect(skips).toMatchObject([{ step_id: seq.steps[0]!.id, skip_reason: "late" }]);
+
+  // The source stays down for 80 hours: the enrollment ends within the first failure's window.
+  while (
+    (await f.enrollment(id)).status === "active" &&
+    f.clock.now().getTime() < failedAt + 80 * hour
+  ) {
+    await f.pass(hour);
+  }
+  const ended = await f.enrollment(id);
+  expect(ended).toMatchObject({
+    status: "exited",
+    exit_reason: "source_error",
+  });
+  expect(Date.parse(ended.finished_at)).toBeLessThanOrEqual(failedAt + 73 * hour);
+  expect(f.sink.messages).toHaveLength(0);
+  expect((await f.sendLog()).filter((s) => s.enrollment_id === id)).toHaveLength(1);
+  expect(f.errors.map(String).filter((line) => line.includes(`enrollment ${id}`))).toHaveLength(1);
+});
+
+test("a source that recovers after a late marketing step clears error_since on the next decided step", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const { f, seq, id } = await marketingOnSource(own, "recovers@example.test");
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+  while (f.clock.now().getTime() < failedAt + 50 * hour) {
+    await f.pass(hour);
+  }
+  // The first step was skipped late, as before; the window carried over to the second.
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[1]!.id,
+    error_since: new Date(failedAt).toISOString(),
+  });
+  await own.start();
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).step_id === seq.steps[2]!.id, "advanced");
+  expect((await f.enrollment(id)).error_since).toBeNull();
+  await f.until(() => f.sink.messages.length === 1, "the second step's mail");
+  expect(
+    (await f.sendLog())
+      .filter((s) => s.enrollment_id === id)
+      .map((s) => [s.step_id, s.skip_reason]),
+  ).toEqual([
+    [seq.steps[0]!.id, "late"],
+    [seq.steps[1]!.id, null],
+  ]);
+  expect(attention(f)).not.toContain(`enrollment ${id}`);
+});
+
+/**
+ * A marketing sequence on `own`'s source whose second step comes due 71.5 hours after the first
+ * step's source failure. The source is down from the first step, which retries hourly until it is
+ * skipped `late` (`max_late: PT70H`) at +71 h; the second step (`max_late: PT20M`) continues that
+ * outage, and its retries carry its decision past the window's 72 hours. Returns once the second
+ * step has failed and retried at +71.75 hours.
+ */
+async function lateAfterWindow(own: PocketBase, email: string) {
+  const f = await open(adapter(own));
+  const news = await f.list("News");
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const step = (wait: string, maxLate = "PT20M") => ({
+    wait,
+    kind: "marketing",
+    template_id: template,
+    condition: { event: "order_paid" },
+    max_late: maxLate,
+  });
+  const seq = await f.sequence({
+    list_id: news,
+    ...external([step("PT1H", "PT70H"), step("PT30M"), step("PT1H")]),
+  });
+  const subscriber = await f.subscriber(email, {
+    external_id: ada.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  expect((await f.enrollment(id)).trigger_external_id).not.toBeNull();
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+  // Retried hourly until +71 h, when the first step is past max_late: skipped late, the window
+  // carried over.
+  while (f.clock.now().getTime() < failedAt + 71 * hour) {
+    await f.pass(hour);
+  }
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[1]!.id,
+    error_since: new Date(failedAt).toISOString(),
+  });
+  // The second step is due at +71.5 h, 1.5 hours after the last failed read (+70 h), so it
+  // continues the outage: its read fails and is retried at +71.75 h (15 minutes late, within
+  // max_late), which fails again and retries 15 minutes later, at +72 h.
+  const quarter = hour / 4;
+  for (let n = 0; n < 3; n++) {
+    await f.pass(quarter);
+  }
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[1]!.id,
+    error_since: new Date(failedAt).toISOString(),
+  });
+  expect((await f.sendLog()).filter((s) => s.enrollment_id === id)).toMatchObject([
+    { step_id: seq.steps[0]!.id, skip_reason: "late" },
+  ]);
+  return { f, seq, id, failedAt, quarter };
+}
+
+test("a late step past the 72-hour window reads its trigger record once and ends source_error when that fails", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const { f, seq, id, failedAt, quarter } = await lateAfterWindow(own, "probe-down@example.test");
+  // At +72 h the step is 30 minutes late, past the window: the probe read fails, so it ends now
+  // rather than being skipped late.
+  await f.pass(quarter);
+  const ended = await f.enrollment(id);
+  expect(ended).toMatchObject({
+    status: "exited",
+    exit_reason: "source_error",
+  });
+  expect(Date.parse(ended.finished_at)).toBe(failedAt + 72 * hour);
+  expect((await f.sendLog()).filter((s) => s.enrollment_id === id)).toMatchObject([
+    { step_id: seq.steps[0]!.id, skip_reason: "late" },
+  ]);
+  expect(f.sink.messages).toHaveLength(0);
+  expect(f.errors.map(String).filter((line) => line.includes(`enrollment ${id}`))).toHaveLength(1);
+  expect(attention(f)).toContain(`Sequence enrollment ${id} ended with source_error`);
+});
+
+test("a late step whose probe reads the source is skipped late and restarts the window; the next step retries a transient failure", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const { f, seq, id, quarter } = await lateAfterWindow(own, "probe-up@example.test");
+  await own.start();
+  // The probe reads the trigger record: the step is still skipped late (nothing stale is sent),
+  // and since the source just answered, error_since is cleared.
+  await f.pass(quarter);
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[2]!.id,
+    error_since: null,
+  });
+  expect(
+    (await f.sendLog())
+      .filter((s) => s.enrollment_id === id)
+      .map((s) => [s.step_id, s.skip_reason]),
+  ).toEqual([
+    [seq.steps[0]!.id, "late"],
+    [seq.steps[1]!.id, "late"],
+  ]);
+  // The third step meets one transient failure: a fresh window, so it retries.
+  await own.stop();
+  const blipAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "transient failure");
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[2]!.id,
+    error_since: new Date(blipAt).toISOString(),
+  });
+  await own.start();
+  await f.pass(quarter);
+  await f.until(() => f.sink.messages.length === 1, "the third step's mail");
+  await f.until(async () => (await f.enrollment(id)).status !== "active", "completed");
+  expect((await f.enrollment(id)).status).toBe("completed");
+  expect(attention(f)).not.toContain(`enrollment ${id}`);
+});
+
+test("an outage left open by a late skip does not shorten a later one: a step days later retries a transient failure", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  const news = await f.list("News");
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const step = (wait: string) => ({
+    wait,
+    kind: "marketing",
+    template_id: template,
+    condition: { event: "order_paid" },
+    max_late: "PT20M",
+  });
+  const seq = await f.sequence({ list_id: news, ...external([step("PT1H"), step("P10D")]) });
+  const subscriber = await f.subscriber("stale@example.test", {
+    external_id: ada.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  // A 1-hour outage at the first step: it fails once and is skipped late an hour on, keeping the
+  // outage's window open.
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+  await f.pass(hour);
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[1]!.id,
+    error_since: new Date(failedAt).toISOString(),
+  });
+  // The source is up for 10 days, with no read, and goes down again as the second step comes due.
+  await own.start();
+  await f.pass(10 * day - hour);
+  expect((await f.enrollment(id)).step_id).toBe(seq.steps[1]!.id);
+  await own.stop();
+  const blipAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => {
+    const row = await f.enrollment(id);
+    return row.status !== "active" || row.error_since !== new Date(failedAt).toISOString();
+  }, "the second step's failure");
+  // The old outage ended long before: a fresh window, so the failure is retried.
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[1]!.id,
+    error_since: new Date(blipAt).toISOString(),
+  });
+  await own.start();
+  await f.pass(hour / 4);
+  await f.until(() => f.sink.messages.length === 1, "the second step's mail");
+  await f.until(async () => (await f.enrollment(id)).status !== "active", "completed");
+  expect((await f.enrollment(id)).status).toBe("completed");
+  expect(
+    (await f.sendLog())
+      .filter((s) => s.enrollment_id === id)
+      .map((s) => [s.step_id, s.skip_reason]),
+  ).toEqual([
+    [seq.steps[0]!.id, "late"],
+    [seq.steps[1]!.id, null],
+  ]);
+  expect(attention(f)).not.toContain(`enrollment ${id}`);
+});
+
+test("a pushed event in an external sequence's exit_on leaves its enrollment active", async () => {
+  const f = await open();
+  const ada = await pb.user();
+  const record = await pb.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const outside = await f.sequence(
+    external([tx(template, { wait: "P7D" })], { exit_on: ["refund"] }),
+  );
+  const pushed = await f.sequence({
+    trigger: { event: "signup" },
+    exit_on: ["refund"],
+    steps: [tx(template, { wait: "P7D" })],
+  });
+  const subscriber = await f.subscriber("exit@example.test", {
+    external_id: ada.id,
+  });
+  const kept = asBody<number>(
+    (
+      await enroll(f, outside.id, subscriber, {
+        trigger_external_id: record.id,
+      })
+    ).body.data.id,
+  );
+  const started = await f.event("exit@example.test", "signup");
+  const exiting = must(started.enrollments.started[0], "pushed enrollment").id;
+  expect((await f.enrollment(exiting)).sequence_id).toBe(pushed.id);
+
+  await f.event("exit@example.test", "refund");
+  expect(await f.enrollment(exiting)).toMatchObject({ status: "exited" });
+  expect(await f.enrollment(kept)).toMatchObject({
+    status: "active",
+    exit_reason: null,
+  });
+});
+
+test("a recovered source clears error_since and sends; a 400 ends source_error at once", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", { plan: "x" }, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const seq = await f.sequence(
+    external([
+      tx(template, {
+        wait: "PT1H",
+        condition: { event: "order_paid", where: { "data.plan": "x" } },
+      }),
+      tx(template, {
+        wait: "P1D",
+        condition: { event: "order_paid", where: { "data.plan": "x" } },
+      }),
+    ]),
+  );
+  const subscriber = await f.subscriber("flaky@example.test", {
+    external_id: ada.id,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  await own.stop();
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+  await own.start();
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).step_id === seq.steps[1]!.id, "advanced");
+  expect((await f.enrollment(id)).error_since).toBeNull();
+  await f.until(() => f.sink.messages.length === 1, "one message");
+
+  // A renamed field: PocketBase answers 400, which no retry fixes.
+  await own.renameField("events", "data", "payload");
+  await f.pass(day);
+  await f.until(async () => (await f.enrollment(id)).status !== "active", "source_error");
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "exited",
+    exit_reason: "source_error",
+  });
+  expect(f.sink.messages).toHaveLength(1);
+});

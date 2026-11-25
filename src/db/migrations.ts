@@ -42,6 +42,7 @@ import instanceSettingsOut from "@/migrations/0033_instance_settings_out.sql" wi
 import sendsDueKind from "@/migrations/0034_sends_due_kind.sql" with { type: "text" };
 import sendsStarted from "@/migrations/0035_sends_started.sql" with { type: "text" };
 import sourceStream from "@/migrations/0036_source_stream.sql" with { type: "text" };
+import externalSequences from "@/migrations/0037_external_sequences.sql" with { type: "text" };
 import instanceRegistry from "@/migrations/instance/0001_registry.sql" with { type: "text" };
 import adminAccount from "@/migrations/instance/0002_admin_account.sql" with { type: "text" };
 import instanceSettings from "@/migrations/instance/0003_settings.sql" with { type: "text" };
@@ -90,6 +91,7 @@ export const productionMigrations: ReadonlyArray<Migration> = [
   { version: 34, sql: sendsDueKind },
   { version: 35, sql: sendsStarted },
   { version: 36, sql: sourceStream },
+  { version: 37, sql: externalSequences },
 ];
 
 /** The instance database's own manifest (D142, 14-projects section 1), applied by the same runner. */

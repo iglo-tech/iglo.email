@@ -21,12 +21,17 @@ const keys = [
   "sequences.entry.stepRemoved",
   "sequences.entry.stepRemovedReason",
   "sequences.entry.trigger",
+  "sequences.entry.triggerMissing",
+  "sequences.entry.triggerRecord",
+  "sequences.entry.triggerUnavailable",
   "sequences.entry.waiting",
   "sequences.entry.waitingHeld",
   "sequences.exit.condition",
   "sequences.exit.conditionText",
   "sequences.exit.event",
   "sequences.exit.eventAt",
+  "sequences.exit.source_error",
+  "sequences.exit.trigger_missing",
   "sequences.kind.marketing",
   "sequences.kind.transactional",
   "sequences.subscriberNotFound",
@@ -37,7 +42,9 @@ const exitReasons = [
   "blocklisted",
   "manual",
   "sequence_archived",
+  "source_error",
   "subscriber_deleted",
+  "trigger_missing",
 ];
 const statuses = ["active", "completed", "exited", "canceled"];
 

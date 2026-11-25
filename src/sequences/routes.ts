@@ -30,12 +30,20 @@ import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
 import { sanitizeEmail, allowedDomain } from "@/subscribers/email";
 import { renderStep, stepCompileInput, stepDataText, TEST_SUBJECT } from "@/sequences/step-data";
-import { FieldError, StepRefusal, stepPreview } from "@/sequences/step-preview";
+import {
+  eventReads,
+  FieldError,
+  previewParts,
+  sourcePreviewReads,
+  StepRefusal,
+  stepPreview,
+} from "@/sequences/step-preview";
 import {
   idValue,
   DefinitionError,
   definitionInput,
   limits,
+  sequenceSources,
   sequenceStatuses,
 } from "@/sequences/input";
 import type { SequenceStatus } from "@/sequences/input";
@@ -44,13 +52,17 @@ import type {
   EnrollmentFilter,
   EnrollmentRow,
   Enrollments,
-  TriggerEvent,
+  TriggerRef,
 } from "@/sequences/enrollments";
 import { validate } from "@/conditions/validate";
 import { compile } from "@/conditions/compile";
 import { SequenceConflict } from "@/sequences/store";
 import type { SequenceStore } from "@/sequences/store";
 import { frequencyHold, timeline } from "@/sequences/timeline";
+import type { SourceTrigger } from "@/sequences/timeline";
+import type { SourceProvider } from "@/sources/project";
+import { isSourceError } from "@/sources/source";
+import type { ExternalSource, SourceEvent } from "@/sources/source";
 import type { RequestContext } from "@/server/context";
 import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
@@ -74,6 +86,18 @@ const PREVIEW_BODY_BYTES = 512 * 1024;
 /** Addresses one test send mails, and test sends in flight, as campaign tests bound theirs. */
 const MAX_TEST_EMAILS = 5;
 const MAX_TEST_SENDS = 4;
+/** A source record ID as the adapter accepts one. */
+const recordId = /^[A-Za-z0-9_-]{1,100}$/;
+
+/** A source failure as an answer (D172): 503 for a transient one, 502 for a refusal. */
+function sourceHttpError(error: unknown): HttpError | undefined {
+  if (!isSourceError(error)) {
+    return undefined;
+  }
+  return error.kind === "transient"
+    ? new HttpError(503, "The source is unavailable; try again later.", { "Retry-After": "30" })
+    : new HttpError(502, `The source refused the read: ${error.message}`);
+}
 
 const isSequenceStatus = (value: unknown): value is SequenceStatus =>
   sequenceStatuses.some((name) => name === value);
@@ -154,9 +178,21 @@ const previewBody = async (
     throw invalid(c, "body");
   }
   for (const key of Object.keys(value)) {
-    if (!["subscriber_id", "trigger_event_id", "sample", ...extra].includes(key)) {
+    if (
+      !["subscriber_id", "trigger_event_id", "trigger_external_id", "sample", ...extra].includes(
+        key,
+      )
+    ) {
       throw invalid(c, key);
     }
+  }
+  const externalId = value.trigger_external_id;
+  if (
+    externalId !== undefined &&
+    externalId !== null &&
+    (typeof externalId !== "string" || !recordId.test(externalId))
+  ) {
+    throw invalid(c, "trigger_external_id");
   }
   const id = (field: "subscriber_id" | "trigger_event_id") => {
     try {
@@ -182,6 +218,7 @@ const previewBody = async (
   return {
     subscriberId: id("subscriber_id"),
     triggerEventId: id("trigger_event_id"),
+    triggerExternalId: typeof externalId === "string" ? externalId : null,
     sample,
     emails: value.emails,
   };
@@ -209,20 +246,25 @@ export function registerSequenceRoutes(
     };
     roles: Roles;
     auth: Authentication;
+    /** The project's source, which external sequences read (D172). */
+    source?: SourceProvider;
   },
 ) {
   const { sequences, enrollments, subscribers, events, sends, templates, roles, auth, testSends } =
     deps;
+  const currentSource = (): ExternalSource | null => deps.source?.() ?? null;
   /** Validate a definition and write it, both inside one write transaction. */
   const save = (
     c: RequestContext,
     value: unknown,
     write: (input: ReturnType<typeof definitionInput>) => unknown,
+    stored?: bigint,
   ) =>
     writeTransaction(c.app.db, () => {
       auth.revalidate(c, MANAGE);
       const i = identity(c);
       try {
+        const storedSource = stored === undefined ? null : sequences.sourceOf(stored);
         const input = definitionInput(value, {
           canUseSql: roles.can(i.role, "subscribers:sql_query"),
           templateType: sequences.templateType,
@@ -230,6 +272,8 @@ export function registerSequenceRoutes(
             sequences.listExists(id) &&
             (roles.canList(i.role, i.user.list_role_id, "list:get", [id]) ||
               roles.canList(i.role, i.user.list_role_id, "list:manage", [id])),
+          sourceConfigured: () => currentSource() !== null,
+          ...(storedSource === null ? {} : { storedSource }),
         });
         return write(input);
       } catch (error) {
@@ -290,7 +334,7 @@ export function registerSequenceRoutes(
     async (c) => {
       const value = await body(c, limits.bodyBytes);
       const id = BigInt(getID(c));
-      const saved = save(c, value, (input) => sequences.update(id, input));
+      const saved = save(c, value, (input) => sequences.update(id, input), id);
       if (!saved) {
         throw new HttpError(404, "Sequence not found");
       }
@@ -340,6 +384,18 @@ export function registerSequenceRoutes(
       if (!("condition" in value)) {
         throw invalid(c, "condition");
       }
+      // D172: where the condition runs; a trigger condition is an external sequence's only.
+      const source = value.source === undefined ? "events" : value.source;
+      if (
+        typeof source !== "string" ||
+        !(sequenceSources as ReadonlyArray<string>).includes(source)
+      ) {
+        throw invalid(c, "source");
+      }
+      const trigger = value.trigger === undefined ? false : value.trigger;
+      if (typeof trigger !== "boolean" || (trigger && source !== "external")) {
+        throw invalid(c, "trigger");
+      }
       // A save reads null as "no condition", so null is valid here too.
       if (value.condition === null) {
         return ok({ ok: true, errors: [] });
@@ -347,9 +403,15 @@ export function registerSequenceRoutes(
       const result = validate(value.condition, {
         canUseSql: roles.can(identity(c).role, "subscribers:sql_query"),
         field,
+        source: source as "events" | "external",
+        trigger,
       });
       if (!result.ok) {
         return ok({ ok: false, errors: result.errors });
+      }
+      // An external condition reads the source and compiles to no SQL.
+      if (source === "external") {
+        return ok({ ok: true, errors: [] });
       }
       // The compiler is what a save's evaluator will run; it touches no data.
       try {
@@ -444,50 +506,76 @@ export function registerSequenceRoutes(
     }
     return template;
   };
-  /** The data a send of this step would render for the request, as the scheduler builds it (D105). */
-  const previewFor = (
+  /**
+   * The data a send of this step would render for the request, as the scheduler builds it (D105):
+   * the trigger and aggregates are read once (from the source for an external sequence, D172), then
+   * `forRecipient` builds each recipient's data.
+   */
+  const previewFor = async (
     c: RequestContext,
     value: Awaited<ReturnType<typeof previewBody>>,
     step: NonNullable<ReturnType<typeof stepOf>["step"]>,
     sequence: NonNullable<ReturnType<typeof sequences.get>>,
-    recipient?: string,
   ) => {
     const row = subscriberNamed(c, value.subscriberId);
     const settings = deps.settings();
-    try {
-      return stepPreview(
-        {
-          brand: settings.marketing.brand,
-          sequence: {
-            id: idOf(sequence.id),
-            name: sequence.name,
-            event: (sequence.trigger as { event: string }).event,
-          },
-          step: {
-            id: idOf(step.id),
-            uuid: step.uuid,
-            position: step.position,
-            kind: step.kind,
-            aggregates: (step.aggregates ?? {}) as Record<string, Aggregate>,
-          },
-          subscriber: row,
-          triggerEventId: value.triggerEventId,
-          sample: value.sample,
-          ...(recipient === undefined ? {} : { recipient }),
-          now: c.app.clock.now(),
-        },
-        events,
-        messageLinks(settings.marketing, deps.tracking),
-      );
-    } catch (error) {
+    const input = {
+      brand: settings.marketing.brand,
+      sequence: {
+        id: idOf(sequence.id),
+        name: sequence.name,
+        event: (sequence.trigger as { event: string }).event,
+      },
+      step: {
+        id: idOf(step.id),
+        uuid: step.uuid,
+        position: step.position,
+        kind: step.kind,
+        aggregates: (step.aggregates ?? {}) as Record<string, Aggregate>,
+      },
+      subscriber: row,
+      triggerEventId: value.triggerEventId,
+      triggerExternalId: value.triggerExternalId,
+      sample: value.sample,
+      now: c.app.clock.now(),
+    };
+    const refused = (error: unknown) => {
       if (error instanceof FieldError) {
-        throw invalid(c, error.field);
+        return invalid(c, error.field);
       }
       if (error instanceof StepRefusal) {
-        throw new HttpError(409, error.message);
+        return new HttpError(409, error.message);
       }
-      throw error;
+      return sourceHttpError(error) ?? error;
+    };
+    let reads;
+    if (sequence.source === "external") {
+      const source = currentSource();
+      if (!source) {
+        throw new HttpError(409, "The project has no source configured.");
+      }
+      reads = sourcePreviewReads(source, c.request.signal);
+    } else {
+      reads = eventReads(events);
     }
+    let parts: Awaited<ReturnType<typeof previewParts>>;
+    try {
+      parts = await previewParts(input, reads);
+    } catch (error) {
+      throw refused(error);
+    }
+    const links = messageLinks(settings.marketing, deps.tracking);
+    return (recipient?: string) => {
+      try {
+        return stepPreview(
+          { ...input, ...(recipient === undefined ? {} : { recipient }) },
+          parts,
+          links,
+        );
+      } catch (error) {
+        throw refused(error);
+      }
+    };
   };
   /** Renders the step's template with its data, as a send does; the step's subject wins. */
   const renderStepFor = (
@@ -526,7 +614,7 @@ export function registerSequenceRoutes(
       const value = await previewBody(c, [], () => auth.revalidate(c, GET));
       const { sequence, step } = stepOf(c);
       const template = stepTemplate(step);
-      const prepared = previewFor(c, value, step, sequence);
+      const prepared = (await previewFor(c, value, step, sequence))();
       const data = stepDataText(prepared.data);
       const rendered = renderStepFor(c, step, template, data);
       return ok({
@@ -574,8 +662,9 @@ export function registerSequenceRoutes(
       try {
         const settings = deps.settings();
         const messages: Array<Message> = [];
+        const forRecipient = await previewFor(c, value, step, sequence);
         for (const email of reachable) {
-          const prepared = previewFor(c, value, step, sequence, email);
+          const prepared = forRecipient(email);
           const data = stepDataText(prepared.data);
           // One budget for the message's render and its generated text part (D118).
           const budget = createMessageBudget();
@@ -642,6 +731,54 @@ export function registerSequenceRoutes(
     auth.middleware(MANAGE),
     hasID,
   );
+  /**
+   * D172: the source record a manual or test enrollment of an external sequence starts from, read
+   * before its write transaction. `"events"` for a pushed-event (or absent) sequence, which takes
+   * `trigger_event_id` instead; null for none (no record named and none under the trigger's name).
+   * A subscriber the caller cannot read is left to the transaction's 404.
+   */
+  async function enrollRecord(
+    c: RequestContext,
+    sequenceId: bigint,
+    subscriberId: bigint,
+    named: string | null,
+  ): Promise<SourceEvent | "events" | null> {
+    const sequence = sequences.get(sequenceId);
+    if (!sequence || sequence.source !== "external") {
+      return "events";
+    }
+    const subscriber = subscribers.get(subscriberId);
+    if (
+      !subscriber ||
+      !readableSubscribers(roles, subscribers, identity(c), [subscriberId]).has(subscriberId)
+    ) {
+      return null;
+    }
+    if (!subscriber.external_id) {
+      throw new HttpError(
+        409,
+        "The subscriber has no external ID, so an external sequence cannot read its source records.",
+      );
+    }
+    const source = currentSource();
+    if (!source) {
+      throw new HttpError(409, "The project has no source configured.");
+    }
+    const event = (sequence.trigger as { event: string }).event;
+    const call = c.request.signal ? { signal: c.request.signal } : {};
+    try {
+      if (named === null) {
+        return await source.latest({ user: subscriber.external_id, names: [event] }, call);
+      }
+      const record = await source.record(named, call);
+      if (!record || record.user !== subscriber.external_id || record.name !== event) {
+        throw invalid(c, "trigger_external_id");
+      }
+      return record;
+    } catch (error) {
+      throw sourceHttpError(error) ?? error;
+    }
+  }
   /** The test recipients: 1 to 5 distinct addresses, validated as a subscriber's are. */
   function testAddresses(c: RequestContext, value: unknown): Array<string> {
     if (!Array.isArray(value) || value.length < 1 || value.length > MAX_TEST_EMAILS) {
@@ -738,13 +875,42 @@ export function registerSequenceRoutes(
   router.route(
     "GET",
     "/api/enrollments/:id/timeline",
-    (c) => {
+    async (c) => {
       const row = enrollments.get(BigInt(getID(c)));
       if (!row) {
         throw new HttpError(404, "Enrollment not found");
       }
       const addresses = readable(c, [row]);
       const steps = enrollments.steps(row.sequence_id);
+      // D172: an external enrollment's trigger is its source record, read for a viewer who may read
+      // the subscriber; a record the source no longer has, or a failed read, is named as such.
+      let record: SourceTrigger | null = null;
+      if (
+        row.sequence_source === "external" &&
+        row.trigger_external_id &&
+        addresses.has(row.subscriber_id)
+      ) {
+        const source = currentSource();
+        let found: SourceEvent | null | undefined;
+        try {
+          found = source
+            ? await source.record(
+                row.trigger_external_id,
+                c.request.signal ? { signal: c.request.signal } : {},
+              )
+            : undefined;
+        } catch (error) {
+          if (!isSourceError(error)) {
+            throw error;
+          }
+          found = undefined;
+        }
+        record = {
+          id: row.trigger_external_id,
+          occurredAt: row.trigger_occurred_at ?? null,
+          record: found === undefined ? "unavailable" : found,
+        };
+      }
       return ok({
         enrollment: addressed(row, addresses),
         entries: timeline(
@@ -755,6 +921,7 @@ export function registerSequenceRoutes(
           steps,
           sends.enrollmentSends(row.id),
           frequencyHold(row, steps, sends.capFreeAt, c.app.clock.now()),
+          record,
         ),
       });
     },
@@ -784,6 +951,16 @@ export function registerSequenceRoutes(
       if (subscriberId === undefined) {
         throw invalid(c, "subscriber_id");
       }
+      const externalId = value.trigger_external_id;
+      if (
+        externalId !== undefined &&
+        externalId !== null &&
+        (typeof externalId !== "string" ||
+          !recordId.test(externalId) ||
+          triggerEventId !== undefined)
+      ) {
+        throw invalid(c, "trigger_external_id");
+      }
       if (value.force !== undefined && typeof value.force !== "boolean") {
         throw invalid(c, "force");
       }
@@ -798,6 +975,17 @@ export function registerSequenceRoutes(
       }
       if (test) {
         refuseWhileHeld(c.app.db);
+      }
+      // D172: an external sequence starts from a source record, read here, before the write
+      // transaction: the one named, else the subscriber's latest under the trigger's name.
+      const record = await enrollRecord(
+        c,
+        sequenceId,
+        subscriberId,
+        typeof externalId === "string" ? externalId : null,
+      );
+      if (record === "events" && typeof externalId === "string") {
+        throw invalid(c, "trigger_external_id");
       }
       const outcome = writeTransaction(c.app.db, () => {
         auth.revalidate(c, MANAGE);
@@ -816,13 +1004,21 @@ export function registerSequenceRoutes(
           throw new HttpError(409, "The subscriber is blocklisted.");
         }
         // An existing event the enrollment starts from (D101); an unknown one is refused here.
-        let trigger: TriggerEvent | null = null;
+        let trigger: TriggerRef = null;
         if (triggerEventId !== undefined) {
           const event = events.get(triggerEventId);
           if (!event) {
             throw invalid(c, "trigger_event_id");
           }
-          trigger = { id: event.id, subscriber_id: event.subscriber_id, name: event.name };
+          trigger = {
+            event: { id: event.id, subscriber_id: event.subscriber_id, name: event.name },
+          };
+        } else if (record !== "events" && record !== null) {
+          // Read before the transaction for the subscriber's external ID, which must still be its own.
+          if (subscriber.external_id !== record.user) {
+            throw invalid(c, "trigger_external_id");
+          }
+          trigger = { record: { id: record.id, name: record.name, occurredAt: record.occurredAt } };
         }
         return test
           ? enrollments.enrollTest(
@@ -841,6 +1037,9 @@ export function registerSequenceRoutes(
       }
       if (outcome.error === "trigger_event") {
         throw invalid(c, "trigger_event_id");
+      }
+      if (outcome.error === "trigger_record") {
+        throw invalid(c, "trigger_external_id");
       }
       if (outcome.error === "sequence_inactive") {
         throw new HttpError(409, "The sequence is not active.");

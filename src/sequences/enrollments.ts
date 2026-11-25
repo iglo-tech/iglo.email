@@ -39,7 +39,14 @@ export interface EnrollmentRow {
   updated_at: string;
   finished_at: string | null;
   test: bigint | number;
+  /** An external sequence's trigger record (D172, migration 0036). */
+  trigger_external_id?: string | null;
+  trigger_occurred_at?: string | null;
+  /** When the current step's source reads began failing transiently (D172). */
+  error_since?: string | null;
   sequence_name?: string | null;
+  /** The sequence's source; an `external` enrollment shows its trigger record and source errors. */
+  sequence_source?: string | null;
 }
 /** An enrollment an event started or exited, as an events row names it (B127). */
 export interface EventLink {
@@ -77,6 +84,15 @@ export function project(row: EnrollmentRow) {
     updated_at: row.updated_at,
     finished_at: row.finished_at,
     test: Boolean(row.test),
+    // D172: an external sequence's enrollment names its trigger record and its source errors; a
+    // pushed-event enrollment keeps its shape.
+    ...(row.sequence_source === "external"
+      ? {
+          trigger_external_id: row.trigger_external_id ?? null,
+          trigger_occurred_at: row.trigger_occurred_at ?? null,
+          error_since: row.error_since ?? null,
+        }
+      : {}),
     ...(row.sequence_name === undefined ? {} : { sequence_name: row.sequence_name }),
   };
 }
@@ -106,9 +122,16 @@ export interface SchedulerContext {
   created_at: string;
   updated_at: string;
   test: bigint | number;
+  trigger_external_id: string | null;
+  trigger_occurred_at: string | null;
+  error_since: string | null;
+  /** When this enrollment's last source read failed transiently (D172). */
+  error_last: string | null;
   sequence_name: string;
   sequence_status: string;
   list_id: bigint | null;
+  /** Pushed events or the project's source (D172). */
+  source: "events" | "external";
   step_uuid: string;
   position: bigint;
   kind: "marketing" | "transactional";
@@ -142,10 +165,28 @@ export interface TriggerEvent {
   subscriber_id: bigint;
   name: string;
 }
+/**
+ * A source record a manual or test enrollment of an external sequence starts from (D172), read by the
+ * route before its transaction: it belongs to the subscriber's `external_id` (the route checks) and
+ * `enroll` checks its name against the trigger.
+ */
+export interface TriggerRecord {
+  id: string;
+  name: string;
+  occurredAt: Date;
+}
+/** What a manual or test enrollment starts from: a pushed event, a source record, or nothing. */
+export type TriggerRef = { event: TriggerEvent } | { record: TriggerRecord } | null;
 export type EnrollOutcome =
   | { enrollment: EnrollmentRow }
   | {
-      error: "sequence_missing" | "sequence_inactive" | "no_steps" | "reentry" | "trigger_event";
+      error:
+        | "sequence_missing"
+        | "sequence_inactive"
+        | "no_steps"
+        | "reentry"
+        | "trigger_event"
+        | "trigger_record";
     };
 export type TestOutcome =
   | EnrollOutcome
@@ -165,9 +206,34 @@ const bound = (since: string) => (e: RecordedEvent) => {
         : Date.parse(e.receivedAt) - (parseDuration(since) ?? Number.NaN);
   return time < MIN_TIME ? "" : new Date(time).toISOString();
 };
-/** A manual or test trigger is the subscriber's own event under the sequence's trigger name. */
-const triggerFits = (trigger: TriggerEvent | null, subscriberId: bigint, event: string) =>
-  trigger === null || (trigger.subscriber_id === subscriberId && trigger.name === event);
+/**
+ * A manual or test trigger fits the sequence: a pushed event sequence takes the subscriber's own event,
+ * an external one a source record (D172), each under the trigger's name. Null when it fits.
+ */
+function triggerMisfit(
+  trigger: TriggerRef,
+  subscriberId: bigint,
+  sequence: { event: string; source: string },
+): "trigger_event" | "trigger_record" | null {
+  if (trigger === null) {
+    return null;
+  }
+  if ("event" in trigger) {
+    const { event } = trigger;
+    return sequence.source === "events" &&
+      event.subscriber_id === subscriberId &&
+      event.name === sequence.event
+      ? null
+      : "trigger_event";
+  }
+  return sequence.source === "external" && trigger.record.name === sequence.event
+    ? null
+    : "trigger_record";
+}
+const triggerIds = (trigger: TriggerRef) => ({
+  eventId: trigger !== null && "event" in trigger ? trigger.event.id : null,
+  record: trigger !== null && "record" in trigger ? trigger.record : null,
+});
 export function createEnrollments(db: Database, clock: Clock) {
   const q = prepareNamedQueries(db, [{ name: "sequences/enrollments", sql }]);
   const exitShown = createExitShown(db);
@@ -245,6 +311,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     now: string,
     test: boolean,
     eventStarted: boolean,
+    record: TriggerRecord | null = null,
   ): bigint {
     const dueAt = dueAfter(from, first.wait, test);
     const id = (
@@ -260,6 +327,8 @@ export function createEnrollments(db: Database, clock: Clock) {
           now,
           test ? 1 : 0,
           eventStarted ? 1 : 0,
+          record?.id ?? null,
+          record ? record.occurredAt.toISOString() : null,
         ) as {
         id: bigint;
       }
@@ -414,7 +483,7 @@ export function createEnrollments(db: Database, clock: Clock) {
     if (!statements) {
       statements = {
         rows: db.prepare<unknown, Array<SQLQueryBindings>>(
-          `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, exit_condition, created_at, updated_at, finished_at, test, (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+          `SELECT id, sequence_id, subscriber_id, trigger_event_id, step_id, due_at, status, exit_reason, exit_condition, created_at, updated_at, finished_at, test, trigger_external_id, trigger_occurred_at, error_since, (SELECT name FROM sequences WHERE sequences.id = sequence_id) AS sequence_name, (SELECT source FROM sequences WHERE sequences.id = sequence_id) AS sequence_source FROM enrollments${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
         ),
         total: db.prepare<unknown, Array<SQLQueryBindings>>(
           `SELECT count(*) AS n FROM enrollments${where}`,
@@ -464,12 +533,13 @@ export function createEnrollments(db: Database, clock: Clock) {
       sequenceId: bigint,
       subscriberId: bigint,
       force: boolean,
-      trigger: TriggerEvent | null = null,
+      trigger: TriggerRef = null,
     ): EnrollOutcome {
       const sequence = q.get("sequence-for-enroll").get(sequenceId) as {
         id: bigint;
         status: string;
         reentry: string;
+        source: string;
         event: string;
       } | null;
       if (!sequence) {
@@ -485,8 +555,9 @@ export function createEnrollments(db: Database, clock: Clock) {
       if (!first) {
         return { error: "no_steps" };
       }
-      if (!triggerFits(trigger, subscriberId, sequence.event)) {
-        return { error: "trigger_event" };
+      const misfit = triggerMisfit(trigger, subscriberId, sequence);
+      if (misfit) {
+        return { error: misfit };
       }
       const now = at();
       if (
@@ -505,16 +576,8 @@ export function createEnrollments(db: Database, clock: Clock) {
         }
         end(active.id, "canceled", "manual", now);
       }
-      const id = start(
-        sequenceId,
-        subscriberId,
-        trigger?.id ?? null,
-        first,
-        now,
-        now,
-        false,
-        false,
-      );
+      const { eventId, record } = triggerIds(trigger);
+      const id = start(sequenceId, subscriberId, eventId, first, now, now, false, false, record);
       return { enrollment: must(byId(id), "enrollment") };
     },
     /**
@@ -529,10 +592,11 @@ export function createEnrollments(db: Database, clock: Clock) {
       sequenceId: bigint,
       subscriberId: bigint,
       consent: (listId: bigint | null) => string | null,
-      trigger: TriggerEvent | null = null,
+      trigger: TriggerRef = null,
     ): TestOutcome {
       const sequence = q.get("sequence-for-enroll").get(sequenceId) as {
         status: string;
+        source: string;
         event: string;
       } | null;
       if (!sequence) {
@@ -545,8 +609,9 @@ export function createEnrollments(db: Database, clock: Clock) {
       if (!first) {
         return { error: "no_steps" };
       }
-      if (!triggerFits(trigger, subscriberId, sequence.event)) {
-        return { error: "trigger_event" };
+      const misfit = triggerMisfit(trigger, subscriberId, sequence);
+      if (misfit) {
+        return { error: misfit };
       }
       if (q.get("active-test").get(subscriberId, sequenceId)) {
         return { error: "test_running" };
@@ -559,7 +624,8 @@ export function createEnrollments(db: Database, clock: Clock) {
         }
       }
       const now = at();
-      const id = start(sequenceId, subscriberId, trigger?.id ?? null, first, now, now, true, false);
+      const { eventId, record } = triggerIds(trigger);
+      const id = start(sequenceId, subscriberId, eventId, first, now, now, true, false, record);
       return { enrollment: must(byId(id), "enrollment") };
     },
     /**
@@ -682,9 +748,11 @@ export function createEnrollments(db: Database, clock: Clock) {
      * `completed` when none is left. A deleted step is passed without waiting again (the
      * current due time is kept) and does not count as a step that ran, so `updated_at`, which
      * conditions read as the last step time, changes only when a step ran. The caller holds
-     * the write and has checked `owns`.
+     * the write and has checked `owns`. `error_since` and `error_last` (D172) are cleared unless `keepErrorSince`
+     * (a step passed without a source read deciding it, such as a late skip) or the step was
+     * deleted.
      */
-    advance(claim: Claim, now: Date): "advanced" | "completed" {
+    advance(claim: Claim, now: Date, keepErrorSince = false): "advanced" | "completed" {
       const { step } = claim;
       const deleted = step.step_status === "deleted";
       const test = Boolean(step.test);
@@ -701,7 +769,8 @@ export function createEnrollments(db: Database, clock: Clock) {
       const dueAt = deleted ? step.due_at : dueAfter(at, next.wait, test);
       // A deleted step keeps the previous step time; claimed-advance sets updated_at.
       const updated = deleted ? (byId(claim.id)?.updated_at ?? at) : at;
-      q.get("claimed-advance").run(next.id, dueAt, updated, claim.id, claim.lease);
+      const keep = keepErrorSince || deleted ? 1 : 0;
+      q.get("claimed-advance").run(next.id, dueAt, keep, updated, claim.id, claim.lease);
       return "advanced";
     },
     /** End a claimed enrollment. The caller holds the write and has checked `owns`. */
@@ -726,6 +795,19 @@ export function createEnrollments(db: Database, clock: Clock) {
      */
     release(claim: Pick<Claim, "id" | "lease">, retryAt: Date | null) {
       q.get("claimed-release").run(retryAt?.toISOString() ?? null, claim.id, claim.lease);
+    },
+    /**
+     * D172: release a claimed enrollment after a transient source failure, claimable again at
+     * `retryAt`, with its outage window: `since` (the window's first failure) and `now` (this one).
+     */
+    releaseSourceRetry(claim: Pick<Claim, "id" | "lease">, retryAt: Date, since: Date, now: Date) {
+      q.get("claimed-source-retry").run(
+        retryAt.toISOString(),
+        since.toISOString(),
+        now.toISOString(),
+        claim.id,
+        claim.lease,
+      );
     },
     /**
      * B5: recompute `due_at` of one batch of enrollments waiting on a step from the step's current

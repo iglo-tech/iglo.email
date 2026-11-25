@@ -1,6 +1,6 @@
 -- Native sequence definitions (docs/design/05-sequences.md#sequence-definition, 03-data-model.md); no upstream source.
 -- name: sequence-by-id
-SELECT id, uuid, name, status, trigger, exit_on, reentry, list_id, created_at, updated_at,
+SELECT id, uuid, name, status, source, trigger, exit_on, reentry, list_id, created_at, updated_at,
   (SELECT count(*) FROM enrollments WHERE sequence_id = sequences.id AND status = 'active' AND test = 0) AS active_enrollments
   FROM sequences WHERE id = ?;
 -- name: steps-by-sequence
@@ -13,10 +13,10 @@ SELECT st.id, st.sequence_id, s.name AS sequence_name, st.position
   FROM sequence_steps st JOIN sequences s ON s.id = st.sequence_id
   WHERE st.id IN (SELECT value FROM json_each(?));
 -- name: sequence-insert
-INSERT INTO sequences (uuid, name, status, trigger, exit_on, reentry, list_id, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;
+INSERT INTO sequences (uuid, name, status, source, trigger, exit_on, reentry, list_id, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id;
 -- name: sequence-update
-UPDATE sequences SET name = ?, status = ?, trigger = ?, exit_on = ?, reentry = ?, list_id = ?, updated_at = ? WHERE id = ?;
+UPDATE sequences SET name = ?, status = ?, source = ?, trigger = ?, exit_on = ?, reentry = ?, list_id = ?, updated_at = ? WHERE id = ?;
 -- name: sequence-status
 UPDATE sequences SET status = ?, updated_at = ? WHERE id = ?;
 -- name: step-positions
@@ -44,7 +44,7 @@ DELETE FROM sequence_steps WHERE sequence_id = ?;
 -- name: sequence-delete
 DELETE FROM sequences WHERE id = ?;
 -- name: sequences-page
-SELECT id, uuid, name, status, trigger, exit_on, reentry, list_id, created_at, updated_at,
+SELECT id, uuid, name, status, source, trigger, exit_on, reentry, list_id, created_at, updated_at,
   (SELECT count(*) FROM enrollments WHERE sequence_id = sequences.id AND status = 'active' AND test = 0) AS active_enrollments
   FROM sequences WHERE ?1 IS NULL OR status = ?1 ORDER BY id DESC LIMIT ?2 OFFSET ?3;
 -- name: sequences-count

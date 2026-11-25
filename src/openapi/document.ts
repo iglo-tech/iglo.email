@@ -47,7 +47,11 @@ const refused = new Map<number, string>([
   [422, "The result is too large for this read."],
   [429, "Too many requests."],
   [499, "The client closed the request before the answer."],
-  [503, "Unavailable: the feature is off, the server is shutting down, or a restore hold is on."],
+  [502, "The project's source refused a read this request needed (D172)."],
+  [
+    503,
+    "Unavailable: the feature is off, the server is shutting down, a restore hold is on, or the project's source is unreachable.",
+  ],
 ]);
 
 function applies(entry: string, operation: Operation): boolean {

@@ -520,7 +520,14 @@ above has the same settings for nginx.
    key `sources.private_hosts` names the host names a source URL may use to reach a private address
    while the block stays on (webhooks never use it). List only host names whose DNS you control,
    because a listed name may resolve to any private or link-local address, including the cloud
-   metadata address, on any port.
+   metadata address, on any port. In the source, guests must not be able to read the events
+   collection or the recipients view: set their list and view rules to the service account only
+   (for example `@request.auth.collectionName = "services"`). PocketBase reads a revoked or expired
+   token as a guest, and iglo.email confirms its token only after a short or empty answer, so a
+   guest-readable collection could answer a revoked token with a full page of what guests see, and
+   a condition would count too few records. The source's "Test connection" reads each of them once
+   without a token and fails the step, naming the collection, when anything comes back
+   ([D172](design/09-decisions.md#d172-sequences-and-conditions-on-a-source-b150c-lead-2026-11-25)).
 4. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
 5. **One container per volume.** Each data directory has one server ([one process per data
    directory](#one-process-per-data-directory)). A rolling deploy that starts the new container

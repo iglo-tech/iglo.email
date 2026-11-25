@@ -153,6 +153,12 @@ async function earlierRelease(): Promise<string> {
     db.run("DROP TABLE source_stream_retries");
     db.run("DROP TABLE source_stream_seen");
     db.run("DROP TABLE source_stream_markers");
+    // Migration 37 (B150c) adds the sequence source and the external trigger columns.
+    db.run("ALTER TABLE sequences DROP COLUMN source");
+    db.run("ALTER TABLE enrollments DROP COLUMN trigger_external_id");
+    db.run("ALTER TABLE enrollments DROP COLUMN trigger_occurred_at");
+    db.run("ALTER TABLE enrollments DROP COLUMN error_since");
+    db.run("ALTER TABLE enrollments DROP COLUMN error_last");
     // Migration 32 (B140) marks the admin's copy; the earlier schema has no such column.
     db.run("DROP INDEX users_one_admin_copy");
     db.run("ALTER TABLE users DROP COLUMN admin_copy");
@@ -190,7 +196,7 @@ test("an upgrade turns the stored false on, and every restart names the refused 
   expect((await (await instance(upgraded.port)).read())[key]).toBe(true);
   // The public webhook, id 2, is never named.
   expect(await stopped(upgraded.child)).toEqual([refusedLine]);
-  expect(userVersion(dataDir)).toBe(36);
+  expect(userVersion(dataDir)).toBe(37);
 
   // A restart, with the target still refused: named again.
   const restarted = await up(dataDir);
