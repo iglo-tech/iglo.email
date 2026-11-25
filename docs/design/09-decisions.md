@@ -2073,3 +2073,20 @@ Brief B117a, from an adopter's checks and reviews of B126, B127, B131, B134f and
   - *An environment variable for the SES endpoint.* It would let the executable send signed requests anywhere in production; the in-process config is enough for tests and the browser pass.
   - *Caching the history for a minute.* Halves nothing for a single page load and makes the on-demand rule harder to read; revisit with the Sending page (B143b) if it polls.
   - *Dropping OpenAPI descriptions to make room.* Not needed now; the component is compact.
+
+## D161. Effective rate and quota guard (B145b, lead, 2026-11-25)
+
+- **Decision:** the choices [14-projects](14-projects.md) section 7's **Rate** and **Last-resort guard** items leave open, as B145b built them ([section 7, "As built (B145b)"](14-projects.md#as-built-b145b)):
+  - **The SES account owns both inputs.** `createSesAccount` gains `held()` and an `onChange` callback; its `rate()` (B145a) becomes the dispatcher's `rate` input and `held()` its `held` input. The instance builds the account before the dispatcher and wires `onChange` to `dispatcher.wake()`, replacing B141's own subscription to `messaging.max_send_rate`. One place decides the rate and the hold; the dispatcher, outbox and campaign runner are unchanged, since `held()` already expressed the guard (D155).
+  - **The hold is kept, not computed per grant.** The account re-evaluates it after a good read and after a settings write, and keeps a boolean; `held()` returns it. This makes "one line when holding starts and one when it stops" exact, makes the check per grant a field read (measured within ±1%, `docs/perf/projects-B145b.md`), and guarantees no timer lifts a hold.
+  - **Wake only on a change.** `onChange` fires when the effective rate or the hold changed, not on every read: an unchanged snapshot every minute while held does not wake the dispatcher.
+  - **The line uses the effective rate.** `max(2% × Max24HourSend, effective rate × 60)`, with `0` (no cap) leaving the 2% term. The rate setting's change can therefore start or end a hold on the same snapshot; that is the line the spec defines for the rate in force, not a resume "without a snapshot". Past the quota (`SentLast24Hours > Max24HourSend`) is held. An account without a daily limit (`-1`) is never held.
+  - **Keys.** A key change drops the snapshot (B145a, D159), so it also ends a hold, with its own attention line ("the SES API keys changed"): the new account's state is unknown until its first read, and without a snapshot section 7 says the setting alone applies. The new keys' first read holds again if it must.
+  - **Attention lines.** One line each way, naming what is left, the quota, the line (rounded up) and the snapshot's read time, through the instance's attention log like B145a's read failures. A failed read writes only B145a's own line and leaves the hold.
+  - **Settings line.** The instance Settings page shows SES's rate beside `messaging.max_send_rate` from the snapshot at render time, and a warning that follows the field as it is edited while it is higher than SES's rate or `0`. B145a's warning inside the "Check SES account" result stays: it reports a fresh read.
+- **Unchanged:** at-most-once (a hold never hands back a claimed row or a started push; nothing is retried), the dispatcher's scheduling and grant sizing, the outbox and campaign runner, B145a's refresh schedule and forecast, and the behaviour without keys (the setting alone, no guard).
+- **Considered:**
+  - *Computing `quotaHeld` inside `held()` on every grant.* Pure and simple, but the attention lines and the wake still need a remembered state, so it would be kept twice.
+  - *Pausing running campaigns while held.* The spec says no pause; a pause would need someone to resume it.
+  - *Keeping the hold across a key change until the new account's first read.* Holds mail on the strength of another account's numbers.
+  - *Measuring with the compiled executable.* It cannot reach a stand-in for SES (D159); the measurement runs the same in-process harness on both sides instead.
