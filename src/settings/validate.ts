@@ -14,6 +14,7 @@ import { parseProxy } from "@/server/client-address";
 import { HttpError } from "@/server/response";
 import { settingSides } from "@/settings/keys";
 import type { SettingKey } from "@/settings/keys";
+import { normalizePreferenceFields, preferenceFieldShape } from "@/public/preference-fields";
 
 export type Settings = Record<string, any>;
 
@@ -94,6 +95,7 @@ export const shapes: Record<string, unknown> = {
   "bounce.mailboxes": [mailboxShape],
   "security.oidc": { ...defaults["security.oidc"], roles: [oidcRoleShape] },
   "bounce.actions": { "*": { count: 0, action: "" } },
+  "privacy.preference_fields": [preferenceFieldShape],
 };
 const arrays = new Set([
   "app.from_email",
@@ -108,6 +110,7 @@ const arrays = new Set([
   "smtp",
   "messengers",
   "bounce.mailboxes",
+  "privacy.preference_fields",
 ]);
 const strings = new Set([
   "app.from_email",
@@ -468,6 +471,8 @@ export function normalizeProject(next: Settings, current: Settings, now: number)
   if (intervalStart(next["marketing.min_interval"], new Date(now)) === undefined) {
     return fail("Invalid marketing.min_interval: use an ISO 8601 duration such as P7D.");
   }
+  // B147 (D160): the preference center's fields, each with a key, a label, a type and its rules.
+  next["privacy.preference_fields"] = normalizePreferenceFields(next["privacy.preference_fields"]);
   for (const key of ["privacy.domain_blocklist", "privacy.domain_allowlist"]) {
     next[key] = next[key].map((d: string) => simpleLower(trimSpace(d ?? ""))).filter(Boolean);
   }

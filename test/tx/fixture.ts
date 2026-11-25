@@ -100,7 +100,7 @@ export async function txFixture(
     effects?: UnsubscribeEffects;
     page?: () => PageOptions;
     /** The subscriber mail of the privacy routes (B123); unset, a privacy action here throws. */
-    mail?: () => Pick<SubscriberMail, "exportData">;
+    mail?: () => Pick<SubscriberMail, "exportData" | "acceptSignup">;
     /** Wire the production webhook owners, with this transport. */
     webhooks?: WebhookTransport;
     /** The provider route's rate limit, with `webhooks`. */
@@ -401,6 +401,7 @@ export async function txFixture(
       allowPreferences: false,
       allowExport: false,
       allowWipe: false,
+      preferenceFields: [],
     };
   // The subscriber mail, made with the public routes below when `webhooks` is set.
   let subscriberMail: SubscriberMail | undefined;

@@ -300,6 +300,7 @@ export async function schedulerFixture(
       allowPreferences: false,
       allowExport: false,
       allowWipe: false,
+      preferenceFields: [],
     }),
     // B124 (D125): a paired self-wipe is real here, so its suppression can be tested through HTTP.
     // Export is not wired: its mail is the public fixture's concern.
@@ -324,6 +325,7 @@ export async function schedulerFixture(
         allowPreferences: false,
         allowExport: false,
         allowWipe: true,
+        preferenceFields: [],
       }),
     }),
   });

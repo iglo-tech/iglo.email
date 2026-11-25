@@ -1,4 +1,6 @@
 // Defaults adapted from listmonk schema.sql at 6fcd95f.
+import type { PreferenceField } from "@/public/preference-fields";
+
 export const defaults = {
   "app.site_name": "Mailing list",
   // Native (B126, D123): the operator's own site. Empty is none. Validated as a root URL is (D107).
@@ -32,6 +34,9 @@ export const defaults = {
   "privacy.allow_export": true,
   "privacy.allow_wipe": true,
   "privacy.allow_preferences": true,
+  // Native (B147, D160): the subscriber attributes the manage view shows and lets subscribers edit, each
+  // with a label, a type and its rules. Empty shows none. See `preferenceFieldShape` in validate.ts.
+  "privacy.preference_fields": [] as Array<PreferenceField>,
   "privacy.exportable": ["profile", "subscriptions", "campaign_views", "link_clicks"],
   "privacy.domain_blocklist": [],
   "privacy.domain_allowlist": [],

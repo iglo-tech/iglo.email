@@ -11,6 +11,9 @@ import type { PreferenceForm } from "@/public/form";
 import { PublicShell, siteText } from "@/public/layout";
 import type { PageSite } from "@/public/layout";
 import { backLink, publicMessage } from "@/public/message";
+import { readProfile, storedProfile, textLimit } from "@/public/preference-fields";
+import type { PreferenceField, ProfileValue } from "@/public/preference-fields";
+import type { Privacy } from "@/public/privacy";
 import { assetVersion } from "@/server/asset-manifest";
 import type { SubscriberStore } from "@/subscribers/store";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
@@ -21,6 +24,77 @@ export interface PageOptions extends PageSite {
   allowPreferences: boolean;
   allowExport: boolean;
   allowWipe: boolean;
+  /** The preference center's profile fields (B147, D160). */
+  preferenceFields: Array<PreferenceField>;
+}
+
+/** A stored attribute as a form control's value: text as is, a number in JSON, anything else empty. */
+const attribText = (value: ProfileValue | undefined) =>
+  typeof value === "string" ? value : typeof value === "number" ? String(value) : "";
+/** A field's bound as an attribute value; none omits the attribute. */
+const boundText = (value: number | null) => (value === null ? undefined : String(value));
+
+/**
+ * B147 (D160): one profile field of the manage view. An editable field is a control named
+ * `attribs.<key>` with its type's browser rules (the server checks them again); a read-only field shows
+ * its stored value as text and posts nothing.
+ */
+function ProfileField(props: { field: PreferenceField; value: ProfileValue | undefined }) {
+  const { field, value } = props;
+  const id = `attrib-${field.key}`;
+  const name = `attribs.${field.key}`;
+  if (!field.editable) {
+    const shown =
+      field.type === "boolean" ? (value === true ? "✓" : "—") : attribText(value) || "—";
+    return (
+      <p class="profile-field">
+        <strong>{field.label}</strong>: <span>{shown}</span>
+      </p>
+    );
+  }
+  if (field.type === "boolean") {
+    return (
+      <p class="profile-field">
+        <input id={id} type="checkbox" name={name} value="true" checked={value === true} />{" "}
+        <label for={id}>{field.label}</label>
+      </p>
+    );
+  }
+  if (field.type === "select") {
+    const current = attribText(value);
+    return (
+      <p class="profile-field">
+        <label for={id}>{field.label}</label>
+        <select id={id} name={name} required={field.required}>
+          {field.required ? null : <option value="">—</option>}
+          {field.options.map((option) => (
+            <option value={option} selected={option === current}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </p>
+    );
+  }
+  const isText = field.type === "text";
+  const isNumber = field.type === "number";
+  return (
+    <p class="profile-field">
+      <label for={id}>{field.label}</label>
+      <input
+        id={id}
+        name={name}
+        type={field.type}
+        value={attribText(value)}
+        required={field.required}
+        maxlength={isText ? String(Math.min(field.max ?? textLimit, textLimit)) : undefined}
+        minlength={isText ? boundText(field.min) : undefined}
+        step={isNumber ? "any" : undefined}
+        min={isNumber ? boundText(field.min) : undefined}
+        max={isNumber ? boundText(field.max) : undefined}
+      />
+    </p>
+  );
 }
 
 /**
@@ -150,12 +224,23 @@ export function subscriptionPage(
   const manageable = subscribers
     .visibleSubscriptions(subscriber.id)
     .filter((list) => (pending ? pendingOptin(list) : list.subscriptionStatus !== "unsubscribed"));
+  // B147 (D160): a paired or transactional manage view is a preference center. It offers every active
+  // public list the subscriber is not on (or left) to opt in to; a pending page offers none, and a
+  // blocklisted or suppressed subscriber gets none. Profile fields follow the name: paired pages only.
+  const joinable = pending ? [] : subscribers.joinableLists(subscriber.id);
+  const profileFields = renames ? options.preferenceFields : [];
   // B130 (D128): with no public list to manage, the page has no manage link and no preference form, and
   // the manage view keeps only the privacy actions. `privacy.allow_preferences` stays the explicit switch.
-  const managePrefs = options.allowPreferences && manageable.length > 0;
+  const managePrefs =
+    options.allowPreferences &&
+    (manageable.length > 0 || joinable.length > 0 || profileFields.length > 0);
   const subscriptions = showManage ? manageable : [];
+  const offered = showManage ? joinable : [];
+  const profile = showManage ? profileFields : [];
+  const attribs = storedProfile(subscribers.get(subscriber.id)?.attribs ?? "{}", profile);
+  const hasForm = subscriptions.length > 0 || offered.length > 0 || profile.length > 0;
   // A manage view with nothing to show (no public list, not a transactional link) has no preference section.
-  const emptyManage = showManage && subscriptions.length === 0 && !transactional;
+  const emptyManage = showManage && !hasForm && !transactional;
   const blocklist = mode.kind === "paired" && mode.blocklist && options.allowBlocklist;
   // B126 (D123 item 8): a transactional link offers export only. A wipe is a marketing or campaign link's.
   const privacyPaired = mode.kind === "paired" ? mode.privacy : transactional;
@@ -245,7 +330,7 @@ export function subscriptionPage(
                 </div>
               </form>
             </>
-          ) : subscriptions.length ? (
+          ) : hasForm ? (
             <form method="post" class="manage-form">
               <div>
                 <input type="hidden" name="manage" value="true" />
@@ -263,11 +348,24 @@ export function subscriptionPage(
                     />
                   </>
                 ) : null}
-                {subscriptions.length ? (
+                {profile.length ? (
+                  <fieldset class="profile">
+                    <input type="hidden" name="profile" value="true" />
+                    <legend>{t.T("public.profileTitle")}</legend>
+                    {profile.map((field) => (
+                      <ProfileField field={field} value={attribs.get(field.key)} />
+                    ))}
+                  </fieldset>
+                ) : null}
+                {subscriptions.length || offered.length ? (
                   <>
                     <br />
                     <br />
-                    <h3>{t.T("public.managePrefsUnsub")}</h3>
+                    <h3>
+                      {offered.length
+                        ? t.T("public.managePrefsLists")
+                        : t.T("public.managePrefsUnsub")}
+                    </h3>
                     <ul class="lists">
                       {subscriptions.map((list) => (
                         <li>
@@ -279,6 +377,14 @@ export function subscriptionPage(
                             checked
                           />{" "}
                           <label for={`l-${list.uuid}`}>{list.name}</label>
+                          {list.description ? <p class="small">{list.description}</p> : null}
+                        </li>
+                      ))}
+                      {offered.map((list) => (
+                        <li>
+                          <input id={`l-${list.uuid}`} type="checkbox" name="l" value={list.uuid} />{" "}
+                          <label for={`l-${list.uuid}`}>{list.name}</label>
+                          {list.description ? <p class="small">{list.description}</p> : null}
                         </li>
                       ))}
                     </ul>
@@ -386,7 +492,7 @@ ${
 function unsubAll(e) {
   var off = e.target.checked;
   document.querySelector("input[name=name]").disabled = off;
-  document.querySelectorAll("input[type=checkbox][name=l]").forEach(function (l) {
+  document.querySelectorAll("input[type=checkbox][name=l], [name^='attribs.']").forEach(function (l) {
     l.disabled = off;
   });
 }
@@ -400,11 +506,18 @@ function unsubAll(e) {
 }
 
 /**
- * The manage branch of SubscriptionPrefs for a paired page. The name change and every unsubscribe,
- * with their effects, are one transaction; `current` re-reads the subscriber inside it.
+ * The manage branch of SubscriptionPrefs for a paired page. The name change, the profile fields, every
+ * unsubscribe with its effects and every opt-in are one transaction; `current` re-reads the subscriber
+ * inside it. B147 (D160): a checked public list the subscriber is not on is joined as a public signup
+ * joins it, and the opt-in mail is queued after the commit.
  */
 export function savePreferences(
-  deps: { db: Database; subscribers: SubscriberStore; effects: UnsubscribeEffects },
+  deps: {
+    db: Database;
+    subscribers: SubscriberStore;
+    effects: UnsubscribeEffects;
+    privacy: Pick<Privacy, "signup">;
+  },
   t: Translation,
   options: PageOptions,
   form: PreferenceForm,
@@ -427,14 +540,23 @@ export function savePreferences(
   if (rename && (!name || Buffer.byteLength(name) > 256 || name.includes("\0"))) {
     return failed(t.T("globals.messages.invalidName"));
   }
+  // B147 (D160): only a paired page edits the profile, as only it renames, and only when the form carries
+  // it. Only the editable fields are read; any other submitted key is never written.
+  const change = rename && form.profile ? readProfile(options.preferenceFields, form) : null;
+  if (change && !change.ok) {
+    return failed(t.T("globals.messages.invalidFields").replaceAll("{name}", change.field.label));
+  }
   const kept = new Set(form.lists.map((uuid) => uuid.toLowerCase()));
   const saved = writeTransaction(deps.db, () => {
     const subscriber = current();
     if (!subscriber) {
-      return false;
+      return null;
     }
     if (rename) {
       deps.subscribers.rename(subscriber.id, name);
+    }
+    if (change?.ok) {
+      deps.subscribers.setAttribs(subscriber.id, change.values, change.removed);
     }
     for (const list of deps.subscribers.visibleSubscriptions(subscriber.id)) {
       if (kept.has(list.uuid) || list.subscriptionStatus === "unsubscribed") {
@@ -447,10 +569,19 @@ export function savePreferences(
         listIds,
       });
     }
-    return true;
+    const wanted = deps.subscribers
+      .joinableLists(subscriber.id)
+      .filter((list) => kept.has(list.uuid))
+      .map((list) => list.id);
+    const joined = wanted.length ? deps.subscribers.publicOptin(subscriber.id, wanted) : [];
+    return { id: subscriber.id, joined: joined.length > 0 };
   });
   if (!saved) {
     return null;
+  }
+  // Outside the write: the opt-in loop mails the pending double opt-in lists, as for a public signup.
+  if (saved.joined) {
+    deps.privacy.signup(saved.id);
   }
   return publicMessage(t, {
     status: 200,

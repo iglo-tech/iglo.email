@@ -205,7 +205,7 @@ export async function runPublicContract(target: {
     return action === "wipe" && !reference && confirmed ? `${path}?confirm=true` : path;
   };
   /** A campaign the runner has delivered to this subscriber: its UUID (D126, production). */
-  const pairedCampaign = async (who: { id: number }) => {
+  const pairedCampaign = async (who: { id: number }, body = "<p>Paired</p>") => {
     const list = await call("/api/lists", "POST", {
       name: `${marker} paired ${randomBytes(4).toString("hex")}`,
       type: "public",
@@ -233,7 +233,7 @@ export async function runPublicContract(target: {
       content_type: "html",
       messenger: "email",
       from_email: fromEmail,
-      body: "<p>Paired</p>",
+      body,
     });
     check(created.status === 200, "paired-campaign");
     owned.campaigns.push(asBody<number>(created.body.data.id));
@@ -844,11 +844,224 @@ export async function runPublicContract(target: {
         (await status(kim.id, hidden.id)) === "confirmed",
       "prefs-stored",
     );
-    // The manage page lists only current subscriptions.
+    // Upstream's manage page lists only current subscriptions. B147 (D160, deliberate difference): production's
+    // manage view is a preference center that offers every active public list, so the list Kim left is shown
+    // again, unchecked, to opt back in.
+    const revisited = (await visit(`${managed}?manage=true`)).text;
     check(
-      !(await visit(`${managed}?manage=true`)).text.includes(`value="${double.uuid}"`),
-      "prefs-unsubscribed-hidden",
+      revisited.includes(`value="${double.uuid}"`) === !reference &&
+        !revisited.includes(`value="${double.uuid}" checked`),
+      reference ? "prefs-unsubscribed-hidden" : "prefs-unsubscribed-offered-d160",
     );
+    // B147 (D160, deliberate difference): a checked public list the subscriber is not on is joined, as the
+    // public form would join it (single opt-in: unconfirmed, which is active). Upstream ignores a list UUID the
+    // subscriber has no membership of.
+    const extra = await createList("extra", "public", "single");
+    const kept = (...more: Array<[string, string]>) =>
+      new URLSearchParams([
+        ["manage", "true"],
+        ["name", "Kim Renamed"],
+        ["l", single.uuid],
+        ["l", extra.uuid],
+        ...more,
+      ]);
+    const joined = await post(managed, kept());
+    check(
+      joined.status === 200 &&
+        (await status(kim.id, extra.id)) === (reference ? undefined : "unconfirmed") &&
+        (await status(kim.id, single.id)) === "confirmed",
+      reference ? "prefs-optin-ignored" : "prefs-optin-d160",
+    );
+    // An attribute the page does not offer is never written, on both targets (B147, D160): upstream binds
+    // name and lists only, and production with no preference fields configured offers none.
+    const attribsBefore = JSON.stringify(
+      (await call(`/api/subscribers/${kim.id}`)).body.data.attribs,
+    );
+    const unlisted = await post(
+      managed,
+      kept(["profile", "true"], ["attribs.role", "admin"], ["attribs", '{"role":"admin"}']),
+    );
+    check(
+      unlisted.status === 200 &&
+        JSON.stringify((await call(`/api/subscribers/${kim.id}`)).body.data.attribs) ===
+          attribsBefore,
+      "prefs-attribs-unlisted",
+    );
+    if (!reference) {
+      // B147 (D160): the fields an admin chose, with their types and rules. Native: upstream has no such setting.
+      const fields = [
+        {
+          key: "city",
+          label: "City",
+          type: "text",
+          editable: true,
+          required: true,
+          min: 2,
+          max: 40,
+          options: [],
+        },
+        { key: "age", label: "Age", type: "number", editable: true, min: 13, max: 120 },
+        {
+          key: "format",
+          label: "Format",
+          type: "select",
+          editable: true,
+          options: ["html", "text"],
+        },
+        { key: "vip", label: "VIP", type: "boolean", editable: false },
+      ];
+      await withSetting("privacy.preference_fields", fields, async () => {
+        const page = await visit(`${managed}?manage=true`);
+        check(
+          page.status === 200 &&
+            page.text.includes('name="attribs.city"') &&
+            page.text.includes('name="attribs.age"') &&
+            page.text.includes('<option value="text"') &&
+            !page.text.includes('name="attribs.vip"') &&
+            page.text.includes('name="profile"'),
+          "prefs-fields-page-d160",
+        );
+        const attribs = async () =>
+          asBody<Record<string, unknown>>(
+            (await call(`/api/subscribers/${kim.id}`)).body.data.attribs,
+          );
+        const profile = (city: string, age: string, ...more: Array<[string, string]>) =>
+          kept(["profile", "true"], ["attribs.city", city], ["attribs.age", age], ...more);
+        const valid = await post(
+          managed,
+          profile(
+            " Oslo ",
+            "30",
+            ["attribs.format", "text"],
+            ["attribs.vip", "true"],
+            ["attribs.role", "admin"],
+          ),
+        );
+        const stored = await attribs();
+        check(
+          valid.status === 200 &&
+            stored.city === "Oslo" &&
+            stored.age === 30 &&
+            stored.format === "text" &&
+            !("vip" in stored) &&
+            !("role" in stored),
+          "prefs-fields-valid-d160",
+        );
+        const refused = async (body: URLSearchParams, label: string) => {
+          const response = await post(managed, body);
+          check(
+            response.status === 400 && JSON.stringify(await attribs()) === JSON.stringify(stored),
+            label,
+          );
+        };
+        await refused(profile("Oslo", "thirty"), "prefs-fields-type-d160");
+        await refused(profile("Oslo", "5"), "prefs-fields-range-d160");
+        await refused(profile("", "30"), "prefs-fields-required-d160");
+        await refused(profile("Oslo", "30", ["attribs.format", "pdf"]), "prefs-fields-choice-d160");
+        // Opting in to a double opt-in list sends today's opt-in mail and stays pending until confirmed:
+        // one Kim left (rejoined) and one Kim was never on (joined).
+        const fresh = await createList("fresh double", "public", "double");
+        const before = (await mails(kim.email)).length;
+        const optin = await post(managed, kept(["l", double.uuid], ["l", fresh.uuid]));
+        check(
+          optin.status === 200 &&
+            (await status(kim.id, double.id)) === "unconfirmed" &&
+            (await status(kim.id, fresh.id)) === "unconfirmed",
+          "prefs-double-pending-d160",
+        );
+        const confirmMail = (await received(kim.email, before + 1)).find(
+          (mail) => mail.Subject === "Confirm subscription",
+        );
+        check(confirmMail !== undefined, "prefs-double-mail-d160");
+        check(
+          (await status(kim.id, double.id)) === "unconfirmed" &&
+            (await status(kim.id, fresh.id)) === "unconfirmed",
+          "prefs-double-unconfirmed-d160",
+        );
+        const confirmed = await post(
+          `/subscription/optin/${kim.uuid}`,
+          new URLSearchParams([
+            ["confirm", "true"],
+            ["l", double.uuid],
+            ["l", fresh.uuid],
+          ]),
+        );
+        check(
+          confirmed.status === 200 &&
+            (await status(kim.id, double.id)) === "confirmed" &&
+            (await status(kim.id, fresh.id)) === "confirmed",
+          "prefs-double-confirmed-d160",
+        );
+        // Opting out of a list is the save without it.
+        const optedOut = await post(
+          managed,
+          new URLSearchParams([
+            ["manage", "true"],
+            ["name", "Kim Renamed"],
+            ["l", single.uuid],
+            ["l", double.uuid],
+          ]),
+        );
+        check(
+          optedOut.status === 200 &&
+            (await status(kim.id, extra.id)) === "unsubscribed" &&
+            (await status(kim.id, double.id)) === "confirmed",
+          "prefs-optout-d160",
+        );
+        // Reach path: a campaign's `{{ manage_url }}` opens this page with the fields.
+        const ora = await createSubscriber("ora", [single.id], true);
+        const oraCampaign = await pairedCampaign(
+          ora,
+          '<p><a href="{{ manage_url }}">Prefs</a></p>',
+        );
+        const oraMail = (await received(ora.email)).find((m) => m.Subject.includes("paired"));
+        const oraLink = decodeEntities((await message(oraMail!.ID)).HTML).match(
+          new RegExp(`https?://[^"]+/subscription/${oraCampaign}/${ora.uuid}\\?manage=true`),
+        )?.[0];
+        const oraPage = oraLink ? await visit(oraLink) : null;
+        check(
+          oraPage?.status === 200 &&
+            oraPage.text.includes('class="manage-form"') &&
+            oraPage.text.includes('name="attribs.city"') &&
+            oraPage.text.includes(`value="${extra.uuid}"`),
+          "prefs-reach-campaign-d160",
+        );
+        // Reach path: a transactional mail's `{{ manage_url }}` opens its manage view, which offers the lists and,
+        // like the name (D137), no profile field.
+        const template = await call("/api/templates", "POST", {
+          name: `${marker} prefs tx`,
+          type: "tx",
+          subject: `${marker} prefs tx`,
+          body: '<p><a href="{{ manage_url }}">Prefs</a></p>',
+        });
+        check(template.status === 200, "prefs-tx-template");
+        try {
+          check(
+            (
+              await call("/api/tx", "POST", {
+                subscriber_id: ora.id,
+                template_id: template.body.data.id,
+              })
+            ).status === 200,
+            "prefs-tx-send",
+          );
+          const txMail = (await received(ora.email, 2)).find((m) => m.Subject.includes("prefs tx"));
+          const txLink = decodeEntities((await message(txMail!.ID)).HTML).match(
+            new RegExp(`https?://[^"]+/m/${uuidText}/unsubscribe/${ora.uuid}\\?manage=true`),
+          )?.[0];
+          const txPage = txLink ? await visit(txLink) : null;
+          check(
+            txPage?.status === 200 &&
+              txPage.text.includes('class="manage-form"') &&
+              txPage.text.includes(`value="${extra.uuid}"`) &&
+              !txPage.text.includes('name="attribs.city"'),
+            "prefs-reach-tx-d160",
+          );
+        } finally {
+          await call(`/api/templates/${template.body.data.id}`, "DELETE");
+        }
+      });
+    }
     // Blocklist through the manage form. B123 (D126, deliberate difference): upstream's placeholder
     // page blocklists a subscriber UUID alone; production refuses that and blocklists through a
     // campaign the runner delivered to the subscriber.
@@ -889,6 +1102,54 @@ export async function runPublicContract(target: {
             : "You are already unsubscribed from these emails",
         ),
       reference ? "prefs-blocklisted-page" : "prefs-all-lists-page",
+    );
+    // B147 (D160): a subscriber who left every list cannot opt back in from the manage view. Upstream blocklisted
+    // Lee and ignores a list it has no open membership of; production suppressed Lee (D128) and offers no list.
+    const leeSave = await post(
+      `/subscription/${leeCampaign}/${lee.uuid}`,
+      new URLSearchParams([
+        ["manage", "true"],
+        ["name", "Lee"],
+        ["l", single.uuid],
+        ["l", extra.uuid],
+      ]),
+    );
+    check(
+      leeSave.status === 200 &&
+        (await status(lee.id, single.id)) === "unsubscribed" &&
+        (await status(lee.id, extra.id)) === undefined,
+      reference ? "prefs-blocklisted-lee-no-optin" : "prefs-suppressed-no-optin-d160",
+    );
+    if (!reference) {
+      const leeManage = await visit(`/subscription/${leeCampaign}/${lee.uuid}?manage=true`);
+      check(
+        leeManage.status === 200 &&
+          !leeManage.text.includes(`value="${single.uuid}"`) &&
+          !leeManage.text.includes(`value="${extra.uuid}"`),
+        "prefs-suppressed-offers-none-d160",
+      );
+    }
+    // An admin-blocklisted subscriber cannot opt in either, on both targets.
+    const pia = await createSubscriber("pia", [single.id], true);
+    const piaCampaign = reference ? dummy : await pairedCampaign(pia);
+    check(
+      (await call(`/api/subscribers/${pia.id}/blocklist`, "PUT")).status === 200,
+      "pia-blocklist",
+    );
+    const piaSave = await post(
+      `/subscription/${piaCampaign}/${pia.uuid}`,
+      new URLSearchParams([
+        ["manage", "true"],
+        ["name", "Pia"],
+        ["l", single.uuid],
+        ["l", extra.uuid],
+      ]),
+    );
+    check(
+      piaSave.status === 200 &&
+        (await status(pia.id, single.id)) === "unsubscribed" &&
+        (await status(pia.id, extra.id)) === undefined,
+      "prefs-blocklisted-no-optin",
     );
     // The dummy campaign (the opt-in mail's unsubscribe link) ends unconfirmed memberships.
     const mia = await createSubscriber("mia", [single.id, double.id]);
