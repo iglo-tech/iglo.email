@@ -704,12 +704,18 @@ export function createSubscriberStore(
      * D173 (15-external-sources sections 3 and 4): write a source-linked subscriber, inside the
      * record handler's write transaction. With no `row`, a new enabled subscriber with the source's
      * address, name (which may be empty: no name from the address) and user ID as `external_id`;
-     * otherwise `row` takes the address, name and user ID, keeping its status, attributes, lists
-     * and history (an address change, or a holder re-pointed to the incoming user). The handler
-     * resolved every address conflict before calling it; a unique conflict left is a 409.
+     * otherwise subscriber `id` takes the address, name and user ID, keeping its status,
+     * attributes, lists and history (an address change, or a holder re-pointed to the incoming
+     * user). It takes an ID, not a row, and writes only the fields the source owns: a status or
+     * attribute change made while the handler read the source (a blocklist, a bounce) stays. The
+     * handler resolved every address conflict before calling it; a unique conflict left is a 409.
      */
-    sourceWrite(row: Row | null, input: { externalId: string; email: string; name: string }): Row {
+    sourceWrite(
+      id: bigint | null,
+      input: { externalId: string; email: string; name?: string },
+    ): Row {
       const now = clock.now().toISOString();
+      const row = id === null ? null : must(get(id), "subscriber row");
       try {
         if (!row) {
           const created = q
@@ -717,7 +723,7 @@ export function createSubscriberStore(
             .get(
               crypto.randomUUID(),
               input.email,
-              input.name,
+              input.name ?? "",
               "enabled",
               "{}",
               input.externalId,
@@ -726,22 +732,15 @@ export function createSubscriberStore(
             ) as { id: bigint };
           return must(get(created.id), "subscriber row");
         }
+        const name = input.name ?? row.name;
         if (
           row.email === input.email &&
-          row.name === input.name &&
+          row.name === name &&
           row.external_id === input.externalId
         ) {
           return row;
         }
-        q.get("subscriber-update").run(
-          input.email,
-          input.name,
-          row.status,
-          row.attribs,
-          input.externalId,
-          now,
-          row.id,
-        );
+        q.get("subscriber-source-update").run(input.email, name, input.externalId, now, row.id);
       } catch (error) {
         return conflict(error);
       }

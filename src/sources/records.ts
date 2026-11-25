@@ -407,23 +407,25 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
       ) {
         throw changedMeanwhile();
       }
+      // Every write below goes by ID and touches only the fields the source owns (address, name,
+      // user ID), and every status decision reads the rows as they are now: a blocklist, bounce or
+      // unsubscribe that landed while the source was read stays.
       let row: Row;
       if (conflict.kind === "moved") {
         const taken = subscribers.byEmail(conflict.email);
         if (taken && taken.id !== conflict.holder.id) {
           throw changedMeanwhile();
         }
-        subscribers.sourceWrite(conflict.holder, {
+        subscribers.sourceWrite(conflict.holder.id, {
           externalId: conflict.holder.external_id ?? "",
           email: conflict.email,
-          name: conflict.holder.name,
         });
-        row = subscribers.sourceWrite(now, { externalId: record.user, email, name });
+        row = subscribers.sourceWrite(now?.id ?? null, { externalId: record.user, email, name });
       } else if (conflict.kind === "gone") {
         enrollments.endSubscriber(conflict.holder.id);
         if (!now) {
           // Re-point the holder to the incoming user: blocklist, unsubscribes and cap history stay.
-          row = subscribers.sourceWrite(conflict.holder, {
+          row = subscribers.sourceWrite(conflict.holder.id, {
             externalId: record.user,
             email,
             name,
@@ -432,14 +434,10 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
           // Carry the holder's consent onto the incoming row, delete the holder, take the address.
           subscribers.carryConsent(conflict.holder.id, now.id);
           subscribers.remove([conflict.holder.id]);
-          row = subscribers.sourceWrite(subscribers.external(record.user), {
-            externalId: record.user,
-            email,
-            name,
-          });
+          row = subscribers.sourceWrite(now.id, { externalId: record.user, email, name });
         }
       } else {
-        row = subscribers.sourceWrite(now, { externalId: record.user, email, name });
+        row = subscribers.sourceWrite(now?.id ?? null, { externalId: record.user, email, name });
       }
       // Grants before exit-then-trigger, so a zero-wait marketing step sees the consent (D99).
       const suppressed = lists.length > 0 && subscribers.suppressed(row);

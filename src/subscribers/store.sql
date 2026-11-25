@@ -18,6 +18,9 @@ SELECT s.id, s.email FROM subscribers s
 INSERT INTO subscribers (uuid,email,name,status,attribs,external_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?) RETURNING id;
 -- name: subscriber-update
 UPDATE subscribers SET email=?, name=?, status=?, attribs=?, external_id=?, updated_at=? WHERE id=?;
+-- name: subscriber-source-update
+-- D173: a source writes only the fields it owns; status and attributes are never rewritten from a copy.
+UPDATE subscribers SET email=?, name=?, external_id=?, updated_at=? WHERE id=?;
 -- name: subscriber-delete
 DELETE FROM subscribers WHERE id=?;
 -- name: membership-insert

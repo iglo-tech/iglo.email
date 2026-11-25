@@ -658,6 +658,72 @@ test("a subscriber row changed between the record's reads and its transaction ro
   expect(h.records.stream()?.retries()).toEqual([]);
 });
 
+test("a holder blocklisted while its read is out stays blocklisted when re-pointed: the grant is refused and nothing is sent", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news] }];
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    list_id: news,
+    trigger: { event: h.ev("signup") },
+    steps: [{ wait: "PT0S", kind: "marketing", template_id: template }],
+  });
+  await resubscribed(h);
+  const incoming = await pb.user();
+  const address = emailOf(incoming);
+  // The holder names a user the view does not have: its read decides "gone", a re-point.
+  const ghost = "ghostuser000003";
+  const holder = await createSubscriber(h, { email: address, external_id: ghost });
+  const atHold = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  h.hold.current = { user: ghost, reached: atHold.resolve, released: released.promise };
+  const signup = await record(h, incoming, "signup");
+  await atHold.promise;
+  expect((await h.f.json("/api/subscribers/blocklist", "PUT", { ids: [holder] })).status).toBe(200);
+  released.resolve();
+  await handled(h, signup);
+
+  expect(await byId(h, holder)).toMatchObject({
+    email: address,
+    external_id: incoming.id,
+    status: "blocklisted",
+  });
+  expect(outcome(h, signup).grants).toEqual([{ list_id: news, result: "blocklisted" }]);
+  expect(statusOn(await byId(h, holder), news)).toBeNull();
+  expect(await enrollmentsOf(h, holder)).toEqual([]);
+  await h.f.pass(0);
+  expect(await h.f.sendLog()).toEqual([]);
+});
+
+test("a moving holder blocklisted while its read is out keeps its blocklist at its new address", async () => {
+  const h = await start({ rules: [] });
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news] }];
+  await resubscribed(h);
+  const holderUser = await pb.user();
+  const address = emailOf(holderUser);
+  const holder = await createSubscriber(h, { email: address, external_id: holderUser.id });
+  const moved = `moved-${crypto.randomUUID().slice(0, 8)}@example.com`;
+  await pb.update("users", holderUser.id, { email: moved });
+  const incoming = await pb.user({ email: address });
+  const atHold = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  h.hold.current = { user: holderUser.id, reached: atHold.resolve, released: released.promise };
+  const signup = await record(h, incoming, "signup");
+  await atHold.promise;
+  expect((await h.f.json("/api/subscribers/blocklist", "PUT", { ids: [holder] })).status).toBe(200);
+  released.resolve();
+  await handled(h, signup);
+
+  expect(await byId(h, holder)).toMatchObject({
+    email: moved,
+    external_id: holderUser.id,
+    status: "blocklisted",
+  });
+  expect((await linked(h, incoming))?.id).not.toBe(holder);
+});
+
 test("a failed settings switch does not stop later ones: the next change applies and stop() stops the stream", async () => {
   const h = await start();
   const first = h.records.stream();
