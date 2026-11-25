@@ -2,6 +2,7 @@
 import { captchaProvider } from "@/captcha/captcha";
 import type { Provider } from "@/captcha/captcha";
 import type { ShellSite } from "@/public/layout";
+import type { PreferenceField } from "@/public/preference-fields";
 
 export interface PublicSettings extends ShellSite {
   siteName: string;
@@ -15,6 +16,8 @@ export interface PublicSettings extends ShellSite {
   allowExport: boolean;
   allowWipe: boolean;
   allowPreferences: boolean;
+  /** The preference center's profile fields (B147, D160). */
+  preferenceFields: Array<PreferenceField>;
   exportable: Array<string>;
   domainAllowlist: Array<string>;
   domainBlocklist: Array<string>;
@@ -51,6 +54,7 @@ export function publicSettings(current: Record<string, any>): PublicSettings {
     allowExport: current["privacy.allow_export"],
     allowWipe: current["privacy.allow_wipe"],
     allowPreferences: current["privacy.allow_preferences"],
+    preferenceFields: current["privacy.preference_fields"] ?? [],
     exportable: current["privacy.exportable"],
     domainAllowlist: current["privacy.domain_allowlist"],
     domainBlocklist: current["privacy.domain_blocklist"],

@@ -219,7 +219,7 @@ export function registerUnsubscribeRoutes(
         }
         return (
           savePreferences(
-            { db: deps.db, subscribers: deps.subscribers, effects },
+            { db: deps.db, subscribers: deps.subscribers, effects, privacy: deps.privacy },
             t,
             options(),
             form,
