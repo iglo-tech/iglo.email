@@ -1013,7 +1013,9 @@ export async function createProject(
     });
     const records = sourceRecords;
     // A saved setting (a source, a grant rule, the private hosts) is compared at once.
-    recordSettings.onUpdate(() => void records.refresh());
+    recordSettings.onUpdate(
+      () => void records.refresh().catch((error: unknown) => app.logger.error(error)),
+    );
     deliveries = createWebhookDelivery({
       db,
       clock,

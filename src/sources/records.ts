@@ -68,6 +68,7 @@ export interface RecordHandlerOptions {
     | "sourceWrite"
     | "carryConsent"
     | "remove"
+    | "removeLeaving"
     | "grantable"
     | "membership"
     | "insertConfirmedIfAbsent"
@@ -202,13 +203,17 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
     options.onOutcome?.(outcome);
   };
 
-  /** The user is leaving (spec section 7): the subscriber goes, and its enrollments with it. */
+  /**
+   * The user is leaving (spec section 7): the subscriber goes, and its enrollments with it. Consent
+   * the person withdrew (a blocklist, an unsubscribe) stays as a suppression, in the same
+   * transaction, so a returning user is not re-granted it.
+   */
   function leave(userId: string, recordId: string, commit: RecordCommit) {
     const removed = writeTransaction(db, () => {
       const row = subscribers.external(userId);
       if (row) {
         enrollments.endSubscriber(row.id);
-        subscribers.remove([row.id]);
+        subscribers.removeLeaving(row.id);
       }
       commit.write();
       return row?.id ?? null;

@@ -4,8 +4,10 @@
 // retry queue. The scheduler fixture's clock is the stream's: a test moves it only while the
 // stream waits, or to run the scheduler.
 //
-// One transport hook: `failRecipients` answers the recipients view with a 503, a transient error
-// the binary cannot produce on demand. Every source request also records whether a SQLite
+// Two transport hooks: `failRecipients` answers the recipients view with a 503, a transient error
+// the binary cannot produce on demand, and `hold` delays one recipients read (the binary's answer,
+// unchanged) so a test can change SQLite between the handler's reads and its write transaction.
+// Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { writeTransaction } from "@/db/transaction";
@@ -58,6 +60,8 @@ interface Harness {
   failRecipients: { on: boolean };
   config: { current: PocketBaseConfig };
   rules: { current: Array<GrantRule> };
+  /** Holds the next recipients-view read of `user` until `released` settles (once). */
+  hold: { current: { user: string; reached: () => void; released: Promise<void> } | null };
   /**
    * This test's own record name for `name`. The tests share one PocketBase, and a new stream's first
    * catch-up starts at the source's `Date` (whole seconds), so a record another test made in the
@@ -84,6 +88,7 @@ async function start(
   const failRecipients = { on: false };
   const config = { current: { ...sourceConfig(pb.url, pb.service), ...options.config } };
   const rules = { current: options.rules ?? [] };
+  const hold: Harness["hold"] = { current: null };
   const records = createSourceRecords({
     db: f.db,
     clock: f.clock,
@@ -105,6 +110,12 @@ async function start(
         ) {
           return Promise.resolve(new Response("unavailable", { status: 503 }));
         }
+        const held = hold.current;
+        if (held && input.pathname === `/api/collections/recipients/records/${held.user}`) {
+          hold.current = null;
+          held.reached();
+          return held.released.then(() => fetch(input, init));
+        }
         return fetch(input, init);
       },
     },
@@ -124,6 +135,7 @@ async function start(
     failRecipients,
     config,
     rules,
+    hold,
     ev: (name) => `${name}_${tag}`,
   };
   open.push(h);
@@ -532,6 +544,147 @@ test("a user leaving in real time ends the enrollments and removes the subscribe
   await until(h, () => h.outcomes.some((o) => o.record === ana.id && o.kind === "left"), "leaving");
   expect(await byId(h, subscriber?.id ?? 0)).toBeNull();
   expect(await enrollmentsOf(h, subscriber?.id ?? 0)).toEqual([]);
+});
+
+test("leaving keeps withdrawn consent: a returning user who unsubscribed or was blocklisted is refused the grant and gets no marketing; one who withdrew nothing is granted again", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("order_paid"), where: {}, lists: [news] }];
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    list_id: news,
+    trigger: { event: h.ev("order_paid") },
+    steps: [{ wait: "PT0S", kind: "marketing", template_id: template }],
+  });
+  await resubscribed(h);
+  const left = await pb.user();
+  const blocked = await pb.user();
+  const plain = await pb.user();
+  for (const user of [left, plain]) {
+    await createSubscriber(h, {
+      email: emailOf(user),
+      external_id: user.id,
+      lists: [news],
+      preconfirm_subscriptions: true,
+    });
+  }
+  const leftRow = await linked(h, left);
+  await unsubscribe(h, leftRow?.id ?? 0, news);
+  // Blocklisted with no membership at all: the status alone is the withdrawal.
+  await createSubscriber(h, {
+    email: emailOf(blocked),
+    external_id: blocked.id,
+    status: "blocklisted",
+  });
+
+  for (const user of [left, blocked, plain]) {
+    await pb.update("users", user.id, { deletedAt: new Date().toISOString() });
+    await until(
+      h,
+      () => h.outcomes.some((o) => o.record === user.id && o.kind === "left"),
+      "leaving",
+    );
+    expect(await linked(h, user)).toBeNull();
+  }
+  // Each comes back: the account restored, and a new record for it.
+  const paid = new Map<string, { id: string }>();
+  for (const user of [left, blocked, plain]) {
+    await pb.update("users", user.id, { deletedAt: "" });
+    const order = await record(h, user, "order_paid");
+    await handled(h, order);
+    paid.set(user.id, order);
+  }
+  const at = (user: PocketBaseRecord) => outcome(h, paid.get(user.id) ?? { id: "" });
+  expect(at(left)).toMatchObject({ grants: [{ list_id: news, result: "suppressed" }], started: 0 });
+  expect(at(blocked)).toMatchObject({
+    grants: [{ list_id: news, result: "suppressed" }],
+    started: 0,
+  });
+  expect(at(plain)).toMatchObject({ grants: [{ list_id: news, result: "added" }], started: 1 });
+  expect(statusOn(await linked(h, left), news)).toBeNull();
+  expect(statusOn(await linked(h, blocked), news)).toBeNull();
+  expect(statusOn(await linked(h, plain), news)).toBe("confirmed");
+
+  await h.f.pass(0);
+  await h.f.until(
+    async () => (await h.f.sendLog()).some((row) => row.status !== "sending"),
+    "the step's send",
+  );
+  const log = await h.f.sendLog();
+  expect(log.map((row) => [row.subscriber_id, row.status])).toEqual([
+    [(await linked(h, plain))?.id ?? 0, "sent"],
+  ]);
+});
+
+test("a subscriber row changed between the record's reads and its transaction rolls the write back and retries it", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news] }];
+  await resubscribed(h);
+  const incoming = await pb.user();
+  const address = emailOf(incoming);
+  // The address's holder names a user the view does not have: its read decides "gone".
+  const ghost = "ghostuser000002";
+  const holder = await createSubscriber(h, { email: address, external_id: ghost });
+  const atHold = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  h.hold.current = { user: ghost, reached: atHold.resolve, released: released.promise };
+  const signup = await record(h, incoming, "signup");
+  await atHold.promise;
+  // While the holder's read is out, the incoming user's own subscriber is created.
+  const own = await createSubscriber(h, {
+    email: `own-${crypto.randomUUID().slice(0, 8)}@example.com`,
+    external_id: incoming.id,
+  });
+  released.resolve();
+  await until(
+    h,
+    () => (h.records.stream()?.retries() ?? []).some((row) => row.record_id === signup.id),
+    "the rolled-back record",
+  );
+  expect(Boolean(h.records.stream()?.retries()[0]?.terminal)).toBe(false);
+  expect(h.outcomes.some((o) => o.record === signup.id)).toBe(false);
+  expect(await byId(h, holder)).toMatchObject({ email: address, external_id: ghost });
+
+  h.f.clock.advance(minute + 1000);
+  h.records.stream()?.wakeRetries();
+  await handled(h, signup);
+  // The retry read again and carried the gone holder onto the user's own row.
+  expect(await byId(h, holder)).toBeNull();
+  const row = await byId(h, own);
+  expect(row).toMatchObject({ email: address, external_id: incoming.id });
+  expect(statusOn(row, news)).toBe("confirmed");
+  expect(h.records.stream()?.retries()).toEqual([]);
+});
+
+test("a failed settings switch does not stop later ones: the next change applies and stop() stops the stream", async () => {
+  const h = await start();
+  const first = h.records.stream();
+  Object.defineProperty(h.config, "current", {
+    configurable: true,
+    get() {
+      throw new Error("settings unreadable");
+    },
+  });
+  const failed = await h.records.refresh().then(
+    () => null,
+    (error: unknown) => error,
+  );
+  expect(String(failed)).toContain("settings unreadable");
+  Object.defineProperty(h.config, "current", {
+    configurable: true,
+    writable: true,
+    value: { ...sourceConfig(pb.url, pb.service), users: { collection: "", leavingFilter: "" } },
+  });
+  await h.records.refresh();
+  const second = h.records.stream();
+  expect(second).not.toBeNull();
+  expect(second).not.toBe(first);
+  expect(first?.state().state).toBe("stopped");
+  await h.records.stop();
+  expect(second?.state().state).toBe("stopped");
+  expect(h.records.stream()).toBeNull();
 });
 
 test("a record whose user the recipients view no longer has creates nothing and removes a linked subscriber", async () => {

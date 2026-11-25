@@ -126,9 +126,13 @@ export function createSourceRecords(options: SourceRecordsOptions) {
     });
   }
 
-  /** Compares the settings with the running stream's: starts, restarts or stops it. */
+  /**
+   * Compares the settings with the running stream's: starts, restarts or stops it. A failed switch
+   * rejects its own caller only: the chain goes on, so the next settings change still applies and
+   * `stop()` still stops the stream.
+   */
   function sync(): Promise<void> {
-    switching = switching.then(async () => {
+    const next = switching.then(async () => {
       if (stopping.signal.aborted) {
         return;
       }
@@ -147,7 +151,10 @@ export function createSourceRecords(options: SourceRecordsOptions) {
         stream.start();
       }
     });
-    return switching;
+    switching = next.catch(() => {
+      /* Reported to the caller of the failed switch. */
+    });
+    return next;
   }
 
   async function watch() {

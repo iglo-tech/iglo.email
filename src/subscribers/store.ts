@@ -495,6 +495,26 @@ export function createSubscriberStore(
         q.get("subscriber-delete").run(id);
       }
     },
+    /**
+     * D173 (15-external-sources section 7): a source user leaving. A subscriber who withdrew
+     * consent (blocklisted, or unsubscribed from any list) first leaves the marketing suppression a
+     * self-wipe writes (B124, D125: keyed on the address and the external ID), unless one already
+     * names it, so a returning person is not re-granted what they withdrew. Then the normal delete
+     * (an administrative one: its webhook payload is unchanged). The caller holds the write.
+     */
+    removeLeaving(id: bigint): void {
+      const row = get(id);
+      if (!row) {
+        return;
+      }
+      const withdrew =
+        row.status === "blocklisted" ||
+        memberships(id).some((membership) => membership.status === "unsubscribed");
+      if (withdrew && !suppressedBy(row)) {
+        suppress(row);
+      }
+      store.remove([id]);
+    },
     /** Whether a suppression names this subscriber's address or external ID (B124, D125). */
     suppressed: suppressedBy,
     /** The suppressions of one address, removed on an operator's explicit request. Their count. */
