@@ -136,6 +136,19 @@ const settings = (): Schema =>
     "privacy.allow_export": boolean,
     "privacy.allow_wipe": boolean,
     "privacy.allow_preferences": boolean,
+    // B147 (D160): the preference center's profile fields.
+    "privacy.preference_fields": array(
+      object({
+        key: string,
+        label: string,
+        type: choice("text", "number", "boolean", "date", "select"),
+        editable: boolean,
+        required: boolean,
+        min: nullable(integer),
+        max: nullable(integer),
+        options: array(string),
+      }),
+    ),
     "privacy.exportable": array(string),
     "privacy.domain_blocklist": array(string),
     "privacy.domain_allowlist": array(string),

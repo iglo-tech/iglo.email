@@ -23,12 +23,17 @@ export interface Privacy {
    * path of the manage page the confirmation's "Keep my data" link returns to.
    */
   wipe(context: RequestContext, current: () => Subscriber | null, manage: string): Response | null;
+  /**
+   * B147 (D160): a committed manage-view opt-in, queued as a public signup is: the opt-in loop sends
+   * today's opt-in mail for its pending double opt-in lists, under the same setting and per-address window.
+   */
+  signup(id: bigint): void;
 }
 
 export function createPrivacy(deps: {
   db: Database;
   subscribers: SubscriberStore;
-  mail: () => Pick<SubscriberMail, "exportData">;
+  mail: () => Pick<SubscriberMail, "exportData" | "acceptSignup">;
   /** The site's branding and the privacy options, read for each answer. */
   page: () => PageOptions;
 }): Privacy {
@@ -42,6 +47,9 @@ export function createPrivacy(deps: {
   const failed = (t: Translation, status: number, text: string, headers = {}) =>
     message(t, status, t.T("globals.terms.error"), text, headers);
   return {
+    signup(id) {
+      deps.mail().acceptSignup(id);
+    },
     export(context, current) {
       const t = context.app.i18n;
       const sub = current();

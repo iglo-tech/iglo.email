@@ -264,6 +264,12 @@ export function createSubscriberStore(
   /** Whether a suppression names this subscriber's address or external ID (D125). */
   const suppressedBy = (subscriber: { email: string; external_id: string | null }) =>
     q.get("suppression-match").get(...suppressionKeys(subscriber)) !== null;
+  /**
+   * B147 (D160): whether a manage view may opt this subscriber in. A blocklisted or marketing-suppressed
+   * subscriber (D125, D128) may not.
+   */
+  const mayOptIn = (row: Row | null): row is Row =>
+    row !== null && row.status !== "blocklisted" && !suppressedBy(row);
   /** A self-wipe's suppression: keyed hashes and the list IDs, written before the rows go. */
   const suppress = (row: Row) => {
     const lists = memberships(row.id).map((m) => Number(m.list_id));
@@ -769,6 +775,72 @@ export function createSubscriberStore(
     },
     rename(id: bigint, name: string) {
       q.get("subscriber-rename").run(name, clock.now().toISOString(), id);
+    },
+    /**
+     * B147 (D160): the active public lists a manage view may offer to join, in list order: those the
+     * subscriber has no membership of, or left. None for a blocklisted or marketing-suppressed subscriber
+     * (D125, D128), who cannot opt in.
+     */
+    joinableLists(id: bigint) {
+      if (!mayOptIn(get(id))) {
+        return [];
+      }
+      const status = new Map(memberships(id).map((m) => [m.list_id, m.status]));
+      return lists.publicLists().filter((list) => {
+        const current = status.get(list.id);
+        return current === undefined || current === "unsubscribed";
+      });
+    },
+    /**
+     * B147 (D160): the manage view's opt-in, under a public signup's rules. Each active public list in
+     * `listIds` the subscriber has no membership of, or left, becomes an unconfirmed membership: active on a
+     * single opt-in list, pending its opt-in mail on a double one. A blocklisted or marketing-suppressed
+     * subscriber (D125, D128) joins nothing. No webhook or enrollment follows, as none follows a public
+     * signup. Returns the lists joined. The caller holds the write.
+     */
+    publicOptin(id: bigint, listIds: Array<bigint>): Array<bigint> {
+      if (!mayOptIn(get(id))) {
+        return [];
+      }
+      const open = new Set(lists.publicLists().map((list) => list.id));
+      const now = clock.now().toISOString();
+      const joined: Array<bigint> = [];
+      for (const list of new Set(listIds)) {
+        if (!open.has(list)) {
+          continue;
+        }
+        const inserted =
+          q.get("membership-insert").run(id, list, "unconfirmed", now, now).changes === 1;
+        if (inserted || q.get("membership-rejoin").run(now, id, list).changes === 1) {
+          joined.push(list);
+        }
+      }
+      return joined;
+    },
+    /**
+     * B147 (D160): a preference center's profile save. `values` are set and `removed` deleted in the stored
+     * attributes; every other key stays. Bounded as an event's attributes are. Returns whether it changed
+     * them. The caller holds the write.
+     */
+    setAttribs(id: bigint, values: ReadonlyMap<string, unknown>, removed: Array<string>): boolean {
+      const row = get(id);
+      if (!row) {
+        return false;
+      }
+      const attribs = new Map(Object.entries(JSON.parse(row.attribs) as Record<string, unknown>));
+      for (const key of removed) {
+        attribs.delete(key);
+      }
+      for (const [key, value] of values) {
+        attribs.set(key, value);
+      }
+      const text = JSON.stringify(Object.fromEntries(attribs));
+      if (text === row.attribs) {
+        return false;
+      }
+      bounded(text, Buffer.byteLength(row.attribs));
+      q.get("subscriber-attribs").run(text, clock.now().toISOString(), id);
+      return true;
     },
     /**
      * A transactional link's cancel (B126, D123 item 8): ends the unconfirmed memberships of double

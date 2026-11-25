@@ -874,6 +874,12 @@ export const differences: Array<Difference> = [
     applies: [],
   },
   {
+    area: "Preference center (B147, D160)",
+    summary:
+      "The manage view is a preference center. privacy.preference_fields (a project setting, empty by default) lists the subscriber attributes it shows, each with a key, a label, a type (text, number, boolean, date or select), whether subscribers may edit it, and its rules (required, min and max as a text length or a number range, a select's allowed values). A marketing or campaign manage save that carries profile=true (a JSON body: an attribs object) writes only the editable fields, checked on the server; any other attribute key is ignored and never written, and an invalid value is a 400 that writes nothing. A transactional manage view shows no profile field, as it shows no name (D137). Paired and transactional manage views offer every active public list the subscriber is not on, with its description, to opt in to: a checked one is joined as a public signup joins it (unconfirmed; a double opt-in list pends its opt-in mail, sent by the opt-in loop under app.send_optin_confirmation and the per-address window). A blocklisted or marketing-suppressed subscriber is offered none and joins none. Upstream's manage view edits the name and unchecks current lists only, and ignores a list UUID the subscriber has no membership of.",
+    applies: [],
+  },
+  {
     area: "Transactional template data carries the brand (B130, D128)",
     summary:
       "A transactional template's data, for POST /api/tx, a sequence step and their previews, carries the eight brand values a campaign's data carries (logo_url, site_name, site_url, brand_accent, brand_link, brand_on_accent, brand_font, brand_header), at the top level beside subscriber and data. They are additive: no existing key moves. Upstream's transactional data has none of them.",

@@ -414,6 +414,108 @@ function Privacy({ t }: { t: Translation }) {
           hint={t.T("settings.privacy.allowWipeHelp")}
         />
       </fieldset>
+      <PreferenceFields t={t} />
+      <DomainLists t={t} />
+    </div>
+  );
+}
+
+/**
+ * B147 (D160): the preference center's profile fields, `privacy.preference_fields`. Each field names a
+ * subscriber attribute, its label and type, whether subscribers may edit it, and its rules.
+ */
+function PreferenceFields({ t }: { t: Translation }) {
+  const notBounded = "item.type !== 'text' && item.type !== 'number'";
+  return (
+    <fieldset
+      class="card preference-fields"
+      data-keywords="preference center profile fields attributes manage page subscriber details consent"
+    >
+      <legend>{t.T("settings.privacy.preferenceFields")}</legend>
+      <Hint>{t.T("settings.privacy.preferenceFieldsHelp")}</Hint>
+      <template x-for="(item, n) in form['privacy.preference_fields']" x-bind:key="n">
+        <div class="repeat-block preference-field">
+          <div class="row">
+            <div class="col-4">
+              <TextField
+                model="item.key"
+                label={t.T("settings.privacy.fieldKey")}
+                maxlength="64"
+                placeholder="city"
+              />
+            </div>
+            <div class="col-4">
+              <TextField
+                model="item.label"
+                label={t.T("settings.privacy.fieldLabel")}
+                maxlength="200"
+              />
+            </div>
+            <div class="col-4">
+              <label data-field="">
+                {t.T("settings.privacy.fieldType")}
+                <select x-model="item.type">
+                  <option value="text">text</option>
+                  <option value="number">number</option>
+                  <option value="boolean">boolean</option>
+                  <option value="date">date</option>
+                  <option value="select">select</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="hstack gap-6">
+            <Switch model="item.editable" label={t.T("settings.privacy.fieldEditable")} />
+            <Switch
+              model="item.required"
+              label={t.T("settings.privacy.fieldRequired")}
+              disabled="item.type === 'boolean'"
+            />
+          </div>
+          <div class="row">
+            <div class="col-6">
+              <NumberField
+                model="item.min"
+                label={t.T("settings.privacy.fieldMin")}
+                hint={t.T("settings.privacy.fieldMinMaxHelp")}
+                disabled={notBounded}
+              />
+            </div>
+            <div class="col-6">
+              <NumberField
+                model="item.max"
+                label={t.T("settings.privacy.fieldMax")}
+                disabled={notBounded}
+              />
+            </div>
+          </div>
+          <label data-field="" x-show="item.type === 'select'">
+            {t.T("settings.privacy.fieldOptions")}
+            <textarea rows="4" x-model="item.strOptions"></textarea>
+            <Hint>{t.T("settings.privacy.fieldOptionsHelp")}</Hint>
+          </label>
+          <button
+            type="button"
+            class="outline small"
+            data-variant="danger"
+            x-on:click="removePreferenceField(n)"
+          >
+            <Icon name="trash-2" /> {t.T("globals.buttons.delete")}
+          </button>
+        </div>
+      </template>
+      <p>
+        <button type="button" class="outline small" x-on:click="addPreferenceField">
+          <Icon name="plus" /> {t.T("globals.buttons.addNew")}
+        </button>
+      </p>
+    </fieldset>
+  );
+}
+
+function DomainLists({ t }: { t: Translation }) {
+  return (
+    <>
       <hr />
       <fieldset
         class="card"
@@ -449,7 +551,7 @@ function Privacy({ t }: { t: Translation }) {
           </div>
         </ot-tabs>
       </fieldset>
-    </div>
+    </>
   );
 }
 

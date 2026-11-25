@@ -156,8 +156,9 @@ test("with no open membership, the page says already unsubscribed, on private an
     expect(html).not.toContain('id="btn-unsub"');
     expect(html).not.toContain("Do you want to unsubscribe");
     expect(html).toContain('id="data-form"');
-    // B130 (D128): nothing is left to manage on a public list, so there is no manage link.
-    expect(html).not.toContain('href="?manage=true"');
+    // B130 (D128) had no manage link here. B147 (D160, deliberate change): the public list News can be
+    // joined from the preference center, so the page links to it.
+    expect(html).toContain('href="?manage=true"');
     expect(html).not.toContain("Back to Brand Co");
   }
 
@@ -166,9 +167,13 @@ test("with no open membership, the page says already unsubscribed, on private an
   expect(await (await f.request(adaLink.page)).text()).toContain(
     `<a href="${brandUrl}">Back to Brand Co</a>`,
   );
-  // With ?manage=true the manage view shows the privacy actions only: no public list is left to manage (B130).
+  // B147 (D160, deliberate change): with ?manage=true the manage view offers the public list Ada left,
+  // unchecked, to opt back in; the private list stays hidden. It had the privacy actions only (B130).
   const manage = await (await f.request(`${adaLink.page}?manage=true`)).text();
-  expect(manage).not.toContain('class="manage-form"');
+  expect(manage).toContain('class="manage-form"');
+  expect(manage).toContain(`value="${news.uuid}"`);
+  expect(manage).not.toContain(`value="${news.uuid}" checked`);
+  expect(manage).not.toContain("Members");
   expect(manage).toContain('id="data-form"');
 });
 

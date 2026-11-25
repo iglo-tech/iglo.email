@@ -58,7 +58,8 @@ hr {
   margin-bottom: 45px;
 }
 
-input[type="text"], input[type="email"], input[type="password"], select {
+input[type="text"], input[type="email"], input[type="password"], input[type="number"],
+input[type="date"], select {
   padding: 10px 15px;
   border: 1px solid #888;
   border-radius: 3px;
@@ -77,6 +78,20 @@ input:focus::placeholder {
 
 input[disabled] {
   opacity: 0.5;
+}
+
+/* B147 (D160): the preference center's profile fields. */
+fieldset.profile {
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  margin: 20px 0 0;
+  padding: 5px 15px;
+}
+.profile-field label {
+  display: block;
+}
+.profile-field input[type="checkbox"] + label {
+  display: inline;
 }
 
 /* Checkboxes and radios take the brand accent, not the browser's blue (B129 adopter check, D127). */
