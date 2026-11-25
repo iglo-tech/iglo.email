@@ -479,6 +479,93 @@ test("only the copy itself changes its password or email: another Super Admin or
   expect((await instanceLogin(port, PRIMARY, attacker)).session).toBeUndefined();
 });
 
+test("a name-only edit of the copy by another user works when the admin stored a mixed-case email (B149d)", async () => {
+  const session = await logIn(port, A, admin);
+  const copy = (await users(A, session)).find((user) => user.username === admin.user)!;
+  const own = await request(port, A, "/api/profile", {
+    method: "PUT",
+    headers: sessionHeaders(session),
+    body: JSON.stringify({ name: "The Admin", email: "Initial-Admin@Localhost.Invalid" }),
+  });
+  expect(own.status).toBe(200);
+  const other = await logIn(port, A, {
+    user: "other-admin-of-a",
+    password: "other-admin-password",
+  });
+  const base = {
+    username: admin.user,
+    type: "user",
+    status: "enabled",
+    password_login: true,
+    user_role_id: 1,
+  };
+  // The admin UI sends the email it read back; another client may send it lowercased.
+  for (const [name, email] of [
+    ["Renamed Once", "Initial-Admin@Localhost.Invalid"],
+    ["Renamed Twice", "initial-admin@localhost.invalid"],
+  ]) {
+    const renamed = await request(port, A, `/api/users/${copy.id}`, {
+      method: "PUT",
+      headers: sessionHeaders(other),
+      body: JSON.stringify({ ...base, name, email }),
+    });
+    expect(renamed.status).toBe(200);
+    const viewed = await readJson<{ data: { name: string; email: string } }>(
+      await request(port, A, `/api/users/${copy.id}`, { headers: sessionHeaders(session) }),
+    );
+    // Another user never rewrites the copy's email, not even its case.
+    expect(viewed.data).toMatchObject({ name, email: "Initial-Admin@Localhost.Invalid" });
+  }
+  // A different address is still the copy's own to set.
+  const changed = await request(port, A, `/api/users/${copy.id}`, {
+    method: "PUT",
+    headers: sessionHeaders(other),
+    body: JSON.stringify({ ...base, name: "The Admin", email: "someone-else@a.example.test" }),
+  });
+  expect(changed.status).toBe(403);
+  const restored = await request(port, A, "/api/profile", {
+    method: "PUT",
+    headers: sessionHeaders(session),
+    body: JSON.stringify({ name: "The Admin", email: "initial-admin@localhost.invalid" }),
+  });
+  expect(restored.status).toBe(200);
+});
+
+test("the admin's own PUT /api/users/<own id> changes its password everywhere (B149d)", async () => {
+  const onA = await logIn(port, A, admin);
+  const copy = (await users(A, onA)).find((user) => user.username === admin.user)!;
+  const next = { user: admin.user, password: "self-edit-password-1" };
+  const edited = await request(port, A, `/api/users/${copy.id}`, {
+    method: "PUT",
+    headers: sessionHeaders(onA),
+    body: JSON.stringify({
+      username: admin.user,
+      name: "The Admin",
+      email: "self-edit@a.example.test",
+      type: "user",
+      status: "enabled",
+      password_login: true,
+      password: next.password,
+      user_role_id: 1,
+    }),
+  });
+  expect(edited.status).toBe(200);
+  const old = admin;
+  admin = next;
+  // The instance login allows 20 attempts a minute from one address and this file makes 20, so the
+  // old password's refusal is checked on one other project only.
+  expect((await instanceLogin(port, PRIMARY, admin)).session).toBeDefined();
+  expect(await projectLogin(B, admin)).toBe("/admin");
+  expect(await projectLogin(B, old)).toBe("");
+  const onANow = await logIn(port, A, admin);
+  const restored = await request(port, A, "/api/profile", {
+    method: "PUT",
+    headers: sessionHeaders(onANow),
+    body: JSON.stringify({ name: "The Admin", email: "initial-admin@localhost.invalid" }),
+  });
+  expect(restored.status).toBe(200);
+});
+
 test("the admin's username is reserved in every project: 409, nothing written", async () => {
   const session = await logIn(port, B, admin);
   const headers = sessionHeaders(session);

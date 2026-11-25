@@ -44,7 +44,8 @@ interface ProjectJson {
   root_url?: string;
   queued_marketing?: number;
   running_campaigns?: number;
-  sent_24h?: number;
+  sent_24h?: number | null;
+  delete_error?: string | null;
 }
 
 const call = (method: string, path: string, body?: unknown) =>
@@ -177,6 +178,7 @@ test("a project created while running is served at once and sends a test from it
     queued_marketing: 0,
     running_campaigns: 0,
     sent_24h: 0,
+    delete_error: null,
   });
 
   // The admin's copy exists in it: the handoff opens it, and the admin's password logs in there.

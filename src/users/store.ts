@@ -266,7 +266,17 @@ export function createUserStore(db: Database, clock: Clock, roles: Roles) {
         }
         // Resolve omitted fields only after obtaining the current row and the
         // write lock. Password hashing must already have finished outside here.
-        const fields = resolve(previous);
+        let fields = resolve(previous);
+        // The handler lowercases the email it is sent, and the copy's own profile stores it as typed:
+        // another actor sending the copy's own address in any case keeps it unchanged (B149d, D167).
+        if (
+          previous.admin_copy === 1n &&
+          actor !== previous.id &&
+          fields.email !== previous.email &&
+          fields.email.toLowerCase() === previous.email.toLowerCase()
+        ) {
+          fields = { ...fields, email: previous.email };
+        }
         // A Super Admin who cannot log in does not count: nothing else can repair the install.
         const canAdminister =
           previous.type === "user" &&

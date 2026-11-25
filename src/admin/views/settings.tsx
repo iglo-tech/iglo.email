@@ -234,6 +234,8 @@ function General({ t, canUpload }: { t: Translation; canUpload: boolean }) {
 export interface SesRateLine {
   readonly configured: boolean;
   readonly maxSendRate: number | null;
+  /** The saved `messaging.max_send_rate`, so the page renders the right line before Alpine starts. */
+  readonly setting: number;
 }
 
 /**
@@ -258,12 +260,33 @@ function SesRate({ ses }: { ses: SesRateLine }) {
     );
   }
   const rate = String(ses.maxSendRate);
-  const higher = `!(form['messaging.max_send_rate'] > 0 && form['messaging.max_send_rate'] <= ${rate})`;
+  // `0` is no cap, not a rate above SES's (B149a, D164): it has its own wording. Both follow the
+  // field; the server renders the saved value's state so the page is right before Alpine starts.
+  // `x-model.number` keeps it a number, and an emptied field is `""`, which is above nothing: only
+  // a number above SES's rate warns. Alpine's CSP build has no `Number()` to call.
+  const field = "form['messaging.max_send_rate']";
+  const unpaced = `${field} === 0`;
+  const higher = `${field} > ${rate}`;
+  const saved = ses.setting;
+  const hidden = { style: "display: none" };
   return (
     <div data-testid="ses-rate">
       <p class="text-light">SES allows {rate}/s. Sending runs at the lower of the two.</p>
-      <p data-testid="ses-rate-warning" x-show={higher} role="alert">
+      <p
+        data-testid="ses-rate-warning"
+        x-show={higher}
+        role="alert"
+        {...(saved > ses.maxSendRate ? {} : hidden)}
+      >
         The setting is higher than the rate SES allows: sending runs at {rate}/s.
+      </p>
+      <p
+        data-testid="ses-rate-unpaced"
+        x-show={unpaced}
+        role="alert"
+        {...(saved === 0 ? {} : hidden)}
+      >
+        The setting is 0, no cap of its own: sending runs at the rate SES allows, {rate}/s.
       </p>
     </div>
   );

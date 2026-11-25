@@ -947,12 +947,24 @@ export async function runPublicContract(target: {
             !("role" in stored),
           "prefs-fields-valid-d160",
         );
+        // B149d (D167): a refused save writes nothing at all. Each refused body also renames Kim, drops
+        // `extra` (an unsubscribe) and checks `double`, which Kim left (a join); none of it happens.
+        const snapshot = async () =>
+          JSON.stringify({
+            attribs: await attribs(),
+            name: (await call(`/api/subscribers/${kim.id}`)).body.data.name,
+            lists: await Promise.all(
+              [single, double, extra].map((list) => status(kim.id, list.id)),
+            ),
+          });
+        const unchanged = await snapshot();
         const refused = async (body: URLSearchParams, label: string) => {
+          body.set("name", "Mallory");
+          body.delete("l");
+          body.append("l", single.uuid);
+          body.append("l", double.uuid);
           const response = await post(managed, body);
-          check(
-            response.status === 400 && JSON.stringify(await attribs()) === JSON.stringify(stored),
-            label,
-          );
+          check(response.status === 400 && (await snapshot()) === unchanged, label);
         };
         await refused(profile("Oslo", "thirty"), "prefs-fields-type-d160");
         await refused(profile("Oslo", "5"), "prefs-fields-range-d160");
@@ -1053,9 +1065,15 @@ export async function runPublicContract(target: {
           check(
             txPage?.status === 200 &&
               txPage.text.includes('class="manage-form"') &&
-              txPage.text.includes(`value="${extra.uuid}"`) &&
+              txPage.text.includes(`value="${fresh.uuid}"`) &&
               !txPage.text.includes('name="attribs.city"'),
             "prefs-reach-tx-d160",
+          );
+          // B149d (D167): a transactional view offers double opt-in lists only; the single opt-in
+          // list `extra`, which a campaign's view offers Ora above, is not offered here.
+          check(
+            txPage !== null && !txPage.text.includes(`value="${extra.uuid}"`),
+            "prefs-tx-double-only-d167",
           );
         } finally {
           await call(`/api/templates/${template.body.data.id}`, "DELETE");
