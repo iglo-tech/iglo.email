@@ -58,6 +58,7 @@ import { createPrivacy } from "@/public/privacy";
 import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 import type { SourceProvider } from "@/sources/project";
+import { createSendTimeLookup } from "@/sources/send-time";
 
 export const admin = {
   user: "fixture-admin",
@@ -73,6 +74,11 @@ export async function schedulerFixture(
     snsFetch?: SnsFetch;
     /** The project's external source (B150c, D172); none by default. */
     source?: SourceProvider;
+    /**
+     * D174: the scheduler reads a source-linked subscriber's address and name at send time, as
+     * src/projects/compose.ts wires it. Off by default, so other tests' made-up external IDs stay.
+     */
+    sendTime?: boolean;
   } = {},
 ) {
   const source: SourceProvider = options.source ?? (() => null);
@@ -254,6 +260,17 @@ export async function schedulerFixture(
     tracking,
     conditions: observed,
     source,
+    ...(options.sendTime
+      ? {
+          sendTime: createSendTimeLookup({
+            db,
+            source,
+            subscribers,
+            enrollments,
+            emailAllowed: (email) => allowedDomain(email, [], []),
+          }),
+        }
+      : {}),
     settings: () => ({
       fromEmail: "Fixture <noreply@fixture.test>",
       marketing,

@@ -551,6 +551,116 @@ above has the same settings for nginx.
    it. Switch it off for your configuration set as [Sending with Amazon SES](#sending-with-amazon-ses)
    describes (`put-configuration-set-vdm-options` with `EngagementMetrics=DISABLED`).
 
+## External sources
+
+An application whose users and their activity live in PocketBase can let a project read them there
+instead of posting events to `/api/events`
+([15-external-sources](design/15-external-sources.md), D169 to D174). iglo.email subscribes to new
+events records, reads users' addresses and names from a recipients view, and reads history for
+sequence conditions. It copies no events. One source per project; PocketBase 0.40.5 is the version
+it is tested against. A sequence uses pushed events or the source, never both.
+
+**1. The service account.** In PocketBase, create an auth collection for iglo.email (for example
+`services`) and one record in it with an email and a strong password. iglo.email signs in as it.
+Do not use a superuser.
+
+**2. The events collection.** The collection your application writes activity to (default name
+`events`), with these fields (names can be mapped in the settings):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `user` | relation to your users collection | Whose event it is |
+| `name` | text | The event name a sequence's trigger, `exit_on` or a grant rule names |
+| `data` | JSON | The event's data (`data.*` in conditions and grant rules) |
+| `occurredAt` | date | When it happened; records without one are ignored |
+| `key` | text, optional | An idempotency key |
+
+An index on `(user, name, occurredAt)` keeps condition reads fast. Records must keep the
+`created` autodate field PocketBase adds: the stream catches up on it after a reconnect.
+
+**3. The recipients view.** A view collection (default name `recipients`) with one row per user who
+may receive mail, keyed by the user's ID, giving `email`, `name` and optionally an opt-out field.
+Read addresses here, not from the auth collection, which hides `email` from other accounts. Leave
+out users who are leaving, so that a deleted or deactivating user is absent:
+
+```sql
+SELECT u.id, u.email, u.name, u.marketingOptOut AS optOut
+FROM users u
+WHERE u.deletedAt = '' OR u.deletedAt IS NULL
+```
+
+The opt-out field is "set" unless it is null, missing, `false`, `0`, `""`, `"0"` or `"false"`. A set
+opt-out refuses grants (step 6) and blocks marketing at send time: a marketing sequence step ends
+`unsubscribed` and a campaign skips the person (`unsubscribed`), while transactional steps still
+send. iglo.email changes no list membership for it, so clearing the field in your application lets
+marketing reach the person again. An opt-out ends the marketing enrollment, as a withdrawn consent
+does: a user who clears the field is not put back into it, but still gets later campaigns and any
+new enrollment their next trigger starts.
+
+**4. Rules.** Set the list and view rules of the events collection and the recipients view so that
+only the service account can read them, for example
+`@request.auth.collectionName = "services"`. Guests must read nothing: PocketBase answers a revoked
+token as a guest, and a guest-readable collection would let a condition count too few records.
+"Test connection" checks it (see the private-address paragraph under
+[Deploying behind a reverse proxy or PaaS](#deploying-behind-a-reverse-proxy-or-paas)).
+
+**5. Leaving users (optional).** To remove a subscriber as soon as the user leaves, name the users
+collection and a filter that matches a leaving user, for example `deletedAt != ''`. iglo.email
+subscribes to it and removes the subscriber when a user starts matching. PocketBase broadcasts
+nothing for a hard delete, so iglo.email also checks at send time: a user the recipients view no
+longer has is removed before anything is sent. Either way a person who had unsubscribed or been
+blocklisted leaves a suppression, so a returning user is not mailed marketing again without opting
+in.
+
+**6. Settings.** On the project's Settings page, "Source" tab (or the `source.*` keys of
+`PUT /api/settings`): the URL (a direct internal URL is best, because a proxy that cuts quiet
+streams makes the stream reconnect more often; it must use a host name, not an IP address, because
+`sources.private_hosts` takes only host names: use `http://localhost:8090`, not
+`http://127.0.0.1:8090`), the auth collection, identity and password, the
+events and recipients mappings, the users collection and filter, and the grant rules. A grant rule
+says "an event named E, with these `data.*` equalities, adds the user to these lists": it is how
+consent reaches iglo.email. A grant never overrides an unsubscribe, a suppression, a blocklist or a
+set opt-out, and does not add to double opt-in lists. Save, then press "Test connection". It signs
+in, reads one row of each collection, names any field that is missing and fails a step a guest can
+read. When PocketBase runs on a private address (a Docker service name, `localhost`) and the
+webhook private-address block is on, add its host name to `sources.private_hosts` on the instance
+Settings page under Security. That setting rejects IP addresses, so the source URL needs a host
+name.
+
+**7. Sequences.** Create a sequence with source `external`: its trigger is an event name with
+optional `data.*` equalities and an optional `trigger.condition` read from the source when the
+event arrives. Steps can use conditions, aggregates and the `recipient` condition kind against the
+source. A user gets a subscriber the first time an event grants a list or starts a sequence: events
+that do neither create nothing. Step templates must be Transactional-type templates. A new sequence
+is a draft: activate it, or its trigger starts nothing. A marketing step also follows the project's
+marketing frequency cap (`marketing.min_interval`, default 7 days): when marketing steps are only a
+short wait apart, a later one is deferred until the cap allows it (or skipped, under the step's
+`skip` cap policy), so it does not go out when its wait ends.
+
+**Send time.** For every sequence step and campaign to a subscriber with an `external_id`, the
+address and name are read from the recipients view just before the mail is rendered, so a renamed or
+re-addressed user gets the mail at the new address with the new name
+(`{{ subscriber.name | first_name | default: "there" }}` gives a safe greeting). A new address held
+by another subscriber is resolved as when an event arrives (the old holder is moved, or its
+blocklist and unsubscribes are carried over and it is deleted). When the source cannot be read:
+
+- a sequence step waits and retries with backoff, sending nothing. After 72 hours of one outage the
+  enrollment ends `source_error`, with an attention line.
+- a campaign hands the current batch back unsent and waits (5 s, doubling to 5 minutes). It stays
+  `running`, and one attention line says it is waiting for its source. When the source answers, it
+  continues where it stopped, and every recipient gets the campaign once.
+- a recipients view that PocketBase refuses (a renamed collection or field, a changed rule) pauses a
+  campaign with an attention line. Fix the settings and resume it. A sequence step treats the same
+  refusal as an outage: it waits and retries within the 72-hour window, then the enrollment ends
+  `source_error`. Fix the settings within that window and the step sends.
+- a user the view has with no valid address ends a sequence enrollment `source_error` at once, and a
+  campaign skips that person (`subscriber_unavailable`) with an attention line.
+
+**Monitoring.** Attention lines (the Logs page and stderr) report a stream that cannot connect for
+15 minutes or that the source refuses, records that failed for good, enrollments ended
+`source_error`, and campaigns waiting for or paused by the source. Routine reconnects are not
+reported.
+
 ## API user for an app integration
 
 An app that posts events, sends transactional mail or provisions the install should have an API user

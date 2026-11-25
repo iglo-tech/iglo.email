@@ -45,6 +45,7 @@ import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { registerSourceRoutes, sourceGuard, sourceListsCheck } from "@/sources/routes";
 import { createSourceProvider } from "@/sources/project";
+import { createSendTimeLookup } from "@/sources/send-time";
 import { createSourceRecords, storedGrantRules } from "@/sources/records-stream";
 import type { SourceRecords } from "@/sources/records-stream";
 import { sourceConfig } from "@/sources/settings";
@@ -844,7 +845,23 @@ export async function createProject(
       listOptin: (id) => must(lists, "lists").subscriberMetadata(id)?.optin ?? null,
     });
     const templateStore = templates;
+    // D174: source-linked recipients' fresh address and name at send time, for campaigns and steps.
+    const sendTime = createSendTimeLookup({
+      db,
+      source: externalSource,
+      subscribers: subscriberStore,
+      enrollments,
+      emailAllowed: (email) => {
+        const current = must(settings, "settings").read();
+        return allowedDomain(
+          email,
+          current["privacy.domain_allowlist"],
+          current["privacy.domain_blocklist"],
+        );
+      },
+    });
     runner = createCampaignRunner({
+      sendTime,
       db,
       clock,
       logger: app.logger,
@@ -982,6 +999,7 @@ export async function createProject(
       tracking,
       conditions,
       source: externalSource,
+      sendTime,
       settings: () => {
         const current = must(settings, "settings").read();
         return {

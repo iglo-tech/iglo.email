@@ -19,17 +19,21 @@ import { evaluateTriggerCondition } from "@/conditions/source";
 import { whereHolds } from "@/conditions/strict";
 import { writeTransaction } from "@/db/transaction";
 import { TRIGGER_WINDOW_MS } from "@/events/store";
-import { trimSpace } from "@/lists/store";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Enrollments } from "@/sequences/enrollments";
 import { isSourceObject, sourceJson } from "@/sources/json";
 import type { SourceJson } from "@/sources/json";
+import {
+  applyRecipient,
+  leaveUser,
+  planRecipient,
+  SubscriberChanged,
+} from "@/sources/recipient-sync";
+import type { SubscriberRow } from "@/sources/recipient-sync";
 import type { GrantRule } from "@/sources/settings";
-import { isSourceError, SourceError } from "@/sources/source";
-import type { ExternalSource, SourceEvent, SourceRecipient } from "@/sources/source";
-import { SettingsMismatch } from "@/sources/stream-record";
+import { SourceError } from "@/sources/source";
+import type { ExternalSource, SourceEvent } from "@/sources/source";
 import type { RecordCommit, RecordHandler, SourceUser } from "@/sources/stream-record";
-import { sanitizeEmail } from "@/subscribers/email";
 import type { SubscriberStore } from "@/subscribers/store";
 
 /** What a grant did to one list (spec section 5): `added` is the only one that writes. */
@@ -81,57 +85,11 @@ export interface RecordHandlerOptions {
   onOutcome?: (outcome: RecordOutcome) => void;
 }
 
-type Row = NonNullable<ReturnType<SubscriberStore["external"]>>;
+type Row = SubscriberRow;
 
 const CONDITION_FAILED: SafeMessage = "Sequence trigger condition failed: not started";
 /** Distinct causes remembered for the condition attention line, so one bad condition writes once. */
 const MAX_WARNED = 100;
-
-/** The record changed under the handler: roll back, and the retry queue reads again. */
-const changedMeanwhile = () =>
-  new SourceError("transient", "The subscriber changed while the record was read");
-
-/**
- * A recipients-view read whose failure is the settings' (a `400`, `403` or `404` of the view, or a
- * mapped field the rows lack) refuses the stream as a `SettingsMismatch`: the record is not consumed
- * and fixing the settings delivers it. Any other failure is the record's or transient.
- */
-async function readRecipient(
-  source: ExternalSource,
-  userId: string,
-  signal: AbortSignal,
-): Promise<SourceRecipient | null> {
-  try {
-    return await source.recipient(userId, { signal });
-  } catch (error) {
-    if (
-      isSourceError(error) &&
-      error.kind === "permanent" &&
-      (error.status === 400 ||
-        error.status === 403 ||
-        error.status === 404 ||
-        (error.status === undefined && error.message.includes(" records have no field ")))
-    ) {
-      throw new SettingsMismatch(`The recipients view refused a read: ${error.message}`);
-    }
-    throw error;
-  }
-}
-
-/** The view's address as iglo.email stores it, or null when it is no address. */
-function addressOf(recipient: SourceRecipient): string | null {
-  const raw = recipient.email.toWellFormed();
-  if (!raw || Buffer.byteLength(raw) > 1000) {
-    return null;
-  }
-  return sanitizeEmail(raw) ?? null;
-}
-
-/** The view's name as a display name: trimmed, "" when unusable (no name from the address). */
-function nameOf(recipient: SourceRecipient): string {
-  const name = trimSpace(recipient.name.toWellFormed());
-  return name.includes("\0") || Buffer.byteLength(name) > 2000 ? "" : name;
-}
 
 /** The parts of a stored external trigger the handler reads. */
 interface StoredTrigger {
@@ -175,16 +133,6 @@ const scalarWhere = (
   return out;
 };
 
-/**
- * How the incoming address meets another subscriber that holds it (spec section 4), as read before
- * the transaction: `moved` (the holder's user now has `email` in the view: move the holder there),
- * `gone` (the holder has no `external_id`, or the view no longer has its user).
- */
-type Conflict =
-  | { kind: "none" }
-  | { kind: "moved"; holder: Row; email: string }
-  | { kind: "gone"; holder: Row };
-
 export function createRecordHandler(options: RecordHandlerOptions): RecordHandler {
   const { db, clock, source, subscribers, enrollments } = options;
   const warned = new Set<string>();
@@ -210,13 +158,9 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
    */
   function leave(userId: string, recordId: string, commit: RecordCommit) {
     const removed = writeTransaction(db, () => {
-      const row = subscribers.external(userId);
-      if (row) {
-        enrollments.endSubscriber(row.id);
-        subscribers.removeLeaving(row.id);
-      }
+      const id = leaveUser(options, userId);
       commit.write();
-      return row?.id ?? null;
+      return id;
     });
     report({
       record: recordId,
@@ -265,46 +209,6 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
       chosen.push({ id: sequence.id, trigger: sequence.trigger });
     }
     return chosen;
-  }
-
-  /** Reads the holder of `email` in the view (before the transaction) and plans the resolution. */
-  async function conflictOf(
-    email: string,
-    current: Row | null,
-    signal: AbortSignal,
-  ): Promise<Conflict> {
-    const holder = subscribers.byEmail(email);
-    if (!holder || holder.id === current?.id) {
-      return { kind: "none" };
-    }
-    if (holder.external_id === null) {
-      return { kind: "gone", holder };
-    }
-    const row = await readRecipient(source, holder.external_id, signal);
-    if (!row) {
-      return { kind: "gone", holder };
-    }
-    const moved = addressOf(row);
-    if (moved === null || moved === email) {
-      throw new SourceError(
-        "permanent",
-        `Two users in the source have one address: ${holder.external_id} holds it as subscriber ${holder.id}`,
-      );
-    }
-    const taken = subscribers.byEmail(moved);
-    if (taken && taken.id !== holder.id) {
-      throw new SourceError(
-        "permanent",
-        `The address holder's user ${holder.external_id} moved to an address subscriber ${taken.id} holds`,
-      );
-    }
-    if (!options.emailAllowed(moved)) {
-      throw new SourceError(
-        "permanent",
-        `The address holder's user ${holder.external_id} moved to a blocklisted domain`,
-      );
-    }
-    return { kind: "moved", holder, email: moved };
   }
 
   /** One grant (spec section 5): refused over opt-out, unsubscribe, suppression and blocklist. */
@@ -372,73 +276,18 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
       return;
     }
 
-    const recipient = await readRecipient(source, record.user, signal);
-    if (!recipient) {
+    const plan = await planRecipient(options, record.user, signal);
+    if (plan.kind === "absent") {
       // The view no longer has the user: leaving (spec section 7). Nothing is created.
       leave(record.user, record.id, commit);
       return;
     }
-    const email = addressOf(recipient);
-    if (email === null) {
-      throw new SourceError("permanent", `The source user ${record.user} has no valid address`);
-    }
-    const name = nameOf(recipient);
-    const current = subscribers.external(record.user);
-    const conflict = await conflictOf(email, current, signal);
-    const newAddress = conflict.kind !== "gone" && current?.email !== email;
-    if (newAddress && !options.emailAllowed(email)) {
-      throw new SourceError(
-        "permanent",
-        `The source user ${record.user}'s address is in a blocklisted domain`,
-      );
-    }
+    const { recipient } = plan;
 
     const outcome = writeTransaction(db, () => {
-      // The reads above planned on this state; anything changed since is read again by a retry.
-      const now = subscribers.external(record.user);
-      if ((now?.id ?? null) !== (current?.id ?? null)) {
-        throw changedMeanwhile();
-      }
-      const holder = subscribers.byEmail(email);
-      const expected = conflict.kind === "none" ? null : conflict.holder;
-      if (
-        (holder && holder.id !== now?.id ? holder.id : null) !== (expected?.id ?? null) ||
-        (holder && expected && holder.external_id !== expected.external_id)
-      ) {
-        throw changedMeanwhile();
-      }
-      // Every write below goes by ID and touches only the fields the source owns (address, name,
-      // user ID), and every status decision reads the rows as they are now: a blocklist, bounce or
-      // unsubscribe that landed while the source was read stays.
-      let row: Row;
-      if (conflict.kind === "moved") {
-        const taken = subscribers.byEmail(conflict.email);
-        if (taken && taken.id !== conflict.holder.id) {
-          throw changedMeanwhile();
-        }
-        subscribers.sourceWrite(conflict.holder.id, {
-          externalId: conflict.holder.external_id ?? "",
-          email: conflict.email,
-        });
-        row = subscribers.sourceWrite(now?.id ?? null, { externalId: record.user, email, name });
-      } else if (conflict.kind === "gone") {
-        enrollments.endSubscriber(conflict.holder.id);
-        if (!now) {
-          // Re-point the holder to the incoming user: blocklist, unsubscribes and cap history stay.
-          row = subscribers.sourceWrite(conflict.holder.id, {
-            externalId: record.user,
-            email,
-            name,
-          });
-        } else {
-          // Carry the holder's consent onto the incoming row, delete the holder, take the address.
-          subscribers.carryConsent(conflict.holder.id, now.id);
-          subscribers.remove([conflict.holder.id]);
-          row = subscribers.sourceWrite(now.id, { externalId: record.user, email, name });
-        }
-      } else {
-        row = subscribers.sourceWrite(now?.id ?? null, { externalId: record.user, email, name });
-      }
+      // The conflict's resolution and the subscriber upsert, re-checked against the state the
+      // reads planned on (`SubscriberChanged` rolls back, and the retry queue reads again).
+      const row = applyRecipient(options, plan);
       // Grants before exit-then-trigger, so a zero-wait marketing step sees the consent (D99).
       const suppressed = lists.length > 0 && subscribers.suppressed(row);
       const grants = lists.map((list) => ({
@@ -453,7 +302,7 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
         sequences,
       });
       if (result.stale) {
-        throw changedMeanwhile();
+        throw new SubscriberChanged();
       }
       commit.write();
       return { row, grants, started: result.started.length, ended: result.ended.length };

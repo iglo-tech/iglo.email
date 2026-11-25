@@ -22,6 +22,9 @@ import type { Grant, Sender } from "@/messaging/dispatcher";
 import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { BrandSite } from "@/public/brand";
+import type { SendTimeLookup, SendTimePlan } from "@/sources/send-time";
+import { isSourceError } from "@/sources/source";
+import { isSettingsMismatch } from "@/sources/stream-record";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
@@ -68,6 +71,11 @@ export interface RunnerDeps {
    * lives, even after the first pipe's lease expired during a stall.
    */
   registry?: CampaignRunnerRegistry;
+  /**
+   * D174: source-linked recipients' fresh address and name, read per batch before render and
+   * eligibility, and their leaving. None in fixtures without a source.
+   */
+  sendTime?: SendTimeLookup;
   /** Idle scan interval; listmonk scans every five seconds. */
   scanIntervalMs?: number;
   leaseMs?: number;
@@ -107,6 +115,14 @@ const scanInterval = 5000;
 const defaultLease = 30_000;
 /** Bound on the per-batch tracked link cache: personalized URLs are distinct per recipient. */
 const maxCachedLinks = 10_000;
+/** D174: recipients-view reads of one batch in flight at once (docs/perf/B150e-send.md). */
+export const SOURCE_LOOKUPS = 8;
+/**
+ * D174: after a source outage rewinds a batch, the campaign waits this long before its next batch,
+ * doubling per failed batch up to the cap; a batch whose reads succeed resets it.
+ */
+const SOURCE_WAIT_MS = 5000;
+const SOURCE_WAIT_MAX_MS = 5 * 60_000;
 /**
  * Why a claimed delivery was skipped at its push (B116, D131): the same reasons a send row
  * skipped for the same condition carries.
@@ -118,6 +134,11 @@ const SKIP_REASON = {
   unsubscribed: "unsubscribed",
   membership_changed: "membership_changed",
 } as const;
+/** D174: a recipient the send-time lookup skips, with why; `message` is logged when not empty. */
+interface SourceSkip {
+  reason: (typeof SKIP_REASON)[keyof typeof SKIP_REASON];
+  message: string;
+}
 
 /** In-process owners of live campaign pipes. */
 export function createCampaignRunnerRegistry() {
@@ -159,6 +180,8 @@ export function createCampaignRunner(deps: RunnerDeps) {
   const pipes = new Map<bigint, Pipe>();
   /** Campaigns whose setup failed are retried at the next scan, as listmonk does. */
   const retryAt = new Map<bigint, number>();
+  /** D174: batches handed back in a row per campaign while its source could not be read. */
+  const sourceWaits = new Map<bigint, number>();
   let rotation = 0;
   const stopping = new AbortController();
 
@@ -414,7 +437,16 @@ export function createCampaignRunner(deps: RunnerDeps) {
     }
     const now = nowDate.getTime();
     const settings = deps.settings();
-    for (const id of store.due(iso(now))) {
+    const due = store.due(iso(now));
+    // D174: a campaign paused, cancelled or finished while it waited for its source starts a later
+    // outage afresh (an attention line, the first wait), and a resume does not wait out the old one.
+    for (const id of sourceWaits.keys()) {
+      if (!pipes.has(id) && !due.includes(id)) {
+        sourceWaits.delete(id);
+        retryAt.delete(id);
+      }
+    }
+    for (const id of due) {
       if (pipes.has(id) || (retryAt.get(id) ?? 0) > now) {
         continue;
       }
@@ -587,19 +619,30 @@ export function createCampaignRunner(deps: RunnerDeps) {
    * listmonk does. Nothing of the batch was pushed: every claim returns to the cursor for the
    * resume. A crash before that leaves the batch claimed, so it is skipped as unknown.
    */
-  async function attach({ pipe, recipients }: Batch): Promise<Attachments | null> {
-    const c = pipe.campaign;
+  async function attach(batch: Batch): Promise<Attachments | null> {
+    const c = batch.pipe.campaign;
     try {
-      if (pipe.embedProblem) {
-        throw new Error(pipe.embedProblem);
+      if (batch.pipe.embedProblem) {
+        throw new Error(batch.pipe.embedProblem);
       }
-      return await deps.attachments(pipe.media, pipe.images);
+      return await deps.attachments(batch.pipe.media, batch.pipe.images);
     } catch (error) {
       log(
         "error fetching campaign attachments: campaign paused",
         `error fetching attachments on ${label(c)}: ${errorText(error)}. Pausing the campaign.`,
       );
     }
+    handBack(batch, true);
+    return null;
+  }
+
+  /**
+   * Hands a batch none of which was pushed back to the cursor: every claim is removed, the cursor
+   * rewinds to before its first recipient, and the pipe ends, paused or not. A crash before this
+   * commits leaves the batch claimed, so it is skipped as unknown, never sent twice.
+   */
+  function handBack({ pipe, recipients }: Batch, pause: boolean) {
+    const c = pipe.campaign;
     const now = iso(clock.now().getTime());
     writeTransaction(db, () => {
       for (const sub of recipients) {
@@ -608,10 +651,143 @@ export function createCampaignRunner(deps: RunnerDeps) {
       if (recipients.length) {
         store.rewind(c.id, token, must(recipients[0], "first recipient").id - 1n, now);
       }
-      store.pause(c.id, token, c.runner_generation, now);
+      if (pause) {
+        store.pause(c.id, token, c.runner_generation, now);
+      }
       release(pipe);
     });
-    return null;
+  }
+
+  /**
+   * D174 (15-external-sources section 7): the batch's source-linked recipients (an `external_id`
+   * while the project has a source) with the source's current address and name, read before any
+   * of the batch renders or is checked for eligibility. Every read runs first, with no transaction
+   * open (at most `SOURCE_LOOKUPS` at once); then each change is written through the record
+   * handler's conflict path in its own short transaction, and the batch's copy takes the new
+   * address and name. A user the recipients view no longer has is leaving: removed (enrollments
+   * ended, a withdrawn consent kept as a suppression) and skipped. Returns the recipients to skip
+   * (by index) with why, or null when the batch was handed back:
+   * - a transient failure (an outage, or a subscriber changed by another write meanwhile) hands the
+   *   whole batch back before anything of it is pushed, and the campaign waits (`SOURCE_WAIT_MS`,
+   *   doubling) with its status unchanged: no message was handed to the emailer, so the batch is
+   *   claimed again and sent once (marketing at-most-once);
+   * - a recipients view the source refuses (`SettingsMismatch`) hands it back and pauses the
+   *   campaign, which needs the settings fixed and a resume;
+   * - a permanent failure of one recipient (no valid address, two users with one address, a
+   *   blocked domain) skips that recipient only.
+   */
+  async function fresh(batch: Batch): Promise<Map<number, SourceSkip> | null> {
+    const skip = new Map<number, SourceSkip>();
+    const lookup = deps.sendTime;
+    const { pipe, recipients } = batch;
+    const c = pipe.campaign;
+    const linked = recipients.flatMap((sub, i) => (sub.external_id === null ? [] : [i]));
+    if (!lookup || !linked.length || !lookup.configured()) {
+      return skip;
+    }
+    const plans: Array<[number, SendTimePlan]> = [];
+    let failure: { error: unknown } | null = null;
+    let cursor = 0;
+    const reader = async () => {
+      while (!failure) {
+        const i = linked[cursor++];
+        if (i === undefined) {
+          return;
+        }
+        const sub = must(recipients[i], "recipient");
+        try {
+          const planned = await lookup.read(
+            sub.id,
+            must(sub.external_id, "external ID"),
+            stopping.signal,
+          );
+          if (planned) {
+            plans.push([i, planned]);
+          }
+        } catch (error) {
+          if (isSourceError(error) && error.kind === "permanent" && !isSettingsMismatch(error)) {
+            skip.set(i, { reason: SKIP_REASON.unavailable, message: error.message });
+          } else {
+            failure ??= { error };
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(SOURCE_LOOKUPS, linked.length) }, reader));
+    if (!failure) {
+      try {
+        for (const [i, planned] of plans) {
+          if (!planned.unchanged) {
+            const result = lookup.apply(planned);
+            if (result.kind === "left") {
+              skip.set(i, { reason: SKIP_REASON.unavailable, message: "" });
+              continue;
+            }
+            const { row } = result;
+            recipients[i] = {
+              id: row.id,
+              uuid: row.uuid,
+              email: row.email,
+              name: row.name,
+              attribs: row.attribs,
+              external_id: row.external_id,
+            };
+          }
+          // The view's opt-out field set: the user declined marketing, which a campaign is.
+          // Skipped as unsubscribed, with no membership change (the source owns the flag).
+          if (planned.plan.kind === "present" && planned.plan.recipient.optOut) {
+            skip.set(i, { reason: SKIP_REASON.unsubscribed, message: "" });
+          }
+        }
+      } catch (error) {
+        failure = { error };
+      }
+    }
+    if (failure) {
+      const { error } = failure;
+      if (stopping.signal.aborted) {
+        handBack(batch, false);
+        return null;
+      }
+      if (!isSourceError(error)) {
+        throw error;
+      }
+      if (isSettingsMismatch(error)) {
+        log(
+          "campaign paused: the source refused a recipient read",
+          `${label(c)}: the source refused a recipient read (${error.message}). Pausing the ` +
+            "campaign: fix the source settings, then resume it.",
+        );
+        handBack(batch, true);
+        return null;
+      }
+      const waited = sourceWaits.get(c.id) ?? 0;
+      if (waited === 0) {
+        log(
+          "campaign waiting for its source: batch handed back",
+          `${label(c)}: the source could not be read (${error.message}). The batch was handed ` +
+            "back unsent; the campaign retries it when the source answers.",
+        );
+      }
+      sourceWaits.set(c.id, waited + 1);
+      handBack(batch, false);
+      retryAt.set(
+        c.id,
+        clock.now().getTime() +
+          Math.min(SOURCE_WAIT_MAX_MS, SOURCE_WAIT_MS * 2 ** Math.min(waited, 16)),
+      );
+      return null;
+    }
+    sourceWaits.delete(c.id);
+    for (const [i, { message }] of skip) {
+      if (message) {
+        log(
+          "campaign recipient skipped: the source has no usable address",
+          `${label(c)}: subscriber ${must(recipients[i], "recipient").id} skipped: ${message}`,
+        );
+      }
+    }
+    return skip;
   }
 
   /**
@@ -621,6 +797,17 @@ export function createCampaignRunner(deps: RunnerDeps) {
   async function process(batch: Batch, grant: Grant): Promise<void> {
     const { pipe, recipients } = batch;
     const c = pipe.campaign;
+    // The reads can wait on a slow source: the lease is renewed meanwhile.
+    const stopReading = heartbeat();
+    let skip: Map<number, SourceSkip> | null;
+    try {
+      skip = await fresh(batch);
+    } finally {
+      await stopReading();
+    }
+    if (!skip) {
+      return;
+    }
     const attachments = await attach(batch);
     if (!attachments) {
       return;
@@ -669,6 +856,18 @@ export function createCampaignRunner(deps: RunnerDeps) {
           return;
         }
         const sub = must(recipients[i], "recipient");
+        const skipped = skip.get(i);
+        if (skipped) {
+          // D174: the source has no usable address for it, the user left (and the subscriber
+          // with it), or the user opted out of marketing. Nothing is rendered or pushed.
+          outcomes.set(i, {
+            status: "skipped",
+            at: clock.now().getTime(),
+            reason: skipped.reason,
+          });
+          unused();
+          continue;
+        }
         let message: Message;
         try {
           message = await render(pipe, sub, settings, attachments);

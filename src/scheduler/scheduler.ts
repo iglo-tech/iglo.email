@@ -30,8 +30,11 @@ import { messageLinks } from "@/unsubscribe/message";
 import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
 import type { SourceProvider } from "@/sources/project";
+import { isSubscriberChanged } from "@/sources/recipient-sync";
+import type { SendTimeLookup } from "@/sources/send-time";
 import { isSourceError } from "@/sources/source";
 import type { SourceEvent } from "@/sources/source";
+import { isSettingsMismatch } from "@/sources/stream-record";
 
 export const SCHEDULER_INTERVAL_MS = 15_000;
 const LEASE_MS = 5 * 60_000;
@@ -125,6 +128,11 @@ export interface SchedulerOptions {
   conditions: Pick<ConditionEvaluator, "evaluate">;
   /** The project's source, which external sequences read (D172); none without it. */
   source?: SourceProvider;
+  /**
+   * D174: a source-linked subscriber's fresh address and name before each step renders, and its
+   * leaving when the source no longer has it. None in fixtures without a source.
+   */
+  sendTime?: SendTimeLookup;
   settings: () => SchedulerSettings;
   signal?: AbortSignal;
 }
@@ -294,6 +302,68 @@ export function createScheduler(options: SchedulerOptions) {
     }
   }
 
+  /**
+   * D174 (15-external-sources section 7): the subscriber with the source's current address and
+   * name, read before the step renders and its consent is checked again, or null when the decision
+   * ended here. The reads run with no transaction open; a change is written through the record
+   * handler's conflict path in its own short transaction. A user the recipients view no longer has
+   * is leaving: its enrollments (this one too) end and the subscriber is removed. A transient
+   * failure, or a view the settings name wrongly, waits like any source read of the step (D172);
+   * an address the source cannot give (none, two users holding it, a blocked domain) ends the
+   * enrollment `source_error`. A marketing step to a user whose view row has the opt-out field set
+   * exits `unsubscribed`. Nothing is sent on any of these paths.
+   */
+  async function refreshed(
+    claim: Decision,
+    row: SchedulerContext,
+    subscriberId: bigint,
+    externalId: string,
+  ) {
+    const lookup = must(options.sendTime, "send-time lookup");
+    let optedOut: boolean;
+    try {
+      const planned = await lookup.read(subscriberId, externalId, options.signal);
+      if (planned && !planned.unchanged && lookup.apply(planned).kind === "left") {
+        return null;
+      }
+      optedOut = planned?.plan.kind === "present" && planned.plan.recipient.optOut;
+    } catch (error) {
+      if (isSubscriberChanged(error)) {
+        // Another write moved the user or the address meanwhile: decide again with fresh reads.
+        commit(claim, () => enrollments.release(claim, null));
+        return null;
+      }
+      const failure = sourceError(error);
+      if (!failure) {
+        throw error;
+      }
+      sourceFailed(
+        claim,
+        row,
+        isSettingsMismatch(error)
+          ? { kind: "source_transient", message: failure.message }
+          : failure,
+      );
+      return null;
+    }
+    const current = options.subscribers.get(subscriberId);
+    if (!current) {
+      end(claim, "canceled", "subscriber_deleted");
+      return null;
+    }
+    if (current.status === "blocklisted") {
+      end(claim, "exited", "blocklisted");
+      return null;
+    }
+    if (optedOut && row.kind === "marketing") {
+      // The view's opt-out field is set: the user declined marketing. The step's consent exit,
+      // as `marketingReason` gives it, with no membership change; a transactional step still sends.
+      end(claim, "exited", "unsubscribed");
+      return null;
+    }
+    return current;
+  }
+
   async function decide(item: { id: bigint; lease: string }) {
     const row = enrollments.schedulerContext(item.id);
     if (!row || row.status !== "active" || row.claimed_until !== item.lease) {
@@ -313,7 +383,7 @@ export function createScheduler(options: SchedulerOptions) {
     if (row.sequence_status !== "active") {
       return commit(claim, () => enrollments.release(claim, null));
     }
-    const subscriber = options.subscribers.get(row.subscriber_id);
+    let subscriber = options.subscribers.get(row.subscriber_id);
     if (!subscriber) {
       return end(claim, "canceled", "subscriber_deleted");
     }
@@ -413,6 +483,15 @@ export function createScheduler(options: SchedulerOptions) {
         );
       }
       return;
+    }
+    // D174: a source-linked subscriber's address and name are read fresh before the consent
+    // recheck and the render, so both see what the source has now.
+    if (options.sendTime?.configured() && subscriber.external_id !== null) {
+      const current = await refreshed(claim, row, subscriber.id, subscriber.external_id);
+      if (!current) {
+        return;
+      }
+      subscriber = current;
     }
     if (marketing) {
       // Rechecked after the condition, which may have waited on the query runner.
