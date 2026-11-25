@@ -172,7 +172,7 @@ export function createScheduler(options: SchedulerOptions) {
       return true;
     });
   }
-  function skipped(claim: Decision, email: string, reason: string) {
+  function skipped(claim: Decision, email: string, reason: string, keepErrorSince = false) {
     return commit(claim, (row) => {
       sends.recordSequence({
         skip: reason,
@@ -185,7 +185,7 @@ export function createScheduler(options: SchedulerOptions) {
         stepId: row.step_id,
         listId: row.kind === "marketing" ? row.list_id : null,
       });
-      enrollments.advance(claim, clock.now());
+      enrollments.advance(claim, clock.now(), keepErrorSince);
     });
   }
   const advance = (claim: Decision) => commit(claim, () => enrollments.advance(claim, clock.now()));
@@ -215,17 +215,15 @@ export function createScheduler(options: SchedulerOptions) {
 
   /**
    * D172: a source failure of an external step. A transient one is retried with the condition
-   * backoff, keeping `error_since`, until 72 hours have passed since the first; then, and at once for
-   * a permanent one, the enrollment ends `source_error`. Nothing is sent past an unread condition.
+   * backoff, keeping `error_since`, until 72 hours have passed since the enrollment's first failure;
+   * then, and at once for a permanent one, the enrollment ends `source_error`. Nothing is sent past
+   * an unread condition. A retry writes no attention line (the outage itself is the source's to
+   * report); only the ending does, once per enrollment.
    */
   function sourceFailed(claim: Decision, row: SchedulerContext, error: ConditionError) {
     const now = clock.now().getTime();
     const since = row.error_since === null ? now : Date.parse(row.error_since);
     if (error.kind === "source_transient" && now - since < SOURCE_RETRY_MS) {
-      attention(
-        "Sequence source read failed: retrying later",
-        `Sequence source read failed for enrollment ${row.id} at step ${row.step_id}; retrying later: ${error.message}`,
-      );
       return commit(claim, () =>
         enrollments.releaseSourceRetry(claim, new Date(now + lateBackoff(row)), clock.now()),
       );
@@ -237,6 +235,34 @@ export function createScheduler(options: SchedulerOptions) {
       );
     }
     return undefined;
+  }
+
+  /**
+   * D172: whether the source can still be read for an external enrollment past its 72-hour window
+   * whose step is late: one read of its trigger record. Undefined when the read succeeds (or there
+   * is no record to read), so the late step is skipped as usual.
+   */
+  async function probeSource(row: SchedulerContext): Promise<ConditionError | undefined> {
+    const source = options.source?.();
+    if (!source) {
+      return { kind: "source_permanent", message: "The project has no source configured" };
+    }
+    if (row.trigger_external_id === null) {
+      return undefined;
+    }
+    try {
+      await source.record(
+        row.trigger_external_id,
+        options.signal ? { signal: options.signal } : {},
+      );
+      return undefined;
+    } catch (error) {
+      const failure = sourceError(error);
+      if (!failure) {
+        throw error;
+      }
+      return failure;
+    }
   }
 
   async function decide(item: { id: bigint; lease: string }) {
@@ -271,7 +297,20 @@ export function createScheduler(options: SchedulerOptions) {
     const maxLate = row.max_late ?? (row.kind === "marketing" ? MARKETING_MAX_LATE : null);
     const late = maxLate === null ? undefined : parseDuration(maxLate);
     if (late !== undefined && now.getTime() > Date.parse(row.due_at) + late) {
-      return skipped(claim, subscriber.email, "late");
+      // D172: the 72-hour source window is the enrollment's, not the step's. A late step keeps
+      // `error_since`; once the window has passed, a source that still cannot be read ends the
+      // enrollment `source_error` rather than skipping step after step.
+      if (
+        row.source === "external" &&
+        row.error_since !== null &&
+        now.getTime() - Date.parse(row.error_since) >= SOURCE_RETRY_MS
+      ) {
+        const failure = await probeSource(row);
+        if (failure) {
+          return sourceFailed(claim, row, failure);
+        }
+      }
+      return skipped(claim, subscriber.email, "late", true);
     }
     const marketing = row.kind === "marketing";
     if (marketing) {

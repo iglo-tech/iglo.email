@@ -746,9 +746,11 @@ export function createEnrollments(db: Database, clock: Clock) {
      * `completed` when none is left. A deleted step is passed without waiting again (the
      * current due time is kept) and does not count as a step that ran, so `updated_at`, which
      * conditions read as the last step time, changes only when a step ran. The caller holds
-     * the write and has checked `owns`.
+     * the write and has checked `owns`. `error_since` (D172) is cleared unless `keepErrorSince`
+     * (a step passed without a source read deciding it, such as a late skip) or the step was
+     * deleted.
      */
-    advance(claim: Claim, now: Date): "advanced" | "completed" {
+    advance(claim: Claim, now: Date, keepErrorSince = false): "advanced" | "completed" {
       const { step } = claim;
       const deleted = step.step_status === "deleted";
       const test = Boolean(step.test);
@@ -765,7 +767,8 @@ export function createEnrollments(db: Database, clock: Clock) {
       const dueAt = deleted ? step.due_at : dueAfter(at, next.wait, test);
       // A deleted step keeps the previous step time; claimed-advance sets updated_at.
       const updated = deleted ? (byId(claim.id)?.updated_at ?? at) : at;
-      q.get("claimed-advance").run(next.id, dueAt, updated, claim.id, claim.lease);
+      const keep = keepErrorSince || deleted ? 1 : 0;
+      q.get("claimed-advance").run(next.id, dueAt, keep, updated, claim.id, claim.lease);
       return "advanced";
     },
     /** End a claimed enrollment. The caller holds the write and has checked `owns`. */

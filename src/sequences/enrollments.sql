@@ -101,7 +101,9 @@ SELECT id, wait FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active'
 SELECT id, wait FROM sequence_steps WHERE sequence_id = ?1 AND status = 'active' AND position >= ?2
   ORDER BY position LIMIT 1;
 -- name: claimed-advance
-UPDATE enrollments SET step_id = ?, due_at = ?, claimed_until = NULL, retry_at = NULL, error_since = NULL, updated_at = ?
+-- D172: `error_since` is per enrollment; a step passed without a source read (late, deleted) keeps it.
+UPDATE enrollments SET step_id = ?, due_at = ?, claimed_until = NULL, retry_at = NULL,
+    error_since = CASE WHEN ? THEN error_since END, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-complete
 UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
