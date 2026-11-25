@@ -269,19 +269,18 @@ export function createSnsClient(deps: {
 }
 export type SnsClient = ReturnType<typeof createSnsClient>;
 
-/** What our own Message-ID names: its domain and the send or campaign delivery's UUIDs (B142). */
+/**
+ * What our own Message-ID names: the send or campaign delivery's UUIDs, lowercase (B142). Its
+ * domain routes nothing (B149b, D165).
+ */
 export interface MessageIdentity {
-  /** Lowercase; empty when the value is not a Message-ID. */
-  domain: string;
   sendUuid: string;
   campaignUuid: string;
   subscriberUuid: string;
 }
 export function messageIdentity(messageId: string): MessageIdentity {
-  const domain = /@([^@<>\s]+)>?$/.exec(messageId.trim())?.[1]?.toLowerCase() ?? "";
   const delivery = campaignMessage.exec(messageId.trim());
   return {
-    domain,
     sendUuid: sendMessage.exec(messageId.trim())?.[1]?.toLowerCase() ?? "",
     campaignUuid: delivery?.[1]?.toLowerCase() ?? "",
     subscriberUuid: delivery?.[2]?.toLowerCase() ?? "",
@@ -358,6 +357,11 @@ export function sesEvents(message: string, now: Date) {
         messageId = value.trim();
       }
     }
+  }
+  // Truncated headers (B149b): SES still names the Message-ID among the common headers.
+  const common = record(mail.commonHeaders);
+  if (!messageId && typeof common.messageId === "string") {
+    messageId = common.messageId.trim();
   }
 
   // Our own Message-ID names the send or the campaign delivery.

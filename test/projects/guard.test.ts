@@ -442,3 +442,77 @@ test("without SES API credentials there is no guard: marketing at the would-be l
   expect(page).toContain("No SES API credentials are saved: the setting alone applies");
   expect(page).not.toContain("SES allows");
 });
+
+/** Async marketing sends to `audience`: rows the outbox claims only against granted slots. */
+const marketing = (f: Guarded, audience: { id: number; emails: Array<string> }, async = true) =>
+  f.call<{ sends: Array<{ status: string }> }>("POST", "/api/tx", {
+    subscriber_emails: audience.emails,
+    template_id: f.template,
+    kind: "marketing",
+    list_id: audience.id,
+    async,
+  });
+
+test("a hold that starts with marketing sends in flight: what was granted finishes once, the rest waits", async () => {
+  // B149b (B145b r1). Rate 2, a 10,000 quota: the line is max(200, 2 × 60) = 200 left.
+  const f = await guarded({ setting: 2, quota: { max: 10_000, sent: 0, rate: 14 } });
+  const news = await f.audience("news", 20);
+  await marketing(f, news);
+  await f.until(() => f.received(news.emails) >= 3, 100, "the first marketing sends");
+  // The line is reached while rows are claimed and their pushes wait in granted slots.
+  f.quota.sent = 9800;
+  expect((await f.check()).status).toBe(200);
+  expect(f.lines()).toHaveLength(1);
+  const atHold = f.received(news.emails);
+  await f.run(60_000, 500);
+  const afterHold = f.received(news.emails);
+  // Only slots granted before the hold still start: at most the 2 s horizon, 4 at rate 2.
+  expect(afterHold - atHold).toBeLessThanOrEqual(4);
+  await f.run(60_000, 1000);
+  expect(f.received(news.emails)).toBe(afterHold);
+  let count = await f.sends();
+  expect(count("marketing", "sending")).toBe(0);
+  expect(count("marketing", "sent")).toBe(afterHold);
+  expect(count("marketing", "queued")).toBe(20 - afterHold);
+  // The guard lifts: the rest is sent, and nothing that started before or during the hold twice.
+  f.quota.sent = 0;
+  expect((await f.check()).status).toBe(200);
+  await f.until(() => f.received(news.emails) === 20, 200, "the rest after the guard lifted");
+  await f.run(5000, 500);
+  expect(f.sink.messages).toHaveLength(20);
+  expect(new Set(f.sink.messages.map((message) => message.to[0])).size).toBe(20);
+  count = await f.sends();
+  expect(count("marketing", "sent")).toBe(20);
+  expect(f.lines()).toHaveLength(2);
+});
+
+test("a long hold: marketing asked for three hours into it waits until the guard lifts", async () => {
+  // B149b (B145b r1): a hold has no timer of its own; only a newer snapshot lifts it.
+  const f = await guarded({ setting: 2, quota: { max: 10_000, sent: 9800, rate: 14 } });
+  expect(f.lines()).toHaveLength(1);
+  await f.run(3 * 3_600_000, 60_000);
+  const late = await f.audience("late", 3);
+  const sync = await f.audience("sync", 1);
+  await marketing(f, late);
+  // A synchronous call waits its bounded 7 s for a grant and answers its row queued.
+  let answered: { sends: Array<{ status: string }> } | undefined;
+  const call = marketing(f, sync, false).then((data) => {
+    answered = data;
+  });
+  await f.until(() => answered !== undefined, 500, "the synchronous marketing call");
+  await call;
+  expect(answered!.sends.map((send) => send.status)).toEqual(["queued"]);
+  await f.run(120_000, 1000);
+  const count = await f.sends();
+  expect(count("marketing", "queued")).toBe(4);
+  expect(f.received([...late.emails, ...sync.emails])).toBe(0);
+  expect(f.lines()).toHaveLength(1);
+  f.quota.sent = 0;
+  expect((await f.check()).status).toBe(200);
+  await f.until(
+    () => f.received([...late.emails, ...sync.emails]) === 4,
+    200,
+    "the held mail after the guard lifted",
+  );
+  expect(f.lines()).toHaveLength(2);
+});

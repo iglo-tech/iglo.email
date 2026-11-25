@@ -1,6 +1,7 @@
 // B142 (14-projects sections 8 and 15 "Bounces", D156): SES notices through the compiled executable.
 // `POST /webhooks/service/ses` is the instance's route on the instance host (127.0.0.1 here), with
-// the instance's bounce keys and topic ARNs; a notice lands in the one project its Message-ID names.
+// the instance's bounce keys and topic ARNs; a notice lands in the one project whose own sends,
+// campaign deliveries or test sends its Message-ID names, whatever its domain (B149b, D165).
 // The process fetches the SNS signing certificate through the loopback tunnel (sns-tunnel.ts), and
 // the notices are signed with the real time, as the route checks their age against the real clock.
 // The instance runs in four phases over one data directory: one project, three, an ambiguous copy,
@@ -113,14 +114,25 @@ async function campaign(host: string, name: string) {
 const bounces = async (host: string) =>
   (await call<{ results: Array<Bounce> }>(host, "GET", "/api/bounces?per_page=all")).results;
 
-/** A signed SES bounce for `recipients`, with our Message-ID header when one is given. */
-function notice(recipients: Array<string>, messageId?: string, bounceType = "Permanent") {
+/**
+ * A signed SES bounce for `recipients`, with our Message-ID header when one is given. `truncated`
+ * sends SES's truncated headers: the list is empty, and the common headers name `messageId`.
+ */
+function notice(
+  recipients: Array<string>,
+  messageId?: string,
+  bounceType = "Permanent",
+  truncated = false,
+) {
   return envelope(real, {
     Message: bounceMessage(
       real,
       recipients,
       { bounceType },
-      messageId ? [{ name: "Message-ID", value: messageId }] : [],
+      messageId && !truncated ? [{ name: "Message-ID", value: messageId }] : [],
+      truncated
+        ? { headersTruncated: true, commonHeaders: messageId ? { messageId, subject: "S" } : {} }
+        : {},
     ),
   });
 }
@@ -193,13 +205,18 @@ test("one project: every notice goes to it as today, including the address fallb
   expect(countLines(await stop(), UNMATCHED)).toBe(0);
 });
 
+const counts = async () =>
+  Promise.all([PRIMARY, A, B].map(async (host) => (await bounces(host)).length));
+
 /** Phase 2's fixtures: the same address in every project, and a campaign in each. */
 const shared = "shared@example.com";
 const people = new Map<string, Subscriber>();
 const campaigns = new Map<string, { id: number; uuid: string }>();
 let unmatchedSent = 0;
+/** Bounces of A's test sends: each is one `[a] Test send bounced` line. */
+let testBounces = 0;
 
-test("several projects: a notice lands in the project its Message-ID's host names", async () => {
+test("several projects: a notice lands in the project whose delivery its Message-ID names", async () => {
   // Phase 2: projects `a` (with an extra hostname) and `b` beside the primary.
   registerProjects(dataDir, [
     { slug: "a", name: "A", hostname: A, extra: [OLD_A] },
@@ -229,15 +246,72 @@ test("several projects: a notice lands in the project its Message-ID's host name
   expect(await statusOf(PRIMARY, must(people.get(PRIMARY)).id)).toBe("enabled");
 });
 
-test("an extra hostname resolves, and the address fallback stays inside that project", async () => {
+test("a project's host in a Message-ID naming none of its records routes nowhere: no address fallback", async () => {
+  // B149b (B142 r1): a hostname moves, and a test send's Message-ID is the user's to choose, so
+  // the domain is no proof the mail came from that project.
   const a = await subscriber(A, "extra@example.com");
   const b = await subscriber(B, "extra@example.com");
-  // The domain decides: these UUIDs name nothing anywhere, so only A's address fallback applies.
-  const id = `<${crypto.randomUUID()}@${OLD_A}>`;
-  expect((await deliver(notice([a.email], id, "Transient"))).status).toBe(200);
-  const rows = (await bounces(A)).filter((row) => row.subscriber_id === a.id);
-  expect(rows.map((row) => row.type)).toEqual(["soft"]);
-  expect((await bounces(B)).some((row) => row.subscriber_id === b.id)).toBe(false);
+  const before = await counts();
+  for (const host of [A, OLD_A, B]) {
+    expect((await deliver(notice([a.email], `<${crypto.randomUUID()}@${host}>`))).status).toBe(200);
+    unmatchedSent++;
+  }
+  expect(await counts()).toEqual(before);
+  expect(await statusOf(A, a.id)).toBe("enabled");
+  expect(await statusOf(B, b.id)).toBe("enabled");
+});
+
+test("a project's own delivery lands in it whatever host its Message-ID names, in any case", async () => {
+  // A's delivery named with B's host (a hostname that moved from A to B, say), upper-cased.
+  const own = await subscriber(A, "moved@example.com");
+  const other = await subscriber(B, "moved@example.com");
+  const id = `<${must(campaigns.get(A)).uuid}.${own.uuid}@${B}>`.toUpperCase();
+  expect((await deliver(notice([own.email], id, "Transient"))).status).toBe(200);
+  const rows = (await bounces(A)).filter((row) => row.subscriber_id === own.id);
+  expect(rows.map((row) => [row.type, row.campaign?.id])).toEqual([
+    ["soft", must(campaigns.get(A)).id],
+  ]);
+  expect((await bounces(B)).some((row) => row.subscriber_id === other.id)).toBe(false);
+});
+
+test("a test send's chosen Message-ID with another project's host stays in the sending project", async () => {
+  // B142 r1's case: a user of A sends a campaign test with a Message-ID naming B's host. Its
+  // bounce is A's test send (a log line), never B's subscriber of the same address.
+  const own = await subscriber(A, "chosen@example.com");
+  const other = await subscriber(B, "chosen@example.com");
+  const list = await call<{ id: number }>(A, "POST", "/api/lists", {
+    name: "chosen",
+    type: "private",
+    optin: "single",
+  });
+  const { id } = await call<{ id: number }>(A, "POST", "/api/campaigns", {
+    name: "chosen",
+    subject: "Chosen",
+    lists: [list.id],
+    content_type: "plain",
+    type: "regular",
+    messenger: "email",
+    body: "Body",
+  });
+  const chosen = `<${crypto.randomUUID()}@${B}>`;
+  const tested = await api(port, A, key(A), "POST", `/api/campaigns/${id}/test`, {
+    name: "chosen",
+    subject: "Chosen",
+    lists: [list.id],
+    type: "regular",
+    content_type: "plain",
+    messenger: "email",
+    body: "Body",
+    headers: [{ "Message-ID": chosen }],
+    subscribers: [own.email],
+  });
+  expect({ status: tested.status, text: tested.text }).toEqual({ status: 200, text: tested.text });
+  const before = await counts();
+  expect((await deliver(notice([own.email], chosen))).status).toBe(200);
+  expect(await counts()).toEqual(before);
+  expect(await statusOf(A, own.id)).toBe("enabled");
+  expect(await statusOf(B, other.id)).toBe("enabled");
+  testBounces++;
 });
 
 test("an unknown domain falls back to the projects' sends, campaigns and test sends", async () => {
@@ -253,9 +327,6 @@ test("an unknown domain falls back to the projects' sends, campaigns and test se
   expect((await bounces(A)).filter((row) => row.type === "soft").length).toBe(1);
 });
 
-const counts = async () =>
-  Promise.all([PRIMARY, A, B].map(async (host) => (await bounces(host)).length));
-
 test("a notice no project claims stores nothing anywhere and names itself once", async () => {
   const before = await counts();
   // Unknown domain and UUIDs; and no Message-ID at all. The address is a subscriber everywhere.
@@ -269,6 +340,22 @@ test("a notice no project claims stores nothing anywhere and names itself once",
       host === PRIMARY ? "enabled" : "blocklisted",
     );
   }
+});
+
+test("truncated headers: the common headers' Message-ID routes; without one, nothing is stored", async () => {
+  // B149b (B142 r1): SES drops the header list of a large message, not its common headers.
+  const own = await subscriber(B, "truncated@example.com");
+  const id = `<${must(campaigns.get(B)).uuid}.${own.uuid}@${B}>`;
+  expect((await deliver(notice([own.email], id, "Permanent", true))).status).toBe(200);
+  expect(await statusOf(B, own.id)).toBe("blocklisted");
+  // No Message-ID at all: the address is a subscriber of A only, and still no project is chosen
+  // by address (D165): a transactional send from B can reach an address only A holds.
+  const only = await subscriber(A, "only-a@example.com");
+  const before = await counts();
+  expect((await deliver(notice([only.email], undefined, "Permanent", true))).status).toBe(200);
+  unmatchedSent++;
+  expect(await counts()).toEqual(before);
+  expect(await statusOf(A, only.id)).toBe("enabled");
 });
 
 /** A's subscriber that phase 3's copy `c` holds too, with the same UUID. */
@@ -286,7 +373,9 @@ test("a project host does not serve the SES route", async () => {
   }
   expect((await bounces(A)).length).toBe(before);
   expect(await statusOf(A, fresh.id)).toBe("enabled");
-  expect(countLines(await stop(), UNMATCHED)).toBe(unmatchedSent);
+  const stderr = await stop();
+  expect(countLines(stderr, UNMATCHED)).toBe(unmatchedSent);
+  expect(countLines(stderr, "[a] Test send bounced")).toBe(testBounces);
 });
 
 test("two projects that both claim a Message-ID: nothing is stored, and the line is written", async () => {
@@ -302,9 +391,10 @@ test("two projects that both claim a Message-ID: nothing is stored, and the line
   expect([(await bounces(A)).length, (await bounces(C)).length]).toEqual(before);
   expect(await statusOf(A, both.id)).toBe("enabled");
   expect(await statusOf(C, both.id)).toBe("enabled");
-  // Its own host still decides for each of them.
-  expect((await deliver(notice([both.email], `<${crypto.randomUUID()}@${C}>`))).status).toBe(200);
-  expect(await statusOf(C, both.id)).toBe("blocklisted");
+  // Its host does not break the tie (B149b): the copy's own host routes nothing either.
+  const hosted = `<${must(campaigns.get(A)).uuid}.${both.uuid}@${C}>`;
+  expect((await deliver(notice([both.email], hosted))).status).toBe(200);
+  expect(await statusOf(C, both.id)).toBe("enabled");
   expect(await statusOf(A, both.id)).toBe("enabled");
   // A campaign delivery is a project's only when its subscriber is too: the shared campaign with
   // a subscriber only A holds is A's alone.
@@ -314,7 +404,7 @@ test("two projects that both claim a Message-ID: nothing is stored, and the line
   expect((await deliver(notice([own.email], delivery))).status).toBe(200);
   expect(await statusOf(A, own.id)).toBe("blocklisted");
   expect(await statusOf(C, copy.id)).toBe("enabled");
-  expect(countLines(await stop(), UNMATCHED)).toBe(1);
+  expect(countLines(await stop(), UNMATCHED)).toBe(2);
 });
 
 test("without a primary project the route still works on the instance host", async () => {
@@ -331,12 +421,12 @@ test("without a primary project the route still works on the instance host", asy
   }
   await start();
   const fresh = await subscriber(B, "no-primary@example.com");
-  const id = `<${crypto.randomUUID()}@${B}>`;
+  const id = `<${must(campaigns.get(B)).uuid}.${fresh.uuid}@${B}>`;
   expect((await deliver(notice([fresh.email], id), PRIMARY)).status).toBe(200);
   expect(await statusOf(B, fresh.id)).toBe("blocklisted");
   // An unclaimed host is answered as the instance host.
   const other = await subscriber(B, "no-primary-other@example.com");
-  const otherId = `<${crypto.randomUUID()}@${B}>`;
+  const otherId = `<${must(campaigns.get(B)).uuid}.${other.uuid}@${B}>`;
   expect((await deliver(notice([other.email], otherId), "unclaimed.example.test")).status).toBe(
     200,
   );

@@ -299,6 +299,8 @@ export function createSesAccount(deps: {
   let reading: Promise<void> | null = null;
   /** Bumped when the credentials change, so a read with the old ones is not kept. */
   let generation = 0;
+  /** The generation `reading` was started with. */
+  let readingGeneration = 0;
   let stopped = false;
   let running: Promise<void> | null = null;
   let sleeping: AbortController | null = null;
@@ -330,16 +332,21 @@ export function createSesAccount(deps: {
     }
   }
 
-  /** One read with the current credentials; concurrent callers share it. */
+  /**
+   * One read with the current credentials; concurrent callers share it. A read still in flight
+   * with keys that have since changed is not shared: the caller waits for it, then reads with the
+   * new keys at once (B149b), so neither the loop nor a forecast waits a refresh for them.
+   */
   function read(): Promise<void> {
     if (reading) {
-      return reading;
+      return readingGeneration === generation ? reading : reading.then(read);
     }
     const current = credentials();
     if (!current) {
       return Promise.resolve();
     }
     const started = generation;
+    readingGeneration = started;
     const now = clock.now();
     lastAttempt = now.getTime();
     reading = getAccount(current, {
@@ -398,9 +405,14 @@ export function createSesAccount(deps: {
 
   async function loop(): Promise<void> {
     while (!stopped) {
+      const keys = generation;
       await read();
       if (stopped) {
         return;
+      }
+      // The keys changed while it read: that read is discarded, and the new keys are read now.
+      if (keys !== generation) {
+        continue;
       }
       sleeping = new AbortController();
       try {

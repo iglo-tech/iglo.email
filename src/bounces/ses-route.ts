@@ -1,7 +1,7 @@
 // The SES notification route (B142, D156; 14-projects section 8). Adapted from the `ses` branch of
 // listmonk cmd/bounce.go at 6fcd95f (BounceWebhook), which src/bounces/routes.ts served per install.
 // Native: the route is the instance's, with the instance's bounce settings and topic ARNs; a notice
-// is routed to the one project its Message-ID names, and each project records it in its own database.
+// is routed to the one project whose own records its Message-ID names, and each project records it in its own database.
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import type { BounceEvent, BounceStore } from "@/bounces/store";
@@ -157,7 +157,7 @@ const invalidData = (c: RequestContext) =>
 
 /**
  * `POST /webhooks/service/ses` on `router`, the instance's (14-projects section 8). `projects` are
- * the served projects in slug order; `byHost` is the routing table's project for a hostname.
+ * the served projects in slug order.
  */
 export function registerSesRoute(
   router: Router,
@@ -171,7 +171,6 @@ export function registerSesRoute(
     /** SNS signature checks and confirmations; tests inject the network. */
     sns?: SnsClient;
     projects: () => ReadonlyArray<SesProject>;
-    byHost: (hostname: string) => SesProject | undefined;
     /** The instance's log: a notice no single project claims is named there. */
     logger: ErrorLogger;
   },
@@ -184,9 +183,10 @@ export function registerSesRoute(
     settings().webhooksEnabled ? next() : publicNotFound(c.app.i18n, c.request.method, page());
 
   /**
-   * The project a notice is for (section 8): the only project; else the Message-ID's domain among
-   * hostnames; else the one project whose sends, campaigns or test sends its UUIDs name. Never by
-   * address: the same address can be a subscriber in two projects.
+   * The project a notice is for (section 8): the only project; else the one project whose own
+   * sends, campaign deliveries or test sends the Message-ID names. Its domain decides nothing: a
+   * project user can choose a test send's Message-ID, and a hostname can move to another project
+   * (B149b, D165). Never by address: the same address can be a subscriber in two projects.
    */
   const routeOf = (messageId: string): SesProject | undefined => {
     const projects = deps.projects();
@@ -195,11 +195,6 @@ export function registerSesRoute(
     }
     if (!messageId) {
       return undefined;
-    }
-    const { domain } = messageIdentity(messageId);
-    const hosted = domain ? deps.byHost(domain) : undefined;
-    if (hosted) {
-      return hosted;
     }
     const matches = projects.filter((project) => project.claims(messageId));
     return matches.length === 1 ? matches[0] : undefined;

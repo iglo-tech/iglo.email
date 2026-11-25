@@ -179,3 +179,84 @@ test("a synchronous marketing call under a backlog answers queued within the hor
     await turns();
   }
 });
+
+test("a synchronous marketing call behind a real transactional backlog answers queued within the horizon plus 5 s, and is sent later", async () => {
+  // B149b (B141 r1): no hold. At rate 1 the horizon holds two slots, and 12 waiting transactional
+  // starts fill it for longer than the call's bound: 7 of them start in 7 s.
+  f = await txFixture({ rate: () => 1 });
+  const fixture = f;
+  const template = await fixture.template("<p>Hello</p>", "Hello");
+  const people = await audience(fixture, "tx", 12);
+  const readers = await audience(fixture, "news", 1);
+  const backlog = await fixture.tx({
+    subscriber_emails: people.emails,
+    template_id: template,
+    async: true,
+  });
+  expect(backlog.status).toBe(200);
+  const claimed = Date.now() + 10_000;
+  while ((await statuses(fixture)).count("transactional", "sending") < 2) {
+    if (Date.now() > claimed) {
+      throw new Error("the transactional backlog was not claimed");
+    }
+    await turns();
+    await Bun.sleep(5);
+  }
+  let answered = false;
+  const call = fixture
+    .tx({
+      subscriber_emails: readers.emails,
+      template_id: template,
+      kind: "marketing",
+      list_id: readers.id,
+    })
+    .then((response) => {
+      answered = true;
+      return response;
+    });
+  // The call has queued its row and waits for a grant before the injected time moves.
+  const queued = Date.now() + 10_000;
+  while ((await statuses(fixture)).count("marketing", "queued") < 1) {
+    if (Date.now() > queued) {
+      throw new Error("the marketing row was not queued");
+    }
+    await turns();
+    await Bun.sleep(5);
+  }
+  await Bun.sleep(50);
+  const limit = HORIZON_MS + 5000;
+  for (let waited = 0; waited < limit - 100; waited += 100) {
+    fixture.clock.advance(100);
+    await turns();
+  }
+  expect(answered).toBe(false);
+  fixture.clock.advance(100);
+  const response = await call;
+  expect(response.status).toBe(200);
+  expect(response.body.data.sends[0].status).toBe("queued");
+  // The backlog drains, and the outbox's marketing loop sends the queued row after it.
+  const end = Date.now() + 20_000;
+  while (!fixture.sink.messages.some((m) => m.to[0] === readers.emails[0])) {
+    if (Date.now() > end) {
+      throw new Error(`the queued marketing row was not sent: ${fixture.sink.messages.length}`);
+    }
+    fixture.clock.advance(1000);
+    await turns();
+    await Bun.sleep(2);
+  }
+  const id = asBody<number>(response.body.data.sends[0].id);
+  const settled = Date.now() + 10_000;
+  for (;;) {
+    const row = await fixture.json(`/api/sends/${id}`);
+    if (row.body.data.status === "sent") {
+      break;
+    }
+    if (Date.now() > settled) {
+      throw new Error(`row ${row.body.data.status}`);
+    }
+    await turns();
+  }
+  // It started behind the transactional backlog's first messages, not ahead of all of them.
+  const order = fixture.sink.messages.map((m) => m.to[0] ?? "");
+  expect(order.indexOf(readers.emails[0]!)).toBeGreaterThan(0);
+});

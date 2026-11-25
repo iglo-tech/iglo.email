@@ -303,6 +303,8 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     // Last in the shutdown order (14-projects section 7): every project has stopped asking for
     // slots and drained; the pools close. After stop() this is the same, already settled close.
     await dispatcher?.close();
+    // Its settings listener goes before the store closes, also after a partial open (B149b).
+    await ses?.stop();
     registry?.close();
     account?.close();
     settings?.close();
@@ -630,7 +632,6 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       clientAddress: instanceClientAddress,
     }),
     projects: sesProjects,
-    byHost: (hostname) => hosts.get(hostname)?.project.ses,
     logger: instanceLogger,
   });
 
