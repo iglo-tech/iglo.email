@@ -18,6 +18,7 @@ import {
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceJson, SourceObject } from "@/sources/json";
 import { DEFAULT_TIMEOUT_MS, PAGE_LIMIT, SCAN_LIMIT, SourceError } from "@/sources/source";
+import { streamReads } from "@/sources/stream-reads";
 import type {
   CallOptions,
   EventQuery,
@@ -745,7 +746,49 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       const items = member(answer.body, "items");
       return { status: answer.status, rows: isSourceList(items) ? items.length : 0 };
     },
-  } satisfies ExternalSource & { authenticate: unknown; probe: unknown; guestProbe: unknown };
+    /** The realtime stream's reads and subscription (src/sources/stream-reads.ts, B150b). */
+    stream: streamReads({
+      events: ev,
+      users: config.users,
+      eventOf,
+      async page(collection, params, call) {
+        const page = await confirmed(
+          () => list(collection, params, call),
+          (answer) => !("tooLarge" in answer) && answer.items.length < params.perPage,
+          call,
+        );
+        return "tooLarge" in page ? null : page.items;
+      },
+      // A subscription sent with a revoked token is a guest's, which PocketBase accepts and then
+      // sends nothing the rules hide: the token is confirmed after every accepted subscription.
+      async realtime(body, call) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const used = await currentToken(call);
+          const answer = await send("POST", "api/realtime", used, body, call);
+          if (answer.status === 204 || answer.status === 200) {
+            if (await confirm(used, call)) {
+              return;
+            }
+          } else if (answer.status === 404) {
+            throw new SourceError("transient", "The realtime connection is gone", 404);
+          } else if (answer.status === 401 || (answer.status === 403 && attempt === 0)) {
+            drop(used);
+          } else {
+            throw failure(answer, "the realtime subscription");
+          }
+        }
+        throw new SourceError(
+          "transient",
+          "The source did not confirm the service account's token for the subscription",
+        );
+      },
+    }),
+  } satisfies ExternalSource & {
+    authenticate: unknown;
+    probe: unknown;
+    guestProbe: unknown;
+    stream: unknown;
+  };
   return source;
 }
 export type PocketBaseSource = ReturnType<typeof createPocketBaseSource>;
