@@ -1,0 +1,3 @@
+[test]
+# Builds the embedded assets and the executable once per `bun test` run (test/production-build.ts).
+preload = ["./test/preload.ts"]
