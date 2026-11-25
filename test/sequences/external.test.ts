@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from 
 import type { ExternalSource } from "@/sources/source";
 import { adapter, enableBatch } from "@/test/conditions/source-fixture";
 import type { JsonObject } from "@/test/json-object";
+import { asBody } from "@/test/read-body";
 import { day, hour, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 import { startPocketBase } from "@/test/sources/pocketbase";
@@ -87,7 +88,7 @@ test("an external sequence needs a source; sql, trigger.where conditions and pus
   const t = await f.template();
   const post = (definition: JsonObject) =>
     f.json("/api/sequences", "POST", { name: "Source", reentry: "always", ...definition });
-  for (const [definition, field] of [
+  const refusals: Array<[JsonObject, string]> = [
     [external([tx(t, { condition: { sql: "1 = 1" } })]), "steps.0.condition.sql"],
     [
       external([tx(t)], { trigger: { event: "order_paid", where: { event: "visit" } } }),
@@ -120,12 +121,11 @@ test("an external sequence needs a source; sql, trigger.where conditions and pus
       "steps.0.condition",
     ],
     [external([tx(t)], { source: "elsewhere" }), "source"],
-  ] as const) {
-    const answer = await post(definition as unknown as JsonObject);
-    expect([answer.status, String(answer.body.message)]).toEqual([
-      400,
-      expect.stringContaining(field) as unknown as string,
-    ]);
+  ];
+  for (const [definition, field] of refusals) {
+    const answer = await post(definition);
+    expect(answer.status).toBe(400);
+    expect(String(answer.body.message)).toContain(field);
   }
 
   // The data.* equality form of trigger.where, trigger.condition and recipient conditions are kept.
@@ -238,7 +238,7 @@ test("a step reads its condition, aggregates and trigger data from the source", 
   await f.pass(0);
   await f.until(() => f.sink.messages.length === 1, "one message");
   expect(decoded(f.sink.messages[0]!.data)).toContain("plan pro|items 3|orders 2");
-  const id = started.body.data.id as number;
+  const id = asBody<number>(started.body.data.id);
   await f.until(async () => (await f.enrollment(id)).status === "completed", "completed");
   const entries = (await f.json(`/api/enrollments/${id}/timeline`)).body.data.entries;
   expect(entries[0]).toMatchObject({
@@ -267,7 +267,7 @@ test("a step whose condition is false on the source follows on_false; a missing 
   );
   const subscriber = await f.subscriber("gone@example.test", { external_id: ada.id });
   const started = await enroll(f, seq.id, subscriber, { trigger_external_id: record.id });
-  const id = started.body.data.id as number;
+  const id = asBody<number>(started.body.data.id);
   await f.pass(0);
   await f.until(async () => (await f.enrollment(id)).step_id === seq.steps[1]!.id, "skipped");
   expect(f.sink.messages).toHaveLength(0);
@@ -301,7 +301,7 @@ test("a transient source failure is retried with backoff for 72 hours, then ends
     external([tx(template, { wait: "PT1H", condition: { event: "order_paid" } })]),
   );
   const subscriber = await f.subscriber("down@example.test", { external_id: ada.id });
-  const id = (await enroll(f, seq.id, subscriber)).body.data.id as number;
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
   await own.stop();
 
   const failedAt = f.clock.now().getTime() + hour;
@@ -349,7 +349,7 @@ test("a recovered source clears error_since and sends; a 400 ends source_error a
     ]),
   );
   const subscriber = await f.subscriber("flaky@example.test", { external_id: ada.id });
-  const id = (await enroll(f, seq.id, subscriber)).body.data.id as number;
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
   await own.stop();
   await f.pass(hour);
   await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");

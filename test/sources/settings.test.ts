@@ -271,7 +271,10 @@ test("Test connection fails a collection guests can read (D172), naming it and i
   const user = await pb.user();
   await pb.event(user.id, "visit");
   const rules = async (collection: string, rule: string | null) =>
-    pb.api("PATCH", `/api/collections/${collection}`, { listRule: rule, viewRule: rule });
+    void (await pb.api("PATCH", `/api/collections/${collection}`, {
+      listRule: rule,
+      viewRule: rule,
+    }));
   const service = '@request.auth.collectionName = "services"';
   for (const [collection, step] of [
     ["events", "events"],

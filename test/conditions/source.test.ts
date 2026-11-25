@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { aggregateOnSource, evaluateOnSource, evaluateTriggerCondition } from "@/conditions/source";
 import type { SourceContext } from "@/conditions/source";
-import type { Condition } from "@/conditions/types";
+import type { Condition, EventCount } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
 import { AGGREGATE_LIMIT } from "@/events/aggregate";
 import type { Aggregate } from "@/events/aggregate";
@@ -44,6 +44,12 @@ async function holds(condition: unknown, user: string, context: Partial<SourceCo
   return result.value;
 }
 const at = (ms: number) => ({ occurredAt: new Date(ms).toISOString() });
+const prepaid = (since: string, count: EventCount) => ({
+  event: "order_paid",
+  since,
+  where: { "data.product": "prepaid" },
+  count,
+});
 
 test("event predicates read the source: existence and every count comparator", async () => {
   const ada = await pb.user();
@@ -192,7 +198,7 @@ test("hostile where values and names reach the source as literals and match only
   for (const value of values) {
     await pb.event(ada.id, "hostile", { v: value }, at(NOW - day));
   }
-  await pb.event(ada.id, "hostile", { v: 0.000_000_1 }, at(NOW - day));
+  await pb.event(ada.id, "hostile", { v: 1e-7 }, at(NOW - day));
   for (const value of values) {
     expect(
       await holds({ event: "hostile", where: { "data.v": value }, count: { eq: 1 } }, ada.id),
@@ -200,12 +206,12 @@ test("hostile where values and names reach the source as literals and match only
   }
   // A number written with an exponent is left to the strict check, which finds its own record.
   expect(
-    await holds({ event: "hostile", where: { "data.v": 0.000_000_1 }, count: { eq: 1 } }, ada.id),
+    await holds({ event: "hostile", where: { "data.v": 1e-7 }, count: { eq: 1 } }, ada.id),
   ).toBe(true);
   expect(await holds({ event: "hostile", where: { "data.v": "it" } }, ada.id)).toBe(false);
   // A hostile event name is a literal too.
-  await pb.event(ada.id, "na'me \\ && x", {}, at(NOW - day));
-  expect(await holds({ event: "na'me \\ && x", count: { eq: 1 } }, ada.id)).toBe(true);
+  await pb.event(ada.id, String.raw`na'me \ && x`, {}, at(NOW - day));
+  expect(await holds({ event: String.raw`na'me \ && x`, count: { eq: 1 } }, ada.id)).toBe(true);
 });
 
 test("recipient reads the recipients view with attr's operators and type rules", async () => {
@@ -311,12 +317,6 @@ test("trigger.condition counts the trigger record and ends at it", async () => {
   // Records after the trigger are outside its window.
   await pb.event(ada.id, "order_paid", { product: "prepaid" }, at(trigger + 3_600_000));
   const record = { occurredAt: new Date(trigger) };
-  const prepaid = (since: string, count: object) => ({
-    event: "order_paid",
-    since,
-    where: { "data.product": "prepaid" },
-    count,
-  });
   expect(
     await evaluateTriggerCondition(source, prepaid("P180D", { gte: 2 }), ada.id, record),
   ).toEqual({

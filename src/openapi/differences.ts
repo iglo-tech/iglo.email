@@ -657,6 +657,17 @@ export const differences: Array<Difference> = [
     applies: ["/api/settings"],
   },
   {
+    area: "Sequences on a source (B150c)",
+    summary:
+      "Native API, changed for D172: a sequence carries `source` (`events` by default, or `external`, which needs a configured source and is fixed while the sequence has enrollments); `trigger.condition` on external sequences only, where `trigger.where` takes only `data.*` equalities; a `recipient` condition kind and no `sql` on external sequences; `POST /api/conditions/validate` takes `source` and `trigger`. Enrollments, the step preview and the step test take a string `trigger_external_id` and answer 503 for an unreachable source and 502 for a refusal. An external enrollment adds `trigger_external_id`, `trigger_occurred_at` and `error_since`, its timeline's trigger entry `external_id` and `unavailable`, and the exit reasons `trigger_missing` and `source_error`. Pushed-event sequences are unchanged.",
+    applies: [
+      "/api/sequences",
+      "POST /api/conditions/validate",
+      "POST /api/enrollments",
+      "/api/enrollments/{id}/timeline",
+    ],
+  },
+  {
     area: "`marketing.min_interval` setting",
     summary:
       "Native key in GET/PUT `/api/settings` and `PUT /api/settings/marketing.min_interval`: an ISO 8601 duration (default `P7D`, empty disables), invalid values 400 with no write.",

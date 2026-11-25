@@ -149,6 +149,11 @@ async function earlierRelease(): Promise<string> {
     db.run("DROP INDEX idx_sends_due_kind");
     // Migration 35 (B143b) indexes started sends by their start time; the earlier schema has no such index.
     db.run("DROP INDEX idx_sends_started");
+    // Migration 36 (B150c) adds the sequence source and the external trigger columns.
+    db.run("ALTER TABLE sequences DROP COLUMN source");
+    db.run("ALTER TABLE enrollments DROP COLUMN trigger_external_id");
+    db.run("ALTER TABLE enrollments DROP COLUMN trigger_occurred_at");
+    db.run("ALTER TABLE enrollments DROP COLUMN error_since");
     // Migration 32 (B140) marks the admin's copy; the earlier schema has no such column.
     db.run("DROP INDEX users_one_admin_copy");
     db.run("ALTER TABLE users DROP COLUMN admin_copy");
