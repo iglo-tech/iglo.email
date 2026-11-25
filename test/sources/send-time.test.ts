@@ -262,6 +262,15 @@ test("the view's opt-out field ends a marketing step unsent with no membership c
     lists: [list],
     preconfirm_subscriptions: true,
   });
+  // Out of step with the view (a stale local name): the read updates the subscriber, and the
+  // opt-out must be seen on that path too.
+  const stale = await pb.user({ name: "Olga" });
+  const staleId = await f.subscriber(emailOf(stale), {
+    name: "Old",
+    external_id: stale.id,
+    lists: [list],
+    preconfirm_subscriptions: true,
+  });
   const template = await f.template();
   const news = await f.sequence({
     source: "external",
@@ -273,15 +282,27 @@ test("the view's opt-out field ends a marketing step unsent with no membership c
     (await f.json("/api/enrollments", "POST", { sequence_id: news.id, subscriber_id: id })).body
       .data.id,
   );
+  const staleMarketing = asBody<number>(
+    (await f.json("/api/enrollments", "POST", { sequence_id: news.id, subscriber_id: staleId }))
+      .body.data.id,
+  );
   const receipt = await enrolled(f, [tx(template)], id);
   // Opted out in the source after the enrollment: only the send-time read can see it.
   await pb.update("users", opted.id, { marketingOptOut: true });
+  await pb.update("users", stale.id, { marketingOptOut: true });
   await f.pass(day);
   await f.until(async () => (await f.enrollment(marketing)).status !== "active", "the exit");
-  expect(await f.enrollment(marketing)).toMatchObject({
-    status: "exited",
-    exit_reason: "unsubscribed",
-  });
+  await f.until(
+    async () => (await f.enrollment(staleMarketing)).status !== "active",
+    "the stale exit",
+  );
+  for (const e of [marketing, staleMarketing]) {
+    expect(await f.enrollment(e)).toMatchObject({
+      status: "exited",
+      exit_reason: "unsubscribed",
+    });
+  }
+  expect(await subscriberOf(f, stale)).toMatchObject({ id: staleId, name: "Olga" });
   await f.until(async () => (await f.enrollment(receipt)).status === "completed", "the receipt");
   await f.until(() => f.sink.messages.length === 1, "the receipt mail");
   await f.pass(day);
