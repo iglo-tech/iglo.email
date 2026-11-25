@@ -1,6 +1,7 @@
 // Bounded synthetic compiled HTTP workload for M1.2; no external services.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { settingsRouter } from "@/test/contract/settings-split";
 import { readJson } from "@/test/read-body";
 
 const measure = async (count: number, warm: number, action: (i: number) => Promise<void>) => {
@@ -26,8 +27,11 @@ for (let repetition = 1; repetition <= 3; repetition++) {
         Authorization: `Basic ${btoa(`${credential.user}:${credential.token}`)}`,
         "Content-Type": "application/json",
       };
+      // B139 (D154): a settings call reaches both sides, the instance keys with the admin's session,
+      // as one settings table served them before the split; every other call is a plain fetch.
+      const send = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
       const request = async (path: string, method = "GET", value?: unknown) => {
-        const response = await fetch(origin + path, {
+        const response = await (path.startsWith("/api/settings") ? send : fetch)(origin + path, {
           method,
           headers,
           ...(value === undefined ? {} : { body: JSON.stringify(value) }),

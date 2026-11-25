@@ -4,6 +4,7 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { settingsRouter } from "@/test/contract/settings-split";
 import { asBody, readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -46,8 +47,10 @@ try {
     async (origin) => {
       const { user, token } = await provisionApiUser(origin, admin);
       const authorization = `Basic ${btoa(`${user}:${token}`)}`;
+      // B139 (D154): an instance key goes to /api/instance/settings with the admin's session.
+      const send = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
       const api = async (path: string, method: string, body: unknown) => {
-        const response = await fetch(`${origin}${path}`, {
+        const response = await send(`${origin}${path}`, {
           method,
           headers: { authorization, "content-type": "application/json" },
           body: JSON.stringify(body),

@@ -18,6 +18,7 @@ import { createServer } from "node:net";
 import type { Socket } from "node:net";
 import { join } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import { settingsRouter } from "@/test/contract/settings-split";
 import {
   measurementBase,
   memAvailable,
@@ -213,7 +214,19 @@ async function setup(origin: string, sinkPort: number) {
     const text = await response.text();
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
-  const current = (await api("/api/settings")).body.data;
+  // B139 (D154): the pacing keys and SMTP are instance keys, written with the admin's session; the
+  // measured calls below keep the plain fetch.
+  const send = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
+  const settingsApi = async (method: string, body?: unknown) => {
+    const response = await send(`${origin}/api/settings`, {
+      method,
+      headers: { authorization, "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+  const current = (await settingsApi("GET")).body.data;
   const settings = {
     "app.concurrency": concurrency,
     "app.message_rate": rate,
@@ -223,7 +236,7 @@ async function setup(origin: string, sinkPort: number) {
       ? { "messaging.max_send_rate": Number(process.env.M61_MAX_SEND_RATE) }
       : {}),
   };
-  const updated = await api("/api/settings", "PUT", {
+  const updated = await settingsApi("PUT", {
     ...current,
     ...settings,
     "app.from_email": ["Measure <measure@example.test>"],

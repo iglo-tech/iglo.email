@@ -11,6 +11,7 @@ import { createServer } from "node:net";
 import type { Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import { settingsRouter } from "@/test/contract/settings-split";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
 
@@ -290,8 +291,20 @@ async function client(origin: string, sinkPort: number, settings: Record<string,
     const text = await response.text();
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
-  const current = (await api("/api/settings")).body.data;
-  const updated = await api("/api/settings", "PUT", {
+  // B139 (D154): the pacing keys and SMTP are instance keys, written with the admin's session; the
+  // measured calls below keep the plain fetch.
+  const send = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
+  const settingsApi = async (method: string, body?: unknown) => {
+    const response = await send(`${origin}/api/settings`, {
+      method,
+      headers: { authorization, "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+  const current = (await settingsApi("GET")).body.data;
+  const updated = await settingsApi("PUT", {
     ...current,
     ...settings,
     "app.from_email": ["Measure <measure@example.test>"],

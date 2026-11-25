@@ -12,6 +12,7 @@ import { containsNul, deepFreeze, settingsRows } from "@/settings/store";
 import { normalizeInstance, projectRaw } from "@/settings/validate";
 import type { Settings } from "@/settings/validate";
 import { HttpError } from "@/server/response";
+import { instanceAttention } from "@/projects/logger";
 import sql from "@/settings/queries.sql" with { type: "text" };
 
 /** What a project sees of the instance settings: the current instance keys and their changes. */
@@ -102,9 +103,17 @@ export function createInstanceSettings(db: Database, clock: Clock) {
         after = candidate;
       });
       if (before && after) {
+        // Every project hears of the change: one failing notification is logged and does not stop
+        // the others or change the save's result, which is already committed.
         const next = read();
         for (const listener of listeners) {
-          listener(next, before);
+          try {
+            listener(next, before);
+          } catch (error) {
+            instanceAttention(
+              `Instance settings change notification failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
         }
       }
     },

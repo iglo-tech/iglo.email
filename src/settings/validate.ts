@@ -630,12 +630,17 @@ export function normalizeInstance(next: Settings, current: Settings, now: number
     return fail("Invalid messaging.max_send_rate: use an integer between 0 and 10000.");
   }
   // B139 (D154): the SES account's API keys, stored and masked, not read by any sender yet. All three
-  // are set or none is; an empty secret keeps the stored one, and an empty key ID clears the secret.
+  // are set or none is; an empty secret keeps the stored one, and so does the mask a GET served (a
+  // client's GET then PUT unchanged); an empty key ID clears the secret.
   next["ses.api_region"] = trimSpace(next["ses.api_region"] ?? "");
   next["ses.api_access_key_id"] = trimSpace(next["ses.api_access_key_id"] ?? "");
   if (!next["ses.api_access_key_id"]) {
     next["ses.api_secret_access_key"] = "";
-  } else if (!next["ses.api_secret_access_key"]) {
+  } else if (
+    !next["ses.api_secret_access_key"] ||
+    (typeof next["ses.api_secret_access_key"] === "string" &&
+      /^•+$/.test(next["ses.api_secret_access_key"]))
+  ) {
     next["ses.api_secret_access_key"] = current["ses.api_secret_access_key"] ?? "";
   }
   if (next["ses.api_region"] && !sesRegion.test(next["ses.api_region"])) {

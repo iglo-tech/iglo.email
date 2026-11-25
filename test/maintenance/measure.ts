@@ -7,6 +7,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
+import { settingsRouter } from "@/test/contract/settings-split";
 import { asBody, readJson } from "@/test/read-body";
 
 const repository = resolve(import.meta.dir, "../..");
@@ -269,11 +270,19 @@ try {
       fetch: () => new Response("ok"),
     });
     // The receiver is on loopback, which the default refuses (D122): this operator turns the block off.
-    await fetch(`${origin}/api/settings/webhooks.block_private_addresses`, {
+    // B139 (D154): an instance key, so it goes to /api/instance/settings with the admin's session.
+    const unblocked = await settingsRouter(
+      { mode: "normal", baseUrl: origin },
+      undefined,
+      admin,
+    )(`${origin}/api/settings/webhooks.block_private_addresses`, {
       method: "PUT",
       headers: { authorization, "content-type": "application/json" },
       body: "false",
     });
+    if (unblocked.status !== 200) {
+      throw new Error(`webhooks.block_private_addresses: ${unblocked.status}`);
+    }
     const hook = await fetch(`${origin}/api/webhooks`, {
       method: "POST",
       headers: { authorization, "content-type": "application/json" },

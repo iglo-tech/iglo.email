@@ -331,6 +331,25 @@ test("the SES API keys are checked, stored and masked, and the secret round-trip
   expect(stored["ses.api_access_key_id"]).toBe("AKIAABCDEFGHIJKLMNOP");
   expect(stored["ses.api_secret_access_key"]).toBe("•".repeat(secret.length));
   expect(JSON.stringify(stored)).not.toContain(secret);
+  // GET then PUT unchanged (the masked secret sent back as served) keeps the stored secret.
+  const roundTrip = await instanceCall(
+    port,
+    PRIMARY,
+    operator,
+    "PUT",
+    "/api/instance/settings",
+    await instanceSettings(),
+  );
+  expect({ status: roundTrip.status, body: await roundTrip.text() }).toMatchObject({ status: 200 });
+  const instanceDb = new Database(join(dataDir, "instance.db"), { readonly: true });
+  try {
+    const row = asBody<{ value: string } | null>(
+      instanceDb.query("SELECT value FROM settings WHERE key = 'ses.api_secret_access_key'").get(),
+    );
+    expect(JSON.parse(row?.value ?? "null")).toBe(secret);
+  } finally {
+    instanceDb.close();
+  }
   // A save with the secret blank keeps it; the page sends a masked one back blank.
   expect((await full({ "ses.api_secret_access_key": "" })).status).toBe(200);
   expect((await putInstance("ses.api_region", "us-east-2")).status).toBe(200);
