@@ -15,6 +15,29 @@ UPDATE enrollments SET status = 'exited', exit_reason = ?, step_id = NULL, due_a
 -- name: sequences-triggered-by
 -- A pushed event starts only pushed-event sequences (D169, D172).
 SELECT id, trigger, reentry FROM sequences WHERE status = 'active' AND json_extract(trigger, '$.event') = ? AND source = 'events' ORDER BY id;
+-- name: exit-by-record
+-- D173: a source record's exits. It ends only external sequences, as a pushed event ends only pushed ones.
+UPDATE enrollments SET status = 'exited', exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
+  WHERE subscriber_id = ? AND status = 'active'
+    AND sequence_id IN (SELECT s.id FROM sequences s, json_each(s.exit_on) j WHERE j.value = ? AND s.source = 'external')
+  RETURNING id, sequence_id;
+-- name: external-triggered-by
+-- D173: the active external sequences a source record under this name may start.
+SELECT id, trigger, reentry FROM sequences WHERE status = 'active' AND json_extract(trigger, '$.event') = ? AND source = 'external' ORDER BY id;
+-- name: external-sequence
+SELECT id, trigger, reentry FROM sequences WHERE id = ? AND status = 'active' AND source = 'external';
+-- name: external-names
+-- D173: the record names the source stream subscribes to for sequences: an active external sequence's
+-- trigger, and an active or paused external sequence's `exit_on`.
+SELECT DISTINCT name FROM (
+    SELECT json_extract(trigger, '$.event') AS name FROM sequences WHERE source = 'external' AND status = 'active'
+    UNION ALL
+    SELECT j.value AS name FROM sequences s, json_each(s.exit_on) j WHERE s.source = 'external' AND s.status IN ('active', 'paused')
+  ) WHERE typeof(name) = 'text' AND name != '' ORDER BY name;
+-- name: end-by-subscriber
+-- D173: a subscriber row that stops being its person (an address conflict) ends every active enrollment.
+UPDATE enrollments SET status = ?, exit_reason = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
+  WHERE +status = 'active' AND subscriber_id = ?;
 -- name: sequence-marketing
 -- B124 (D125): whether any active step of the sequence is marketing, which a suppressed person never starts.
 SELECT 1 FROM sequence_steps WHERE sequence_id = ? AND status = 'active' AND kind = 'marketing' LIMIT 1;

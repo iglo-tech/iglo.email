@@ -680,6 +680,90 @@ export function createSubscriberStore(
       }
       return must(get(row.id), "subscriber row");
     },
+    /**
+     * D173 (15-external-sources sections 3 and 4): write a source-linked subscriber, inside the
+     * record handler's write transaction. With no `row`, a new enabled subscriber with the source's
+     * address, name (which may be empty: no name from the address) and user ID as `external_id`;
+     * otherwise `row` takes the address, name and user ID, keeping its status, attributes, lists
+     * and history (an address change, or a holder re-pointed to the incoming user). The handler
+     * resolved every address conflict before calling it; a unique conflict left is a 409.
+     */
+    sourceWrite(row: Row | null, input: { externalId: string; email: string; name: string }): Row {
+      const now = clock.now().toISOString();
+      try {
+        if (!row) {
+          const created = q
+            .get("subscriber-insert")
+            .get(
+              crypto.randomUUID(),
+              input.email,
+              input.name,
+              "enabled",
+              "{}",
+              input.externalId,
+              now,
+              now,
+            ) as { id: bigint };
+          return must(get(created.id), "subscriber row");
+        }
+        if (
+          row.email === input.email &&
+          row.name === input.name &&
+          row.external_id === input.externalId
+        ) {
+          return row;
+        }
+        q.get("subscriber-update").run(
+          input.email,
+          input.name,
+          row.status,
+          row.attribs,
+          input.externalId,
+          now,
+          row.id,
+        );
+      } catch (error) {
+        return conflict(error);
+      }
+      return must(get(row.id), "subscriber row");
+    },
+    /**
+     * D173 (15-external-sources section 4): before an address holder whose person is gone is
+     * deleted, its consent moves onto the incoming user's row `to`: a blocklisted holder blocklists
+     * `to` through the normal blocklist path (D81: every membership unsubscribed, enrollments ended,
+     * webhooks), and each list the holder left is left on `to` too (the membership becomes, or is
+     * added as, unsubscribed, with the unsubscribe effects). Nothing the holder consented to is
+     * carried: a grant still refuses over a carried unsubscribe. The caller holds the write.
+     */
+    carryConsent(from: bigint, to: bigint): void {
+      const holder = get(from);
+      if (!holder) {
+        return;
+      }
+      if (holder.status === "blocklisted" && get(to)?.status !== "blocklisted") {
+        blocklist([to]);
+      }
+      const left = memberships(from)
+        .filter((m) => m.status === "unsubscribed")
+        .map((m) => m.list_id);
+      const now = clock.now().toISOString();
+      const changed: Array<bigint> = [];
+      for (const list of left) {
+        const current = memberships(to).find((m) => m.list_id === list);
+        if (!current) {
+          q.get("membership-insert").run(to, list, "unsubscribed", now, now);
+          changed.push(list);
+        } else if (current.status !== "unsubscribed") {
+          q.get("membership-update").run("unsubscribed", now, to, list);
+          changed.push(list);
+        }
+      }
+      // As a bounce's unsubscribe: the effects end the lists' enrollments, the change queues the webhook.
+      if (changed.length) {
+        effects.unsubscribed([to], changed);
+        consentChanged(to, false, changed);
+      }
+    },
     byUuid: (uuid: string) => q.get("subscriber-by-uuid").get(uuid) as Row | null,
     /**
      * Public signup, adapted from insert-subscriber and update-subscriber-with-lists with

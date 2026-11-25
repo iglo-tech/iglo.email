@@ -287,6 +287,12 @@ export function createSourceStream(options: SourceStreamOptions) {
     } catch (error) {
       // Stopping: nothing is marked, and the next start reads the record again.
       stopping.signal.throwIfAborted();
+      // D173: the handler's own source reads found the settings wrong (a 400, 403 or 404 of the
+      // recipients view): a refusal of the stream, as a record lacking a configured field is. The
+      // session ends refused with nothing consumed and no marker moved; the retry queue waits.
+      if (isSettingsMismatch(error)) {
+        throw error;
+      }
       queue(item, error);
       return;
     }

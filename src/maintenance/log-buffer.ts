@@ -45,6 +45,7 @@ const SAFE_MESSAGES = [
   "Sequence scheduler failed",
   "Sequence step could not be rendered: skipped",
   "Sequence step has no transactional template: skipped",
+  "Sequence trigger condition failed: not started",
   "Source record failed for good: see the stream's retry queue",
   "Source stream cannot connect: retrying",
   "Source stream refused by the source: check the source settings",
