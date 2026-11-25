@@ -1,5 +1,6 @@
 // B145a: an instance with a stand-in for SES v2 GetAccount, for the agent-browser pass over the
-// campaign page forecast and the instance settings "Check SES account" button. Not a test: run it
+// campaign page forecast and the instance settings "Check SES account" button, and (B143b) the
+// instance Sending page in each of its states. Not a test: run it
 // with `bun test/projects/capacity-serve.ts`, read the printed URLs and credentials, stop it with
 // Ctrl-C. It uses a temporary data directory and port 0 for both servers; nothing reaches AWS.
 import { Database } from "bun:sqlite";
@@ -13,21 +14,52 @@ import { instanceCall, instanceLogin } from "@/test/projects/admin-fixture";
 import { adminCredentials } from "@/test/projects/fixture";
 import { asBody } from "@/test/read-body";
 
-/** `?quota=` on the stand-in's own URL changes Max24HourSend, to see the over-quota line. */
+/**
+ * The stand-in's own URL changes its next answers: `?quota=` sets Max24HourSend (the over-quota
+ * line), `?sent=` SentLast24Hours (the guard's hold, B143b), `?sandbox=1` and `?disabled=1` clear
+ * ProductionAccessEnabled and SendingEnabled, `?fail=1` makes reads fail with an AWS-style 403
+ * (stale), and `?fail=0`, `?sandbox=0`, `?disabled=0` undo them. A page reads again only once the
+ * last read is over a minute old.
+ */
 let max24HourSend = Number(process.argv[2] ?? 50_000);
+let sentLast24Hours = 1200;
+let production = true;
+let sending = true;
+let fail = false;
 const ses = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
   fetch(request) {
-    const quota = new URL(request.url).searchParams.get("quota");
-    if (quota) {
-      max24HourSend = Number(quota);
-      return new Response(`Max24HourSend is now ${max24HourSend}\n`);
+    const query = new URL(request.url).searchParams;
+    if (query.size) {
+      const flag = (name: string, current: boolean) =>
+        query.has(name) ? query.get(name) === "1" : current;
+      max24HourSend = Number(query.get("quota") ?? max24HourSend);
+      sentLast24Hours = Number(query.get("sent") ?? sentLast24Hours);
+      production = !flag("sandbox", !production);
+      sending = !flag("disabled", !sending);
+      fail = flag("fail", fail);
+      return new Response(
+        `Max24HourSend ${max24HourSend}, SentLast24Hours ${sentLast24Hours}, production ${production}, sending ${sending}, failing ${fail}\n`,
+      );
+    }
+    if (fail) {
+      return Response.json(
+        {
+          message:
+            "User: arn:aws:iam::123456789012:user/reader is not authorized to perform: ses:GetAccount",
+        },
+        { status: 403, headers: { "x-amzn-errortype": "AccessDeniedException:" } },
+      );
     }
     return Response.json({
-      SendQuota: { Max24HourSend: max24HourSend, MaxSendRate: 14, SentLast24Hours: 1200 },
-      ProductionAccessEnabled: true,
-      SendingEnabled: true,
+      SendQuota: {
+        Max24HourSend: max24HourSend,
+        MaxSendRate: 14,
+        SentLast24Hours: sentLast24Hours,
+      },
+      ProductionAccessEnabled: production,
+      SendingEnabled: sending,
     });
   },
 });
@@ -83,7 +115,10 @@ console.log(
   `admin:            http://127.0.0.1:${port}/admin  (${admin.user} / ${admin.password})`,
 );
 console.log(`instance settings: http://127.0.0.1:${port}/admin/instance/settings`);
-console.log(`SES stand-in:     http://127.0.0.1:${ses.port}/?quota=2000 sets a small quota`);
+console.log(`sending page:     http://127.0.0.1:${port}/admin/instance/sending`);
+console.log(
+  `SES stand-in:     http://127.0.0.1:${ses.port}/?quota=2000 sets a small quota (also ?sent=, ?sandbox=1, ?disabled=1, ?fail=1)`,
+);
 console.log(`data directory:   ${dataDir}`);
 
 const stop = async () => {

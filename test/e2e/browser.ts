@@ -197,6 +197,15 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
       value('document.querySelector("[data-testid=project-extra-warning]").innerText'),
     );
     shot("instance-project-edit");
+    browser("open", `${origin}/admin/instance/sending`);
+    settle();
+    see(
+      "sending page",
+      value(
+        String.raw`document.querySelector(".instance-sending").innerText.replace(/\s+/g, " ").slice(0, 400)`,
+      ),
+    );
+    shot("instance-sending");
     browser("open", `${origin}/admin/instance/logs`);
     settle();
     see(

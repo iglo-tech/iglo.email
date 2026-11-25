@@ -166,6 +166,8 @@ test("a seeded install from before this release takes the migrated bodies, and a
     db.run("ALTER TABLE sends DROP COLUMN sequence_name");
     // Migration 34 (B141) indexes due sends by kind; the earlier schema has no such index.
     db.run("DROP INDEX idx_sends_due_kind");
+    // Migration 35 (B143b) indexes started sends by their start time; the earlier schema has no such index.
+    db.run("DROP INDEX idx_sends_started");
     // Migration 32 (B140) marks the admin's copy; the earlier schema has no such column.
     db.run("DROP INDEX users_one_admin_copy");
     db.run("ALTER TABLE users DROP COLUMN admin_copy");
@@ -178,7 +180,7 @@ test("a seeded install from before this release takes the migrated bodies, and a
   const second = await up(dataDir);
   try {
     const after = await templates(second.port);
-    expect(userVersion(dataDir)).toBe(34);
+    expect(userVersion(dataDir)).toBe(35);
     expect(after.get(names.campaign)?.body).toBe(seeded.get(names.campaign)?.body);
     expect(after.get(names.archive)?.body).toBe(seeded.get(names.archive)?.body);
     expect(after.get(names.sample)?.body).toBe(seeded.get(names.sample)?.body);

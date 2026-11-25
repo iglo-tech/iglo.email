@@ -590,7 +590,7 @@ describe("compiled executable", () => {
         };
       }>(response);
       expect(result).toMatchObject({
-        version: "34",
+        version: "35",
         integrity: "ok",
         foreignKeyErrors: [],
         backups: [],
