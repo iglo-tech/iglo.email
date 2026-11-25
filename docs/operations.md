@@ -194,7 +194,42 @@ tag.
 
 Flags win over variables. The root URL goes into every link in every email: set it to the public
 URL, with its scheme (`https://news.example.com`). It is the one setting that needs a restart.
-Everything else is in the admin UI under Settings, or `PUT /api/settings`, and applies at once.
+Everything else is a setting, which applies at once ([Settings](#settings-instance-and-project)).
+
+### Settings: instance and project
+
+Settings come in two kinds ([14-projects](design/14-projects.md) section 4, D154):
+
+- **Instance settings** describe the server and the sending account: SMTP servers and DKIM,
+  `messaging.max_send_rate`, the SES API keys, bounce processing and its providers,
+  `security.trusted_proxies`, `security.session_duration`, `webhooks.block_private_addresses`,
+  maintenance, slow-query caching, the media provider, the admin appearance and the campaign pacing
+  keys. They are stored once, in `instance.db`, and every project uses them. Only the instance
+  admin changes them: the instance Settings page at `<root URL>/admin/instance/settings`, or
+  `/api/instance/settings` with the instance session. An API credential is refused there (`401`).
+- **Project settings** describe one project's audience and brand: the site name and URLs, the
+  sender addresses, consent and privacy, public pages, bounce actions, CAPTCHA, trusted URLs,
+  public rate limits, uploads and the public appearance. They are in the project's database:
+  Settings in the project's admin, or `GET`/`PUT /api/settings` on its host with its API users.
+  Naming an instance key there is a `400` that names it.
+
+A script reaches the instance settings with the admin's session. On the instance host (the root
+URL's), this signs in and defines `instance` for the calls below; `ADMIN_USER` and
+`ADMIN_PASSWORD` are the instance admin's (an admin with TOTP signs in on the page instead):
+
+```sh
+BASE=https://news.example.com
+jar="$(mktemp)"
+nonce="$(curl -fsS -c "$jar" "$BASE/admin/instance/login" |
+  sed -n 's/.*name="nonce" value="\([^"]*\)".*/\1/p')"
+curl -fsS -b "$jar" -c "$jar" -o /dev/null --data-urlencode "nonce=$nonce" \
+  --data-urlencode "username=$ADMIN_USER" --data-urlencode "password=$ADMIN_PASSWORD" \
+  --data-urlencode "next=" "$BASE/admin/instance/login"
+csrf="$(awk '$6 == "instance_csrf" { print $7 }' "$jar")"
+instance() { curl -fsS -b "$jar" -H "X-CSRF-Token: $csrf" -H 'content-type: application/json' "$@"; }
+```
+
+A project's backup holds its project settings only; the instance settings stay in `instance.db`.
 
 A port of 0 (`--port 0` or `IGLO_EMAIL_PORT=0`) asks the OS for a free port. Once the server is
 bound it writes one line to stdout, `listening on port <port>`, and only for port 0. A port of 0
@@ -311,15 +346,15 @@ served by the primary project, so a single install behaves as before whatever ho
 Behind a proxy every visitor arrives from the proxy's address, so one client's rate limit would
 stop all of them. List the proxy in `security.trusted_proxies` ([D60](design/09-decisions.md#d60-explicit-trusted-proxies-for-client-addresses)).
 It is empty by default, and `X-Forwarded-For` is ignored until it is set. It takes IPs or CIDRs and
-refuses a zero prefix. In Settings > Security, or:
+refuses a zero prefix. It is an instance setting: on the instance Settings page under Security,
+or with the `instance` session of [Settings](#settings-instance-and-project):
 
 ```sh
-curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
-  -d '["127.0.0.1"]' http://127.0.0.1:9000/api/settings/security.trusted_proxies
+instance -X PUT -d '["127.0.0.1"]' "$BASE/api/instance/settings/security.trusted_proxies"
 ```
 
-`API` is `username:token` of an API user, created under Users. Public rate limits, login limits
-and `privacy.record_optin_ip` all use the address found this way.
+Public rate limits, login limits (the instance login's too) and `privacy.record_optin_ip` all use
+the address found this way.
 
 ## Deploying behind a reverse proxy or PaaS
 
@@ -354,9 +389,10 @@ above has the same settings for nginx.
    ([D122](design/09-decisions.md#d122-personal-pages-send-hardening-headers-export-mail-is-throttled-per-subscriber-and-private-webhook-targets-are-refused-by-default-lead-2026-11-20)).
    That covers a platform's internal service names and the cloud metadata address `169.254.169.254`.
    Leave `webhooks.block_private_addresses` on, which is the default, unless a receiver you run is on
-   a private network. Turn it off then, under Settings → Security, or with
-   `PUT /api/settings/webhooks.block_private_addresses` and the body `false`. An upgrade turns a
-   stored `false` on once, and names each webhook the block refuses ([Upgrades](#upgrades)).
+   a private network. Turn it off then, on the instance Settings page under Security, or with
+   `PUT /api/instance/settings/webhooks.block_private_addresses` and the body `false` (an instance
+   setting, [Settings](#settings-instance-and-project)). Each start names each webhook the block
+   refuses ([Upgrades](#upgrades)).
 4. **Health probe.** `GET /health` answers `200` with `{"data":true}` and needs no credential.
 5. **One container per volume.** Each data directory has one server ([one process per data
    directory](#one-process-per-data-directory)). A rolling deploy that starts the new container
@@ -479,8 +515,8 @@ pages each step follows are listed under [References](#references); they were ch
    subdomain aligns with the From domain only in relaxed mode.
 4. **Create SMTP credentials and add the server.** In SES, open SMTP settings and choose Create SMTP
    credentials. The SMTP user name and password are not your AWS login, and SES shows the password
-   only once, so download the credentials then. Set SMTP servers in Settings > SMTP, then send a
-   test from there. The defaults are placeholders. Add a server with host
+   only once, so download the credentials then. Set SMTP servers on the instance Settings page under
+   SMTP, then send a test from there (it goes out from the primary project's default address). The defaults are placeholders. Add a server with host
    `email-smtp.<region>.amazonaws.com`, port 587 with STARTTLS (or 465 with TLS), and those
    credentials. Change the default `app.from_email` (`Newsletter <noreply@example.com>`, the
    placeholder for a new install in `src/settings/defaults.ts`) to an address on the verified
@@ -488,8 +524,9 @@ pages each step follows are listed under [References](#references); they were ch
    campaign From addresses too, because SES refuses mail from any other address.
 5. **Send through a configuration set (optional).** A configuration set carries the bounce,
    complaint and other event destinations for mail sent through SES. To assign one, add
-   `X-SES-CONFIGURATION-SET: <name>` to the SMTP server's custom headers in Settings > SMTP, or via
-   the API as `[{"X-SES-CONFIGURATION-SET": "<name>"}]` under `smtp[].email_headers`. The header goes
+   `X-SES-CONFIGURATION-SET: <name>` to the SMTP server's custom headers on the instance Settings
+   page under SMTP, or via `/api/instance/settings` as `[{"X-SES-CONFIGURATION-SET": "<name>"}]`
+   under `smtp[].email_headers`. The header goes
    with every message sent through that server.
 
    **Engagement tracking adds a third party's tracking.** When Virtual Deliverability Manager
@@ -514,8 +551,8 @@ pages each step follows are listed under [References](#references); they were ch
    Confirm with a test send that the links are no longer rewritten. See
    [Virtual Deliverability Manager settings](https://docs.aws.amazon.com/ses/latest/dg/vdm-settings.html)
    and the [SES metrics FAQ](https://docs.aws.amazon.com/ses/latest/DeveloperGuide/faqs-metrics.html).
-6. **Set the send rate.** `messaging.max_send_rate` (Settings > Performance, or
-   `PUT /api/settings/messaging.max_send_rate`) is the account-wide cap in messages per second across
+6. **Set the send rate.** `messaging.max_send_rate` (the instance Settings page under Performance,
+   or `PUT /api/instance/settings/messaging.max_send_rate`) is the account-wide cap in messages per second across
    all connections. Set it slightly below the maximum sending rate your SES account has. The cap is
    enforced when a send is granted and handed to SMTP. SES counts a send when it receives it, and the
    receipt includes the connection's latency. A receipt is always after its own grant; what varies is
@@ -538,8 +575,9 @@ pages each step follows are listed under [References](#references); they were ch
 `smtp[].dkim` makes iglo.email sign messages itself. It exists for listmonk API compatibility and
 is not needed with SES Easy DKIM (step 1). SES already signs every message for the verified domain,
 so a key here only adds a second signature from the same domain. Do not set both. To sign here, add
-`dkim` to a server. The admin UI keeps it but does not show it, so this goes through the API. A
-masked password sent back unchanged is kept. The key script below is for anyone who needs it.
+`dkim` to a server. The admin UI keeps it but does not show it, so this goes through the instance
+settings API, with the `instance` session of [Settings](#settings-instance-and-project). A masked
+password sent back unchanged is kept. The key script below is for anyone who needs it.
 
 The private key passes through two files. Keep them in a private directory, created under a
 restrictive umask before either exists, and removed even if a command fails. Run this in a
@@ -554,7 +592,7 @@ set -e
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$staging/dkim.pem"
 openssl pkey -in "$staging/dkim.pem" -pubout -outform DER | openssl base64 -A
 echo
-curl -fsS -u "$API" http://127.0.0.1:9000/api/settings -o "$staging/settings.json"
+instance "$BASE/api/instance/settings" -o "$staging/settings.json"
 python3 - "$staging/settings.json" "$staging/dkim.pem" example.com mail <<'PY'
 import json, sys
 path, key, domain, selector = sys.argv[1:]
@@ -566,8 +604,7 @@ settings["smtp"][0]["dkim"] = {
 }
 json.dump(settings, open(path, "w"))
 PY
-curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
-  -d @"$staging/settings.json" http://127.0.0.1:9000/api/settings
+instance -X PUT -d @"$staging/settings.json" "$BASE/api/instance/settings"
 )
 ```
 
@@ -611,17 +648,17 @@ and bounce provider (D89).
    them it is matched by address). With a configuration
    set, add an event destination for Bounce and Complaint events to the topic instead. Other event
    types (Delivery, Send) are refused with 400 and do nothing, so do not publish them to this topic.
-3. **Turn it on** in Settings > Bounces (bounce processing, webhooks, the Amazon SES switch, and
-   the allowed topic ARNs), or:
+3. **Turn it on** on the instance Settings page under Bounces (bounce processing, webhooks, the
+   Amazon SES switch, and the allowed topic ARNs), or with the `instance` session of
+   [Settings](#settings-instance-and-project). The bounce actions stay each project's, under its
+   own Settings > Bounces.
 
    ```sh
    for setting in bounce.enabled bounce.webhooks_enabled bounce.ses_enabled; do
-     curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
-       -d 'true' "http://127.0.0.1:9000/api/settings/$setting"
+     instance -X PUT -d 'true' "$BASE/api/instance/settings/$setting"
    done
-   curl -fsS -u "$API" -X PUT -H 'content-type: application/json' \
-     -d '["arn:aws:sns:eu-west-1:123456789012:ses-bounces"]' \
-     http://127.0.0.1:9000/api/settings/bounce.ses_topic_arns
+   instance -X PUT -d '["arn:aws:sns:eu-west-1:123456789012:ses-bounces"]' \
+     "$BASE/api/instance/settings/bounce.ses_topic_arns"
    ```
 
    List the topic's full ARN, or `arn:aws:sns:*:<account-id>:*` to accept every topic of your

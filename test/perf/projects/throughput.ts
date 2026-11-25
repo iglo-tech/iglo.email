@@ -1,4 +1,4 @@
-// B138b measurement (docs/perf/projects-B138b.md): outbox and campaign throughput of one project,
+// B138b measurement (docs/perf/projects-B138b.md; B139: projects-B139.md): outbox and campaign throughput of one project,
 // against any compiled executable, through HTTP and a loopback SMTP sink only. The same script
 // measures both sides of a change, since it does not read the data directory.
 //
@@ -13,6 +13,7 @@ import { join, resolve } from "node:path";
 import { asBody } from "@/test/read-body";
 import { portZeroRootUrl, readyOnPortZero, stopChild } from "@/test/serve-port";
 import { startSink } from "@/test/tx/sink";
+import { instanceClient } from "@/test/settings/instance-client";
 
 const executable = resolve(process.argv[2] ?? "dist/iglo.email");
 const label = process.argv[3] ?? "run";
@@ -55,9 +56,9 @@ try {
     }
     return asBody<{ data: T }>(await response.json()).data;
   };
-  const settings = await call<Record<string, unknown>>("GET", "/api/settings");
-  await call("PUT", "/api/settings", {
-    ...settings,
+  // Every key below is an instance key since B139 (D154): a build with the instance settings API
+  // (401 without a session) takes them there with the admin's session; an earlier one on /api/settings.
+  const changes: Record<string, unknown> = {
     "messaging.max_send_rate": 0,
     "app.concurrency": 10,
     "app.message_rate": 100_000,
@@ -84,7 +85,18 @@ try {
         exclude_from_default: false,
       },
     ],
-  });
+  };
+  const origin = `http://127.0.0.1:${port}`;
+  if ((await fetch(`${origin}/api/instance/settings`)).status === 401) {
+    const instance = await instanceClient(origin, {
+      user: "measure-admin",
+      password: "measure-admin-password",
+    });
+    await instance.update((current) => ({ ...current, ...changes }));
+  } else {
+    const settings = await call<Record<string, unknown>>("GET", "/api/settings");
+    await call("PUT", "/api/settings", { ...settings, ...changes });
+  }
   const list = await call<{ id: number }>("POST", "/api/lists", {
     name: "Measure",
     type: "private",

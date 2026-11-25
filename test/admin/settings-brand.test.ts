@@ -16,8 +16,8 @@ beforeAll(async () => {
 });
 afterAll(() => f.close());
 
-async function setting(key: string): Promise<unknown> {
-  const res = await get(f, "/api/settings", cookie);
+async function setting(key: string, path = "/api/settings"): Promise<unknown> {
+  const res = await get(f, path, cookie);
   expect(res.status).toBe(200);
   return (await readJson<{ data: Record<string, unknown> }>(res)).data[key];
 }
@@ -34,7 +34,8 @@ test("the brand is the built-in blue, the system sans font and the automatic hea
 
 test("a new install's sender and SMTP bounce address name no product (B129 review N1)", async () => {
   expect(JSON.stringify(await setting("app.from_email"))).not.toMatch(/listmonk/i);
-  expect(JSON.stringify(await setting("smtp"))).not.toMatch(/listmonk/i);
+  // B139: SMTP is an instance key.
+  expect(JSON.stringify(await setting("smtp", "/api/instance/settings"))).not.toMatch(/listmonk/i);
 });
 
 test("a hex accent is saved in either length, in any case, and an empty one is the default", async () => {

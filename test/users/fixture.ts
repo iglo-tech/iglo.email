@@ -21,6 +21,10 @@ import { createFactorHandlers } from "@/users/factor";
 import { registerUserRoutes } from "@/users/routes";
 import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
+import {
+  createTestInstanceSettings,
+  registerFixtureInstanceSettingsRoutes,
+} from "@/test/settings/instance-fixture";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { sessionDuration } from "@/settings/duration";
 import { createEmailer } from "@/messaging/email";
@@ -46,7 +50,9 @@ export async function startUserFixture(
   const lists = createListReferences(db);
   const roles = createRoles(db, lists);
   const users = createUserStore(db, clock, roles);
-  const settings = createSettings(db, clock, "http://fixture.test", roles);
+  // B139: the instance keys in an instance.db beside the project, so a reopen finds them again.
+  const instanceSettings = createTestInstanceSettings(clock, join(dataDir, "instance"));
+  const settings = createSettings(db, clock, "http://fixture.test", instanceSettings.reader);
   try {
     let loginGate = false;
     let announceLogin!: () => void;
@@ -121,6 +127,7 @@ export async function startUserFixture(
       auth,
       emailer && createSMTPTest(settings, emailer, app.i18n, createRenderer(clock, app.i18n)),
     );
+    registerFixtureInstanceSettingsRoutes(router, instanceSettings, auth);
     const outgoing: Array<Message> = [];
     registerAdminRoutes(router, {
       auth,
@@ -413,6 +420,7 @@ export async function startUserFixture(
         } finally {
           users.close();
           settings.close();
+          instanceSettings.close();
           roles.close();
           lists.close();
           db.close(true);
@@ -425,6 +433,7 @@ export async function startUserFixture(
   } catch (error) {
     users.close();
     settings.close();
+    instanceSettings.close();
     roles.close();
     lists.close();
     db.close(true);

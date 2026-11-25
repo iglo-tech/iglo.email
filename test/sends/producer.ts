@@ -16,7 +16,9 @@ import { createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { registerSendRoutes } from "@/messaging/routes";
 import { TestClock } from "@/test/server/fixture";
-import { createSettings } from "@/settings/store";
+import { dirname } from "node:path";
+import { openInstanceDatabase } from "@/projects/instance";
+import { createInstanceSettings } from "@/settings/instance";
 import { createHash } from "node:crypto";
 import { readJson } from "@/test/read-body";
 
@@ -68,7 +70,12 @@ const sends = createSends({
   // Component evidence only: consent always granted and the cap disabled.
   marketingPolicy: { consent: () => null, capStart: () => null },
 });
-const settings = createSettings(db, clock, "http://fixture.test", roles);
+// B139 (D154): SMTP is an instance key. The fixture writes it to the instance.db two levels above
+// the project, which the production executable started on this data directory then reads.
+const instanceSettings = createInstanceSettings(
+  openInstanceDatabase(dirname(dirname(directory)), clock),
+  clock,
+);
 const smtp = {
   name: "fixture",
   enabled: true,
@@ -180,7 +187,7 @@ router.route("POST", "/fixture/enqueue", async ({ request }) => {
   return ok(entry);
 });
 router.route("POST", "/fixture/settings", () => {
-  settings.update((current) => ({ ...current, smtp: [smtp] }));
+  instanceSettings.update((current) => ({ ...current, smtp: [smtp] }));
   return ok(true);
 });
 router.route("POST", "/fixture/start", async ({ request }) => {

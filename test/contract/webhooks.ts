@@ -14,6 +14,7 @@ import {
 import { verifyDelivery } from "@/test/webhooks/verify-delivery";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 const dummy = "00000000-0000-0000-0000-000000000000";
 const events = [
@@ -42,7 +43,7 @@ export async function runWebhooksContract(target: {
     body?: unknown,
     headers: Record<string, string> = { authorization },
   ) => {
-    const response = await fetch(`${target.baseUrl}${path}`, {
+    const response = await routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       headers: {
         ...headers,

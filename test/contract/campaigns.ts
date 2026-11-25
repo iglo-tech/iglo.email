@@ -13,6 +13,7 @@ import type { Credentials, Mode } from "@/test/contract/types";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 type Campaign = Record<string, any> & { id: number; uuid: string };
 const fields = [
@@ -78,7 +79,7 @@ export async function runCampaignsContract(target: {
     auth: string = authorization,
     contentType = "application/json",
   ) => {
-    const response = await fetch(`${target.baseUrl}${path}`, {
+    const response = await routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       redirect: "manual",
       headers: {

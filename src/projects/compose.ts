@@ -40,6 +40,7 @@ import { registerUserRoutes } from "@/users/routes";
 import type { AdminAccount, AdminCredentials } from "@/users/account";
 import { createUserStore } from "@/users/store";
 import { createSettings } from "@/settings/store";
+import type { InstanceSettingsReader } from "@/settings/instance";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
@@ -120,6 +121,13 @@ export interface ProjectServices {
   readonly clock: Clock;
   readonly budgets: InstanceBudgets;
   /**
+   * The instance settings (B139, D154): the one configuration every project reads, and its change
+   * notifications. A project holds no copy of an instance key (invariant 5).
+   */
+  readonly settings: InstanceSettingsReader;
+  /** `--root-url`: the instance host, which the Settings page links to (B139). */
+  readonly instanceRootUrl: string;
+  /**
    * Where the process listens. Only `App.bootstrap` carries it, which the fixtures' startServer
    * reads; production binds once, in main().
    */
@@ -175,6 +183,11 @@ export interface Project {
   close(): Promise<void>;
   /** Writes the instance admin account into this project's copy (B140). */
   syncAdmin(account: AdminAccount): void;
+  /**
+   * Sends the SMTP test mail of the instance settings page through this project's sender, with its
+   * default from address and brand (B139, D154). Only the primary project's is used.
+   */
+  smtpTest(body: unknown, revalidate: () => void): Promise<void>;
 }
 
 /**
@@ -294,7 +307,7 @@ export async function createProject(
     runMigrations(db, directory, clock, productionMigrations, options.snapshots);
     lists = createListReferences(db);
     roles = createRoles(db, lists);
-    settings = createSettings(db, clock, rootUrl, roles);
+    settings = createSettings(db, clock, rootUrl, services.settings);
     counts = createListCounts(db);
     enrollments = createEnrollments(db, clock);
     webhooks = createWebhookStore(db, clock);
@@ -522,13 +535,8 @@ export async function createProject(
     // A database that names a directory it must not serve from refuses media, not the server:
     // the reason is logged here, and each media operation refuses with it (D64).
     await files.sweep().catch((error: unknown) => app.logger.error(error));
-    registerSettingsRoutes(
-      router,
-      settings,
-      auth,
-      createSMTPTest(settings, emailer, app.i18n, renderer),
-      uploadPathCheck(directory, media),
-    );
+    const smtpTest = createSMTPTest(settings, emailer, app.i18n, renderer);
+    registerSettingsRoutes(router, settings, auth, smtpTest, uploadPathCheck(directory, media));
     const marketing = () => marketingSettings(must(settings, "settings").read());
     const pages = () => publicSettings(must(settings, "settings").read());
     // Each limit is the process's one table for its kind; this project's peers are its own in it.
@@ -952,6 +960,7 @@ export async function createProject(
           captcha: current.captcha,
           customCss: must(settings, "settings").read()["appearance.admin.custom_css"],
           customJs: must(settings, "settings").read()["appearance.admin.custom_js"],
+          instanceUrl: services.instanceRootUrl,
         };
       },
       settings: pages,
@@ -1044,6 +1053,10 @@ export async function createProject(
       close: closeAll,
       syncAdmin(account: AdminAccount) {
         must(users, "users").syncCopy(account);
+      },
+      smtpTest(body: unknown, revalidate: () => void) {
+        refuseWhileHeld(db);
+        return smtpTest(body, revalidate);
       },
     };
   } catch (error) {

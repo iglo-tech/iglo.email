@@ -97,10 +97,12 @@ function listenErrorEvents() {
   };
 }
 
-// The session's CSRF token: cookie-authenticated unsafe requests send it as a header.
+// The session's CSRF token: cookie-authenticated unsafe requests send it as a header. An instance
+// page names its own cookie, `instance_csrf` (B139), so a project session's token is never sent there.
 export function csrfToken() {
-  const part = document.cookie.split('; ').find((c) => c.startsWith('csrf='));
-  return part ? part.slice('csrf='.length) : '';
+  const name = `${(typeof window !== 'undefined' && window._LM_CONFIG?.csrf_cookie) || 'csrf'}=`;
+  const part = document.cookie.split('; ').find((c) => c.startsWith(name));
+  return part ? part.slice(name.length) : '';
 }
 
 // Return the global Alpine store.

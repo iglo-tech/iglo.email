@@ -75,10 +75,21 @@ export async function runSettingsNul(target: {
   }
   const out = candidate();
   out.smtp[0].name = "Normalized\0 Name";
-  const body =
+  const bound =
     JSON.stringify(out).slice(0, -1) +
-    String.raw`,"app.site_name":"bad\u0000name","APP.SITE_NAME":"Final bound value",` +
-    String.raw`"unconsumed_metadata":{"bad":"discarded\u0000value"}}`;
+    String.raw`,"app.site_name":"bad\u0000name","APP.SITE_NAME":"Final bound value"`;
+  const unknown = String.raw`,"unconsumed_metadata":{"bad":"discarded\u0000value"}}`;
+  // Deliberate difference (B139, D154): iglo.email refuses a key that is no setting with a 400 that
+  // names it, and writes nothing; upstream ignores it. The bound keys are then sent without it.
+  if (target.mode === "normal") {
+    const refused = await request("/api/settings", "PUT", bound + unknown);
+    check(
+      refused.status === 400 && (await refused.text()).includes("unconsumed_metadata"),
+      "unknown-key-refused",
+    );
+    check(JSON.stringify(await read()) === JSON.stringify(before), "unknown-key-no-write");
+  }
+  const body = target.mode === "normal" ? `${bound}}` : bound + unknown;
   const response = await acceptedWrite(target, "final-bound-write", () =>
     request("/api/settings", "PUT", body),
   );

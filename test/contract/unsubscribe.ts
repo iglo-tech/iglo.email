@@ -11,6 +11,7 @@ import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 type SendRow = { id: number; uuid: string; status: string };
 
@@ -33,7 +34,7 @@ export async function runUnsubscribeContract(target: {
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const api = async (path: string, method = "GET", body?: unknown) => {
-    const response = await fetch(`${target.baseUrl}${path}`, {
+    const response = await routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       headers: {
         authorization,

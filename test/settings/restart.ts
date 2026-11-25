@@ -3,6 +3,7 @@
 // accepts it, and the next start does not fail: it serves English and refuses uploads.
 import { resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { settingsRouter } from "@/test/contract/settings-split";
 
 const admin = { user: "empty-values-admin", password: "empty-values-synthetic-password" };
 function check(value: unknown, name: string): asserts value {
@@ -20,8 +21,10 @@ await withProduction(
       Authorization: `Basic ${btoa(`${credential.user}:${credential.token}`)}`,
       "Content-Type": "application/json",
     };
+    // B139 (D154): `upload.provider` is an instance key, `app.lang` a project key; each reaches its side.
+    const routed = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
     const api = (path: string, method = "GET", body?: unknown) =>
-      fetch(origin + path, {
+      routed(origin + path, {
         method,
         headers,
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),

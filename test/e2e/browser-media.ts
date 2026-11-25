@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { withStack } from "@/test/e2e/stack";
 import { admin } from "@/test/worked-example/harness";
 import { asBody } from "@/test/read-body";
+import { instanceClient } from "@/test/settings/instance-client";
 
 const session = `m45-${randomBytes(6).toString("hex")}`;
 const shots = process.env.E2E_SHOTS;
@@ -28,6 +29,10 @@ const text = (selector: string) =>
 const settle = () => browser("wait", "--load", "networkidle");
 
 process.exitCode = await withStack(async ({ origin }) => {
+  // B139 (D154): bounce processing is an instance key, switched on with the instance session.
+  const instance = await instanceClient(origin, admin);
+  await instance.put("bounce.enabled", true);
+  await instance.put("bounce.webhooks_enabled", true);
   const visit = (path: string, name: string) => {
     browser("open", `${origin}${path}`);
     settle();
@@ -48,9 +53,6 @@ process.exitCode = await withStack(async ({ origin }) => {
       const call = async (method, uri, body) => (await (await fetch(uri, { method, headers,
         body: JSON.stringify(body) })).json()).data;
       const hostile = '<img src=x onerror="window.pwned=1"> x-on:click="pwned=1"';
-      const settings = await (await fetch("/api/settings")).json();
-      await call("PUT", "/api/settings", { ...settings.data, "bounce.enabled": true,
-        "bounce.webhooks_enabled": true });
       const list = await call("POST", "/api/lists", { name: "Browser " + hostile, type: "public",
         description: hostile });
       await call("POST", "/api/subscribers", { email: "browser@example.com", name: "Browser",

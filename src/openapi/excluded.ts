@@ -122,6 +122,11 @@ export const excluded: Array<Excluded> = [
     reason: "Tracking pixels and link redirects inside sent mail.",
   },
   {
+    routes: ["/admin/instance/*", "/api/instance/*"],
+    reason:
+      "instance host, admin session only: the instance pages and JSON routes (B140, B139), answered before any project's router and never with API credentials.",
+  },
+  {
     routes: ["/public/static/*", "/admin/static/*", "/uploads/*"],
     reason: "Static assets and uploaded files: no JSON, and not router routes.",
   },

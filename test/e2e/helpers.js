@@ -98,16 +98,44 @@ export async function requestAdmin(request) {
     maxRedirects: 0,
   });
   expect(posted.status(), "the login form redirects to the admin").toBe(302);
+  // B139 (D154): and the instance session, for a hook that puts an instance key back.
+  const instanceForm = await request.get("/admin/instance/login", { headers });
+  const instanceNonce = /name="nonce" value="([^"]+)"/.exec(await instanceForm.text())?.[1];
+  const instancePosted = await request.post("/admin/instance/login", {
+    headers,
+    form: { username: ADMIN.user, password: ADMIN.password, next: "", nonce: instanceNonce },
+    maxRedirects: 0,
+  });
+  expect(instancePosted.status(), "the instance login redirects").toBe(302);
   const state = await request.storageState();
   const csrf = state.cookies.find((cookie) => cookie.name === "csrf")?.value ?? "";
-  return async (path, method = "GET", body = undefined) => {
+  const instanceCsrf = state.cookies.find((cookie) => cookie.name === "instance_csrf")?.value ?? "";
+  const send = async (path, method, body, token) => {
     // JSON for every body, strings included, as `api` sends them: a bare string would go as text.
     const response = await request.fetch(path, {
       method,
-      headers: { ...headers, "X-CSRF-Token": csrf, "Content-Type": "application/json" },
+      headers: { ...headers, "X-CSRF-Token": token, "Content-Type": "application/json" },
       ...(body === undefined ? {} : { data: JSON.stringify(body) }),
     });
     return { status: response.status(), body: await response.json() };
+  };
+  return async (path, method = "GET", body = undefined) => {
+    const first = await send(path, method, body, csrf);
+    // A one-key write of an instance key: the project refuses it, and the instance takes it.
+    if (
+      first.status === 400 &&
+      method.toUpperCase() === "PUT" &&
+      path.startsWith("/api/settings/") &&
+      String(first.body?.message ?? "").startsWith("Not a project setting")
+    ) {
+      return send(
+        `/api/instance/settings/${path.slice("/api/settings/".length)}`,
+        method,
+        body,
+        instanceCsrf,
+      );
+    }
+    return first;
   };
 }
 
@@ -150,15 +178,16 @@ export async function selectList(scope, name) {
   await expect(scope.locator("ot-taginput .badge").filter({ hasText: name })).toBeVisible();
 }
 
-// A session-authenticated API call from the logged in page, with its CSRF header.
-export function api(page, path, method = "GET", body = undefined) {
+// A session-authenticated API call from the logged in page, with the CSRF header of `cookie`'s
+// session (`csrf` for the project, `instance_csrf` for the instance).
+function pageCall(page, path, method, body, cookie = "csrf") {
   return page.evaluate(
-    async ([uri, verb, data]) => {
+    async ([uri, verb, data, name]) => {
       const csrf =
         document.cookie
           .split("; ")
-          .find((c) => c.startsWith("csrf="))
-          ?.slice(5) ?? "";
+          .find((c) => c.startsWith(`${name}=`))
+          ?.slice(name.length + 1) ?? "";
       const response = await fetch(uri, {
         method: verb,
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
@@ -166,8 +195,109 @@ export function api(page, path, method = "GET", body = undefined) {
       });
       return { status: response.status, body: await response.json() };
     },
-    [path, method, body],
+    [path, method, body, cookie],
   );
+}
+
+// B139 (D154): the instance session of a page, logged in once through the instance login form on
+// the page's own request context, so the browser's fetches carry `instance_session` too. Its
+// settings' keys are the instance keys: what /api/instance/settings serves.
+const instances = new WeakMap();
+export function signInInstance(page, origin = "") {
+  let pending = instances.get(page);
+  if (!pending) {
+    pending = (async () => {
+      const headers = peers.has(page) ? { "X-Forwarded-For": peers.get(page) } : {};
+      const form = await page.request.get(`${origin}/admin/instance/login`, { headers });
+      const nonce = /name="nonce" value="([^"]+)"/.exec(await form.text())?.[1];
+      expect(nonce, "the instance login page carries a nonce").toBeTruthy();
+      const posted = await page.request.post(`${origin}/admin/instance/login`, {
+        headers,
+        form: { username: ADMIN.user, password: ADMIN.password, next: "", nonce },
+        maxRedirects: 0,
+      });
+      expect(posted.status(), "the instance login redirects").toBe(302);
+      const shared = await pageCall(
+        page,
+        "/api/instance/settings",
+        "GET",
+        undefined,
+        "instance_csrf",
+      );
+      expect(shared.status, "the instance settings answer").toBe(200);
+      return new Set(Object.keys(shared.body.data));
+    })();
+    instances.set(page, pending);
+  }
+  return pending;
+}
+
+// An instance call with the page's instance session; a session the page lost (its cookies cleared)
+// logs in again once.
+async function instanceCall(page, path, method, body) {
+  await signInInstance(page);
+  let response = await pageCall(page, path, method, body, "instance_csrf");
+  if (response.status === 401) {
+    instances.delete(page);
+    await signInInstance(page);
+    response = await pageCall(page, path, method, body, "instance_csrf");
+  }
+  return response;
+}
+
+// The key a project's settings API refused as not its own (B139), if it did.
+const refused = (response) =>
+  response.status === 400
+    ? /^Not a project setting: (.+?)\. Instance settings/.exec(response.body?.message ?? "")?.[1]
+    : undefined;
+
+// A session-authenticated API call from the logged in page, with its CSRF header. B139 (D154): a
+// settings call reaches its side, as the contract harness does (test/contract/settings-split.ts): a
+// full GET merges the project's and the instance's keys, a full PUT sends each side its keys, and a
+// one-key PUT of an instance key goes to the instance after the project refused it.
+export async function api(page, path, method = "GET", body = undefined) {
+  const verb = method.toUpperCase();
+  if (path === "/api/settings" && verb === "GET") {
+    const project = await pageCall(page, path, verb);
+    if (project.status !== 200) {
+      return project;
+    }
+    const shared = await instanceCall(page, "/api/instance/settings", "GET");
+    return { status: 200, body: { data: { ...project.body.data, ...shared.body.data } } };
+  }
+  if (path === "/api/settings" && verb === "PUT" && body && typeof body === "object") {
+    await instanceCall(page, "/api/instance/settings", "GET");
+    const keys = await signInInstance(page);
+    const own = {};
+    const other = {};
+    for (const [key, value] of Object.entries(body)) {
+      (keys.has(key) ? other : own)[key] = value;
+    }
+    let project = await pageCall(page, path, verb, own);
+    // A secret the instance masks away while empty is not in its GET: the project's refusal names it.
+    for (
+      let named = refused(project);
+      named && Object.hasOwn(own, named);
+      named = refused(project)
+    ) {
+      other[named] = own[named];
+      delete own[named];
+      project = await pageCall(page, path, verb, own);
+    }
+    if (project.status !== 200 || !Object.keys(other).length) {
+      return project;
+    }
+    return instanceCall(page, "/api/instance/settings", verb, other);
+  }
+  const key = path.startsWith("/api/settings/") ? path.slice("/api/settings/".length) : "";
+  if (verb === "PUT" && key && key !== "smtp/test") {
+    const first = await pageCall(page, path, verb, body);
+    if (refused(first) !== key) {
+      return first;
+    }
+    return instanceCall(page, `/api/instance/settings/${key}`, verb, body);
+  }
+  return pageCall(page, path, method, body);
 }
 
 // A session-authenticated API call that must succeed; returns `data`.

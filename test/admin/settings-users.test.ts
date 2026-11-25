@@ -104,7 +104,8 @@ test("stored names are escaped where the server writes them", async () => {
 
 test("custom admin assets need a session and answer as authored", async () => {
   const css = "body { color: red; } /* </style> */";
-  await api(f, cookie, "/api/settings/appearance.admin.custom_css", "PUT", css);
+  // B139: the admin appearance is an instance key.
+  await api(f, cookie, "/api/instance/settings/appearance.admin.custom_css", "PUT", css);
   const anonymous = await get(f, "/admin/custom.css");
   expect(anonymous.status).toBe(307);
   const response = await get(f, "/admin/custom.css", cookie);

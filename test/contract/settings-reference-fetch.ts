@@ -2,6 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { asBody } from "@/test/read-body";
 import type { Mode } from "@/test/contract/types";
 import { upstreamSetting } from "@/test/reference/upstream-db";
+import { settingsRouter } from "@/test/contract/settings-split";
 
 // Go's time.ParseDuration grammar: "0", or signed runs of number and unit (ns, us, \u00b5s, \u03bcs, ms, s, m, h).
 const GO_DURATION = /^(?:[-+]?(?:(?:\d+\.?\d*|\.\d+)(?:ns|us|\u00b5s|\u03bcs|ms|s|m|h))+|0)$/;
@@ -118,6 +119,19 @@ function upstreamLogTail(): string {
 
 // Upstream schedules SIGHUP after accepted settings writes. Retry only a
 // refused connection, where no request reached the server, until it is ready.
+// B139 (D154): on iglo.email each settings call goes to its side (test/contract/settings-split.ts);
+// one router per origin keeps its instance session across a corpus's calls.
+const routers = new Map<string, ReturnType<typeof settingsRouter>>();
+function routed(url: string): ReturnType<typeof settingsRouter> {
+  const { origin } = new URL(url);
+  let router = routers.get(origin);
+  if (!router) {
+    router = settingsRouter({ mode: "normal", baseUrl: origin });
+    routers.set(origin, router);
+  }
+  return router;
+}
+
 export async function settingsFetch(
   url: string,
   init: RequestInit,
@@ -134,7 +148,7 @@ export async function settingsFetch(
   for (;;) {
     attempts++;
     try {
-      const response = await fetch(url, sent);
+      const response = await (reference ? fetch(url, sent) : routed(url)(url, sent));
       const method = /^(GET|PUT|POST|DELETE)$/.test(init.method ?? "GET")
         ? (init.method ?? "GET")
         : "OTHER";

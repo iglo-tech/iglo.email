@@ -10,6 +10,7 @@ import { header } from "@/test/perf/runtime-compat/smtp-expect";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 const failed = async (response: Response, label: string, status = 400) => {
   check(response.status === status, `${label}-status`);
@@ -38,7 +39,7 @@ export async function runTxContract(target: {
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const api = (path: string, method = "GET", body?: unknown) =>
-    fetch(`${target.baseUrl}${path}`, {
+    routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       headers: {
         authorization,

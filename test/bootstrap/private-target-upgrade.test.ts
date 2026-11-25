@@ -12,6 +12,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { portZeroRootUrl, readyOnPortZero, stopChild } from "@/test/serve-port";
 import { readJson } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { instanceClient } from "@/test/settings/instance-client";
 
 const repository = resolve(import.meta.dir, "../..");
 setDefaultTimeout(60_000);
@@ -67,6 +68,10 @@ function start(dataDir: string) {
     stderr: "pipe",
   });
 }
+
+/** B139 (D154): the key is an instance key, read and changed with the instance session. */
+const instance = (port: number) =>
+  instanceClient(`http://127.0.0.1:${port}`, { user: adminUser, password: adminPassword });
 
 /** A started process, healthy on its port. */
 async function up(dataDir: string) {
@@ -173,12 +178,11 @@ test("an upgrade turns the stored false on, and every restart names the refused 
 
   const upgraded = await up(dataDir);
   await noticed(upgraded.port);
-  expect(
-    (await api<Record<string, unknown>>(upgraded.port, "GET", "/api/settings")).data[key],
-  ).toBe(true);
+  // B139: the stored false went with every instance key (migration 33); the instance default holds.
+  expect((await (await instance(upgraded.port)).read())[key]).toBe(true);
   // The public webhook, id 2, is never named.
   expect(await stopped(upgraded.child)).toEqual([refusedLine]);
-  expect(userVersion(dataDir)).toBe(32);
+  expect(userVersion(dataDir)).toBe(33);
 
   // A restart, with the target still refused: named again.
   const restarted = await up(dataDir);
@@ -205,14 +209,12 @@ test("setting the block off stops the line, and a later restart keeps it off", a
   const dataDir = await earlierRelease();
   const first = await up(dataDir);
   await noticed(first.port);
-  expect((await api(first.port, "PUT", `/api/settings/${key}`, false)).status).toBe(200);
+  await (await instance(first.port)).put(key, false);
   expect(await stopped(first.child)).toEqual([refusedLine]);
 
   const off = await up(dataDir);
   await settle();
-  expect((await api<Record<string, unknown>>(off.port, "GET", "/api/settings")).data[key]).toBe(
-    false,
-  );
+  expect((await (await instance(off.port)).read())[key]).toBe(false);
   expect(await logLines(off.port, fixed)).toHaveLength(0);
   expect(await stopped(off.child)).toEqual([]);
 });

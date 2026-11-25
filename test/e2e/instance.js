@@ -82,7 +82,16 @@ export async function startInstance(executable, dataDir, directory) {
     const current = spawn(
       executable,
       ["serve", "--host", "127.0.0.1", "--port", String(port), "--data-dir", dataDir],
-      { env: { PATH: "" }, stdio: ["ignore", "ignore", "pipe"] },
+      // B139: the admin's variables, so the fresh instance.db has the account and its instance
+      // settings can be reached; the restored project's copy of the admin is adopted (D153).
+      {
+        env: {
+          PATH: "",
+          IGLO_EMAIL_ADMIN_USER: process.env.E2E_ADMIN_USER ?? "",
+          IGLO_EMAIL_ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD ?? "",
+        },
+        stdio: ["ignore", "ignore", "pipe"],
+      },
     );
     // Registered before the process can listen, so no path from here to `ready` loses it.
     children.add(current);

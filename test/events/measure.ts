@@ -8,6 +8,7 @@ import { createServer } from "node:net";
 import type { Socket } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { settingsRouter } from "@/test/contract/settings-split";
 import { variantIdentity } from "@/test/perf/variant";
 import { asBody, readJson } from "@/test/read-body";
 
@@ -167,8 +168,10 @@ async function run(name: string, events: boolean, sends: boolean) {
         const executable = join(dirname(dataDir), "iglo.email");
         const credentials = await provisionApiUser(baseUrl, admin);
         const authorization = `Basic ${btoa(`${credentials.user}:${credentials.token}`)}`;
+        // B139 (D154): SMTP is an instance key, read and written with the admin's session.
+        const send = settingsRouter({ mode: "normal", baseUrl }, undefined, admin);
         const api = async (path: string, method: string, body: unknown) => {
-          const response = await fetch(`${baseUrl}${path}`, {
+          const response = await send(`${baseUrl}${path}`, {
             method,
             headers: { authorization, "content-type": "application/json" },
             body: JSON.stringify(body),
@@ -176,7 +179,7 @@ async function run(name: string, events: boolean, sends: boolean) {
           const text = await response.text();
           return { status: response.status, body: text ? JSON.parse(text) : null };
         };
-        const settings = await fetch(`${baseUrl}/api/settings`, { headers: { authorization } });
+        const settings = await send(`${baseUrl}/api/settings`, { headers: { authorization } });
         const current = await readJson<{ data: { smtp: Array<object> } }>(settings);
         const configured = await api("/api/settings/smtp", "PUT", [
           {

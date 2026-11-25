@@ -3,7 +3,9 @@
 // everything, so a key the form does not show is sent back as it was read. A masked secret goes
 // back empty, which the API reads as "keep the stored value". After a save the form is read again,
 // so a secret just typed is masked and a new server has its UUID. A save takes effect at once; only
-// the root URL, a read-only flag, needs a restart.
+// the root URL, a read-only flag, needs a restart. B139 (D154): the same page serves a project's keys
+// from /api/settings and, on the instance host, the instance keys from /api/instance/settings; a key
+// the side does not have is not in its object, so every step below skips what is absent.
 import Alpine from '@alpinejs/csp';
 import { read } from '@/assets/admin/js/listing.js';
 import {
@@ -49,6 +51,9 @@ function loadOpen() {
   }
 }
 
+// Where this side's settings are served.
+const base = config.settings_side === 'instance' ? '/instance/settings' : '/settings';
+
 function component() {
   const openState = loadOpen();
 
@@ -58,7 +63,7 @@ function component() {
 
     // Serialize the email_headers map to a display string, and remember what an untouched
     // server sends back: a null stays null.
-    d.smtp.forEach((s, i) => {
+    (d.smtp || []).forEach((s, i) => {
       s.strEmailHeaders = JSON.stringify(s.email_headers || [], null, 4);
       s.savedHeaders = s.strEmailHeaders;
       s.showHeaders = false;
@@ -67,11 +72,13 @@ function component() {
       s.from_addresses ||= [];
     });
 
-    lineKeys.forEach((key) => {
+    lineKeys.filter((key) => key in d).forEach((key) => {
       d[key] = (d[key] || []).join('\n');
     });
 
-    d['app.notify_emails'] = (d['app.notify_emails'] || []).join(', ');
+    if ('app.notify_emails' in d) {
+      d['app.notify_emails'] = (d['app.notify_emails'] || []).join(', ');
+    }
 
     return d;
   };
@@ -149,7 +156,7 @@ function component() {
 
     async init() {
       try {
-        this.form = normalize(await read('/settings'));
+        this.form = normalize(await read(base));
         this.$nextTick(() => this.buildSearchIndex());
       } catch (e) {
         this.error = e.message;
@@ -343,7 +350,7 @@ function component() {
       delete body.dkim;
       this.errMsg = '';
       try {
-        await api('settings.testSMTP', '/settings/smtp/test', 'POST', { ...body, email: this.testEmail });
+        await api('settings.testSMTP', `${base}/smtp/test`, 'POST', { ...body, email: this.testEmail });
         u.toast(i18n.t('campaigns.testSent'));
       } catch (err) {
         this.errMsg = err.message;
@@ -407,7 +414,7 @@ function component() {
 
       // B56: the API refuses two items of one list with the same uuid. A later duplicate (only a
       // row saved before that rule can hold one) goes as a new item, so it takes no stored secret.
-      [form.smtp, form['bounce.mailboxes'], form.messengers].forEach((items) => {
+      [form.smtp, form['bounce.mailboxes'], form.messengers].filter(Boolean).forEach((items) => {
         const seen = new Set();
         (items || []).forEach((item) => {
           if (!item?.uuid) {
@@ -423,7 +430,7 @@ function component() {
 
       // Blank a masked secret. A partly masked one is a mistake to point out, not a value to store.
       const secret = (obj, key, name) => {
-        if (!obj) {
+        if (!obj || !(key in obj)) {
           return;
         }
         if (isDummy(obj[key])) {
@@ -433,7 +440,7 @@ function component() {
         }
       };
 
-      for (let i = 0; i < form.smtp.length; i += 1) {
+      for (let i = 0; i < (form.smtp || []).length; i += 1) {
         form.smtp[i].host = form.smtp[i].host?.trim();
         // Auth none sends no password, so there is nothing to re-enter (the field is disabled then).
         if (form.smtp[i].needsPassword && form.smtp[i].auth_protocol !== 'none' && isDummy(form.smtp[i].password)) {
@@ -447,12 +454,13 @@ function component() {
         }
       }
 
-      form['bounce.mailboxes'].forEach((b, i) => secret(b, 'password', `bounce #${i + 1}`));
-      form.messengers.forEach((m, i) => secret(m, 'password', `messenger #${i + 1}`));
+      (form['bounce.mailboxes'] || []).forEach((b, i) => secret(b, 'password', `bounce #${i + 1}`));
+      (form.messengers || []).forEach((m, i) => secret(m, 'password', `messenger #${i + 1}`));
       secret(form, 'upload.s3.aws_secret_access_key', 's3');
       secret(form, 'bounce.sendgrid_key', 'sendgrid');
+      secret(form, 'ses.api_secret_access_key', 'ses');
       secret(form['bounce.azure'], 'shared_secret', 'azure shared secret');
-      secret(form['security.captcha'].hcaptcha, 'secret', 'captcha');
+      secret(form['security.captcha']?.hcaptcha, 'secret', 'captcha');
       secret(form['security.oidc'], 'client_secret', 'oidc');
       secret(form['bounce.postmark'], 'password', 'postmark');
       secret(form['bounce.forwardemail'], 'key', 'forwardemail');
@@ -464,19 +472,21 @@ function component() {
       }
 
       // One entry per line back to arrays.
-      lineKeys.forEach((key) => {
+      lineKeys.filter((key) => key in form).forEach((key) => {
         form[key] = lines(form[key]);
       });
-      ['privacy.domain_blocklist', 'privacy.domain_allowlist'].forEach((key) => {
+      ['privacy.domain_blocklist', 'privacy.domain_allowlist'].filter((key) => key in form).forEach((key) => {
         form[key] = form[key].map((v) => v.toLowerCase());
       });
 
-      form['app.notify_emails'] = typeof form['app.notify_emails'] === 'string'
-        ? addressList(form['app.notify_emails'])
-        : (form['app.notify_emails'] || []);
+      if ('app.notify_emails' in form) {
+        form['app.notify_emails'] = typeof form['app.notify_emails'] === 'string'
+          ? addressList(form['app.notify_emails'])
+          : (form['app.notify_emails'] || []);
+      }
 
       try {
-        await api('settings', '/settings', 'PUT', form);
+        await api('settings', base, 'PUT', form);
       } catch {
         return;
       }
@@ -484,7 +494,7 @@ function component() {
       this.smtpTestItem = null;
       u.toast(i18n.ts('globals.messages.updated', { name: i18n.t('globals.terms.settings') }), 'success');
       try {
-        this.form = normalize(await read('/settings'));
+        this.form = normalize(await read(base));
       } catch (e) {
         this.error = e.message;
       }

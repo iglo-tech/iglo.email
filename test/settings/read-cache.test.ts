@@ -5,11 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
-import { createListReferences } from "@/lists/references";
-import { createRoles } from "@/roles/roles";
 import { placeRestoreHold, sendingHeld } from "@/settings/hold";
 import { writeStoredValue } from "@/settings/stored";
 import { createSettings } from "@/settings/store";
+import { createTestInstanceSettings } from "@/test/settings/instance-fixture";
 import { TestClock } from "@/test/server/fixture";
 import { asBody } from "@/test/read-body";
 
@@ -26,8 +25,8 @@ function open() {
   const db = openDatabase(directory);
   const clock = new TestClock();
   runMigrations(db, directory, clock, productionMigrations);
-  const roles = createRoles(db, createListReferences(db));
-  const settings = createSettings(db, clock, "https://example.test", roles);
+  const instance = createTestInstanceSettings(clock);
+  const settings = createSettings(db, clock, "https://example.test", instance.reader);
   return { directory, db, settings };
 }
 

@@ -6,6 +6,7 @@ import { ensureProductionBuild } from "@/test/production-build";
 import { startProduction, admin } from "@/test/worked-example/harness";
 import type { Production } from "@/test/worked-example/harness";
 import { provisionApiUser } from "@/test/contract/owned";
+import { instanceClient } from "@/test/settings/instance-client";
 
 const ASCENDING = ["asc", "ASC", "Asc"];
 const DESCENDING = ["desc", "DESC", "Desc"];
@@ -163,8 +164,10 @@ describe("order takes any case on every endpoint that documents it (B80)", () =>
   });
 
   test("GET /api/bounces", async () => {
+    // B139: bounce processing is an instance key, changed with the instance session.
+    const instance = await instanceClient(production.origin, admin);
     for (const key of ["bounce.enabled", "bounce.webhooks_enabled"]) {
-      expect((await api("PUT", `/api/settings/${key}`, true)).status).toBe(200);
+      await instance.put(key, true);
     }
     for (const [name, email] of [
       ["Zeta", "zeta-b80bnc@example.test"],

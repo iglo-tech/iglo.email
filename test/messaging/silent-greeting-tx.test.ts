@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import {
+  admin,
   apiClient,
   buildExecutable,
   provisionAuthorization,
@@ -11,7 +12,8 @@ import {
   temporaryDirectory,
 } from "@/test/backup/fixture";
 import { silentServer } from "@/test/messaging/silent-server";
-import { asBody, readJson } from "@/test/read-body";
+import { readJson } from "@/test/read-body";
+import { instanceClient } from "@/test/settings/instance-client";
 
 setDefaultTimeout(120_000);
 
@@ -29,23 +31,8 @@ test("a transactional send to a server that never greets answers queued, not unk
   const server = await startServer(executable, join(base, "data"));
   try {
     const client = apiClient(server.origin, await provisionAuthorization(server.origin));
-    const seeded = (
-      await readJson<{ data: Record<string, unknown> }>(await client("/api/settings"))
-    ).data;
-    const smtp = asBody<Array<Record<string, unknown>>>(seeded.smtp).map((item, index) =>
-      index === 0
-        ? { ...item, host: "127.0.0.1", port: silent.port, tls_type: "none", auth_protocol: "none" }
-        : item,
-    );
-    expect(
-      (
-        await client("/api/settings/smtp", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(smtp),
-        })
-      ).status,
-    ).toBe(200);
+    // B139: SMTP is an instance key, changed with the instance session.
+    await (await instanceClient(server.origin, admin)).useSink(silent.port);
 
     const template = await client("/api/templates", {
       method: "POST",

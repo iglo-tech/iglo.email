@@ -15,7 +15,7 @@ import { publicSettings } from "@/public/settings";
 import type { PublicSettings } from "@/public/settings";
 import { createRoles } from "@/roles/roles";
 import { createClientAddress } from "@/server/client-address";
-import { createSettings } from "@/settings/store";
+import { createFixtureSettings } from "@/test/settings/instance-fixture";
 import { txFixture } from "@/test/tx/fixture";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 import { asBody } from "@/test/read-body";
@@ -50,7 +50,7 @@ export async function publicFixture() {
   const f = await txFixture({ effects, page: () => settings(), mail: () => mail });
   const { router, lists, subscribers, tracking, renderer, templates, media, files } = f.owners;
   const roles = createRoles(f.db, lists);
-  const store = createSettings(f.db, f.clock, "http://fixture.test", roles);
+  const store = createFixtureSettings(f.db, f.clock, "http://fixture.test");
   settings = () => ({
     ...publicSettings(store.read()),
     fromEmail: "Fixture <noreply@fixture.test>",

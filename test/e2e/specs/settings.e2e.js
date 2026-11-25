@@ -2,11 +2,39 @@
 // each test restores what it changed. A save needs no restart here (D44), so there is no health
 // wait; messengers, bounce mailboxes and the other bounce providers have no admin control (D44, D89, 07-api-and-ui.md);
 // the root URL belongs to the bootstrap flags. API-only cases live in `bun run contract:settings`.
+// B139 (D154): the instance keys (SMTP, pacing, proxies, the session duration, bounce processing, the
+// private-target block, the admin appearance and the inert keys) are on the instance Settings page,
+// which the same script drives against /api/instance/settings; the project's page keeps the rest.
 import { generateKeyPairSync } from "node:crypto";
 import { expect } from "@playwright/test";
-import { ADMIN, ORIGIN, api, createUser, login, mailFor, test, unique } from "../helpers.js";
+import {
+  ADMIN,
+  ORIGIN,
+  api,
+  createUser,
+  login,
+  mailFor,
+  signInInstance,
+  test,
+  unique,
+} from "../helpers.js";
 
 const SETTINGS = "/admin/settings";
+const INSTANCE = "/admin/instance/settings";
+// A save from either page: the project's keys or the instance's.
+const saved = (r) =>
+  ["/api/settings", "/api/instance/settings"].includes(new URL(r.url()).pathname) &&
+  r.request().method() === "PUT";
+const sentPut = (r) =>
+  ["/api/settings", "/api/instance/settings"].includes(new URL(r.url()).pathname) &&
+  r.method() === "PUT";
+
+/** The instance Settings page, with the admin's instance session. */
+async function onInstance(page) {
+  await signInInstance(page);
+  await page.goto(INSTANCE);
+  await expect(page.getByTestId("settings-instance")).toBeVisible();
+}
 const smtpServers = (page) => page.locator(".mail-servers details");
 const tab = (page, name) => page.getByRole("tab", { name, exact: true });
 
@@ -34,9 +62,7 @@ async function settings(page) {
 // save's own toast the only one `getByText` can match.
 async function save(page, status = 200) {
   await page.evaluate(() => window.ot.toast.clear());
-  const response = page.waitForResponse(
-    (r) => new URL(r.url()).pathname === "/api/settings" && r.request().method() === "PUT",
-  );
+  const response = page.waitForResponse(saved);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   expect((await response).status()).toBe(status);
   if (status === 200) {
@@ -47,9 +73,7 @@ async function save(page, status = 200) {
 
 // The same save without the toast check: an upload's own toast can hide the save's before it is read.
 async function saveQuietly(page) {
-  const response = page.waitForResponse(
-    (r) => new URL(r.url()).pathname === "/api/settings" && r.request().method() === "PUT",
-  );
+  const response = page.waitForResponse(saved);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   expect((await response).status()).toBe(200);
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
@@ -162,6 +186,13 @@ test("saves edits across tabs, enables SMTP and deletes a server", async ({ page
   await expect(root).toHaveJSProperty("readOnly", true);
   await expect(page.getByText("Changing it needs a restart.")).toBeVisible();
   await page.locator('[name="app.favicon_url"]').fill(favicon);
+  await save(page);
+  // B139: the pacing and SMTP keys are on the instance page, which the project page links to.
+  await expect(page.getByTestId("instance-settings-link")).toHaveAttribute(
+    "href",
+    `${ORIGIN}${INSTANCE}`,
+  );
+  await onInstance(page);
   await tab(page, "Performance").click();
   await page.locator('[name="app.concurrency"]').fill("9");
   await tab(page, "SMTP").click();
@@ -193,10 +224,11 @@ test("saves edits across tabs, enables SMTP and deletes a server", async ({ page
   await page.reload();
   await tab(page, "SMTP").click();
   await expect(servers.getByRole("switch", { name: "Enabled", exact: true })).toBeChecked();
-  await tab(page, "General").click();
-  await expect(page.locator('[name="app.favicon_url"]')).toHaveValue(favicon);
   await tab(page, "Performance").click();
   await expect(page.locator('[name="app.concurrency"]')).toHaveValue("9");
+  await page.goto(SETTINGS);
+  await tab(page, "General").click();
+  await expect(page.locator('[name="app.favicon_url"]')).toHaveValue(favicon);
 });
 
 test("a logo or favicon path the API accepts saves, from any tab", async ({ page }) => {
@@ -205,11 +237,11 @@ test("a logo or favicon path the API accepts saves, from any tab", async ({ page
   expect(res.status).toBe(200);
   await page.reload();
   await tab(page, "Performance").click();
-  await page.locator('[name="app.concurrency"]').fill("8");
+  await page.locator('[name="app.max_send_errors"]').fill("8");
   await save(page);
   expect(await settings(page)).toMatchObject({
     "app.logo_url": "/uploads/logo.png",
-    "app.concurrency": 8,
+    "app.max_send_errors": 8,
   });
 });
 
@@ -259,18 +291,23 @@ test("uploads a logo and a favicon to media, saves their URLs, replaces and remo
 test("searches across tabs using all terms", async ({ page }) => {
   const search = page.getByRole("searchbox", { name: "Search" });
   await expect(page.locator('[name="app.from_email"]')).toBeVisible();
+  await search.fill("sender address");
+  await expect(page.locator('[name="app.from_email"]')).toBeVisible();
+  await search.fill("no-such-setting");
+  await expect(tab(page, "Privacy")).toBeVisible();
+  // B139: the instance page searches its own tabs the same way.
+  await onInstance(page);
   await search.fill("  RATE   workers  ");
   await expect(page.locator('[name="app.concurrency"]')).toBeVisible();
-  await expect(tab(page, "General")).toBeHidden();
+  await expect(tab(page, "Security")).toBeHidden();
   await expect(tab(page, "Performance")).toBeVisible();
-  await search.fill("email");
-  await expect(page.locator('[name="app.from_email"]')).toBeVisible();
+  await search.fill("outgoing");
   await expect(tab(page, "SMTP")).toBeVisible();
   await tab(page, "SMTP").click();
   await expect(search).toBeEmpty();
   await expect(smtpServers(page)).toBeVisible();
   await search.fill("no-such-setting");
-  await expect(tab(page, "General")).toBeVisible();
+  await expect(tab(page, "Performance")).toBeVisible();
   await expect(smtpServers(page)).toBeVisible();
   await search.fill("concurrency");
   await search.fill("");
@@ -281,6 +318,7 @@ test("searches across tabs using all terms", async ({ page }) => {
 test("SMTP presets reset credentials and preserve unrelated fields and accordion state", async ({
   page,
 }) => {
+  await onInstance(page);
   await tab(page, "SMTP").click();
   const server = smtpServers(page);
   await server.locator("summary").click();
@@ -324,6 +362,7 @@ test("SMTP presets reset credentials and preserve unrelated fields and accordion
 test("a provider template on a saved server asks for its password before a save", async ({
   page,
 }) => {
+  await onInstance(page);
   const seeded = await settings(page);
   const res = await api(page, "/api/settings/smtp", "PUT", [
     {
@@ -353,7 +392,7 @@ test("a provider template on a saved server asks for its password before a save"
   // The save is refused on the page: nothing is sent, so the old password goes nowhere.
   const sent = [];
   page.on("request", (r) => {
-    if (r.method() === "PUT" && new URL(r.url()).pathname === "/api/settings") {
+    if (sentPut(r)) {
       sent.push(r);
     }
   });
@@ -372,6 +411,7 @@ test("a provider template on a saved server asks for its password before a save"
 test("a provider template on a saved server with auth none saves without a password", async ({
   page,
 }) => {
+  await onInstance(page);
   const seeded = await settings(page);
   const res = await api(page, "/api/settings/smtp", "PUT", [
     {
@@ -405,6 +445,7 @@ test("a provider template on a saved server with auth none saves without a passw
 });
 
 test("a new server from a provider template saves without a password", async ({ page }) => {
+  await onInstance(page);
   await tab(page, "SMTP").click();
   await page.getByRole("button", { name: "Add new", exact: true }).click();
   // A new server has no saved password to protect, so the template asks for none.
@@ -422,6 +463,7 @@ test("a new server from a provider template saves without a password", async ({ 
 });
 
 test("a disabled SMTP server takes a password typed while it is off", async ({ page }) => {
+  await onInstance(page);
   const seeded = await settings(page);
   const res = await api(page, "/api/settings/smtp", "PUT", [
     { ...seeded.smtp[0], password: "" },
@@ -444,10 +486,11 @@ test("a disabled SMTP server takes a password typed while it is off", async ({ p
 });
 
 test("the settings page never sends two servers with one uuid", async ({ page }) => {
+  await onInstance(page);
   // A row saved before the duplicate refusal can hold two items with one uuid. The GET below
   // stands in for such a stored state; the API now refuses to store it again.
   const stored = (await settings(page)).smtp.length;
-  await page.route("**/api/settings", async (route) => {
+  await page.route("**/api/instance/settings", async (route) => {
     if (route.request().method() !== "GET") {
       return route.continue();
     }
@@ -470,12 +513,10 @@ test("the settings page never sends two servers with one uuid", async ({ page })
   await tab(page, "SMTP").click();
   await expect(smtpServers(page)).toHaveCount(stored + 1);
 
-  const sent = page.waitForRequest(
-    (r) => r.method() === "PUT" && new URL(r.url()).pathname === "/api/settings",
-  );
+  const sent = page.waitForRequest(sentPut);
   await save(page);
   const body = (await sent).postDataJSON();
-  await page.unroute("**/api/settings");
+  await page.unroute("**/api/instance/settings");
   const uuids = body.smtp.map((item) => item.uuid).filter(Boolean);
   expect(body.smtp).toHaveLength(stored + 1);
   expect(new Set(uuids).size).toBe(uuids.length);
@@ -483,6 +524,7 @@ test("the settings page never sends two servers with one uuid", async ({ page })
 });
 
 test("tests custom SMTP headers and masks saved secrets", async ({ page }) => {
+  await onInstance(page);
   await tab(page, "SMTP").click();
   const server = smtpServers(page);
   await server.locator("summary").click();
@@ -511,9 +553,7 @@ test("tests custom SMTP headers and masks saved secrets", async ({ page }) => {
   await tab(page, "SMTP").click();
   await expect(server.getByLabel(/Password/)).toHaveValue(/^•+$/);
   // An unrelated save sends no replacement for the masked password.
-  const request = page.waitForRequest(
-    (r) => r.url().endsWith("/api/settings") && r.method() === "PUT",
-  );
+  const request = page.waitForRequest(sentPut);
   await save(page);
   expect((await request).postDataJSON().smtp[0].password).toBe("");
   await page.reload();
@@ -522,6 +562,7 @@ test("tests custom SMTP headers and masks saved secrets", async ({ page }) => {
 });
 
 test("test connection uses the form's values and saves nothing", async ({ page }) => {
+  await onInstance(page);
   const stored = (await settings(page)).smtp;
   await tab(page, "SMTP").click();
   const server = smtpServers(page);
@@ -572,6 +613,7 @@ test("normalizes domain lists and retains tracking preferences while disabled", 
 });
 
 test("enables sliding window controls and persists their values", async ({ page }) => {
+  await onInstance(page);
   await tab(page, "Performance").click();
   const group = page.getByRole("group", { name: "Enable sliding window limit", exact: true });
   await expect(group.getByRole("textbox", { name: /^Duration/ })).toBeDisabled();
@@ -593,9 +635,13 @@ test("persists trusted URLs and the native security settings", async ({ page }) 
   await tab(page, "Security").click();
   const urls = page.getByPlaceholder("https://example.com", { exact: true });
   await urls.fill("https://one.example.com\nhttps://two.example.com/thanks");
+  await page.getByRole("spinbutton", { name: "Subscribe", exact: true }).fill("31");
+  await save(page);
+  // B139: the proxies and the private-target block are instance keys, on the instance page.
+  await onInstance(page);
+  await tab(page, "Security").click();
   const proxies = page.locator('[name="security.trusted_proxies"]');
   await proxies.fill(`${(await proxies.inputValue()).trim()}\n10.0.0.0/8`);
-  await page.getByRole("spinbutton", { name: "Subscribe", exact: true }).fill("31");
   await page.getByRole("switch", { name: /^Block private webhook addresses/ }).check();
   await save(page);
   expect(await settings(page)).toMatchObject({
@@ -604,14 +650,15 @@ test("persists trusted URLs and the native security settings", async ({ page }) 
     "security.public_rate_limit": { ...before["security.public_rate_limit"], subscribe: 31 },
     "webhooks.block_private_addresses": true,
   });
-  await page.reload();
-  await tab(page, "Security").click();
-  await expect(urls).toHaveValue("https://one.example.com\nhttps://two.example.com/thanks");
-  await urls.fill("");
   await proxies.fill("0.0.0.0/0");
   await save(page, 400);
   await expect(page.getByText(/invalid trusted proxy/)).toBeVisible();
   await proxies.fill("127.0.0.1");
+  await save(page);
+  await page.goto(SETTINGS);
+  await tab(page, "Security").click();
+  await expect(urls).toHaveValue("https://one.example.com\nhttps://two.example.com/thanks");
+  await urls.fill("");
   await save(page);
   await page.reload();
   await tab(page, "Security").click();
@@ -672,11 +719,15 @@ test("the CAPTCHA card turns one provider on at a time and keeps the secret mask
 });
 
 test("persists bounce actions and SES settings; only SES is shown", async ({ page }) => {
+  // B139: the actions are this project's; bounce processing and SES are the instance's.
   await tab(page, "Bounces").click();
-  await page.getByRole("switch", { name: "Enable bounce processing", exact: true }).check();
   const hard = page.getByRole("group", { name: "Hard", exact: true });
   await hard.getByRole("spinbutton").fill("3");
   await hard.getByRole("combobox").selectOption("unsubscribe");
+  await save(page);
+  await onInstance(page);
+  await tab(page, "Bounces").click();
+  await page.getByRole("switch", { name: "Enable bounce processing", exact: true }).check();
   const webhooks = page.getByRole("switch", { name: /^Enable bounce webhooks/ });
   await webhooks.check();
   const ses = page.getByRole("group", { name: /SES/ });
@@ -692,8 +743,6 @@ test("persists bounce actions and SES settings; only SES is shown", async ({ pag
   });
   await page.reload();
   await tab(page, "Bounces").click();
-  await expect(hard.getByRole("spinbutton")).toHaveValue("3");
-  await expect(hard.getByRole("combobox")).toHaveValue("unsubscribe");
   await expect(ses.getByRole("switch")).toBeChecked();
   await expect(page.getByRole("group", { name: "Enable Mailgun", exact: true })).toHaveCount(0);
   await expect(
@@ -702,6 +751,10 @@ test("persists bounce actions and SES settings; only SES is shown", async ({ pag
   await expect(page.getByRole("group", { name: "Enable bounce mailbox" })).toHaveCount(0);
   await webhooks.uncheck();
   await expect(ses).toHaveCount(0);
+  await page.goto(SETTINGS);
+  await tab(page, "Bounces").click();
+  await expect(hard.getByRole("spinbutton")).toHaveValue("3");
+  await expect(hard.getByRole("combobox")).toHaveValue("unsubscribe");
 });
 
 // A bounce appears on the bounces screen and its metadata dialog renders escaped.
@@ -739,17 +792,22 @@ test("a bounce appears on the bounces screen like any other", async ({ page }) =
 });
 
 test("saves independent admin and public appearance editors", async ({ page }) => {
+  // B139: the public editors are this project's; the admin editors are the instance's.
   await tab(page, "Appearance").click();
-  await expect(page.getByTestId("appearance-warning")).toContainText("every signed-in admin page");
+  // The warning names the admin pages, whose code is the instance's.
+  await expect(page.getByTestId("appearance-warning")).toHaveCount(0);
   const css = page.getByRole("group", { name: "Custom CSS", exact: true }).getByRole("textbox");
   const js = page
     .getByRole("group", { name: "Custom JavaScript", exact: true })
     .getByRole("textbox");
-  await css.fill("/* admin settings test */");
-  await js.fill("window.adminCustom = 1;");
-  await page.getByRole("tab", { name: "Public", exact: true }).click();
   await css.fill("/* public settings test */");
   await js.fill("window.publicCustom = 1;");
+  await save(page);
+  await onInstance(page);
+  await tab(page, "Appearance").click();
+  await expect(page.getByTestId("appearance-warning")).toContainText("every signed-in admin page");
+  await css.fill("/* admin settings test */");
+  await js.fill("window.adminCustom = 1;");
   await save(page);
   expect(await settings(page)).toMatchObject({
     "appearance.admin.custom_css": "/* admin settings test */",
@@ -761,7 +819,8 @@ test("saves independent admin and public appearance editors", async ({ page }) =
   await tab(page, "Appearance").click();
   await expect(css).toHaveText("/* admin settings test */");
   await expect(js).toHaveText("window.adminCustom = 1;");
-  await page.getByRole("tab", { name: "Public", exact: true }).click();
+  await page.goto(SETTINGS);
+  await tab(page, "Appearance").click();
   await expect(css).toHaveText("/* public settings test */");
   await expect(js).toHaveText("window.publicCustom = 1;");
 
@@ -829,21 +888,29 @@ test("a save without edits leaves unshown values and untouched secrets alone", a
   await put("maintenance.db", { vacuum: true, vacuum_cron_interval: "0 4 * * *" });
   try {
     const stored = await settings(page);
+    // B139: each page saves its own side, and together they send back every key.
     await page.reload();
     await expect(page.locator('[name="app.from_email"]')).toBeVisible();
-    const request = page.waitForRequest(
-      (r) => r.url().endsWith("/api/settings") && r.method() === "PUT",
-    );
+    const request = page.waitForRequest(sentPut);
     await save(page);
-    const sent = (await request).postDataJSON();
+    const project = (await request).postDataJSON();
+    await onInstance(page);
+    const instanceRequest = page.waitForRequest(sentPut);
+    await save(page);
+    const shared = (await instanceRequest).postDataJSON();
     expect(await settings(page)).toEqual(stored);
     // Every secret goes back empty, which the API reads as "keep": a bullet never reaches storage.
-    expect(JSON.stringify(sent)).not.toContain("•");
-    expect(sent.smtp[0].dkim.private_key).toBe("");
-    expect(sent.smtp[0].uuid).toBe(stored.smtp[0].uuid);
-    expect(sent["security.oidc"].client_secret).toBe("");
-    expect(sent["privacy.exportable"]).toEqual(["profile"]);
-    expect(Object.keys(sent).sort()).toEqual(Object.keys(stored).sort());
+    for (const sent of [project, shared]) {
+      expect(JSON.stringify(sent)).not.toContain("•");
+    }
+    expect(shared.smtp[0].dkim.private_key).toBe("");
+    expect(shared.smtp[0].uuid).toBe(stored.smtp[0].uuid);
+    expect(shared["security.oidc"].client_secret).toBe("");
+    expect(project["privacy.exportable"]).toEqual(["profile"]);
+    expect(Object.keys(project).some((key) => Object.hasOwn(shared, key))).toBe(false);
+    expect([...Object.keys(project), ...Object.keys(shared)].sort()).toEqual(
+      Object.keys(stored).sort(),
+    );
   } finally {
     await put("smtp", [{ ...before.smtp[0], dkim: null }]);
   }
@@ -852,6 +919,7 @@ test("a save without edits leaves unshown values and untouched secrets alone", a
 test("messengers have no control, a save keeps them, and the media provider is read-only", async ({
   page,
 }) => {
+  await onInstance(page);
   const res = await api(page, "/api/settings/messengers", "PUT", [
     { name: "sms-test", root_url: "http://localhost:9999/send", enabled: false },
   ]);
@@ -878,7 +946,9 @@ test("settings values are text, and viewing needs no more than settings:get", as
   await login(other, viewer.username, "e2e-user-password", SETTINGS);
   await expect(other.locator('[name="app.from_email"]')).toBeVisible();
   await expect(other.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
-  await tab(other, "SMTP").click();
-  await expect(other.getByRole("button", { name: "Test connection" })).toHaveCount(0);
+  // B139: SMTP is on the instance page, which only the instance admin reaches.
+  await expect(tab(other, "SMTP")).toHaveCount(0);
+  await other.goto(INSTANCE);
+  await expect(other.getByTestId("instance-login")).toBeVisible();
   await context.close();
 });

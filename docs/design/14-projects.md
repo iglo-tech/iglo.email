@@ -165,6 +165,21 @@ A new key must be classified in this table when it is added.
 - A project's Settings page shows only project keys, with a link to "Instance settings" on the instance host.
 - The instance Settings page shows only instance keys.
 
+### As built (B139)
+
+[D154](09-decisions.md#d154-settings-split-b139-lead-2026-11-25) records the choices this section left open. Where this list and the text above differ, this list is the code.
+
+- **Modules.** `src/settings/keys.ts` gives every default key its side (a key without one does not compile); `src/settings/instance.ts` is the instance store over instance.db's `settings` table (migration `instance/0003`) and hands out the one reader every project gets; `createSettings` in `store.ts` takes that reader, stores the project keys and reads both sides; `routes.ts` serves the same bodies and rules for both APIs; the views are one `settingsPage(side)`. Migration 33 removes every instance key from a project database (`restore.hold` stays).
+- **Classification.** The table above, plus `messengers` (inert, beside SMTP) as an instance key. The campaign pacing keys (`app.concurrency`, `app.message_rate`, `app.batch_size`, `app.message_sliding_window*`) are instance keys until B141 removes them.
+- **Reads and changes.** A project's settings read is its project rows and the instance's keys together, re-read on each call as before (D88), so an instance change is seen by the next read in every project, with no restart, as a change in one install was. The instance store calls each project's settings listener after its commit (the send-rate wake).
+- **Project API.** `GET /api/settings` serves the project keys and `app.root_url`. A `PUT /api/settings` or `PUT /api/settings/:key` naming any other key, an instance key or a name that binds no setting, is `400` "Not a project setting: <name>…" after the permission check, with nothing written. `app.root_url` in a full write is ignored; its own key PUT stays the `400` it was.
+- **Instance API.** On the instance host and unclaimed hosts: `GET`/`PUT /api/instance/settings`, `PUT /api/instance/settings/:key`, and `POST /api/instance/settings/smtp/test`, which sends through the primary project (its sender, default from address and brand) and is `409` without one. Instance session and CSRF; any `Authorization` header is `401`. A full write keeps the native instance keys a listmonk-shaped body leaves out, as the project API does.
+- **SES keys.** `ses.api_region` (an AWS region name), `ses.api_access_key_id` (`AKIA` and 16 capitals or digits) and `ses.api_secret_access_key` (16 to 128 printable characters) are set together or not at all. A blank secret, or the mask a GET served, keeps the stored one; a blank key ID clears it. The secret is masked. Nothing reads them yet.
+- **OIDC.** `security.oidc` is an instance key, and a role ID names one project's role, so the instance checks OIDC role IDs for shape only (positive whole numbers).
+- **The instance login** now takes its session length from `security.session_duration` and its client address from `security.trusted_proxies`, as a project's login does.
+- **Pages.** `/admin/instance/settings` in the instance layout (Performance, Security, Media, SMTP, Bounces, Amazon SES, Appearance); a project's Settings page keeps General, Performance, Privacy, Security, Media, Bounces (the actions) and Appearance (the public editors), and links to it.
+- **Tests.** `test/projects/settings.test.ts` in `contract:projects`. The settings contract and the other corpora reach both sides through `test/contract/settings-split.ts`; against upstream it is plain fetch.
+
 ## 5. One admin
 
 The owner works alone. The design keeps today's project authentication untouched, so the user and role contract suites (which also run against upstream) do not change. It adds one account that exists in every project.

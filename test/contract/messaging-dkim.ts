@@ -10,6 +10,7 @@ import { verifyFixtureDkim } from "@/test/perf/runtime-compat/dkim-check";
 import { listmonkEnvelope } from "@/test/contract/envelope";
 import { asBody } from "@/test/read-body";
 import type { Credentials } from "@/test/contract/types";
+import { routedFetch } from "@/test/contract/settings-split";
 
 export async function runDKIMSettings(target: {
   baseUrl: string;
@@ -26,7 +27,7 @@ export async function runDKIMSettings(target: {
   try {
     const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
     const request = (path: string, method = "GET", body?: unknown) =>
-      fetch(`${target.baseUrl}${path}`, {
+      routedFetch(target)(`${target.baseUrl}${path}`, {
         method,
         headers: {
           authorization,

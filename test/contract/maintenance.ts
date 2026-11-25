@@ -10,6 +10,7 @@ import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat
 import { startReceiver } from "@/test/webhooks/receiver";
 import { asBody } from "@/test/read-body";
 import { untilState } from "@/test/wait";
+import { routedFetch } from "@/test/contract/settings-split";
 
 const invalid = (response: { status: number; body: any }, label: string) => {
   check(response.status === 400, `${label}-status-${response.status}`);
@@ -39,7 +40,7 @@ export async function runMaintenanceContract(target: {
   const mailpit = new Mailpit(sink, marker);
   const authorization = `Basic ${btoa(`${target.credentials.user}:${target.credentials.token}`)}`;
   const call = async (path: string, method = "GET", body?: unknown, auth = authorization) => {
-    const response = await fetch(`${target.baseUrl}${path}`, {
+    const response = await routedFetch(target)(`${target.baseUrl}${path}`, {
       method,
       redirect: "manual",
       headers: {

@@ -15,6 +15,7 @@ import { createImporter } from "@/subscribers/import/importer";
 import { createSubscriberStore } from "@/subscribers/store";
 import { createTranslation } from "@/i18n/i18n";
 import { provisionApiUser, withProduction } from "@/test/contract/owned";
+import { settingsRouter } from "@/test/contract/settings-split";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { createWebhookStore } from "@/webhooks/store";
 import { asBody } from "@/test/read-body";
@@ -52,11 +53,13 @@ async function overHttp() {
       const pid = Bun.spawnSync(["pgrep", "-f", dataDir]).stdout.toString().trim().split("\n")[0]!;
       const { user, token } = await provisionApiUser(origin, admin);
       const authorization = `Basic ${btoa(`${user}:${token}`)}`;
+      // B139 (D154): an instance key goes to /api/instance/settings with the admin's session.
+      const send = settingsRouter({ mode: "normal", baseUrl: origin }, undefined, admin);
       const json = async <T = unknown>(path: string, method = "GET", body?: unknown): Promise<T> =>
         asBody<T>(
           (
             await (
-              await fetch(`${origin}${path}`, {
+              await send(`${origin}${path}`, {
                 method,
                 headers: { authorization, "content-type": "application/json" },
                 ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -146,7 +149,14 @@ async function overHttp() {
       out.overwrite = await probing(() => importing({ ...subscribe, overwrite: true }, file));
       out.hwmAfterOverwriteMiB = +peak(pid).toFixed(0);
       // A loopback target, which the default refuses (D122): this operator turns the block off.
-      await json("/api/settings/webhooks.block_private_addresses", "PUT", false);
+      const unblocked = await send(`${origin}/api/settings/webhooks.block_private_addresses`, {
+        method: "PUT",
+        headers: { authorization, "content-type": "application/json" },
+        body: "false",
+      });
+      if (unblocked.status !== 200) {
+        throw new Error(`webhooks.block_private_addresses: ${unblocked.status}`);
+      }
       const hook = await json<{ id: number }>("/api/webhooks", "POST", {
         url: "http://127.0.0.1:9/hook",
         events: ["subscriber.blocklisted", "subscriber.unsubscribed"],

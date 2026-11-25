@@ -1,4 +1,4 @@
-// B56: settings secret residuals. Public boundaries only: GET and PUT /api/settings through the admin
+// B56: settings secret residuals. Public boundaries only: GET and PUT /api/instance/settings (B139: instance keys) through the admin
 // session. The page sends each masked secret back empty, which the API reads as "keep"; `unmasked`
 // takes the page's shape the same way (settings.js onSubmit).
 import { afterEach, beforeEach, expect, test } from "bun:test";
@@ -23,7 +23,7 @@ type Settings = {
   [key: string]: any;
 };
 async function read(): Promise<Settings> {
-  const res = await get(f, "/api/settings", cookie);
+  const res = await get(f, "/api/instance/settings", cookie);
   expect(res.status).toBe(200);
   return (await readJson<{ data: Settings }>(res)).data;
 }
@@ -46,7 +46,7 @@ function unmaskedValue(value: unknown): unknown {
   return value;
 }
 
-const save = (body: unknown) => api(f, cookie, "/api/settings", "PUT", body);
+const save = (body: unknown) => api(f, cookie, "/api/instance/settings", "PUT", body);
 const masked = (text: string) => "•".repeat(text.length);
 
 // Stores a real password on the seeded SMTP server, which has auth cram (an authenticated mode).
@@ -173,7 +173,7 @@ test("7. the per-key SMTP update refuses duplicate uuids too", async () => {
   const before = await read();
   const items = unmasked<Array<any>>(before.smtp);
   items.push({ ...items[0], name: "b56-key-twin", host: "b56-key-twin.example.test" });
-  const response = await api(f, cookie, "/api/settings/smtp", "PUT", items);
+  const response = await api(f, cookie, "/api/instance/settings/smtp", "PUT", items);
   expect(response.status).toBe(400);
   expect(await read()).toEqual(before);
 });
