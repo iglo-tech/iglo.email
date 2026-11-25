@@ -67,6 +67,8 @@ async function guarded(options: { setting: number; quota: Quota; credentials?: b
   const begun: Array<number> = [];
   /** How long the stand-in takes to answer, on the test clock. */
   let latency = 0;
+  /** Aborted by `answerIn`: a held read answers at once instead of outliving the change. */
+  let holding = new AbortController();
   const ses = Bun.serve({
     port: 0,
     hostname: HOST,
@@ -79,7 +81,7 @@ async function guarded(options: { setting: number; quota: Quota; credentials?: b
         ),
       );
       if (latency > 0) {
-        await clock.sleep(latency);
+        await clock.sleep(latency, holding.signal).catch(() => {});
       }
       return Response.json({
         SendQuota: {
@@ -256,9 +258,14 @@ async function guarded(options: { setting: number; quota: Quota; credentials?: b
     reads: () => reads,
     /** When each read so far began, in ms on the test clock (to the second). */
     begun: () => [...begun],
-    /** Makes the stand-in answer each later read `ms` later on the test clock. */
+    /**
+     * Makes the stand-in answer each later read `ms` later on the test clock; a read it holds now
+     * answers at once.
+     */
     answerIn: (ms: number) => {
       latency = ms;
+      holding.abort();
+      holding = new AbortController();
     },
     lines,
     call,
@@ -399,7 +406,11 @@ async function holdAndResume(quota: Quota, line: number) {
   expect(first).toBeGreaterThanOrEqual(60_000);
   expect(first).toBeLessThanOrEqual(61_000);
   expect(second).toBe(60_000);
-  expect((await gaps(3))[2]).toBe(60_000);
+  const third = (await gaps(3))[2];
+  // The third read is held on the test clock while GetAccount's timeout runs in real time: answer
+  // it now, and every later read at once, so no held read outlives the checks below.
+  f.answerIn(0);
+  expect(third).toBe(60_000);
   let count = await f.sends();
   expect(count("marketing", "queued")).toBe(5);
   expect(count("marketing", "sending")).toBe(0);
