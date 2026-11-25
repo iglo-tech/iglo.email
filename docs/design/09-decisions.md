@@ -2144,7 +2144,8 @@ Brief B117a, from an adopter's checks and reviews of B126, B127, B131, B134f and
   - **The "or renamed" prose** (B146 r2 backlog). Migrations 0027 and 0030 match a template by its type and whole body, not by its name, so a renamed (or cloned, unedited) copy that still holds the seeded body is rewritten too. Their comments and D127/D128 said a renamed copy keeps its body; they now say what the SQL does. No SQL changed.
   - **D15** gets "Superseded by D142" at its top; its text is unchanged.
   - **Link check.** Every relative link and anchor in the changed files resolves. Four anchors in this file that pointed at shortened headings (to D100, D101, D112 and D125) were corrected to the headings' full slugs; no wording changed.
-- **Unchanged:** all product code and tests; the behaviour each As-built list records; the release, version and release notes (the next task).
+  - **The OpenAPI mirror (lead decision after the acceptance of 7028f41).** The new 07 row is mirrored in `src/openapi/differences.ts` with a short summary and no `applies`, since `test/openapi/coverage.test.ts` requires every 07 row in the document's `x-deliberate-differences`; this is the only product-code edit.
+- **Unchanged:** all other product code and tests; the behaviour each As-built list records; the release, version and release notes (the next task).
 - **Considered:**
   - *Rewriting the As-built lists into the present tense.* Loses which task changed what, which the decision records link to.
   - *A separate projects guide beside `operations.md`.* Two places for one operator's setup; the guide already had B138b–B144a's sections in place.

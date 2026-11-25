@@ -799,6 +799,12 @@ export const differences: Array<Difference> = [
     applies: ["PUT /api/users/{id}"],
   },
   {
+    area: "Projects: host routing and instance routes (B138b–B143b, D151, D153, D154, D156, D157, D159, D162)",
+    summary:
+      "The request's `Host` picks the project; a credential works only on its project's host. Instance routes are undocumented here. No route names another project.",
+    applies: [],
+  },
+  {
     area: "Sort direction (`order`)",
     summary:
       "`order` takes `asc`, `ASC` or `Asc` (any case) on every endpoint that documents it. Upstream's documented `ASC` sorts descending, so a client that reads the enum gets the wrong order there.",
