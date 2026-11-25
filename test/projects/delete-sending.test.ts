@@ -14,6 +14,7 @@ import { instanceCall, instanceLogin } from "@/test/projects/admin-fixture";
 import type { InstanceSession } from "@/test/projects/admin-fixture";
 import { adminCredentials, logIn, request, sessionHeaders } from "@/test/projects/fixture";
 import type { Credentials, Session } from "@/test/projects/fixture";
+import { heldRequest as heldPost } from "@/test/projects/lifecycle-fixture";
 import { asBody } from "@/test/read-body";
 import { TestClock } from "@/test/server/fixture";
 import { startSink } from "@/test/tx/sink";
@@ -25,11 +26,15 @@ const PRIMARY = "127.0.0.1";
 const GONE = "gone.example.test";
 const STAY = "stay.example.test";
 
-/** An instance with projects `gone` and `stay`, its SMTP pointed at `sink`, sending at `rate`. */
+/**
+ * An instance with projects `gone` and `stay`, its SMTP pointed at `sink` with `maxConns`
+ * connections, sending at `rate`.
+ */
 async function openFixture(
   sink: Awaited<ReturnType<typeof startSink>>,
   rate: number,
   clock: TestClock,
+  maxConns = 4,
 ) {
   const admin = await adminCredentials();
   const dataDir = await mkdtemp(join(tmpdir(), "iglo-email-b143a-delete-sending-"));
@@ -63,7 +68,7 @@ async function openFixture(
         enabled: true,
         host: "127.0.0.1",
         port: sink.port,
-        max_conns: 4,
+        max_conns: maxConns,
         auth_protocol: "none",
         username: "",
         password: "",
@@ -214,13 +219,14 @@ test("a delete stops the project's slot requests first: while its requests drain
       { label: "gone off the routing table", progress: () => "" },
     );
 
-    // Six more starts while gone's request is still draining: all of them are stay's.
+    // Four more starts while gone's request is still draining (about 4 s of the clock, inside the
+    // drain's 5 s bound): all of them are stay's.
     await untilState(
       () => {
         advance();
-        return sink.messages.length >= total + 6;
+        return sink.messages.length >= total + 4;
       },
-      { label: "six starts during the drain", progress: () => String(sink.messages.length) },
+      { label: "four starts during the drain", progress: () => String(sink.messages.length) },
     );
     expect(recipientsOf(sink.messages, GONE)).toBe(goneBefore);
 
@@ -286,18 +292,31 @@ test("a delete waits at most 5 s for the project's send in SMTP flight, cuts no 
       answered = true;
       return answer;
     });
-    // The delete answers once the test clock passes the 5 s deadline, long before the push's own
-    // 60 s deadline (also on this clock) or the socket's 30 s timeout (real time).
+    // The clock stays put until the delete has begun (gone is off the routing table), so the
+    // deadline is measured from the delete's own start.
     await untilState(
-      () => {
-        clock.advance(250);
-        return answered;
-      },
-      { label: "the delete within the close deadline", progress: () => clock.now().toISOString() },
+      async () =>
+        (await request(port, GONE, "/api/profile", { headers: sessionHeaders(gone.session) }))
+          .status !== 200,
+      { label: "gone off the routing table", progress: () => "" },
     );
+    // The delete answers when the test clock reaches the 5 s deadline, long before the push's own
+    // 60 s deadline (also on this clock) or the socket's 30 s timeout (real time): still waiting
+    // at 4.9 s, answered at 5 s (B149a: a deadline drifting to 8 s fails here).
+    while (clock.now().getTime() - startedAt < 4900) {
+      clock.advance(100);
+      await Bun.sleep(2);
+    }
+    await Bun.sleep(50);
+    expect(answered).toBe(false);
+    clock.advance(100);
+    await untilState(() => answered, {
+      label: "the delete at the close deadline",
+      progress: () => clock.now().toISOString(),
+    });
     const answer = await deleted;
     expect(answer.status).toBe(200);
-    expect(clock.now().getTime() - startedAt).toBeLessThan(10_000);
+    expect(clock.now().getTime() - startedAt).toBe(5000);
     // The shared connection carrying it was not cut, and the other project sends meanwhile.
     expect(sink.heldOpen()).toBe(1);
     await runCampaign(port, STAY, admin, "after", 1);
@@ -335,6 +354,205 @@ test("a delete waits at most 5 s for the project's send in SMTP flight, cuts no 
       await Bun.sleep(5);
     }
     expect(sink.messages.filter((message) => message.to.includes(stuck))).toHaveLength(1);
+  } finally {
+    await fixture.close();
+    await sink.close();
+  }
+  expect(fixture.failures).toEqual([]);
+});
+
+/** A project-session JSON call on `host` that must answer 200; its `data`. */
+async function projectData<T>(
+  port: number,
+  host: string,
+  session: Session,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const response = await request(port, host, path, {
+    method,
+    headers: sessionHeaders(session),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await response.text();
+  expect({ path, status: response.status, text }).toMatchObject({ status: 200 });
+  return asBody<{ data: T }>(JSON.parse(text)).data;
+}
+
+/** The project's send log statuses in a final snapshot, by kind. */
+function snapshotSends(dataDir: string, database: string) {
+  const snapshot = new Database(join(dataDir, database), { readonly: true });
+  try {
+    return snapshot
+      .query<{ kind: string; status: string; to_email: string }, []>(
+        "SELECT kind, status, to_email FROM sends ORDER BY id",
+      )
+      .all();
+  } finally {
+    snapshot.close();
+  }
+}
+
+test("a marketing POST /api/tx still in flight when its project is deleted answers with its rows queued, and nothing is sent", async () => {
+  const sink = await startSink();
+  const clock = new TestClock();
+  const fixture = await openFixture(sink, 0, clock);
+  const { port, admin, operator } = fixture;
+  let held: ReturnType<typeof heldPost> | undefined;
+  try {
+    const session = await logIn(port, GONE, admin);
+    const list = await projectData<{ id: number }>(port, GONE, session, "POST", "/api/lists", {
+      name: "news",
+      type: "public",
+      optin: "single",
+    });
+    const reader = "reader@gone.example.test";
+    await projectData(port, GONE, session, "POST", "/api/subscribers", {
+      email: reader,
+      name: "Reader",
+      status: "enabled",
+      lists: [list.id],
+      preconfirm_subscriptions: true,
+    });
+    const templates = await projectData<Array<{ id: number; type: string }>>(
+      port,
+      GONE,
+      session,
+      "GET",
+      "/api/templates",
+    );
+    const template = templates.find((item) => item.type === "tx")!.id;
+    // The request's body is still arriving when the delete starts: it is in the project's router.
+    held = heldPost(port, GONE, session, "/api/tx", {
+      subscriber_email: reader,
+      template_id: template,
+      kind: "marketing",
+      list_id: list.id,
+    });
+    await untilState(
+      async () =>
+        (await request(port, GONE, "/api/profile", { headers: sessionHeaders(session) })).status ===
+        200,
+      { label: "gone serving", progress: () => "" },
+    );
+    const deleted = deleteGone(port, operator);
+    await untilState(
+      async () =>
+        (await request(port, GONE, "/api/profile", { headers: sessionHeaders(session) })).status !==
+        200,
+      { label: "gone off the routing table", progress: () => "" },
+    );
+    // Its sending is already stopped: the send is journalled and handed back, not started.
+    held.finish();
+    const sent = await held.answered;
+    expect(sent.status).toBe(200);
+    const rows = asBody<{ data: { sends: Array<{ status: string }> } }>(JSON.parse(sent.text)).data
+      .sends;
+    expect(rows.map((row) => row.status)).toEqual(["queued"]);
+    const answer = await deleted;
+    expect(answer.status).toBe(200);
+    const { database } = asBody<{ data: { database: string } }>(JSON.parse(answer.text)).data;
+    expect(snapshotSends(fixture.dataDir, database)).toEqual([
+      { kind: "marketing", status: "queued", to_email: reader },
+    ]);
+    for (let i = 0; i < 20; i++) {
+      clock.advance(1000);
+      await Bun.sleep(5);
+    }
+    expect(sink.messages).toHaveLength(0);
+  } finally {
+    held?.finish();
+    await fixture.close();
+    await sink.close();
+  }
+  expect(fixture.failures).toEqual([]);
+});
+
+test("a deleted project's send queued behind a shared connection never starts once the connection frees", async () => {
+  // One pooled connection for every project; stay's campaign message holds it in SMTP flight.
+  const stuck = "stuck0@stay.example.test";
+  const sink = await startSink({ hold: (to) => to.includes(stuck) });
+  const clock = new TestClock();
+  const fixture = await openFixture(sink, 0, clock, 1);
+  const { port, admin, operator } = fixture;
+  try {
+    await runCampaign(port, STAY, admin, "stuck", 1);
+    await untilState(
+      () => {
+        clock.advance(100);
+        return sink.heldOpen() === 1;
+      },
+      { label: "stay's send in SMTP flight", progress: () => String(sink.heldOpen()) },
+    );
+    // Gone's transactional send starts and waits in the pool for the one connection.
+    const session = await logIn(port, GONE, admin);
+    const waiting = "waiting@gone.example.test";
+    await projectData(port, GONE, session, "POST", "/api/subscribers", {
+      email: waiting,
+      name: "Waiting",
+      status: "enabled",
+    });
+    const templates = await projectData<Array<{ id: number; type: string }>>(
+      port,
+      GONE,
+      session,
+      "GET",
+      "/api/templates",
+    );
+    const template = templates.find((item) => item.type === "tx")!.id;
+    await projectData(port, GONE, session, "POST", "/api/tx", {
+      subscriber_email: waiting,
+      template_id: template,
+      async: true,
+    });
+    await untilState(
+      async () => {
+        clock.advance(100);
+        const page = await projectData<{ results: Array<{ status: string }> }>(
+          port,
+          GONE,
+          session,
+          "GET",
+          "/api/sends?per_page=10",
+        );
+        return page.results.some((row) => row.status === "sending");
+      },
+      { label: "gone's send waiting for the connection", progress: () => "" },
+    );
+    // The delete ends it not-started at the close deadline: its row is handed back.
+    let answered = false;
+    const deleted = deleteGone(port, operator).then((answer) => {
+      answered = true;
+      return answer;
+    });
+    await untilState(
+      () => {
+        clock.advance(250);
+        return answered;
+      },
+      { label: "the delete", progress: () => clock.now().toISOString() },
+    );
+    const answer = await deleted;
+    expect(answer.status).toBe(200);
+    const { database } = asBody<{ data: { database: string } }>(JSON.parse(answer.text)).data;
+    expect(snapshotSends(fixture.dataDir, database)).toEqual([
+      { kind: "transactional", status: "queued", to_email: waiting },
+    ]);
+    // The connection frees: stay's message is accepted, and gone's released push never starts on it.
+    sink.release();
+    await untilState(
+      () => {
+        clock.advance(1000);
+        return sink.messages.some((message) => message.to.includes(stuck));
+      },
+      { label: "stay's send accepted", progress: () => String(sink.messages.length) },
+    );
+    for (let i = 0; i < 20; i++) {
+      clock.advance(1000);
+      await Bun.sleep(5);
+    }
+    expect(sink.messages.filter((message) => message.to.includes(waiting))).toHaveLength(0);
   } finally {
     await fixture.close();
     await sink.close();

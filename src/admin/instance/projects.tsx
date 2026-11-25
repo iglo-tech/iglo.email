@@ -9,10 +9,14 @@ import type { NewProject, ProjectChange, ProjectRecord } from "@/projects/regist
 export const PROJECTS_PATH = "/admin/instance/projects";
 export const LOGS_PATH = "/admin/instance/logs";
 
-/** One served project, its root URL and its activity counts. */
+/**
+ * One project, its root URL and its activity counts. A delete that stopped part way (B149a, D164)
+ * has no counts and names the step that failed; it is not served until a new delete finishes it.
+ */
 export interface ProjectSummary extends ProjectRecord {
   readonly rootUrl: string;
-  readonly activity: ProjectActivity;
+  readonly activity: ProjectActivity | null;
+  readonly deleteError: string | null;
 }
 
 /** The instance's lifecycle and read functions the pages and JSON routes use. */
@@ -40,14 +44,18 @@ export function projectJson(project: ProjectRecord) {
   };
 }
 
-/** A served project as the list answers it: the record, its root URL and its counts. */
+/**
+ * A project as the list answers it: the record, its root URL and its counts; a stopped delete has
+ * null counts and `delete_error`.
+ */
 export function summaryJson(project: ProjectSummary) {
   return {
     ...projectJson(project),
     root_url: project.rootUrl,
-    queued_marketing: project.activity.queuedMarketing,
-    running_campaigns: project.activity.runningCampaigns,
-    sent_24h: project.activity.sent,
+    queued_marketing: project.activity?.queuedMarketing ?? null,
+    running_campaigns: project.activity?.runningCampaigns ?? null,
+    sent_24h: project.activity?.sent ?? null,
+    delete_error: project.deleteError,
   };
 }
 
@@ -120,12 +128,16 @@ export function ProjectsBody(props: {
               {props.projects.map((project) => (
                 <tr data-testid="project-row" data-slug={project.slug}>
                   <td>
-                    <a
-                      href={`/admin/instance/open/${encodeURIComponent(project.slug)}?next=%2Fadmin`}
-                      data-testid="project-open"
-                    >
-                      {project.name}
-                    </a>{" "}
+                    {project.deleteError === null ? (
+                      <a
+                        href={`/admin/instance/open/${encodeURIComponent(project.slug)}?next=%2Fadmin`}
+                        data-testid="project-open"
+                      >
+                        {project.name}
+                      </a>
+                    ) : (
+                      project.name
+                    )}{" "}
                     {project.primary ? (
                       <span class="badge" data-testid="project-primary">
                         Primary
@@ -133,6 +145,12 @@ export function ProjectsBody(props: {
                     ) : null}
                     <br />
                     <small class="text-light">{project.slug}</small>
+                    {project.deleteError === null ? null : (
+                      <p role="alert" data-variant="danger" data-testid="project-delete-failed">
+                        Not served: its delete stopped at {project.deleteError}. Delete it again to
+                        finish.
+                      </p>
+                    )}
                   </td>
                   <td>
                     <code>{project.hostname}</code>
@@ -146,25 +164,27 @@ export function ProjectsBody(props: {
                     ))}
                   </td>
                   <td class="align-right" data-testid="project-queued">
-                    {String(project.activity.queuedMarketing)}
+                    {project.activity ? String(project.activity.queuedMarketing) : "–"}
                   </td>
                   <td class="align-right" data-testid="project-running">
-                    {String(project.activity.runningCampaigns)}
+                    {project.activity ? String(project.activity.runningCampaigns) : "–"}
                   </td>
                   <td class="align-right" data-testid="project-sent">
-                    {String(project.activity.sent)}
+                    {project.activity ? String(project.activity.sent) : "–"}
                   </td>
                   <td class="align-right">
                     <div class="hstack gap-1 justify-end">
-                      <button
-                        type="button"
-                        class="small outline"
-                        data-testid="project-edit"
-                        data-slug={project.slug}
-                        x-on:click="openEdit"
-                      >
-                        Edit
-                      </button>
+                      {project.deleteError === null ? (
+                        <button
+                          type="button"
+                          class="small outline"
+                          data-testid="project-edit"
+                          data-slug={project.slug}
+                          x-on:click="openEdit"
+                        >
+                          Edit
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         class="small"

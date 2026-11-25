@@ -9,7 +9,10 @@ export interface ProjectActivity {
   readonly queuedMarketing: number;
   /** Campaigns with the status `running`. */
   readonly runningCampaigns: number;
-  /** Sends and campaign messages delivered at or after `since`. */
+  /**
+   * Sends started (and since delivered) and campaign messages delivered at or after `since`. A send
+   * counts from its last attempt, as the capacity forecast counts it.
+   */
   readonly sent: number;
 }
 
@@ -22,9 +25,12 @@ export function createProjectActivity(db: Database) {
   const running = db.query<{ total: bigint }, []>(
     "SELECT count(*) AS total FROM campaigns WHERE status = 'running'",
   );
-  // A send belongs to the moment it was delivered (idx_sends_status_id narrows to sent rows).
+  // A sent row counts from its start, its last attempt (`sent_at` for a row without one), as the
+  // capacity forecast counts it against SES's 24-hour quota (D162). The condition is the start-time
+  // index's own expression, so SQLite reads only the window's entries of idx_sends_started, not
+  // every sent row in history (B149a, D164; docs/perf/projects-B149a.md).
   const sends = db.query<{ total: bigint }, [string]>(
-    "SELECT count(*) AS total FROM sends WHERE status = 'sent' AND sent_at >= ?1",
+    "SELECT count(*) AS total FROM sends WHERE status = 'sent' AND coalesce(attempted_at, sent_at) >= ?1",
   );
   // A campaign whose message was delivered since then was updated since then (its sent count), so
   // the deliveries are read by campaign through their primary key, not by a scan of every delivery.

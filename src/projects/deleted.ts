@@ -1,10 +1,11 @@
 // A deleted project's final snapshot (14-projects sections 1 and 10; B143a, D157). Native: listmonk
 // has no projects. The project is already stopped and its database closed: the database file moves
-// to `backups/deleted/<slug>-<timestamp>.db`, every other file of the directory (its uploads) goes
-// into `<slug>-<timestamp>.tar` beside it, and then the directory is removed.
+// to `backups/deleted/<slug>-<timestamp>.db` (with `-2`, `-3`… when that name is taken; never
+// replaced), every other file of the directory (its uploads) goes into `<slug>-<timestamp>.tar`
+// beside it, and then the directory is removed.
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, rename, rm, unlink } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Clock } from "@/clock";
 import { PROJECT_DATABASE, projectDirectory } from "@/projects/layout";
@@ -42,9 +43,7 @@ export async function archiveDeleted(
   const directory = projectDirectory(dataDir, slug);
   const target = deletedDirectory(dataDir);
   await mkdir(target, { recursive: true });
-  const name = `${slug}-${clock.now().toISOString().replaceAll(":", "-")}`;
   const source = join(directory, PROJECT_DATABASE);
-  const database = join(target, `${name}.db`);
   if (existsSync(source)) {
     const db = new Database(source, { strict: true });
     try {
@@ -59,13 +58,61 @@ export async function archiveDeleted(
       db.close(true);
     }
   }
-  await rename(source, database);
-  const files = await tarFiles(directory, join(target, `${name}.tar`));
+  const { name, database } = await claimName(
+    source,
+    target,
+    `${slug}-${clock.now().toISOString().replaceAll(":", "-")}`,
+  );
+  const tarball = join(target, `${name}.tar`);
+  let files: string | null;
+  try {
+    files = await tarFiles(directory, tarball);
+  } catch (error) {
+    // The project's directory is whole again, so a new delete archives it from the start.
+    await rm(tarball, { force: true });
+    await rename(database, source);
+    throw error;
+  }
   await rm(directory, { recursive: true, force: true });
   return {
     database: relative(dataDir, database),
     files: files ? relative(dataDir, files) : null,
   };
+}
+
+/**
+ * Moves the database to `<base>.db`, or `<base>-2.db`, `-3`… when an earlier snapshot has that name
+ * (two deletes of one slug in the same millisecond, or a clock set back; B149a, D164). A hard link
+ * is made first and fails on a taken name, where `rename` would replace it, and the source is
+ * unlinked after. A name whose `.tar` exists is skipped too, so the pair is always one delete's.
+ */
+async function claimName(
+  source: string,
+  target: string,
+  base: string,
+): Promise<{ name: string; database: string }> {
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? base : `${base}-${n}`;
+    const database = join(target, `${name}.db`);
+    if (existsSync(join(target, `${name}.tar`))) {
+      continue;
+    }
+    try {
+      await link(source, database);
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "EEXIST"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+    await unlink(source);
+    return { name, database };
+  }
 }
 
 /** Every regular file and directory under `directory` except the database and staging. */
