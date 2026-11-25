@@ -45,6 +45,7 @@ const keys = [
   "sequences.rescheduleDone",
   "sequences.step",
   "sequences.subscriberNotFound",
+  "sequences.triggerCondition",
   "sequences.triggerWhere",
 ];
 
@@ -420,6 +421,14 @@ function sequenceView(isNew: boolean): AdminView {
                         </label>
                       </div>
                     </div>
+                    <label data-field="">
+                      {t.T("sequences.source")}
+                      <select name="source" x-model="form.source" data-testid="sequence-source">
+                        <option value="events">{t.T("sequences.source.events")}</option>
+                        <option value="external">{t.T("sequences.source.external")}</option>
+                      </select>
+                      <small data-hint="">{t.T("sequences.sourceHelp")}</small>
+                    </label>
                     <div data-field="">
                       <label>{t.T("sequences.triggerWhere")}</label>
                       <template x-if="ready">
@@ -432,6 +441,19 @@ function sequenceView(isNew: boolean): AdminView {
                         ></code-editor>
                       </template>
                       <small data-hint="">{t.T("sequences.triggerWhereHelp")}</small>
+                    </div>
+                    <div data-field="" x-show="form.source === 'external'" style="display: none">
+                      <label>{t.T("sequences.triggerCondition")}</label>
+                      <template x-if="ready">
+                        <code-editor
+                          lang="json"
+                          data-testid="trigger-condition"
+                          x-init="setValue($el, form.condition)"
+                          x-on:input="form.condition = $el.value"
+                          {...(canManage ? {} : { disabled: true })}
+                        ></code-editor>
+                      </template>
+                      <small data-hint="">{t.T("sequences.triggerConditionHelp")}</small>
                     </div>
                     <div class="row">
                       <div class="col-6">

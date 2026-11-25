@@ -80,6 +80,11 @@ export function exitText(reason, at = null, condition = null) {
       ? i18n.ts('sequences.exit.eventAt', { name, at: u.niceDate(at, true) })
       : i18n.ts('sequences.exit.event', { name });
   }
+  // An external sequence's endings (D172): the source failed for 72 hours or refused, or the trigger
+  // record is gone.
+  if (reason === 'source_error' || reason === 'trigger_missing') {
+    return i18n.t(`sequences.exit.${reason}`);
+  }
   return reason;
 }
 

@@ -98,6 +98,19 @@ test("a filter in the URL arrives escaped", async () => {
   expect((await get(f, "/admin/sequences/enrollments/x", cookie)).status).toBe(400);
 });
 
+test("the editor chooses the activity source and offers a history condition for an external one (D172)", async () => {
+  const html = await (await get(f, "/admin/sequences/new", cookie)).text();
+  expect(html).toContain('data-testid="sequence-source"');
+  expect(html).toContain("Pushed events (/api/events)");
+  expect(html).toContain("The project&#39;s source");
+  expect(html).toContain('data-testid="trigger-condition"');
+  expect(html).toContain("counts include the trigger");
+  // The enrollment filter offers an external sequence's endings.
+  const list = await (await get(f, "/admin/sequences/enrollments", cookie)).text();
+  expect(list).toContain('<option value="source_error">');
+  expect(list).toContain('<option value="trigger_missing">');
+});
+
 test("the step editor offers aggregates beside the condition, for those who may save", async () => {
   const manager = await userWith(f, cookie, "b85-manager", ["sequences:get", "sequences:manage"]);
   for (const user of [cookie, manager]) {

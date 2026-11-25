@@ -103,7 +103,7 @@ function sequenceForm() {
     error: '',
     saved: { id: null, name: '', status: 'draft', active_enrollments: 0 },
     form: {
-      name: '', event: '', where: '', exitOn: '', reentry: 'never', list_id: null,
+      name: '', source: 'events', event: '', where: '', condition: '', exitOn: '', reentry: 'never', list_id: null,
     },
     steps: [],
     // Bumped to rebuild the cards: a moved editor element would lose its document.
@@ -149,6 +149,8 @@ function sequenceForm() {
         name: s.name,
         event: s.trigger.event,
         where: s.trigger.where ? JSON.stringify(s.trigger.where, null, 2) : '',
+        source: s.source || 'events',
+        condition: s.trigger.condition ? JSON.stringify(s.trigger.condition, null, 2) : '',
         exitOn: (s.exit_on || []).join('\n'),
         reentry: s.reentry,
         list_id: s.list_id,
@@ -227,7 +229,7 @@ function sequenceForm() {
             'Content-Type': 'application/json; charset=utf-8',
             'X-CSRF-Token': csrfToken(),
           },
-          body: JSON.stringify({ condition }),
+          body: JSON.stringify({ condition, source: this.form.source }),
         });
         const out = await resp.json();
         if (step.condition !== text) {
@@ -275,9 +277,17 @@ function sequenceForm() {
     // save never changes it.
     payload() {
       const where = parsed(this.form.where, i18n.t('sequences.triggerWhere'));
+      // A history condition belongs to an external sequence only (D172): another source drops it.
+      const external = this.form.source === 'external';
+      const condition = external ? parsed(this.form.condition, i18n.t('sequences.triggerCondition')) : null;
       return {
         name: this.form.name,
-        trigger: { event: this.form.event, ...(where === null ? {} : { where }) },
+        source: this.form.source,
+        trigger: {
+          event: this.form.event,
+          ...(where === null ? {} : { where }),
+          ...(condition === null ? {} : { condition }),
+        },
         exit_on: this.form.exitOn.split('\n').map((name) => name.trim()).filter(Boolean),
         reentry: this.form.reentry,
         list_id: this.form.list_id,
