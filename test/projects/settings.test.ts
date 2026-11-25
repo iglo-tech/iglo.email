@@ -317,6 +317,18 @@ test("the admin's SMTP change is the one every project sends through", async () 
 /** One instance key, written with the instance session. */
 const putInstance = (name: string, value: unknown) =>
   instanceCall(port, PRIMARY, operator, "PUT", `/api/instance/settings/${name}`, value);
+/** The SES secret as `instance.db` holds it, unmasked. */
+const storedSecret = (): unknown => {
+  const instanceDb = new Database(join(dataDir, "instance.db"), { readonly: true });
+  try {
+    const row = asBody<{ value: string } | null>(
+      instanceDb.query("SELECT value FROM settings WHERE key = 'ses.api_secret_access_key'").get(),
+    );
+    return JSON.parse(row?.value ?? "null");
+  } finally {
+    instanceDb.close();
+  }
+};
 
 test("the SES API keys are checked, stored and masked, and the secret round-trips", async () => {
   const full = async (change: Record<string, unknown>) =>
@@ -374,20 +386,46 @@ test("the SES API keys are checked, stored and masked, and the secret round-trip
     await instanceSettings(),
   );
   expect({ status: roundTrip.status, body: await roundTrip.text() }).toMatchObject({ status: 200 });
-  const instanceDb = new Database(join(dataDir, "instance.db"), { readonly: true });
-  try {
-    const row = asBody<{ value: string } | null>(
-      instanceDb.query("SELECT value FROM settings WHERE key = 'ses.api_secret_access_key'").get(),
-    );
-    expect(JSON.parse(row?.value ?? "null")).toBe(secret);
-  } finally {
-    instanceDb.close();
+  expect(storedSecret()).toBe(secret);
+  // Only a value made entirely of the mask means "keep": a secret that mixes it with other
+  // characters is a new value, refused by the format check, and the stored secret stays (B149d).
+  for (const mixed of ["••••newSecretValue1234567890", " •••• ", `${secret}•`]) {
+    const refused = await full({ "ses.api_secret_access_key": mixed });
+    expect({ mixed, status: refused.status }).toEqual({ mixed, status: 400 });
+    expect(await refused.text()).toContain("ses.api_secret_access_key");
+    expect(storedSecret()).toBe(secret);
   }
   // A save with the secret blank keeps it; the page sends a masked one back blank.
   expect((await full({ "ses.api_secret_access_key": "" })).status).toBe(200);
   expect((await putInstance("ses.api_region", "us-east-2")).status).toBe(200);
   expect((await instanceSettings())["ses.api_secret_access_key"]).toBe("•".repeat(secret.length));
-  // An empty key ID clears the secret with it.
+  // Clearing the key ID alone clears the account: the secret and the stored region with it
+  // (B149d, D167). A save that clears the key while it sets another region is still refused.
+  const changedRegion = await full({
+    "ses.api_region": "eu-central-1",
+    "ses.api_access_key_id": "",
+  });
+  expect(changedRegion.status).toBe(400);
+  expect(await changedRegion.text()).toContain("together");
+  expect((await instanceSettings())["ses.api_region"]).toBe("us-east-2");
+  expect((await putInstance("ses.api_access_key_id", "")).status).toBe(200);
+  const cleared = await instanceSettings();
+  expect([
+    cleared["ses.api_region"],
+    cleared["ses.api_access_key_id"],
+    cleared["ses.api_secret_access_key"],
+  ]).toEqual(["", "", ""]);
+  expect(storedSecret()).toBe("");
+  // So does a full save that blanks all three.
+  expect(
+    (
+      await full({
+        "ses.api_region": "eu-west-1",
+        "ses.api_access_key_id": "AKIAABCDEFGHIJKLMNOP",
+        "ses.api_secret_access_key": secret,
+      })
+    ).status,
+  ).toBe(200);
   expect(
     (
       await full({

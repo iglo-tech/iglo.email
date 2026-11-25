@@ -166,12 +166,13 @@ function component() {
       }
       const until = new Date(f.window_end).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
       const n = (v) => Number(v).toLocaleString();
+      // B149d (D167): the lines are language-pack keys, as every other string on this page.
       if (f.quota === null) {
-        return `Fits: ${n(f.demand)} in the 24 h up to ${until}; the SES account has no daily limit`;
+        return i18n.ts('campaigns.capacityNoLimit', { demand: n(f.demand), until });
       }
       return f.fits
-        ? `Fits: ${n(f.demand)} of ${n(f.quota)} in the 24 h up to ${until}`
-        : `Over the quota by ${n(f.demand - f.quota)} in the 24 h up to ${until}`;
+        ? i18n.ts('campaigns.capacityFits', { demand: n(f.demand), quota: n(f.quota), until })
+        : i18n.ts('campaigns.capacityOver', { over: n(f.demand - f.quota), until });
     },
 
     async _load() {
@@ -525,7 +526,7 @@ function component() {
       let msg = status === 'scheduled' ? i18n.t('campaigns.confirmSchedule') : null;
       // Over the SES quota (B145a): the user confirms; nothing is refused.
       if ((status === 'scheduled' || status === 'running') && this.capacityOver) {
-        msg = `${this.capacityLine}. ${msg ?? 'Start anyway?'}`;
+        msg = `${this.capacityLine}. ${msg ?? i18n.t('campaigns.capacityStartAnyway')}`;
       }
       if (!(await u.confirm(msg))) {
         this.changing = false;
