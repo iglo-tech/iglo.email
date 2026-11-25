@@ -1,9 +1,12 @@
 // Campaign runner adapted from listmonk internal/manager/manager.go (Run, scanCampaigns,
 // worker), internal/manager/pipe.go (NextSubscribers, OnError, cleanup) and
-// internal/manager/message.go at 6fcd95f, on the M0.4 loop helper. One batch is in flight
-// at a time. Its cursor and per-subscriber claims commit before any of it is sent, so a
-// crash can skip at most that batch and never sends a subscriber the campaign twice
-// (docs/design/04-sending.md#campaigns).
+// internal/manager/message.go at 6fcd95f, on the M0.4 loop helper. One batch per project is in
+// flight at a time. A batch is reserved before it is claimed (B141, 14-projects section 7): the
+// runner asks the dispatcher for slots, claims at most that many recipients, and its cursor and
+// per-subscriber claims commit before any of it is sent, so a crash can skip at most the granted
+// batch and never sends a subscriber the campaign twice (docs/design/04-sending.md#campaigns).
+// listmonk's per-campaign pacing (app.concurrency, app.message_rate, the sliding window) is gone:
+// the dispatcher paces every send.
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
@@ -15,11 +18,10 @@ import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
+import type { Grant, Sender } from "@/messaging/dispatcher";
 import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
-import type { SendPriority } from "@/messaging/rate";
 import type { BrandSite } from "@/public/brand";
-import { goDuration } from "@/settings/duration";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
@@ -29,15 +31,7 @@ import type { CampaignStore } from "@/campaigns/store";
 import type { DeliveryStatus, RunnableCampaign, RunnerStore } from "@/campaigns/runner/store";
 
 export interface RunnerSettings {
-  batchSize: number;
-  concurrency: number;
-  /** Messages per second per worker (app.message_rate). */
-  messageRate: number;
   maxSendErrors: number;
-  slidingWindow: boolean;
-  /** Go duration (app.message_sliding_window_duration). */
-  slidingWindowDuration: string;
-  slidingWindowRate: number;
   rootUrl: string;
   /** The site's brand, which a campaign template reads (B129, D127). */
   brand: BrandSite;
@@ -62,13 +56,8 @@ export interface RunnerDeps {
   };
   renderer: TemplateRenderer;
   tracking: Pick<Tracking, "link" | "get">;
-  emailer: {
-    push(
-      message: Message,
-      delivery?: { copies?: boolean; priority?: SendPriority },
-    ): { result: Promise<Outcome> };
-    readonly closed: boolean;
-  };
+  /** This project's side of the instance dispatcher: grants, and pushes in their slots. */
+  sender: Pick<Sender, "push" | "request" | "closed">;
   settings: () => RunnerSettings;
   /** Reads a campaign's files, so never inside the claim transaction. */
   attachments(ids: Array<bigint>, inline: Array<InlineImage>): Promise<Attachments>;
@@ -103,11 +92,17 @@ interface Batch {
   recipients: Array<CampaignRecipient>;
 }
 /**
- * Why a batch stopped early. "emailer": the emailer closed under the batch, so nothing more of it
+ * Why a batch stopped early. "emailer": the sender closed under the batch, so nothing more of it
  * is pushed and the unsent recipients are handed back.
  */
 type Stop = "status" | "errors" | "shutdown" | "emailer";
 
+/**
+ * The most recipients one batch asks slots for and claims (14-projects section 4). The grant caps
+ * it further: at most the slots this project gets within the 2 s horizon. Chosen by measurement
+ * (D155, docs/perf/projects-B141.md).
+ */
+export const MAX_CLAIM = 100;
 const scanInterval = 5000;
 const defaultLease = 30_000;
 /** Bound on the per-batch tracked link cache: personalized URLs are distinct per recipient. */
@@ -124,10 +119,9 @@ const SKIP_REASON = {
   membership_changed: "membership_changed",
 } as const;
 
-/** In-process owners of live campaign pipes, and of the one batch sent at a time. */
+/** In-process owners of live campaign pipes. */
 export function createCampaignRunnerRegistry() {
   const owners = new Map<bigint, string>();
-  let sending: string | null = null;
   return {
     /** Takes the campaign for `token`; false while another runner's pipe holds it. */
     take(id: bigint, token: string): boolean {
@@ -141,19 +135,6 @@ export function createCampaignRunnerRegistry() {
     drop(id: bigint, token: string): void {
       if (owners.get(id) === token) {
         owners.delete(id);
-      }
-    },
-    /** The batch slot: one batch, and so at most `concurrency` messages, at a time. */
-    begin(token: string): boolean {
-      if (sending !== null && sending !== token) {
-        return false;
-      }
-      sending = token;
-      return true;
-    },
-    end(token: string): void {
-      if (sending === token) {
-        sending = null;
       }
     },
   };
@@ -180,12 +161,6 @@ export function createCampaignRunner(deps: RunnerDeps) {
   const retryAt = new Map<bigint, number>();
   let rotation = 0;
   const stopping = new AbortController();
-  // Worker pacing and the sliding window are shared by all campaigns (Manager). Each worker
-  // keeps the times of its last `app.message_rate` messages (D59).
-  const workerTimes: Array<Array<number>> = [];
-  let slidingStart = clock.now().getTime();
-  let slidingCount = 0;
-  let slidingUntil = 0;
 
   const log = (safe: SafeMessage, message: string) => deps.logger.attention(message, safe);
 
@@ -377,8 +352,11 @@ export function createCampaignRunner(deps: RunnerDeps) {
     });
   }
 
-  /** NextSubscribers: claims the next batch and commits its cursor, or ends the pipe. */
-  function next(pipe: Pipe, now: number, settings: RunnerSettings): Batch | null {
+  /**
+   * NextSubscribers: claims the next batch of at most `limit` (the granted slots) and commits its
+   * cursor, or ends the pipe. The cursor advances only over the recipients read for the grant.
+   */
+  function next(pipe: Pipe, now: number, limit: number): Batch | null {
     const id = pipe.campaign.id;
     const state = store.state(id);
     if (!state || state.runner_lease !== token) {
@@ -391,12 +369,11 @@ export function createCampaignRunner(deps: RunnerDeps) {
       release(pipe);
       return null;
     }
-    const batchSize = settings.batchSize >= 1 ? Math.floor(settings.batchSize) : 1000;
     const found = deps.recipients.next(
       audience(pipe.campaign),
       state.last_subscriber_id,
       state.max_subscriber_id,
-      batchSize,
+      limit,
     );
     if (!found.length) {
       // Subscribers are exhausted: the campaign is finished.
@@ -425,44 +402,41 @@ export function createCampaignRunner(deps: RunnerDeps) {
     return { pipe, recipients };
   }
 
-  function claim(nowDate: Date): Array<Batch> {
-    // Held (D67) or closed: nothing is claimed, so no batch is handed back and claimed again.
-    if (sendingHeld(db) || deps.emailer.closed) {
+  /** Held (D67) or closed: nothing is opened or claimed, so no batch is handed back and claimed again. */
+  const idle = () => sendingHeld(db) || deps.sender.closed;
+  /**
+   * The loop's claim, inside its transaction: opens the due campaigns, and asks for a batch while a
+   * pipe is open. No recipient is claimed here: that waits for the grant.
+   */
+  function scan(nowDate: Date): Array<true> {
+    if (idle()) {
       return [];
     }
     const now = nowDate.getTime();
     const settings = deps.settings();
-    // Another runner in this process is sending a batch: wait for it.
-    if (!registry.begin(token)) {
-      return [];
-    }
-    try {
-      const batch = claimBatch(now, settings);
-      if (!batch.length) {
-        registry.end(token);
-      }
-      return batch;
-    } catch (error) {
-      registry.end(token);
-      throw error;
-    }
-  }
-  function claimBatch(now: number, settings: RunnerSettings): Array<Batch> {
     for (const id of store.due(iso(now))) {
       if (pipes.has(id) || (retryAt.get(id) ?? 0) > now) {
         continue;
       }
       open(id, now, settings);
     }
+    return pipes.size ? [true] : [];
+  }
+  /** Claims a batch of at most the granted slots from the next pipe in rotation. */
+  function claimBatch(limit: number): Batch | null {
+    if (idle()) {
+      return null;
+    }
+    const now = clock.now().getTime();
     while (pipes.size) {
       const all = [...pipes.values()];
       const pipe = must(all[rotation++ % all.length], "pipe");
-      const batch = next(pipe, now, settings);
+      const batch = next(pipe, now, limit);
       if (batch) {
-        return [batch];
+        return batch;
       }
     }
-    return [];
+    return null;
   }
 
   function renewAll() {
@@ -472,6 +446,29 @@ export function createCampaignRunner(deps: RunnerDeps) {
         store.renew(id, token, until);
       }
     });
+  }
+
+  /** Renews every pipe's lease a third of the way through it until the returned stop is awaited. */
+  function heartbeat(): () => Promise<void> {
+    const beat = new AbortController();
+    const beating = (async () => {
+      while (!beat.signal.aborted) {
+        try {
+          await clock.sleep(Math.max(1, Math.floor(leaseMs / 3)), beat.signal);
+        } catch {
+          return;
+        }
+        try {
+          renewAll();
+        } catch (error) {
+          deps.logger.error(error);
+        }
+      }
+    })();
+    return async () => {
+      beat.abort();
+      await beating;
+    };
   }
 
   async function sleep(ms: number) {
@@ -617,8 +614,11 @@ export function createCampaignRunner(deps: RunnerDeps) {
     return null;
   }
 
-  /** The campaign's message workers for one batch (Manager.worker and pipe flow). */
-  async function process(batch: Batch): Promise<void> {
+  /**
+   * The campaign's message workers for one batch (Manager.worker and pipe flow): one per recipient,
+   * each pushing in a slot of the batch's grant, so the dispatcher alone sets the pace.
+   */
+  async function process(batch: Batch, grant: Grant): Promise<void> {
     const { pipe, recipients } = batch;
     const c = pipe.campaign;
     const attachments = await attach(batch);
@@ -626,26 +626,28 @@ export function createCampaignRunner(deps: RunnerDeps) {
       return;
     }
     const settings = deps.settings();
-    const concurrency = settings.concurrency >= 1 ? Math.floor(settings.concurrency) : 1;
-    const rate = settings.messageRate >= 1 ? Math.floor(settings.messageRate) : 1;
-    const windowMs = goDuration(settings.slidingWindowDuration);
-    const sliding =
-      settings.slidingWindow &&
-      settings.slidingWindowRate > 0 &&
-      Number.isFinite(windowMs) &&
-      windowMs > 1000;
+    /** A recipient that will not be pushed returns its slot at once. */
+    const unused = () => grant.keep(grant.count - 1);
     pipe.links.clear();
     const outcomes = new Map<number, { status: DeliveryStatus; at: number; reason?: string }>();
     const pushed = new Set<number>();
     let stop: Stop | null = null;
     let sent = 0;
     let index = 0;
+    /**
+     * Ends the batch: nothing more of it is pushed, and its pushes still waiting for their slots
+     * end not-started, so their recipients return to the cursor with the rest.
+     */
+    const halt = (reason: Stop) => {
+      stop ??= reason;
+      grant.release();
+    };
     const stopped = (): boolean => {
       if (stop) {
         return true;
       }
       if (stopping.signal.aborted) {
-        stop = "shutdown";
+        halt("shutdown");
       } else {
         const state = store.state(c.id);
         if (
@@ -654,27 +656,13 @@ export function createCampaignRunner(deps: RunnerDeps) {
           state.runner_lease !== token ||
           state.runner_generation !== c.runner_generation
         ) {
-          stop = "status";
+          halt("status");
         }
       }
       return stop !== null;
     };
-    const heartbeat = new AbortController();
-    const beating = (async () => {
-      while (!heartbeat.signal.aborted) {
-        try {
-          await clock.sleep(Math.max(1, Math.floor(leaseMs / 3)), heartbeat.signal);
-        } catch {
-          return;
-        }
-        try {
-          renewAll();
-        } catch (error) {
-          deps.logger.error(error);
-        }
-      }
-    })();
-    const worker = async (w: number) => {
+    const stopBeating = heartbeat();
+    const worker = async () => {
       while (!stopped()) {
         const i = index++;
         if (i >= recipients.length) {
@@ -691,23 +679,8 @@ export function createCampaignRunner(deps: RunnerDeps) {
             `error rendering message (${c.name}) (${sub.email}): ${errorText(error)}`,
           );
           outcomes.set(i, { status: "failed", at: clock.now().getTime() });
+          unused();
           continue;
-        }
-        // Pause on hitting the message rate, only until the one-second window that began
-        // with the oldest of the worker's last `rate` messages ends (D59; listmonk sleeps a
-        // full second). No one-second window then holds more than `rate` of its messages.
-        const times = (workerTimes[w] ??= []);
-        if (times.length >= rate) {
-          const until = must(times[times.length - rate], "rate window") + 1000;
-          while (clock.now().getTime() < until && !stopping.signal.aborted) {
-            await sleep(until - clock.now().getTime());
-          }
-          times.splice(0, times.length - rate + 1);
-        }
-        const slot = times.push(clock.now().getTime()) - 1;
-        // The sliding window holds every worker until the window is over.
-        while (slidingUntil > clock.now().getTime() && !stopping.signal.aborted) {
-          await sleep(slidingUntil - clock.now().getTime());
         }
         if (stopped()) {
           return;
@@ -730,27 +703,14 @@ export function createCampaignRunner(deps: RunnerDeps) {
             at: clock.now().getTime(),
             reason: SKIP_REASON[current],
           });
+          unused();
           continue;
         }
         pushed.add(i);
-        // The pace counts from the push, after any sliding-window hold.
-        times[slot] = clock.now().getTime();
-        const dispatch = deps.emailer.push(message, { copies: false, priority: "campaign" });
-        if (sliding) {
-          const nowMs = clock.now().getTime();
-          if (nowMs - slidingStart >= windowMs) {
-            slidingStart = nowMs;
-            slidingCount = 0;
-          }
-          slidingCount++;
-          if (slidingCount >= settings.slidingWindowRate) {
-            slidingCount = 0;
-            slidingUntil = slidingStart + windowMs;
-          }
-        }
+        // The message starts in its granted slot; it waits for no other token (no double pacing).
         let outcome: Outcome;
         try {
-          outcome = await dispatch.result;
+          outcome = await deps.sender.push(message, { copies: false, grant }).result;
         } catch {
           outcome = {
             messageId: "",
@@ -761,10 +721,10 @@ export function createCampaignRunner(deps: RunnerDeps) {
           };
         }
         if (outcome.stage === "not-started") {
-          // The message never reached the emailer's pools: it is not failed, and no later
-          // recipient of this batch is pushed into the same closed emailer.
+          // The message never reached a pool (the batch halted, or the sender closed): it is not
+          // failed, and no later recipient of this batch is pushed.
           pushed.delete(i);
-          stop ??= "emailer";
+          halt("emailer");
           return;
         }
         const at = clock.now().getTime();
@@ -784,7 +744,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
         );
         // OnError: pause the campaign when the error threshold is met.
         if (settings.maxSendErrors >= 1 && ++pipe.errors >= settings.maxSendErrors && !stop) {
-          stop = "errors";
+          halt("errors");
           log(
             "error count limit reached: campaign paused",
             `error count exceeded ${settings.maxSendErrors}. pausing campaign ${c.name}`,
@@ -795,13 +755,10 @@ export function createCampaignRunner(deps: RunnerDeps) {
     let failure: PromiseRejectedResult | undefined;
     try {
       // Every worker settles before the pipe can end: none leaves a push outstanding.
-      const settled = await Promise.allSettled(
-        Array.from({ length: Math.min(concurrency, recipients.length) }, (_, w) => worker(w)),
-      );
+      const settled = await Promise.allSettled(Array.from(recipients, () => worker()));
       failure = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
     } finally {
-      heartbeat.abort();
-      await beating;
+      await stopBeating();
       pipe.links.clear();
     }
     if (failure) {
@@ -859,7 +816,54 @@ export function createCampaignRunner(deps: RunnerDeps) {
     }
   }
 
-  const loop = createLoop<Batch>({
+  /** One batch: ask for slots (no transaction open), claim at most that many, send in them. */
+  async function batch(): Promise<void> {
+    let grant: Grant;
+    // A wait for slots can be long (a backlog of marketing work, or B145's guard): the campaigns
+    // stay running with their leases renewed, and their cursors do not move.
+    const stopBeating = heartbeat();
+    try {
+      grant = await deps.sender.request("campaign", MAX_CLAIM, stopping.signal);
+    } catch {
+      return;
+    } finally {
+      await stopBeating();
+    }
+    let claimed: Batch | null = null;
+    try {
+      claimed = writeTransaction(db, () => claimBatch(grant.count));
+      if (!claimed) {
+        return;
+      }
+      grant.keep(claimed.recipients.length);
+      await process(claimed, grant);
+    } catch (error) {
+      if (!claimed) {
+        throw error;
+      }
+      // The batch is skipped, never resent. Its workers have drained, so its claims are marked
+      // unknown now instead of holding the cap until the campaign reopens.
+      const { pipe } = claimed;
+      deps.logger.error(error);
+      drop(pipe.campaign.id);
+      try {
+        writeTransaction(db, () =>
+          abandonClaims(pipe.campaign.id, clock.now().getTime(), label(pipe.campaign)),
+        );
+      } catch {
+        /* Recovered at the next pickup or startup. */
+      }
+      try {
+        store.release(pipe.campaign.id, token);
+      } catch {
+        /* The lease expires. */
+      }
+    } finally {
+      grant.release();
+    }
+  }
+
+  const loop = createLoop<true>({
     db,
     clock,
     logger: deps.logger,
@@ -867,35 +871,8 @@ export function createCampaignRunner(deps: RunnerDeps) {
     leaseMs,
     batchSize: 1,
     signal: stopping.signal,
-    claim: (now) => claim(now),
-    async process(batch) {
-      try {
-        await process(batch);
-      } catch (error) {
-        // The batch is skipped, never resent. Its workers have drained, so its claims are marked
-        // unknown now instead of holding the cap until the campaign reopens.
-        deps.logger.error(error);
-        drop(batch.pipe.campaign.id);
-        try {
-          writeTransaction(db, () =>
-            abandonClaims(
-              batch.pipe.campaign.id,
-              clock.now().getTime(),
-              label(batch.pipe.campaign),
-            ),
-          );
-        } catch {
-          /* Recovered at the next pickup or startup. */
-        }
-        try {
-          store.release(batch.pipe.campaign.id, token);
-        } catch {
-          /* The lease expires. */
-        }
-      } finally {
-        registry.end(token);
-      }
-    },
+    claim: (now) => scan(now),
+    process: () => batch(),
   });
 
   return {
@@ -914,7 +891,6 @@ export function createCampaignRunner(deps: RunnerDeps) {
         await loop.done;
       } finally {
         flushNotifications();
-        registry.end(token);
         if (pipes.size) {
           writeTransaction(db, () => {
             for (const pipe of pipes.values()) {

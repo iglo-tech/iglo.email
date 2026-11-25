@@ -27,7 +27,7 @@ import {
 } from "@/test/settings/instance-fixture";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { sessionDuration } from "@/settings/duration";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { createSMTPTest } from "@/messaging/test";
 import { createRenderer } from "@/templates/renderer";
 import { registerAdminRoutes } from "@/admin/routes";
@@ -113,7 +113,7 @@ export async function startUserFixture(
       header: settings.read()["appearance.brand.header"],
     }));
     const emailer = smtp
-      ? createEmailer({
+      ? fixtureEmailer({
           clock,
           settings: () => ({
             smtp: settings.read().smtp,

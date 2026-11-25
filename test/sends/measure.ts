@@ -11,7 +11,7 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { createListReferences } from "@/lists/references";
 import { createSubscriberStore } from "@/subscribers/store";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { Message } from "@/messaging/email";
 import { createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
@@ -20,7 +20,7 @@ import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { asBody } from "@/test/read-body";
 
 const controlPath = resolve("node_modules/.cache/m22-control/src/messaging/email.ts");
-const control = asBody<{ createEmailer: typeof createEmailer }>(await import(controlPath));
+const control = asBody<{ createEmailer: typeof fixtureEmailer }>(await import(controlPath));
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const marker = `m08${sink.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
@@ -83,7 +83,7 @@ const smtp = [
 ];
 const settings = () => ({ smtp, rootUrl: "https://example.test" });
 const direct = control.createEmailer({ clock, settings });
-const mailer = createEmailer({ clock, settings });
+const mailer = fixtureEmailer({ clock, settings });
 const sends = createSends({ db, clock, subscribers, rootUrl: () => "https://example.test" });
 const pending = new Map<string, (accepted: boolean) => void>();
 const tracked = {
@@ -109,7 +109,7 @@ try {
         clock,
         logger: { error: () => {}, attention: () => {} },
         sends: tracked,
-        emailer: mailer,
+        sender: mailer,
       });
     }
     for (let repetition = 0; repetition <= 3; repetition++) {

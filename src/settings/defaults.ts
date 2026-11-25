@@ -10,13 +10,7 @@ export const defaults = {
   // keeps its stored sender.
   "app.from_email": ["Newsletter <noreply@example.com>"],
   "app.logo_url": "",
-  "app.concurrency": 10,
-  "app.message_rate": 10,
-  "app.batch_size": 1000,
   "app.max_send_errors": 1000,
-  "app.message_sliding_window": false,
-  "app.message_sliding_window_duration": "1h",
-  "app.message_sliding_window_rate": 10_000,
   "app.cache_slow_queries": false,
   "app.cache_slow_queries_interval": "0 3 * * *",
   "app.enable_public_archive": true,

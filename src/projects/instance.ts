@@ -15,6 +15,9 @@ import { createAdminSync } from "@/projects/admin-sync";
 import { createInstanceBudgets } from "@/projects/budgets";
 import type { InstanceBudgets } from "@/projects/budgets";
 import { createProject } from "@/projects/compose";
+import { createDispatcher } from "@/messaging/dispatcher";
+import type { Dispatcher } from "@/messaging/dispatcher";
+import type { SMTPServer } from "@/messaging/email";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
 import {
   INSTANCE_DATABASE,
@@ -157,6 +160,9 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   let budgets: InstanceBudgets | undefined;
   let account: AdminAccountStore | undefined;
   let settings: InstanceSettingsStore | undefined;
+  /** The one dispatcher every project sends through (B141): its pools, rate and start schedule. */
+  let dispatcher: Dispatcher | undefined;
+  let unsubscribeRate: (() => void) | undefined;
   /** The SES account snapshot and the capacity forecast over every project (B145a). */
   let ses: SesAccount | undefined;
   let capacity: Capacity | undefined;
@@ -213,6 +219,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         clock,
         budgets: must(budgets, "budgets"),
         settings: must(settings, "instance settings").reader,
+        dispatcher: must(dispatcher, "dispatcher"),
         instanceRootUrl: config.rootUrl,
         listen: config.listen,
         admin: {
@@ -241,6 +248,10 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       await entry.project.close();
     }
     entries.length = 0;
+    // Last in the shutdown order (14-projects section 7): every project has stopped asking for
+    // slots and drained; the pools close. After stop() this is the same, already settled close.
+    unsubscribeRate?.();
+    await dispatcher?.close();
     registry?.close();
     account?.close();
     settings?.close();
@@ -250,6 +261,26 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   try {
     registry = createRegistry(db, clock);
     settings = createInstanceSettings(db, clock);
+    const instanceKeys = settings;
+    // The effective rate is messaging.max_send_rate until B145 adds SES's MaxSendRate (D155).
+    dispatcher = createDispatcher({
+      clock,
+      // Validated on save (src/settings/validate.ts): an array of servers and a whole number.
+      smtp: () => {
+        const servers: unknown = instanceKeys.read().smtp;
+        return Array.isArray(servers) ? servers.filter((s): s is SMTPServer => !!s) : [];
+      },
+      rate: () => {
+        const rate: unknown = instanceKeys.read()["messaging.max_send_rate"];
+        return typeof rate === "number" ? rate : 0;
+      },
+    });
+    const paced = dispatcher;
+    unsubscribeRate = settings.reader.subscribe((next, current) => {
+      if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
+        paced.wake();
+      }
+    });
     ses = createSesAccount({
       clock,
       settings: settings.reader,
@@ -451,9 +482,18 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         startProject(entry);
       }
     },
-    /** Every project's orderly stops, the last registered first. main() appends the HTTP stop. */
+    /**
+     * Every project's orderly stops, the last registered first, then the dispatcher's. main() appends
+     * the HTTP stop. The dispatcher stops in the same turn as the projects, not after they settle: a
+     * project's sender waits for its pushes in SMTP flight, and only the dispatcher's emailer bounds
+     * that drain (5 s, then it cancels the sockets), as each project's own emailer did before B141.
+     */
     stop(): Array<unknown> {
-      return [...entries.toReversed().flatMap((entry) => entry.project.stop()), sesAccount.stop()];
+      const stops = [
+        ...entries.toReversed().flatMap((entry) => entry.project.stop()),
+        sesAccount.stop(),
+      ];
+      return dispatcher ? [...stops, dispatcher.close()] : stops;
     },
     close: closeAll,
     /**

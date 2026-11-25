@@ -37,13 +37,13 @@ export async function runSettingsBinding(target: {
   const base = `<Settings><AppLang>en</AppLang><UploadProvider>filesystem</UploadProvider><AppFromEmail>a@example.invalid</AppFromEmail><SMTP><Enabled>true</Enabled><MaxConns>1</MaxConns><IdleTimeout>15s</IdleTimeout><WaitTimeout>5s</WaitTimeout></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration>`;
   const xml = (contents: string) => base + contents + "</Settings>";
   for (const [label, contents, expected] of [
-    ["empty-scalars", "<AppBatchSize/><EnablePublicArchive/>", 0],
-    ["nel-padding", "<AppBatchSize>\u0085 42 \u0085</AppBatchSize>", 42],
+    ["empty-scalars", "<AppMaxSendErrors/><EnablePublicArchive/>", 0],
+    ["nel-padding", "<AppMaxSendErrors>\u0085 42 \u0085</AppMaxSendErrors>", 42],
   ] as const) {
     check((await put(label, xml(contents), "application/xml")).status === 200, label);
     const result = await get();
     check(
-      result["app.batch_size"] === expected && result["app.enable_public_archive"] === false,
+      result["app.max_send_errors"] === expected && result["app.enable_public_archive"] === false,
       `${label}-projection`,
     );
   }
@@ -132,7 +132,7 @@ export async function runSettingsBinding(target: {
     "omitted-pointer-role",
   );
   for (const [label, body] of [
-    ["bom-scalar", xml("<AppBatchSize>\ufeff42\ufeff</AppBatchSize>")],
+    ["bom-scalar", xml("<AppMaxSendErrors>\ufeff42\ufeff</AppMaxSendErrors>")],
     ["unsupported-map", xml("<BounceActions><x><Count>1</Count></x></BounceActions>")],
     ["incomplete", xml("").slice(0, -8)],
     ["unknown-entity", xml("<AppSiteName>&bad;</AppSiteName>")],
@@ -214,7 +214,11 @@ export async function runSettingsBinding(target: {
     }
     check(JSON.stringify(value) === JSON.stringify(expected), `${label}-projection`);
   }
-  for (const members of ['"app.batch_size":1e999', '"app.batch_size":1.0', '"unknown":{"x":}']) {
+  for (const members of [
+    '"app.max_send_errors":1e999',
+    '"app.max_send_errors":1.0',
+    '"unknown":{"x":}',
+  ]) {
     const before = await get();
     check(
       (await put("bad-json-or-number", addMembers(members))).status === 400,

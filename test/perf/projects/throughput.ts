@@ -1,4 +1,4 @@
-// B138b measurement (docs/perf/projects-B138b.md; B139: projects-B139.md): outbox and campaign throughput of one project,
+// B138b measurement (docs/perf/projects-B138b.md; B139: projects-B139.md; B141: projects-B141.md): outbox and campaign throughput of one project,
 // against any compiled executable, through HTTP and a loopback SMTP sink only. The same script
 // measures both sides of a change, since it does not read the data directory.
 //
@@ -6,8 +6,9 @@
 //
 // Outbox: 2,000 async POST /api/tx, timed from the first request to the last message the sink
 // receives. Campaign: one campaign to N subscribers, timed from the start to the last message.
-// `messaging.max_send_rate` is 0 (no cap, D92) and the campaign pacing is raised out of the way,
-// so the numbers are the loops' own throughput. One JSON line per run goes to stdout.
+// `messaging.max_send_rate` is 0 (no cap, D92) and, on a build that still has them (before B141),
+// the campaign pacing keys are raised out of the way, so the numbers are the loops' own throughput.
+// One JSON line per run goes to stdout.
 import { mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { asBody } from "@/test/read-body";
@@ -92,7 +93,13 @@ try {
       user: "measure-admin",
       password: "measure-admin-password",
     });
-    await instance.update((current) => ({ ...current, ...changes }));
+    // B141 removed the campaign pacing keys: a build without them gets the rest.
+    await instance.update((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        Object.entries(changes).filter(([key]) => key === "smtp" || key in current),
+      ),
+    }));
   } else {
     const settings = await call<Record<string, unknown>>("GET", "/api/settings");
     await call("PUT", "/api/settings", { ...settings, ...changes });

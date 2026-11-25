@@ -22,9 +22,7 @@ import { createRouter } from "@/server/server";
 import { createAuthentication, defaultAuthPolicy } from "@/users/auth";
 import { bootstrapAdmin } from "@/users/bootstrap";
 import { createUserStore } from "@/users/store";
-import { createEmailer } from "@/messaging/email";
-import { createSendRateLimiter } from "@/messaging/rate";
-import type { SendRateLimiter } from "@/messaging/rate";
+import { fixtureEmailer, sinkMessage, sinkServer } from "@/test/messaging/sender";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { startOutbox } from "@/messaging/outbox";
 import { createTemplateStore } from "@/templates/store";
@@ -149,45 +147,35 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   // The sink stamps each receipt with the injected clock, and a send's SMTP hand-off takes real time.
   // So the clock moves only once every granted send has reached the sink. Otherwise a receipt is
   // stamped later than its grant by however far the wait moved the clock meanwhile, and a send that
-  // the test expects to wait behind a slot starts early. `grants` counts the grants of every limiter
-  // this harness makes; `cleared` counts the receipts `resetSink` has taken off the sink.
+  // the test expects to wait behind a slot starts early. `grants` counts the starts of every
+  // dispatcher this harness makes; `cleared` counts the receipts `resetSink` has taken off the sink.
   let grants = 0;
   let cleared = 0;
-  const countGrants = (inner: SendRateLimiter): SendRateLimiter => ({
-    acquire: (priority, signal) =>
-      inner.acquire(priority, signal).then(() => {
-        grants++;
-      }),
-    stop: () => inner.stop(),
-    wake: () => inner.wake(),
-  });
   // A granted send that never reaches the sink (it failed) stays in flight, so `moveClock` never steps the
   // clock again: the drive then stops with its state rather than moving on without the send.
   const inFlight = () => grants - cleared - sink.messages.length;
 
-  // Wiring matching src/main.ts: one settings listener for the process, which wakes whichever
-  // limiter is current (restart() replaces the limiter, not the listener).
-  let limiter = countGrants(
-    createSendRateLimiter({
+  // Wiring matching src/projects/instance.ts: one settings listener for the process, which wakes
+  // whichever dispatcher is current (restart() replaces the dispatcher, not the listener).
+  const dispatched = () =>
+    fixtureEmailer({
       clock,
       rate: () => asBody<number>(settingsStore.read()["messaging.max_send_rate"]),
-    }),
-  );
+      onStart: () => {
+        grants++;
+      },
+      settings: () => {
+        const current = settingsStore.read();
+        return { smtp: current.smtp, rootUrl: current["app.root_url"] };
+      },
+      copyAllowed: (addr) => !addressBlocklisted(subscribers, addr),
+    });
+  let emailer = dispatched();
   settingsStore.onUpdate((next, current) => {
     if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
-      limiter.wake();
+      emailer.dispatcher.wake();
     }
   });
-  let emailer = createEmailer({
-    clock,
-    limiter,
-    settings: () => {
-      const current = settingsStore.read();
-      return { smtp: current.smtp, rootUrl: current["app.root_url"] };
-    },
-    copyAllowed: (addr) => !addressBlocklisted(subscribers, addr),
-  });
-
   const marketing = () => ({
     rootUrl: root,
     siteName: "Fixture",
@@ -221,7 +209,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   });
 
   const tracking = createTracking(db, clock);
-  let outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+  let outbox = startOutbox({ db, clock, logger: app.logger, sends, sender: emailer });
   const router = createRouter();
   // The settings test button goes through the same limiter as every other send (test 8). One handler
   // serves every request, as src/main.ts builds it, so its 4-in-flight cap is shared.
@@ -305,13 +293,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
   const campaignRunnerSettings = () => {
     const current = settingsStore.read();
     return {
-      batchSize: current["app.batch_size"] ?? 1000,
-      concurrency: current["app.concurrency"] ?? 10,
-      messageRate: current["app.message_rate"] ?? 1000,
       maxSendErrors: current["app.max_send_errors"] ?? 1000,
-      slidingWindow: false,
-      slidingWindowDuration: "1h",
-      slidingWindowRate: 10_000,
       rootUrl: root,
       brand: {
         logoUrl: "",
@@ -342,7 +324,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     },
     renderer,
     tracking,
-    emailer,
+    sender: emailer,
     attachments,
     embedImages,
     settings: campaignRunnerSettings,
@@ -539,22 +521,8 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
     resetSink,
     template,
     restart() {
-      limiter = countGrants(
-        createSendRateLimiter({
-          clock,
-          rate: () => asBody<number>(settingsStore.read()["messaging.max_send_rate"]),
-        }),
-      );
-      emailer = createEmailer({
-        clock,
-        limiter,
-        settings: () => {
-          const current = settingsStore.read();
-          return { smtp: current.smtp, rootUrl: current["app.root_url"] };
-        },
-        copyAllowed: (addr) => !addressBlocklisted(subscribers, addr),
-      });
-      outbox = startOutbox({ db, clock, logger: app.logger, sends, emailer });
+      emailer = dispatched();
+      outbox = startOutbox({ db, clock, logger: app.logger, sends, sender: emailer });
       runner = startCampaignRunner({
         db,
         clock,
@@ -570,7 +538,7 @@ async function createRateHarness(initialSettings: Record<string, unknown> = {}) 
         },
         renderer,
         tracking,
-        emailer,
+        sender: emailer,
         attachments,
         embedImages,
         settings: campaignRunnerSettings,
@@ -599,8 +567,6 @@ describe("B37: send rate cap", () => {
   test("1. paces campaign and tx sends together under max_send_rate = 5", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 5,
-      "app.concurrency": 5,
-      "app.message_rate": 100,
     });
     try {
       const listRes = await h.json("/api/lists", "POST", { name: "test-list", type: "public" });
@@ -693,7 +659,6 @@ describe("B37: send rate cap", () => {
   test("1b. limiter wait does not count toward 60 s cutoff: cap 1 with outbox and campaign load", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 1,
-      "app.concurrency": 5,
     });
     try {
       const listRes = await h.json("/api/lists", "POST", { name: "cutoff-list", type: "public" });
@@ -790,8 +755,6 @@ describe("B37: send rate cap", () => {
   test("2. outbox sends have priority over waiting campaign sends", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 2,
-      "app.concurrency": 5,
-      "app.message_rate": 100,
     });
     try {
       const listRes = await h.json("/api/lists", "POST", { name: "prio-list", type: "public" });
@@ -850,7 +813,6 @@ describe("B37: send rate cap", () => {
   test("3. sequence steps are paced by the same cap", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 3,
-      "app.concurrency": 5,
     });
     try {
       const listRes = await h.json("/api/lists", "POST", { name: "seq-list", type: "public" });
@@ -909,7 +871,6 @@ describe("B37: send rate cap", () => {
   test("4. 0 means no cap: sends finish without limiter wait", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 0,
-      "app.concurrency": 10,
     });
     try {
       const txTemplateId = await h.template();
@@ -943,7 +904,6 @@ describe("B37: send rate cap", () => {
   test("5. settings change applies to next wait mid-campaign", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 10,
-      "app.concurrency": 10,
     });
     try {
       const listRes = await h.json("/api/lists", "POST", { name: "dyn-list", type: "public" });
@@ -1057,37 +1017,48 @@ describe("B37: send rate cap", () => {
     }
   });
 
-  test("5c. lowering the rate applies to the very next grant, not the old interval", async () => {
+  test("5c. lowering the rate applies to the very next start, not the old interval", async () => {
     const clock = new TestClock();
+    const sink = await startSink({ clock });
     let rate = 14;
-    const limiter = createSendRateLimiter({ clock, rate: () => rate });
-    // The first grant after a start waits one interval (B118a): 1000/14 ms, rounded up.
-    const first = limiter.acquire("outbox");
-    clock.advance(72);
-    await first;
-
-    // Lower to 1/s just after a grant. The next grant must wait a full second; the old 71 ms
-    // slot must not carry it, which would put two starts in one second under the new rate.
-    rate = 1;
-    limiter.wake();
-    let granted = false;
-    const next = limiter.acquire("outbox").then(() => {
-      granted = true;
+    const starts: Array<number> = [];
+    const emailer = fixtureEmailer({
+      clock,
+      rate: () => rate,
+      settings: () => ({ smtp: [sinkServer(sink.port)], rootUrl: root }),
+      onStart: () => starts.push(clock.now().getTime()),
     });
-    clock.advance(100);
-    for (let j = 0; j < 5; j++) {
-      await Bun.sleep(0);
-    }
-    expect(granted).toBe(false);
+    try {
+      // The first start after a start waits one interval (B118a): 1000/14 ms, rounded up.
+      const first = emailer.push(sinkMessage("first@example.test"));
+      clock.advance(72);
+      await first.result;
+      expect(starts.length).toBe(1);
 
-    clock.advance(900);
-    await next;
-    expect(granted).toBe(true);
-    limiter.stop();
+      // Lower to 1/s just after a start. The next start must wait a full second; the old 71 ms
+      // slot must not carry it, which would put two starts in one second under the new rate.
+      rate = 1;
+      emailer.dispatcher.wake();
+      void emailer.push(sinkMessage("next@example.test"));
+      clock.advance(100);
+      for (let j = 0; j < 5; j++) {
+        await Bun.sleep(0);
+      }
+      expect(starts.length).toBe(1);
+
+      clock.advance(900);
+      for (let j = 0; j < 5; j++) {
+        await Bun.sleep(0);
+      }
+      expect(starts.length).toBe(2);
+    } finally {
+      await emailer.close();
+      await sink.close();
+    }
   });
 
   test("7c. emailer closed while a campaign batch waits: no recipient of that batch ends failed", async () => {
-    const h = await createRateHarness({ "messaging.max_send_rate": 1, "app.concurrency": 5 });
+    const h = await createRateHarness({ "messaging.max_send_rate": 1 });
     try {
       const listRes = await h.json("/api/lists", "POST", { name: "closing-list", type: "public" });
       const listId = listRes.body.data.id;
@@ -1229,7 +1200,6 @@ describe("B37: send rate cap", () => {
   test("7. shutdown during a wait stops cleanly and preserves unstarted work", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 1,
-      "app.concurrency": 2,
     });
     try {
       const txTemplateId = await h.template();
@@ -1371,7 +1341,6 @@ describe("B37: send rate cap", () => {
   test("7b. main shutdown order (runner, outbox, emailer stopping together) preserves waiters", async () => {
     const h = await createRateHarness({
       "messaging.max_send_rate": 1,
-      "app.concurrency": 2,
     });
     try {
       const listRes = await h.json("/api/lists", "POST", {

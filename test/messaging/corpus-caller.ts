@@ -1,7 +1,7 @@
 // Compiled test-only driver of the production messaging owner, not a TX endpoint.
 import assert from "node:assert/strict";
 import { createRealClock } from "@/clock";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { SMTPServer, Message } from "@/messaging/email";
 import { asBody } from "@/test/read-body";
 const server: SMTPServer = {
@@ -54,7 +54,7 @@ if (message.inline) {
     },
   ];
 }
-const emailer = createEmailer({
+const emailer = fixtureEmailer({
   settings: () => ({
     smtp: process.env.M21_SERVERS
       ? asBody<Array<SMTPServer>>(JSON.parse(process.env.M21_SERVERS))

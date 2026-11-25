@@ -177,7 +177,10 @@ function measure(version: number) {
       const lease = new Date(time.getTime() + 60_000);
       const claimStart = performance.now();
       for (;;) {
-        const rows = writeTransaction(db, () => journal.claimBatch(time, lease, outboxBatch));
+        const rows = writeTransaction(db, () => [
+          ...journal.claimBatch(time, lease, outboxBatch, "transactional"),
+          ...journal.claimBatch(time, lease, outboxBatch, "marketing"),
+        ]);
         if (rows.length === 0) {
           break;
         }

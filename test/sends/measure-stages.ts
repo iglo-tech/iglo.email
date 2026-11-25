@@ -11,7 +11,7 @@ import { writeTransaction } from "@/db/transaction";
 import { createListReferences } from "@/lists/references";
 import { createSubscriberStore } from "@/subscribers/store";
 import { createSends } from "@/messaging/sends";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 const sink = referenceMailpit(process.env);
@@ -29,7 +29,7 @@ try {
     let lists = createListReferences(db),
       subscribers = createSubscriberStore(db, clock, lists);
     let sends = createSends({ db, clock, subscribers, rootUrl: () => "http://fixture.test" });
-    const mailer = createEmailer({
+    const mailer = fixtureEmailer({
       clock,
       settings: () => ({
         rootUrl: "http://fixture.test",

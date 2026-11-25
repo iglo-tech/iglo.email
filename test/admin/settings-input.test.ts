@@ -48,8 +48,6 @@ async function settings(path = "/api/settings"): Promise<Record<string, any>> {
   expect(res.status).toBe(200);
   return (await readJson<{ data: Record<string, any> }>(res)).data;
 }
-/** B139 (D154): both sides, each read from its own settings API. */
-const both = async () => ({ ...(await settings()), ...(await settings(instance)) });
 const instance = "/api/instance/settings";
 
 /** A single-key write to its side's API: its status and, when refused, its message. */
@@ -98,35 +96,6 @@ test("an administrator address an older build stored does not block saving anoth
   expect(added.status).toBe(400);
   expect(added.message).toBe("invalid notification email address: new@");
   await put("app.notify_emails", []);
-});
-
-test("the sliding window duration must be longer than one second when the window is on", async () => {
-  // Off, a duration is not read, so it is not checked.
-  expect(await put("app.message_sliding_window_duration", "x")).toEqual({
-    status: 200,
-    message: undefined,
-  });
-  // Turning the window on checks the duration that is stored, which is `x`: the window stays off.
-  const turnedOn = await put("app.message_sliding_window", true);
-  expect(turnedOn.status).toBe(400);
-  expect(turnedOn.message).toContain("app.message_sliding_window_duration");
-  expect((await both())["app.message_sliding_window"]).toBe(false);
-  expect(await put("app.message_sliding_window_duration", "2s")).toEqual({
-    status: 200,
-    message: undefined,
-  });
-  expect(await put("app.message_sliding_window", true)).toEqual({
-    status: 200,
-    message: undefined,
-  });
-  // On, every changed duration is checked.
-  for (const value of ["", "0", "1ms", "1s", "x"]) {
-    const refused = await put("app.message_sliding_window_duration", value);
-    expect({ value, status: refused.status }).toEqual({ value, status: 400 });
-  }
-  expect((await both())["app.message_sliding_window_duration"]).toBe("2s");
-  await put("app.message_sliding_window", false);
-  await put("app.message_sliding_window_duration", "1h");
 });
 
 test("the vacuum cron is checked when vacuum is on, and not while it is off", async () => {

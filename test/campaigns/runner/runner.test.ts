@@ -7,8 +7,6 @@ import { createSends } from "@/messaging/sends";
 import { createMarketingPolicy } from "@/unsubscribe/policy";
 import { asBody } from "@/test/read-body";
 
-const smtpMs = (i: number) => ((i * 7) % 10) * 30;
-
 let f: RunnerFixture;
 afterEach(async () => {
   await f?.close();
@@ -37,7 +35,7 @@ test("sends once to every eligible member and finishes", async () => {
     body: '<p>{{ unsubscribe_url }}</p><a href="{{ "https://example.test/x" | track_link }}">x</a>',
     headers: [{ "X-Custom": "1" }],
   });
-  f.settings.batchSize = 2;
+  f.control.grant = 2;
   expect((await f.status(c.id, "running")).status).toBe(200);
   f.start();
   await f.until(c.id, "finished");
@@ -113,87 +111,12 @@ async function campaignOf(count: number) {
   return f.campaign({ name: "bulk", subject: "s", lists: [list] });
 }
 
-test("concurrency and the per-worker message rate bound sends", async () => {
-  f = await runnerFixture();
-  const c = await campaignOf(40);
-  Object.assign(f.settings, { concurrency: 2, messageRate: 3, batchSize: 7 });
-  f.control.hold = true;
-  await f.status(c.id, "running");
-  f.start();
-  await f.drive(async () => {
-    // Each held message is accepted after 20 ms of SMTP time.
-    for (const push of f.pushes) {
-      if (f.clock.now().getTime() - push.at >= 20) {
-        push.settle();
-      }
-    }
-    return (await f.read(c.id)).status === "finished";
-  }, 10);
-  expect(recipientsOf().length).toBe(40);
-  expect(new Set(recipientsOf()).size).toBe(40);
-  expect(f.maxInFlight).toBeLessThanOrEqual(2);
-  const times = f.pushes.map((p) => p.at).sort((a, b) => a - b);
-  for (const t of times) {
-    expect(times.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(6);
-  }
-  // 40 messages at no more than 6 per second take at least six seconds.
-  expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(6000);
-});
-
-test("D59 pacing never exceeds the per-worker rate in any one-second window", async () => {
-  f = await runnerFixture();
-  const c = await campaignOf(41);
-  Object.assign(f.settings, { concurrency: 1, messageRate: 4, batchSize: 50 });
-  f.control.hold = true;
-  await f.status(c.id, "running");
-  f.start();
-  // SMTP time varies from 0 to 270 ms, standing in for a busy shared thread.
-  await f.drive(async () => {
-    f.pushes.forEach((push, i) => {
-      if (f.clock.now().getTime() - push.at >= smtpMs(i)) {
-        push.settle();
-      }
-    });
-    return (await f.read(c.id)).status === "finished";
-  }, 10);
-  expect(new Set(recipientsOf()).size).toBe(41);
-  const times = f.pushes.map((p) => p.at).sort((a, b) => a - b);
-  for (const t of times) {
-    expect(times.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(4);
-  }
-  for (const t of times) {
-    expect(times.filter((u) => u > t - 1000 && u <= t).length).toBeLessThanOrEqual(4);
-  }
-  // The worker waits only for the rest of each window: 41 messages at 4/s take ten seconds
-  // plus SMTP time, where a full-second sleep after every four would take over 13 s.
-  expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(10_000);
-  expect(times.at(-1)! - times[0]!).toBeLessThan(10_500);
-});
-
-test("the sliding window holds sends until the window is over", async () => {
-  f = await runnerFixture();
-  const c = await campaignOf(25);
-  Object.assign(f.settings, {
-    slidingWindow: true,
-    slidingWindowDuration: "10s",
-    slidingWindowRate: 10,
-    concurrency: 3,
-  });
-  await f.status(c.id, "running");
-  f.start();
-  await f.until(c.id, "finished");
-  const times = f.pushes.map((p) => p.at).sort((a, b) => a - b);
-  expect(times.length).toBe(25);
-  for (const t of times) {
-    expect(times.filter((u) => u >= t && u < t + 10_000).length).toBeLessThanOrEqual(10);
-  }
-  expect(times.at(-1)! - times[0]!).toBeGreaterThanOrEqual(20_000);
-});
-
 test("the error threshold pauses the campaign and failed messages are never retried", async () => {
   f = await runnerFixture();
   const c = await campaignOf(10);
-  Object.assign(f.settings, { maxSendErrors: 3, concurrency: 1, batchSize: 4 });
+  // Three slots per grant: the first batch is the three failures that reach the threshold.
+  Object.assign(f.settings, { maxSendErrors: 3 });
+  f.control.grant = 3;
   f.control.outcome = "proven-not-accepted";
   await f.status(c.id, "running");
   f.start();
@@ -221,10 +144,10 @@ test("ambiguous outcomes count as errors and are not resent", async () => {
   expect((await f.read(c.id)).sent).toBe(0);
 });
 
-test("pause takes effect mid-batch and resume sends only the unsent rest", async () => {
+test("pause takes effect after the batch in flight and resume sends only the unsent rest", async () => {
   f = await runnerFixture({ hold: true });
   const c = await campaignOf(12);
-  Object.assign(f.settings, { concurrency: 2, batchSize: 10 });
+  f.control.grant = 2;
   await f.status(c.id, "running");
   f.start();
   await f.drive(() => f.pushes.length === 2);
@@ -247,7 +170,7 @@ test("pause takes effect mid-batch and resume sends only the unsent rest", async
 test("cancel stops sending promptly", async () => {
   f = await runnerFixture({ hold: true });
   const c = await campaignOf(6);
-  Object.assign(f.settings, { concurrency: 1 });
+  f.control.grant = 1;
   await f.status(c.id, "running");
   f.start();
   await f.drive(() => f.pushes.length === 1);
@@ -262,7 +185,7 @@ test("cancel stops sending promptly", async () => {
 test("shutdown returns the unsent rest and a restarted runner resumes without duplicates", async () => {
   f = await runnerFixture({ hold: true });
   const c = await campaignOf(9);
-  Object.assign(f.settings, { concurrency: 3, batchSize: 9 });
+  f.control.grant = 3;
   await f.status(c.id, "running");
   const first = f.start();
   await f.drive(() => f.pushes.length === 3);
@@ -285,7 +208,7 @@ test("shutdown returns the unsent rest and a restarted runner resumes without du
 test("a held lease keeps a second runner off the campaign", async () => {
   f = await runnerFixture({ hold: true });
   const c = await campaignOf(4);
-  Object.assign(f.settings, { concurrency: 1, batchSize: 2 });
+  f.control.grant = 1;
   await f.status(c.id, "running");
   f.start(3000);
   await f.drive(() => f.pushes.length === 1);
@@ -424,10 +347,16 @@ test("an unsubscribe or blocklist during a batch stops that subscriber's message
   const c2 = await f.member("c@x.test", [list]);
   await f.member("d@x.test", [list]);
   const c = await f.campaign({ name: "u", subject: "s", lists: [list] });
-  Object.assign(f.settings, { concurrency: 1, batchSize: 10 });
+  // The batch waits after its claim commits, before any push (B141: every recipient of a batch is
+  // pushed in its granted slot at once), so the change lands between the claim and the push.
+  let open!: () => void;
+  f.control.gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const claimed = f.batchClaimed();
   await f.status(c.id, "running");
   f.start();
-  await f.drive(() => f.pushes.length === 1);
+  await claimed;
   // The whole batch is claimed; b unsubscribes and c is blocklisted before their turn.
   await f.json("/api/subscribers/lists", "PUT", {
     ids: [b.id],
@@ -436,7 +365,7 @@ test("an unsubscribe or blocklist during a batch stops that subscriber's message
   });
   expect((await f.json("/api/subscribers/blocklist", "PUT", { ids: [c2.id] })).status).toBe(200);
   f.control.hold = false;
-  f.pushes[0]!.settle();
+  open();
   await f.until(c.id, "finished");
   expect(recipientsOf()).toEqual(["a@x.test", "d@x.test"]);
   expect(f.runnerStore.lastDelivery(BigInt(b.id))).toBeNull();
@@ -454,10 +383,16 @@ test("a membership removed during a batch is skipped as membership_changed, and 
   const b = await f.member("b@x.test", [list]);
   const c2 = await f.member("c@x.test", [list]);
   const c = await f.campaign({ name: "m", subject: "s", lists: [list] });
-  Object.assign(f.settings, { concurrency: 1, batchSize: 10 });
+  // The batch waits after its claim commits, before any push (B141: every recipient of a batch is
+  // pushed in its granted slot at once), so the change lands between the claim and the push.
+  let open!: () => void;
+  f.control.gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const claimed = f.batchClaimed();
   await f.status(c.id, "running");
   f.start();
-  await f.drive(() => f.pushes.length === 1);
+  await claimed;
   // b leaves the list outright (its membership is deleted); c2 is unsubscribed from it.
   await f.json("/api/subscribers/lists", "PUT", {
     ids: [b.id],
@@ -470,7 +405,7 @@ test("a membership removed during a batch is skipped as membership_changed, and 
     target_list_ids: [list],
   });
   f.control.hold = false;
-  f.pushes[0]!.settle();
+  open();
   await f.until(c.id, "finished");
   expect(recipientsOf()).toEqual(["a@x.test"]);
   // B127: the reason names the change; only an unsubscribed membership is `unsubscribed`.
@@ -498,7 +433,7 @@ test("pause, list edit and resume while a message is outstanding reaches the new
   await f.member("s3@x.test", [after]);
   await f.member("s4@x.test", [after]);
   const c = await f.campaign({ name: "edit", subject: "Old", lists: [before] });
-  Object.assign(f.settings, { concurrency: 1, batchSize: 10 });
+  f.control.grant = 1;
   await f.status(c.id, "running");
   f.start();
   await f.drive(() => f.pushes.length === 1);
@@ -529,10 +464,16 @@ test("a subscriber whose email changed after the claim is not sent the old addre
   await f.member("a@x.test", [list]);
   const b = await f.member("b@x.test", [list]);
   const c = await f.campaign({ name: "id", subject: "s", lists: [list] });
-  Object.assign(f.settings, { concurrency: 1, batchSize: 10 });
+  // The batch waits after its claim commits, before any push (B141: every recipient of a batch is
+  // pushed in its granted slot at once), so the change lands between the claim and the push.
+  let open!: () => void;
+  f.control.gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const claimed = f.batchClaimed();
   await f.status(c.id, "running");
   f.start();
-  await f.drive(() => f.pushes.length === 1);
+  await claimed;
   // b's message is claimed and waits; b moves to a new address and the old one is blocklisted.
   const moved = await f.json(`/api/subscribers/${b.id}`, "PUT", {
     email: "b2@x.test",
@@ -545,7 +486,7 @@ test("a subscriber whose email changed after the claim is not sent the old addre
   const old = await f.subscriber("b@x.test", [], { status: "blocklisted" });
   expect(old.email).toBe("b@x.test");
   f.control.hold = false;
-  f.pushes[0]!.settle();
+  open();
   await f.until(c.id, "finished");
   expect(recipientsOf()).toEqual(["a@x.test"]);
   // Resolved as not sent, and logged for a manual resend; never sent again.
@@ -593,7 +534,6 @@ test("a batch still in flight holds the cap for messages sent late in the batch"
   const b = await f.member("b@x.test", [list]);
   await f.member("c@x.test", [list]);
   const c = await f.campaign({ name: "slow", subject: "s", lists: [list] });
-  Object.assign(f.settings, { concurrency: 1, batchSize: 1000 });
   const sends = capSends("PT1M");
   try {
     await f.status(c.id, "running");
@@ -644,7 +584,7 @@ test("claims a stopped runner left on a cancelled campaign stop holding the cap 
 test("a runner whose heartbeat stalled keeps its campaign from a second pipe in the process", async () => {
   f = await runnerFixture({ hold: true });
   const c = await campaignOf(4);
-  Object.assign(f.settings, { concurrency: 1, batchSize: 2 });
+  f.control.grant = 1;
   await f.status(c.id, "running");
   // The first runner's timers stall, as in a blocked event loop, so it misses its renewals.
   let resume!: () => void;
@@ -708,7 +648,7 @@ test("tracked links personalized per subscriber do not accumulate across batches
     lists: [list],
     body: links,
   });
-  Object.assign(fx.settings, { concurrency: 5, batchSize: 10 });
+  fx.control.grant = 10;
   await fx.status(c.id, "running");
   fx.start();
   const heap = () => {
@@ -1015,7 +955,7 @@ const statuses = (id: number) =>
 test("a runner that loses its lease between batches stops sending and writes nothing more", async () => {
   f = await runnerFixture();
   const c = await campaignOf(4);
-  Object.assign(f.settings, { concurrency: 1, batchSize: 2 });
+  f.control.grant = 2;
   await f.status(c.id, "running");
   f.start(3000);
   await f.drive(() => sentOf(c.id) === 2n);
@@ -1036,7 +976,7 @@ test("a runner that loses its lease between batches stops sending and writes not
 test("a runner that loses its lease mid-batch writes nothing, and no one is sent twice", async () => {
   f = await runnerFixture({ hold: true });
   const c = await campaignOf(4);
-  Object.assign(f.settings, { concurrency: 2, batchSize: 2 });
+  f.control.grant = 2;
   await f.status(c.id, "running");
   f.start(3000);
   await f.drive(() => f.pushes.length === 2);

@@ -747,7 +747,13 @@ export const differences: Array<Difference> = [
   {
     area: "Settings split (B139, D154)",
     summary:
-      "A project host's `GET` and `PUT /api/settings` read and write its project keys only (14-projects section 4): the brand, consent, content, public pages and the read-only `app.root_url`. The instance keys (SMTP, `messaging.max_send_rate`, the `ses.api_*` keys, bounce processing and its providers, `security.trusted_proxies`, `security.session_duration`, `security.oidc`, `webhooks.block_private_addresses`, maintenance, slow-query caching, `upload.provider` and `upload.s3.*`, the admin appearance and the campaign pacing keys) are stored once for every project and change only through the instance host's `/api/instance/settings`, with the instance session; they are not in this document. A `PUT /api/settings` that names any other key, an instance key or a key that is no setting, is a 400 that names it, with nothing written; upstream ignores an unknown key and stores every key in one table.",
+      "A project host's `GET` and `PUT /api/settings` read and write its project keys only (14-projects section 4): the brand, consent, content, public pages and the read-only `app.root_url`. The instance keys (SMTP, `messaging.max_send_rate`, the `ses.api_*` keys, bounce processing and its providers, `security.trusted_proxies`, `security.session_duration`, `security.oidc`, `webhooks.block_private_addresses`, maintenance, slow-query caching, `upload.provider` and `upload.s3.*` and the admin appearance) are stored once for every project and change only through the instance host's `/api/instance/settings`, with the instance session; they are not in this document. A `PUT /api/settings` that names any other key, an instance key or a key that is no setting, is a 400 that names it, with nothing written; upstream ignores an unknown key and stores every key in one table.",
+    applies: ["/api/settings"],
+  },
+  {
+    area: "Campaign pacing keys removed (B141, D155)",
+    summary:
+      "`app.concurrency`, `app.message_rate`, `app.batch_size`, `app.message_sliding_window`, `app.message_sliding_window_duration` and `app.message_sliding_window_rate` do not exist: one instance dispatcher paces every send at `messaging.max_send_rate` (14-projects section 7), and a campaign claims at most the slots it is granted. A `PUT /api/settings` or `/api/instance/settings` that names one is a 400 that names it, with nothing written; upstream paces each campaign with them.",
     applies: ["/api/settings"],
   },
   {
@@ -925,7 +931,7 @@ export const differences: Array<Difference> = [
   {
     area: "Settings checked on save (B117a, D136)",
     summary:
-      "A value the server reads is checked when its feature is on and the value changed: the sliding window duration (longer than one second), the vacuum cron, `upload.s3.expiry` (a positive duration), the SMTP `idle_timeout` (1 s to 5 min) and `msg_retry_delay` (a duration). An empty S3 expiry, idle timeout or retry delay is accepted; an empty vacuum cron (while vacuum is on) and an empty sliding window duration are refused. Upstream stores these as sent.",
+      "A value the server reads is checked when its feature is on and the value changed: the vacuum cron, `upload.s3.expiry` (a positive duration), the SMTP `idle_timeout` (1 s to 5 min) and `msg_retry_delay` (a duration). An empty S3 expiry, idle timeout or retry delay is accepted; an empty vacuum cron (while vacuum is on) is refused. Upstream stores these as sent.",
     applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
   },
   {

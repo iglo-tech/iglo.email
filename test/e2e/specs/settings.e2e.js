@@ -187,14 +187,14 @@ test("saves edits across tabs, enables SMTP and deletes a server", async ({ page
   await expect(page.getByText("Changing it needs a restart.")).toBeVisible();
   await page.locator('[name="app.favicon_url"]').fill(favicon);
   await save(page);
-  // B139: the pacing and SMTP keys are on the instance page, which the project page links to.
+  // B139: the send rate and SMTP keys are on the instance page, which the project page links to.
   await expect(page.getByTestId("instance-settings-link")).toHaveAttribute(
     "href",
     `${ORIGIN}${INSTANCE}`,
   );
   await onInstance(page);
   await tab(page, "Performance").click();
-  await page.locator('[name="app.concurrency"]').fill("9");
+  await page.locator('[name="messaging.max_send_rate"]').fill("15");
   await tab(page, "SMTP").click();
   await page.getByRole("button", { name: "Add new" }).click();
   const servers = smtpServers(page);
@@ -218,14 +218,14 @@ test("saves edits across tabs, enables SMTP and deletes a server", async ({ page
   expect(await settings(page)).toMatchObject({
     "app.root_url": before["app.root_url"],
     "app.favicon_url": favicon,
-    "app.concurrency": 9,
+    "messaging.max_send_rate": 15,
     smtp: [{ enabled: true, host: "localhost", port: 1025, tls_type: "none" }],
   });
   await page.reload();
   await tab(page, "SMTP").click();
   await expect(servers.getByRole("switch", { name: "Enabled", exact: true })).toBeChecked();
   await tab(page, "Performance").click();
-  await expect(page.locator('[name="app.concurrency"]')).toHaveValue("9");
+  await expect(page.locator('[name="messaging.max_send_rate"]')).toHaveValue("15");
   await page.goto(SETTINGS);
   await tab(page, "General").click();
   await expect(page.locator('[name="app.favicon_url"]')).toHaveValue(favicon);
@@ -297,8 +297,8 @@ test("searches across tabs using all terms", async ({ page }) => {
   await expect(tab(page, "Privacy")).toBeVisible();
   // B139: the instance page searches its own tabs the same way.
   await onInstance(page);
-  await search.fill("  RATE   workers  ");
-  await expect(page.locator('[name="app.concurrency"]')).toBeVisible();
+  await search.fill("  RATE   speed  ");
+  await expect(page.locator('[name="messaging.max_send_rate"]')).toBeVisible();
   await expect(tab(page, "Security")).toBeHidden();
   await expect(tab(page, "Performance")).toBeVisible();
   await search.fill("outgoing");
@@ -309,10 +309,10 @@ test("searches across tabs using all terms", async ({ page }) => {
   await search.fill("no-such-setting");
   await expect(tab(page, "Performance")).toBeVisible();
   await expect(smtpServers(page)).toBeVisible();
-  await search.fill("concurrency");
+  await search.fill("throughput");
   await search.fill("");
   await expect(smtpServers(page)).toBeVisible();
-  await expect(page.locator('[name="app.concurrency"]')).toBeHidden();
+  await expect(page.locator('[name="messaging.max_send_rate"]')).toBeHidden();
 });
 
 test("SMTP presets reset credentials and preserve unrelated fields and accordion state", async ({
@@ -610,25 +610,6 @@ test("normalizes domain lists and retains tracking preferences while disabled", 
   await page.getByRole("switch", { name: /^Disable tracking/ }).uncheck();
   await expect(individual).toBeEnabled();
   await expect(individual).toBeChecked();
-});
-
-test("enables sliding window controls and persists their values", async ({ page }) => {
-  await onInstance(page);
-  await tab(page, "Performance").click();
-  const group = page.getByRole("group", { name: "Enable sliding window limit", exact: true });
-  await expect(group.getByRole("textbox", { name: /^Duration/ })).toBeDisabled();
-  await group.getByRole("switch").check();
-  await group.getByRole("spinbutton", { name: /^Max. messages/ }).fill("42");
-  await group.getByRole("textbox", { name: /^Duration/ }).fill("2h");
-  await save(page);
-  await page.reload();
-  await tab(page, "Performance").click();
-  await expect(group.getByRole("switch")).toBeChecked();
-  await expect(group.getByRole("spinbutton", { name: /^Max. messages/ })).toHaveValue("42");
-  await expect(group.getByRole("textbox", { name: /^Duration/ })).toHaveValue("2h");
-  await group.getByRole("switch").uncheck();
-  await expect(group.getByRole("textbox", { name: /^Duration/ })).toBeDisabled();
-  await expect(group.getByRole("textbox", { name: /^Duration/ })).toHaveValue("2h");
 });
 
 test("persists trusted URLs and the native security settings", async ({ page }) => {

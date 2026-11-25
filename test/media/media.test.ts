@@ -292,9 +292,9 @@ async function sendHeld(
   return seen;
 }
 
-test("two campaigns sharing attachments hold them once, with concurrency 1", async () => {
+test("two campaigns sharing attachments hold them once, one recipient per batch", async () => {
   const f = await openRunner({ hold: true });
-  Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
+  f.control.grant = 1;
   const media = await stored(f, "brochure.pdf", mebibytes(8));
   const list = await f.list("shared");
   for (const i of [1, 2, 3]) {
@@ -320,7 +320,7 @@ test("attachments over the cache budget are evicted and read again for the next 
     attachmentCacheBytes: 9 * 1024 * 1024,
     attachmentReads: reads,
   });
-  Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
+  f.control.grant = 1;
   const list = await f.list("evicted");
   for (const i of [1, 2, 3]) {
     await f.member(`to-${i}@example.com`, [list]);
@@ -340,7 +340,7 @@ test("attachments over the cache budget are evicted and read again for the next 
   // Six batches alternate between two 8 MiB files under a 9 MiB budget, so the cache holds one
   // file at a time and each batch carries a buffer from a read of its file: six distinct buffers.
   // A cache hit would carry a buffer already counted, so the count would be lower. This does not
-  // see a batch that read its file twice and carried one buffer, since batchSize 1 carries one
+  // see a batch that read its file twice and carried one buffer, since a one-slot grant carries one
   // buffer per batch either way.
   expect(carried.carried()).toBe(6);
   // The same claim, counted at the disk: six batches, six reads of the two files, three each. A
@@ -367,7 +367,7 @@ test("attachments over the cache budget are evicted and read again for the next 
 
 test("a file lost between batches pauses the campaign, and resuming sends the rest once", async () => {
   const f = await openRunner({ hold: true });
-  Object.assign(f.settings, { concurrency: 1, batchSize: 1 });
+  f.control.grant = 1;
   const media = await stored(f, "lost.pdf", "%PDF");
   const list = await f.list("between");
   for (const i of [1, 2, 3]) {

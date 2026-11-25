@@ -47,7 +47,8 @@ export async function runSettingsContract(target: {
   check(response.status === 200, "get");
   const snapshot = asBody<{ data: Record<string, any> }>(await response.json()).data;
   check(
-    typeof snapshot["app.site_name"] === "string" && typeof snapshot["app.batch_size"] === "number",
+    typeof snapshot["app.site_name"] === "string" &&
+      typeof snapshot["app.max_send_errors"] === "number",
     "scalar-types",
   );
   check(Array.isArray(snapshot.smtp) && Array.isArray(snapshot["app.from_email"]), "array-types");
@@ -104,7 +105,7 @@ export async function runSettingsContract(target: {
         headers: { Authorization: authorization, "Content-Type": "application/xml" },
         // AppLang, UploadProvider and the SMTP pool fields stay set: upstream stores a missing one as "" and exits on the next reload
         // (app.lang panic at cmd/main.go:211, "unknown provider" fatal at cmd/init.go:852, invalid duration at cmd/init.go:747, MaxConns at cmd/init.go:777).
-        body: "<Settings><AppLang>en</AppLang><UploadProvider>filesystem</UploadProvider><AppFromEmail>sender@example.invalid</AppFromEmail><AppBatchSize>9223372036854775807</AppBatchSize><SMTP><Enabled>true</Enabled><MaxConns>1</MaxConns><IdleTimeout>15s</IdleTimeout><WaitTimeout>5s</WaitTimeout></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
+        body: "<Settings><AppLang>en</AppLang><UploadProvider>filesystem</UploadProvider><AppFromEmail>sender@example.invalid</AppFromEmail><AppMaxSendErrors>9223372036854775807</AppMaxSendErrors><SMTP><Enabled>true</Enabled><MaxConns>1</MaxConns><IdleTimeout>15s</IdleTimeout><WaitTimeout>5s</WaitTimeout></SMTP><SecuritySessionDuration>7d</SecuritySessionDuration></Settings>",
       },
       target.mode === "reference",
     ),
@@ -119,7 +120,7 @@ export async function runSettingsContract(target: {
     "xml-projection",
   );
   check(
-    /"app.batch_size"\s*:\s*9223372036854775807(?:[,}])/.test(
+    /"app.max_send_errors"\s*:\s*9223372036854775807(?:[,}])/.test(
       await (await request("/api/settings")).text(),
     ),
     "xml-int64-projection",
@@ -332,26 +333,6 @@ export async function runSettingsContract(target: {
         "vacuum-bad-cron",
         { ...base, "maintenance.db": { vacuum: true, vacuum_cron_interval: "bad cron" } },
       ],
-      [
-        "sliding-empty",
-        { ...base, "app.message_sliding_window": true, "app.message_sliding_window_duration": "" },
-      ],
-      [
-        "sliding-zero",
-        { ...base, "app.message_sliding_window": true, "app.message_sliding_window_duration": "0" },
-      ],
-      [
-        "sliding-1ms",
-        {
-          ...base,
-          "app.message_sliding_window": true,
-          "app.message_sliding_window_duration": "1ms",
-        },
-      ],
-      [
-        "sliding-word",
-        { ...base, "app.message_sliding_window": true, "app.message_sliding_window_duration": "x" },
-      ],
       ["s3-expiry-word", { ...base, "upload.s3.expiry": "x" }],
       ["s3-expiry-zero", { ...base, "upload.s3.expiry": "0s" }],
       ["smtp-idle-1ms", { ...base, smtp: [{ ...base.smtp[0], idle_timeout: "1ms" }] }],
@@ -376,8 +357,6 @@ export async function runSettingsContract(target: {
       ...base,
       "app.notify_emails": ["ops@example.test", " "],
       "maintenance.db": { vacuum: false, vacuum_cron_interval: "bad cron" },
-      "app.message_sliding_window": true,
-      "app.message_sliding_window_duration": "1h",
       "upload.s3.expiry": "167h",
       smtp: [{ ...base.smtp[0], idle_timeout: "15s", msg_retry_delay: "" }],
       "security.trusted_urls": ["https://example.invalid"],
@@ -462,8 +441,8 @@ export async function runSettingsContract(target: {
     "ordered-alias-null",
   );
   const integerCandidate = JSON.stringify(updated).replace(
-    /"app.batch_size":\d+/,
-    '"app.batch_size":9007199254740993',
+    /"app.max_send_errors":\d+/,
+    '"app.max_send_errors":9007199254740993',
   );
   check(
     (
@@ -475,13 +454,13 @@ export async function runSettingsContract(target: {
   );
   const integerProjection = await (await request("/api/settings")).text();
   check(
-    /"app.batch_size"\s*:\s*9007199254740993(?:[,}])/.test(integerProjection),
+    /"app.max_send_errors"\s*:\s*9007199254740993(?:[,}])/.test(integerProjection),
     "int64-exact-projection",
   );
   if (target.restart) {
     await target.restart();
     check(
-      /"app.batch_size"\s*:\s*9007199254740993(?:[,}])/.test(
+      /"app.max_send_errors"\s*:\s*9007199254740993(?:[,}])/.test(
         await (await request("/api/settings")).text(),
       ),
       "int64-restart",
@@ -496,7 +475,7 @@ export async function runSettingsContract(target: {
       boundary,
     );
     check(
-      (await (await request("/api/settings")).text()).includes(`"app.batch_size":${integer}`),
+      (await (await request("/api/settings")).text()).includes(`"app.max_send_errors":${integer}`),
       `int64-boundary-projection-${integer.startsWith("-") ? "min" : "max"}`,
     );
   }
@@ -575,7 +554,11 @@ export async function runSettingsContract(target: {
   check(unknown.status === (target.mode === "reference" ? 200 : 400), "unknown-key-d44");
   // The reference log's size before the invalid write: its exit line is searched for after this (B114).
   const logFrom = upstreamLogSize();
-  const malformedKey = await request("/api/settings/app.batch_size", "PUT", '"not-an-integer"');
+  const malformedKey = await request(
+    "/api/settings/app.max_send_errors",
+    "PUT",
+    '"not-an-integer"',
+  );
   check(malformedKey.status === (target.mode === "reference" ? 200 : 400), "invalid-key-d44");
   if (target.mode === "reference") {
     // The last write, not awaited: its accepted reload exits on the stored value by design (below).
@@ -594,8 +577,8 @@ export async function runSettingsContract(target: {
     const finalGet = await request("/api/settings");
     check(finalGet.status === 200, "invalid-key-read-d44");
     check(
-      asBody<{ data: Record<string, any> }>(await finalGet.json()).data["app.batch_size"] ===
-        snapshot["app.batch_size"],
+      asBody<{ data: Record<string, any> }>(await finalGet.json()).data["app.max_send_errors"] ===
+        snapshot["app.max_send_errors"],
       "invalid-key-rollback",
     );
     if (target.restart) {

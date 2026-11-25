@@ -44,8 +44,7 @@ import type { InstanceSettingsReader } from "@/settings/instance";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
-import { createEmailer } from "@/messaging/email";
-import { createSendRateLimiter } from "@/messaging/rate";
+import type { Dispatcher, Sender } from "@/messaging/dispatcher";
 import { createSMTPTest } from "@/messaging/test";
 import { addressBlocklisted, createSends } from "@/messaging/sends";
 import { createSendAnonymizer, createUnlinkedSends } from "@/messaging/anonymize";
@@ -131,6 +130,11 @@ export interface ProjectServices {
    * notifications. A project holds no copy of an instance key (invariant 5).
    */
   readonly settings: InstanceSettingsReader;
+  /**
+   * The instance's one dispatcher (B141, 14-projects section 7): its SMTP pools and start schedule
+   * are every project's. A project gets a sender from it and never builds an emailer of its own.
+   */
+  readonly dispatcher: Dispatcher;
   /** `--root-url`: the instance host, which the Settings page links to (B139). */
   readonly instanceRootUrl: string;
   /**
@@ -241,7 +245,7 @@ export async function createProject(
   let roles: ReturnType<typeof createRoles> | undefined;
   let users: ReturnType<typeof createUserStore> | undefined;
   let settings: ReturnType<typeof createSettings> | undefined;
-  let emailer: ReturnType<typeof createEmailer> | undefined;
+  let sender: Sender | undefined;
   let sends: ReturnType<typeof createSends> | undefined;
   let templateReferences: ReturnType<typeof createCampaignTemplateReferences> | undefined;
   let templates: ReturnType<typeof createTemplateStore> | undefined;
@@ -302,7 +306,7 @@ export async function createProject(
     await analyticsReader?.close();
     // A decision awaiting a condition finishes before the runner and connections close.
     await scheduling?.catch(() => {});
-    const closing = emailer?.close();
+    const closing = sender?.close();
     await running?.catch(() => {});
     await closing;
     await queryRunner?.close();
@@ -540,27 +544,15 @@ export async function createProject(
     });
     await importer.sweep().catch((error: unknown) => app.logger.error(error));
     registerImportRoutes(router, { importer, roles, auth });
-    const limiter = createSendRateLimiter({
-      clock,
-      rate: () => must(settings, "settings").read()["messaging.max_send_rate"],
-    });
-    settings.onUpdate((next, current) => {
-      if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
-        limiter.wake();
-      }
-    });
-    emailer = createEmailer({
-      clock,
-      limiter,
-      settings: () => {
-        const current = must(settings, "settings").read();
-        return { smtp: current.smtp, rootUrl: current["app.root_url"] };
-      },
+    // The per-push context the instance's one emailer receives from this project (B141).
+    sender = services.dispatcher.sender({
+      rootUrl: () => must(settings, "settings").read()["app.root_url"],
       copyAllowed: (address) =>
         !addressBlocklisted(must(subscriberStore, "subscriberStore"), address),
-      // Past every loop's and route's own check: nothing reaches SMTP from a held install (D67).
+      // Past every loop's and route's own check: nothing reaches SMTP from a held project (D67).
       refuse: () => refuseWhileHeld(db),
     });
+    const emailer = sender;
     mediaStore = createMediaStore(db, clock);
     const media = mediaStore;
     const files = createFilesystem(directory, () => {
@@ -631,7 +623,7 @@ export async function createProject(
     subscriberTracking = createSubscriberTracking(db);
     registerSendRoutes(router, sends, auth, roles);
     registerWebhookRoutes(router, { webhooks, auth });
-    outbox = createOutbox({ db, clock, logger: app.logger, sends, emailer });
+    outbox = createOutbox({ db, clock, logger: app.logger, sends, sender });
     const attachments = createAttachments(media, files);
     const embedImages = createEmbeds(media, app.logger);
     registerTxRoutes(router, {
@@ -822,20 +814,14 @@ export async function createProject(
       },
       renderer,
       tracking,
-      emailer,
+      sender,
       attachments,
       embedImages,
       settings: () => {
         const current = must(settings, "settings").read();
         const campaign = campaignSettings();
         return {
-          batchSize: current["app.batch_size"],
-          concurrency: current["app.concurrency"],
-          messageRate: current["app.message_rate"],
           maxSendErrors: current["app.max_send_errors"],
-          slidingWindow: current["app.message_sliding_window"],
-          slidingWindowDuration: current["app.message_sliding_window_duration"],
-          slidingWindowRate: current["app.message_sliding_window_rate"],
           rootUrl: campaign.rootUrl,
           messengers: campaign.messengers,
           unsubscribeHeader: campaign.unsubscribeHeader,
@@ -994,7 +980,7 @@ export async function createProject(
       roles,
       renderer,
       logger: app.logger,
-      send: (message) => must(emailer, "emailer").push(message, { priority: "outbox" }),
+      send: (message) => must(sender, "sender").push(message),
       site: () => {
         const current = pages();
         return {
@@ -1080,8 +1066,9 @@ export async function createProject(
         // An import stops at its next batch and uploads end, so nothing new reaches the writer.
         const importStop = must(importer, "importer").close();
         const maintenanceStop = must(maintenance, "maintenance").close();
-        // Stop campaign and sequence claims first. The campaign batch in flight finishes or
-        // is abandoned by the emailer's drain deadline; its unsent rest returns to the cursor.
+        // Stop campaign and sequence claims first, and this project's sending with them: its
+        // requests and unused slots go back, a push still waiting for its start ends not-started
+        // (its claim is handed back), and the pushes in SMTP flight drain under their deadlines.
         const runnerStop = must(runner, "runner").stop();
         const schedulerStop = must(scheduler, "scheduler").stop();
         const outboxStop = must(outbox, "outbox").stop();
@@ -1090,7 +1077,7 @@ export async function createProject(
         const deliveryStop = must(deliveries, "deliveries").stop();
         const summaryStop = must(summaryRefresh, "summaryRefresh").stop();
         const readerClose = must(analyticsReader, "analyticsReader").close();
-        const messagingClose = must(emailer, "emailer").close();
+        const messagingClose = must(sender, "sender").close();
         return [
           importStop,
           maintenanceStop,

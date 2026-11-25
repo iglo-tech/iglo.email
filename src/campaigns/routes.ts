@@ -7,10 +7,10 @@ import { must } from "@/invariant";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import { newMessageId } from "@/messaging/email";
-import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
+import type { Message, MessageHeaders } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
+import type { Sender } from "@/messaging/dispatcher";
 import type { CapacityAnswer, Candidate } from "@/messaging/capacity";
-import type { SendPriority } from "@/messaging/rate";
 import type { TestSends } from "@/messaging/test-sends";
 import type { BrandSite } from "@/public/brand";
 import type { PageSite } from "@/public/layout";
@@ -80,12 +80,7 @@ export interface CampaignDeps {
   auth: Authentication;
   lists: ListReferences;
   subscribers: SubscriberStore;
-  emailer: {
-    push(
-      message: Message,
-      delivery?: { copies?: boolean; priority?: SendPriority; testPool?: boolean },
-    ): { messageId: string; result: Promise<Outcome> };
-  };
+  emailer: Pick<Sender, "push">;
   /** Each test message's Message-ID, so a notice of it is named in the log (B108). */
   testSends: TestSends;
   settings: () => CampaignSettings;
@@ -1037,7 +1032,7 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
       // with the outcome and never rejects, so without this its failure would leave no trace.
       const dispatched = messages.map((message) => ({
         message,
-        dispatch: deps.emailer.push(message, { copies: false, priority: "outbox", testPool: true }),
+        dispatch: deps.emailer.push(message, { copies: false, testPool: true }),
       }));
       const results = dispatched.map(({ message, dispatch }) =>
         dispatch.result.then((outcome) => {

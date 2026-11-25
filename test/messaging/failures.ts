@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { createRealClock } from "@/clock";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { SMTPServer } from "@/messaging/email";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
@@ -39,7 +39,7 @@ try {
       email_headers: [],
       from_addresses: [],
     };
-    const emailer = createEmailer({
+    const emailer = fixtureEmailer({
       settings: () => ({ smtp: [server], rootUrl: "https://example.test" }),
       clock: createRealClock(),
     });
@@ -99,7 +99,7 @@ try {
     from_addresses: [],
   };
   let current = [config];
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     settings: () => ({ smtp: current, rootUrl: "https://example.test" }),
     clock: createRealClock(),
   });

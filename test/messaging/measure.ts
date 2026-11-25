@@ -5,7 +5,7 @@ import { createConnection, createServer } from "node:net";
 import type { Socket } from "node:net";
 import nodemailer from "nodemailer";
 import { createRealClock } from "@/clock";
-import { createEmailer } from "@/messaging/email";
+import { fixtureEmailer } from "@/test/messaging/sender";
 import type { SMTPServer } from "@/messaging/email";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { verifyFixtureDkim } from "@/test/perf/runtime-compat/dkim-check";
@@ -86,7 +86,7 @@ async function run(mode: "control" | "owner", count: number, repetition: string)
   const mailpit = new Mailpit(sink, marker);
   const before = connects;
   peak = live;
-  const emailer = createEmailer({
+  const emailer = fixtureEmailer({
     settings: () => ({ smtp: [config], rootUrl: "https://example.test" }),
     clock: createRealClock(),
   });

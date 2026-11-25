@@ -221,7 +221,7 @@ async function writer(until: () => boolean) {
     );
     const claimed = writeTransaction(db, () => {
       const time = new Date();
-      return sends.claimBatch(time, new Date(time.getTime() + 60_000), 1);
+      return sends.claimBatch(time, new Date(time.getTime() + 60_000), 1, "transactional");
     });
     sends.finishAll(
       claimed.map(({ row }) => ({

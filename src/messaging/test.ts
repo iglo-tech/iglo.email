@@ -7,7 +7,7 @@ import type { Translation } from "@/i18n/i18n";
 import type { SettingsStore } from "@/settings/store";
 import type { SMTPServer } from "@/messaging/email";
 import { validServer } from "@/messaging/email";
-import type { createEmailer } from "@/messaging/email";
+import type { Sender } from "@/messaging/dispatcher";
 import { HttpError } from "@/server/response";
 import { validateDKIM } from "@/settings/dkim";
 import { mailBrand } from "@/public/brand";
@@ -135,7 +135,7 @@ function parse(value: unknown) {
 }
 export function createSMTPTest(
   settings: SettingsStore,
-  emailer: ReturnType<typeof createEmailer>,
+  emailer: Pick<Sender, "test">,
   t: Translation,
   renderer: TemplateRenderer,
 ) {
