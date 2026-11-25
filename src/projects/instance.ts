@@ -238,7 +238,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     }
     entries.length = 0;
     // Last in the shutdown order (14-projects section 7): every project has stopped asking for
-    // slots and drained; the pools close.
+    // slots and drained; the pools close. After stop() this is the same, already settled close.
     unsubscribeRate?.();
     await dispatcher?.close();
     registry?.close();
@@ -457,9 +457,15 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         startProject(entry);
       }
     },
-    /** Every project's orderly stops, the last registered first. main() appends the HTTP stop. */
+    /**
+     * Every project's orderly stops, the last registered first, then the dispatcher's. main() appends
+     * the HTTP stop. The dispatcher stops in the same turn as the projects, not after they settle: a
+     * project's sender waits for its pushes in SMTP flight, and only the dispatcher's emailer bounds
+     * that drain (5 s, then it cancels the sockets), as each project's own emailer did before B141.
+     */
     stop(): Array<unknown> {
-      return entries.toReversed().flatMap((entry) => entry.project.stop());
+      const stops = entries.toReversed().flatMap((entry) => entry.project.stop());
+      return dispatcher ? [...stops, dispatcher.close()] : stops;
     },
     close: closeAll,
     /**
