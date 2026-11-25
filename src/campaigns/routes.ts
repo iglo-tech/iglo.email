@@ -9,6 +9,7 @@ import { UploadRootError } from "@/media/filesystem";
 import { newMessageId } from "@/messaging/email";
 import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
+import type { CapacityAnswer, Candidate } from "@/messaging/capacity";
 import type { SendPriority } from "@/messaging/rate";
 import type { TestSends } from "@/messaging/test-sends";
 import type { BrandSite } from "@/public/brand";
@@ -98,6 +99,25 @@ export interface CampaignDeps {
   notify?: AdminNotifier;
   /** Wakes the campaign runner (B75): a start, resume or due schedule need not wait for its scan. */
   wakeRunner?: () => void;
+  /**
+   * `GET /api/sending/capacity` (14-projects section 7, B145a): the instance's forecast and this
+   * project's campaign counts for a candidate given by ID. Without it the route is not served.
+   */
+  capacity?:
+    | {
+        forecast(candidate: Candidate | null): Promise<CapacityAnswer>;
+        campaign(id: bigint): { recipients: number; sendAt: string | null } | null;
+      }
+    | undefined;
+}
+
+/** A query parameter given at most once; undefined when absent. */
+function single(params: URLSearchParams, name: string): string | undefined {
+  const values = params.getAll(name);
+  if (values.length > 1) {
+    throw new HttpError(400, `Invalid ${name}: give it once.`);
+  }
+  return values[0];
 }
 
 const idValue = (id: bigint | null) =>
@@ -1043,6 +1063,54 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
   const manage = any("campaigns:manage_all", "campaigns:manage");
   router.route("GET", "/api/campaigns", collection, auth.middleware(), get);
   router.route("GET", "/api/campaigns/running/stats", running, auth.middleware(), get);
+  const capacity = deps.capacity;
+  if (capacity) {
+    // Native (B145a): instance totals only. `at`, `count` and `campaign_id` describe a candidate.
+    const forecast: Handler = async (context) => {
+      const params = context.url.searchParams;
+      const at = single(params, "at");
+      const count = single(params, "count");
+      const id = single(params, "campaign_id");
+      let start: Date | null = null;
+      if (at !== undefined) {
+        const parsed = Date.parse(at);
+        if (!/^\d{4}-\d{2}-\d{2}T/.test(at) || Number.isNaN(parsed)) {
+          throw new HttpError(400, "Invalid at: use an RFC 3339 time.");
+        }
+        start = new Date(parsed);
+      }
+      let recipients: number | null = null;
+      if (count !== undefined) {
+        if (!/^\d{1,10}$/.test(count) || Number(count) > 1_000_000_000) {
+          throw new HttpError(400, "Invalid count: use a whole number up to 1000000000.");
+        }
+        recipients = Number(count);
+      }
+      let exclude: number | null = null;
+      if (id !== undefined) {
+        if (!/^[1-9]\d{0,15}$/.test(id) || Number(id) > Number.MAX_SAFE_INTEGER) {
+          throw new HttpError(400, "Invalid campaign_id.");
+        }
+        const campaign = capacity.campaign(BigInt(id));
+        if (!campaign) {
+          throw new HttpError(
+            404,
+            t(context).Ts("globals.messages.notFound", "name", "{globals.terms.campaign}"),
+          );
+        }
+        checkCampaign(context, false, BigInt(id));
+        exclude = Number(id);
+        recipients ??= campaign.recipients;
+        start ??= campaign.sendAt === null ? null : new Date(campaign.sendAt);
+      }
+      const candidate =
+        at === undefined && count === undefined && id === undefined
+          ? null
+          : { at: start, recipients: recipients ?? 0, exclude };
+      return ok(await capacity.forecast(candidate));
+    };
+    router.route("GET", "/api/sending/capacity", forecast, auth.middleware(), get);
+  }
   router.route("GET", "/api/campaigns/:id", one, auth.middleware(), get, hasID);
   router.route("GET", "/api/campaigns/:id/skipped", skipped, auth.middleware(), get, hasID);
   router.route("GET", "/api/campaigns/:id/preview", preview, auth.middleware(), get, hasID);

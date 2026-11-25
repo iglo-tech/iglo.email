@@ -1122,6 +1122,9 @@ export async function runOpenApiContract(target: {
       body: { status: "running" },
     });
     await op("GET /api/campaigns/running/stats");
+    // B145a: without SES API credentials the answer has no account or forecast; the full shape is
+    // checked below with a literal answer.
+    await op("GET /api/sending/capacity", { query: `?campaign_id=${campaign.id}&count=10` });
     let campaignStatus = "";
     await untilState(
       async () =>
@@ -1789,6 +1792,48 @@ export async function runOpenApiContract(target: {
         checked,
       ).length === 0,
       "event-sequence-link-shape",
+    );
+    // A capacity answer with SES API credentials (B145a). The production run has no SES account to
+    // read, so the shape test/projects/capacity.test.ts receives from its stand-in is checked alone.
+    const capacityAnswer = {
+      available: true,
+      reason: null,
+      error: null,
+      rate: { setting: 10, ses: 20, effective: 10 },
+      account: {
+        max_send_rate: 20,
+        max_24_hour_send: 50_000,
+        sent_last_24_hours: 3000,
+        production_access_enabled: true,
+        sending_enabled: true,
+        read_at: "2026-01-02T03:04:05.000Z",
+        age_seconds: 0,
+      },
+      forecast: {
+        start: "2026-01-02T03:04:05.000Z",
+        window_start: "2026-01-01T03:34:05.000Z",
+        window_end: "2026-01-02T03:34:05.000Z",
+        still_counted: 2980,
+        outside: 1000,
+        baseline: 21,
+        planned: 19_750,
+        candidate: 18_000,
+        demand: 22_751,
+        quota: 50_000,
+        headroom: 27_249,
+        fits: true,
+      },
+    };
+    check(
+      validate(
+        document,
+        { $ref: "#/components/schemas/SendingCapacity" },
+        capacityAnswer,
+        "$",
+        0,
+        checked,
+      ).length === 0,
+      "sending-capacity-shape",
     );
     // Nothing documented went unexercised.
     for (const name of Object.keys(document.components.schemas)) {

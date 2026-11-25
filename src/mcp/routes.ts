@@ -13,22 +13,33 @@ const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"] as const;
 
 const LATEST_PROTOCOL_VERSION = SUPPORTED_VERSIONS[0];
 
+/** The longest project name the instructions quote (D159); a longer one is cut with "…". */
+export const INSTRUCTIONS_NAME_LIMIT = 40;
+
 /**
- * What an agent reads first, in the initialize result (D108). About 1,500 characters at most. Every
- * tool named here exists in tools/list for an admin credential (test/mcp/agent-guidance.test.ts).
+ * What an agent reads first, in the initialize result (D108). About 1,500 characters at most, with
+ * a project name of up to INSTRUCTIONS_NAME_LIMIT characters (D159). Every tool named here exists
+ * in tools/list for an admin credential (test/mcp/agent-guidance.test.ts).
  */
-const INSTRUCTIONS = [
-  "iglo.email is an email server. This endpoint is for an agent working on an instance for a person; applications use the REST API (/api/openapi.json) with an API user. Both apply the same permissions; this endpoint omits what the last paragraph names.",
-  "Before writing Liquid, read `template_reference`.",
-  "To author a sequence step: `get_sequence`; change the step with `update_sequence_step`, or a template with `update_template`; render it with `preview_sequence_step`, giving a real `subscriber_id` or a `sample`; send a labelled test with `test_sequence_step`. Campaigns follow the same loop: `update_campaign`, `preview_campaign`, `send_campaign_test`.",
-  "A test send's `true` means queued, not delivered: ask the person to check their inbox. A test writes no send row. A test that fails to deliver, at SMTP time or later by a bounce or complaint, appears in `get_logs`; silence may be delay or filtering. Never repeat a send to check it, real or test.",
-  "Check real sends with `get_sends`; `get_bounces` lists the bounces that came back.",
-  "A failed call returns the API's message as a tool error: correct the arguments it names. Sends are real mail: confirm addresses with the person first. Reading users and roles is a tool (`get_users`, `get_user_roles`); changes to users and roles, two-factor sign-in, bulk deletes, deletes addressed by a query, bulk changes selected by a query and replacing all settings are not tools; a person does those in the admin UI. Uploads and answers are capped at 1 MiB.",
-].join("\n\n");
+export function instructions(project: string): string {
+  const flat = project.replaceAll(/[\p{Cc}"\s]+/gu, " ").trim() || "this project";
+  const name =
+    flat.length > INSTRUCTIONS_NAME_LIMIT ? `${flat.slice(0, INSTRUCTIONS_NAME_LIMIT - 1)}…` : flat;
+  return [
+    `iglo.email is an email server. This endpoint serves only the project "${name}", for an agent working for a person; applications use the REST API (/api/openapi.json) with the same permissions; this endpoint omits what the last paragraph names.`,
+    "Before writing Liquid, read `template_reference`.",
+    "To author a sequence step: `get_sequence`; change the step with `update_sequence_step`, or a template with `update_template`; render it with `preview_sequence_step`, giving a real `subscriber_id` or a `sample`; send a labelled test with `test_sequence_step`. Campaigns: `update_campaign`, `preview_campaign`, `send_campaign_test`.",
+    "A test send's `true` means queued: ask the person to check their inbox. A test writes no send row; a test that fails to deliver (at SMTP time, or by a later bounce or complaint) appears in `get_logs`. Never repeat a send to check it, real or test.",
+    "Real sends: `get_sends`; bounces: `get_bounces`. Before scheduling a large campaign, check `get_sending_capacity` with its `campaign_id`.",
+    "A failed call returns the API's message as a tool error: fix the arguments it names. Sends are real mail: confirm addresses with the person first. Reading users and roles is a tool (`get_users`, `get_user_roles`); changes to users and roles, two-factor sign-in, bulk deletes, deletes addressed by a query, bulk changes selected by a query and replacing all settings are not tools; a person uses the admin UI. Uploads and answers are capped at 1 MiB.",
+  ].join("\n\n");
+}
 
 export interface McpDeps {
   auth: Authentication;
   router: Router;
+  /** The project this endpoint serves, named in the instructions (B145a). */
+  project?: string;
 }
 
 /** A parsed JSON object that is not an array: the only shape a JSON-RPC request can take here. */
@@ -43,6 +54,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
     errorResponse(new HttpError(405, "Method Not Allowed", { Allow: "POST" }), "GET"),
   );
 
+  const projectInstructions = instructions(deps.project ?? "");
   router.route("POST", "/api/mcp", async (context: RequestContext) => {
     // 1. Origin validation: reuse auth.checkOrigin to validate Origin when present
     deps.auth.checkOrigin(context.request);
@@ -201,7 +213,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
               name: "iglo.email",
               version,
             },
-            instructions: INSTRUCTIONS,
+            instructions: projectInstructions,
           },
         }),
         {

@@ -999,15 +999,19 @@ function Bounces({ t, side }: { t: Translation; side: SettingsSide }) {
   );
 }
 
-/** The SES account's API access (B139, D154): stored and masked; no sender reads it yet. */
+/**
+ * The SES account's API access (B139, D154): stored and masked. The capacity forecast reads the
+ * account with it (B145a); "Check SES account" reads it now with the saved keys.
+ */
 function Ses() {
   return (
     <div class="settings-items">
       <fieldset class="card" data-keywords="ses amazon aws api access key secret region account">
         <legend>Amazon SES API</legend>
         <p class="text-light">
-          API access to the SES account. Set all three or none. A saved secret stays masked; leave
-          it as it is to keep it.
+          API access to the SES account, for an IAM user allowed only ses:GetAccount. Set all three
+          or none. A saved secret stays masked; leave it as it is to keep it. Without them there is
+          no capacity forecast.
         </p>
         <TextField
           model="form['ses.api_region']"
@@ -1030,6 +1034,29 @@ function Ses() {
           type="password"
           maxlength="128"
         />
+        <div class="hstack">
+          <button
+            type="button"
+            data-testid="ses-check"
+            x-bind:disabled="isLoading('settings.checkSES')"
+            {...{ "x-on:click.prevent": "doSESCheck()" }}
+          >
+            Check SES account
+          </button>
+          <span class="text-light">Reads the account with the saved keys.</span>
+        </div>
+        <template x-if="sesCheck">
+          <div data-testid="ses-check-result">
+            <template x-if="sesCheckError">
+              <p data-testid="ses-check-error" x-text="sesCheckError"></p>
+            </template>
+            <ul>
+              <template x-for="line in sesCheckLines">
+                <li x-text="line"></li>
+              </template>
+            </ul>
+          </div>
+        </template>
       </fieldset>
     </div>
   );

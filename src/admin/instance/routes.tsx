@@ -21,6 +21,7 @@ import type { Translation } from "@/i18n/i18n";
 import { settingsHandlers } from "@/settings/routes";
 import type { InstanceSettingsStore } from "@/settings/instance";
 import type { NavigationLink } from "@/admin/layout/shell";
+import type { SesAccount } from "@/messaging/ses-account";
 
 export const ACCOUNT_PATH = "/admin/instance/account";
 export const SETTINGS_PATH = "/admin/instance/settings";
@@ -37,6 +38,8 @@ export interface InstanceRouteDeps {
   readonly settings: InstanceSettingsStore;
   /** The login limit's client address, with security.trusted_proxies; the peer without it. */
   readonly clientAddress?: (context: RequestContext) => string;
+  /** The SES account (B145a): the instance Settings page's "Check SES account" button. */
+  readonly ses: Pick<SesAccount, "check" | "setting">;
   /** The primary project's SMTP test, or undefined without a primary project. */
   readonly smtpTest: () => ((body: unknown, revalidate: () => void) => Promise<void>) | undefined;
 }
@@ -666,6 +669,29 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
       }
       await test(value, () => auth.authorize(context.request));
       return ok([]);
+    }),
+  );
+  // "Check SES account" (B145a): a GetAccount read now, with its values or the AWS error. The
+  // secret never leaves the server; without the three API keys it answers `configured: false`.
+  const { ses } = deps;
+  router.route(
+    "POST",
+    "/api/instance/settings/ses/check",
+    api(async () => {
+      const state = await ses.check();
+      return ok({
+        configured: state.configured,
+        error: state.error,
+        setting: ses.setting(),
+        account: state.snapshot && {
+          max_send_rate: state.snapshot.maxSendRate,
+          max_24_hour_send: state.snapshot.max24HourSend,
+          sent_last_24_hours: state.snapshot.sentLast24Hours,
+          production_access_enabled: state.snapshot.productionAccessEnabled,
+          sending_enabled: state.snapshot.sendingEnabled,
+          read_at: state.snapshot.readAt,
+        },
+      });
     }),
   );
   // Any other instance page is the plain 404 an unclaimed host answers.

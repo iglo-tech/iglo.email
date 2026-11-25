@@ -65,6 +65,14 @@ function Schedule({ t, isNew, canSend }: Omit<FormProps, "site">) {
               />
             </label>
           </template>
+          {/* The SES capacity forecast (B145a): only with SES API credentials. */}
+          <template x-if="capacity">
+            <p
+              data-testid="campaign-capacity"
+              x-bind:class="capacityOver ? 'text-danger' : 'text-light'"
+              x-text="capacityLine"
+            ></p>
+          </template>
         </div>
         {!isNew && canSend ? (
           <div class="col-6 col-end hstack justify-end">

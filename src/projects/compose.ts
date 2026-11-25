@@ -88,6 +88,9 @@ import { createMediaStore } from "@/media/store";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { createCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
+import { createPlannedCampaigns } from "@/campaigns/planned";
+import type { PlannedCampaigns } from "@/campaigns/planned";
+import type { CapacityAnswer, CapacitySource, Candidate } from "@/messaging/capacity";
 import { registerArchiveRoutes } from "@/public/archive";
 import { googleFontUrl } from "@/public/brand";
 import { createSubscriberMail, createSignupMail } from "@/public/mail";
@@ -142,11 +145,20 @@ export interface ProjectServices {
     changed(slug: string, credentials: AdminCredentials): void;
     redeem(slug: string, token: string): boolean;
   };
+  /**
+   * The instance's capacity forecast (B145a): `GET /api/sending/capacity` on this project's host
+   * asks it with this project's own source. Without it (a fixture) the route is not served.
+   */
+  readonly capacity?: {
+    forecast(source: CapacitySource, candidate: Candidate | null): Promise<CapacityAnswer>;
+  };
 }
 
 /** What one project is wired from: its identity, its directory, its root URL and its seed. */
 export interface ProjectOptions {
   readonly slug: string;
+  /** The project's name in the registry, which the MCP instructions name (B145a); the slug if none. */
+  readonly name?: string;
   /** `projects/<slug>/`: the database, `uploads/` and `stage/` live here. */
   readonly directory: string;
   /** `--root-url` with the host replaced by the project's main hostname (14-projects section 2). */
@@ -167,6 +179,8 @@ export interface Project {
   readonly app: App;
   readonly db: Database;
   readonly router: Router;
+  /** This project's counts for the instance's capacity forecast (B145a). */
+  readonly capacity: CapacitySource;
   /** The bound server, read by the maintenance routes' keep-open and stopped by main(). */
   attach(server: ProjectServer): void;
   /**
@@ -231,6 +245,7 @@ export async function createProject(
   let mediaStore: ReturnType<typeof createMediaStore> | undefined;
   let runnerStore: ReturnType<typeof createRunnerStore> | undefined;
   let recipients: ReturnType<typeof createCampaignRecipients> | undefined;
+  let planned: PlannedCampaigns | undefined;
   let runner: ReturnType<typeof createCampaignRunner> | undefined;
   let mail: SubscriberMail | undefined;
   let signups: ReturnType<typeof createSignupMail> | undefined;
@@ -249,6 +264,14 @@ export async function createProject(
     server?: ProjectServer;
   }
   const serverRef: ServerRef = {};
+  /** This project's counts for the instance's forecast (B145a): counts and send times, no rows. */
+  const source: CapacitySource = {
+    starts: (day, from) => ({
+      campaign: must(planned, "planned").starts(day, from),
+      other: must(sends, "sends").starts(day, from),
+    }),
+    planned: () => must(planned, "planned").planned(),
+  };
   // The finally body of the composition: every store that exists is closed, the database last.
   // A wiring failure runs it before the error propagates, so nothing that was opened stays open.
   const closeAll: () => Promise<void> = async () => {
@@ -280,6 +303,7 @@ export async function createProject(
     bounces?.close();
     webhooks?.close();
     sequences?.close();
+    planned?.close();
     recipients?.close();
     runnerStore?.close();
     campaignStore?.close();
@@ -702,6 +726,11 @@ export async function createProject(
       notify: notifier,
       // The runner is created after these routes (below), so the route reads it when called.
       wakeRunner: () => runner?.wake(),
+      // The forecast is the instance's; this project gives its own counts (B145a).
+      capacity: services.capacity && {
+        forecast: (candidate) => must(services.capacity, "capacity").forecast(source, candidate),
+        campaign: (id) => must(planned, "planned").campaign(id),
+      },
     });
     registerCampaignPublicRoutes(router, {
       db,
@@ -755,6 +784,11 @@ export async function createProject(
       }),
     });
     recipients = createCampaignRecipients(db);
+    const measured = recipients;
+    planned = createPlannedCampaigns(db, {
+      recipients: measured,
+      listOptin: (id) => must(lists, "lists").subscriberMetadata(id)?.optin ?? null,
+    });
     const templateStore = templates;
     runner = createCampaignRunner({
       db,
@@ -969,6 +1003,7 @@ export async function createProject(
     registerMcpRoutes(router, {
       auth,
       router,
+      project: options.name ?? options.slug,
     });
     summaryRefresh = createSummaryRefresh({
       clock,
@@ -986,6 +1021,7 @@ export async function createProject(
       app,
       db,
       router,
+      capacity: source,
       attach(server: ProjectServer) {
         serverRef.server = server;
       },
