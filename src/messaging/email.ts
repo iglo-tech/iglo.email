@@ -62,6 +62,15 @@ export interface Dispatch {
   messageId: string;
   result: Promise<Outcome>;
 }
+/** A push as the emailer hands it to the dispatcher, which alone may hand it back. */
+export interface EmailerDispatch extends Dispatch {
+  /**
+   * Hands a push that has not reached SMTP back: it ends not-started at once and never starts.
+   * Returns false, and changes nothing, once the push may have reached SMTP (its operation started).
+   * A push that already settled returns true. A sender's close deadline uses it (B141a).
+   */
+  release(): boolean;
+}
 /**
  * What one push carries that differs between projects (14-projects section 7): its Message-ID
  * domain, its copy policy (that project's blocklist) and its hold check (its restore hold).
@@ -527,7 +536,7 @@ export function createEmailer(options: {
     delivery: PushDelivery,
     temporary = false,
     startedAt = options.clock.now().getTime(),
-  ): Dispatch {
+  ): EmailerDispatch {
     const { context } = delivery;
     const copies = delivery.copies ?? true;
     const testPool = delivery.testPool ?? false;
@@ -547,10 +556,15 @@ export function createEmailer(options: {
       accepted: [],
       rejected: [],
     });
-    const local = (): Dispatch => ({ messageId, result: Promise.resolve(localOutcome()) });
+    const done = (outcome: Outcome): EmailerDispatch => ({
+      messageId,
+      result: Promise.resolve(outcome),
+      release: () => true,
+    });
+    const local = () => done(localOutcome());
     // A closed emailer never starts a message: the work is handed back (not-started), not failed.
     if (closed) {
-      return { messageId, result: Promise.resolve(notStartedOutcome()) };
+      return done(notStartedOutcome());
     }
     if (!server || !validServer(server) || !/^<[^<>\s@]+@[^<>\s@]+>$/.test(messageId)) {
       return local();
@@ -795,13 +809,28 @@ export function createEmailer(options: {
       pump(pool);
     })();
 
-    return { messageId, result };
+    return {
+      messageId,
+      result,
+      release() {
+        if (settled) {
+          return true;
+        }
+        if (operation?.started) {
+          return false;
+        }
+        // Not started on a connection: nothing reached SMTP. Settling removes a queued operation from
+        // its pool, and the start path checks `settled` after its wait, so it never starts now.
+        complete(notStartedOutcome());
+        return true;
+      },
+    };
   }
   /**
    * Picks the message's server and sends it. The caller (the dispatcher's sender) runs the hold check
    * before it; the emailer runs it again at the start, after the wait.
    */
-  function push(message: Message, delivery: PushDelivery): Dispatch {
+  function push(message: Message, delivery: PushDelivery): EmailerDispatch {
     const startedAt = options.clock.now().getTime();
     if (closed) {
       return dispatch(undefined, message, delivery, false, startedAt);

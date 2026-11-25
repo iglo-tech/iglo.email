@@ -17,6 +17,7 @@ import type { Clock } from "@/clock";
 import { createEmailer, rootDomain } from "@/messaging/email";
 import type {
   Dispatch,
+  EmailerDispatch,
   Message,
   Outcome,
   PushContext,
@@ -94,9 +95,11 @@ export interface Sender {
   /**
    * Stops this project's sending: requests and unused slots go back, pushes waiting for a start
    * end not-started, and it resolves once the pushes already started have settled, or after
-   * `SENDER_CLOSE_MS`. A push still in flight then settles `ambiguous` for this project (never
-   * retried), as a push the shutdown cuts does; its SMTP connection is left alone, since the pools
-   * are every project's. Calling it again returns the same promise.
+   * `SENDER_CLOSE_MS`. A push still queued for a pool connection then ends not-started (its row is
+   * handed back, as the emailer's own close does), and a push that may have reached SMTP settles
+   * `ambiguous` for this project (never retried), as a push the shutdown cuts does; its SMTP
+   * connection is left alone, since the pools are every project's. Calling it again returns the
+   * same promise.
    */
   close(): Promise<void>;
 }
@@ -131,7 +134,10 @@ interface Member {
   readonly waiting: Set<Start>;
   /** Pushes not yet settled. */
   readonly inflight: Set<Promise<void>>;
-  /** Settles each unsettled push `ambiguous` for this project: the close deadline. */
+  /**
+   * The close deadline, one per unsettled push: one not yet on an SMTP connection ends not-started,
+   * one that may have reached SMTP settles `ambiguous` for this project.
+   */
   readonly cut: Set<() => void>;
 }
 interface Start {
@@ -531,12 +537,17 @@ export function createDispatcher(options: DispatcherOptions) {
       copyAllowed: (address) => context.copyAllowed(address),
       refuse: () => context.refuse(),
     });
-    const track = (dispatch: Dispatch, slot?: Slot): Dispatch => {
-      // The project sees the push's own outcome, or `ambiguous` once its close deadline passes.
-      // The slot stays running until the push itself settles, so the horizon's bound holds.
+    const track = (dispatch: EmailerDispatch, slot?: Slot): Dispatch => {
+      // The project sees the push's own outcome, or once its close deadline passes: not-started for
+      // a push that never reached SMTP (it is handed back and never starts, B141a), `ambiguous` for
+      // one that may have. The slot stays running until the push itself settles, so the horizon's
+      // bound holds.
       let expire!: () => void;
       const result = new Promise<Outcome>((resolve, reject) => {
-        expire = () =>
+        expire = () => {
+          if (dispatch.release()) {
+            return;
+          }
           resolve({
             messageId: dispatch.messageId,
             status: "ambiguous",
@@ -544,6 +555,7 @@ export function createDispatcher(options: DispatcherOptions) {
             accepted: [],
             rejected: [],
           });
+        };
         dispatch.result.then(resolve, reject);
       });
       member.cut.add(expire);
