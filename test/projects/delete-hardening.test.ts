@@ -5,7 +5,7 @@
 // In process, through the instance's own server and API, since each case needs a chosen moment.
 import { Database } from "bun:sqlite";
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, readdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import {
@@ -127,6 +127,111 @@ test("a delete that stops part way keeps the project listed with its error and o
   }
   expect(f.failures).toEqual([]);
 });
+
+/**
+ * A final-snapshot step the server cannot finish until the operator repairs a permission (the
+ * reviewer's probe: a folder made by another user). `block` runs on the project's directory before
+ * the first delete, `repair` before the second.
+ */
+const snapshotSteps: Array<{
+  step: string;
+  block: (directory: string) => void;
+  repair: (directory: string) => void;
+}> = [
+  {
+    // A read-only project directory: the snapshot and tarball are written, nothing is removed.
+    step: "removing a read-only directory",
+    block: (directory) => chmodSync(directory, 0o555),
+    repair: (directory) => chmodSync(directory, 0o755),
+  },
+  {
+    // An upload the server cannot read: the tarball cannot be written.
+    step: "writing the tarball",
+    block: (directory) => chmodSync(join(directory, "uploads", "kept.txt"), 0o000),
+    repair: (directory) => chmodSync(join(directory, "uploads", "kept.txt"), 0o644),
+  },
+  {
+    // A folder the server cannot empty: the snapshot and tarball exist, the directory is half gone.
+    step: "emptying an upload folder",
+    block: (directory) => chmodSync(join(directory, "uploads", "locked"), 0o555),
+    repair: (directory) => chmodSync(join(directory, "uploads", "locked"), 0o755),
+  },
+];
+
+for (const { step, block, repair } of snapshotSteps) {
+  test(`a delete stopped at ${step} is finished by the next delete from that step, one snapshot and one tarball`, async () => {
+    const f = await openLifecycle(createRealClock());
+    const host = "archive.example.test";
+    const directory = join(f.dataDir, "projects", "archive");
+    const deleted = join(f.dataDir, "backups", "deleted");
+    const archived = () =>
+      existsSync(deleted)
+        ? readdirSync(deleted)
+            .filter((name) => name.endsWith(".db") || name.endsWith(".tar"))
+            .toSorted()
+        : [];
+    try {
+      await createProject(f, { slug: "archive", name: "Archive", hostname: host });
+      const session = await projectSession(f, host);
+      const created = await projectCall(f, host, session, "POST", "/api/subscribers", {
+        email: "kept@archive.example.test",
+        name: "Kept",
+      });
+      expect(created.status).toBe(200);
+      mkdirSync(join(directory, "uploads", "locked"), { recursive: true });
+      writeFileSync(join(directory, "uploads", "kept.txt"), "kept upload");
+      writeFileSync(join(directory, "uploads", "locked", "inner.txt"), "inner upload");
+      block(directory);
+      let failed: { status: number; text: string };
+      try {
+        failed = await deleteProject(f, "archive");
+      } finally {
+        repair(directory);
+      }
+      expect(failed.status).toBe(500);
+      expect(failed.text).toContain("Deleting project archive stopped at its archive");
+      expect(existsSync(directory)).toBe(true);
+      const listed = (
+        await readJson<{ data: Array<{ slug: string; delete_error: string | null }> }>(
+          await f.call("GET", "/api/instance/projects"),
+        )
+      ).data.find((project) => project.slug === "archive");
+      expect(listed?.delete_error).toContain("its archive");
+      const before = archived();
+
+      const finished = await deleteProject(f, "archive");
+      expect(finished.status).toBe(200);
+      const result = asBody<{ data: { database: string; files: string | null } }>(
+        JSON.parse(finished.text),
+      ).data;
+      expect(existsSync(directory)).toBe(false);
+      // The retry used the name the first attempt claimed: one snapshot, one tarball, no `-2`.
+      expect(archived()).toEqual(
+        [result.database, result.files!].map((path) => path.slice("backups/deleted/".length)),
+      );
+      expect(before.every((name) => archived().includes(name))).toBe(true);
+      expect(snapshotEmails(f.dataDir, result.database)).toEqual(["kept@archive.example.test"]);
+      const tar = await Bun.file(join(f.dataDir, result.files!)).text();
+      expect(tar).toContain("kept upload");
+      expect(tar).toContain("inner upload");
+      expect(tar.split("uploads/kept.txt").length - 1).toBe(1);
+      const after = (
+        await readJson<{ data: Array<{ slug: string }> }>(
+          await f.call("GET", "/api/instance/projects"),
+        )
+      ).data.map((project) => project.slug);
+      expect(after).toEqual(["main"]);
+    } finally {
+      for (const path of [directory, join(directory, "uploads", "locked")]) {
+        if (existsSync(path)) {
+          chmodSync(path, 0o755);
+        }
+      }
+      await f.close();
+    }
+    expect(f.failures).toEqual([]);
+  });
+}
 
 test("a delete waits at most 5 s of the instance clock for a request in flight, then cuts it and says so", async () => {
   const clock = new TestClock();

@@ -113,8 +113,8 @@ export async function main(inspect?: (router: Router) => void): Promise<void> {
         process.off("SIGTERM", onSignal);
         process.off("SIGINT", onSignal);
         // Stop campaign and sequence claims first, as each project lists them, the last project
-        // first; the HTTP stop is last.
-        const stops = [...composed.stop(), server.stop()];
+        // first; the HTTP stop is last, its requests in flight bounded at 5 s (B149a, D164).
+        const stops = [...composed.stop(), composed.stopServer()];
         void Promise.allSettled(stops).then((results) => {
           const error = failure ?? results.find((result) => result.status === "rejected");
           if (error) {

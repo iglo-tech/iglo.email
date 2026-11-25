@@ -23,7 +23,7 @@ import type { Dispatcher } from "@/messaging/dispatcher";
 import type { SMTPServer } from "@/messaging/email";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
 import { archiveDeleted } from "@/projects/deleted";
-import type { DeletedProject } from "@/projects/deleted";
+import type { ArchiveProgress, DeletedProject } from "@/projects/deleted";
 import {
   INSTANCE_DATABASE,
   PROJECTS,
@@ -122,6 +122,8 @@ interface StuckDelete {
   closed: boolean;
   /** Its registry rows are gone: a restart would find a leftover directory. */
   unregistered: boolean;
+  /** The final snapshot's finished steps: a retry neither claims another name nor tars again. */
+  readonly archive: ArchiveProgress;
   error: string;
 }
 
@@ -561,7 +563,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       } finally {
         busy.delete(slug);
       }
-      return finishDelete({ entry, closed: false, unregistered: false, error: "" });
+      return finishDelete({ entry, closed: false, unregistered: false, archive: {}, error: "" });
     });
 
   /**
@@ -581,7 +583,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         registered.remove(slug);
         state.unregistered = true;
       }
-      const deleted = await archiveDeleted(root, slug, clock);
+      const deleted = await archiveDeleted(root, slug, clock, state.archive);
       stuck.delete(slug);
       return deleted;
     } catch (error) {
@@ -796,6 +798,33 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         sesAccount.stop(),
       ];
       return dispatcher ? [...stops, dispatcher.close()] : stops;
+    },
+    /**
+     * The HTTP stop main() appends (B149a, D164): the attached server stops taking requests, and
+     * those in flight get at most DRAIN_MS on the instance clock, a delete's drain bound, before
+     * their connections are cut and the databases close under them. A stalled upload no longer
+     * holds the shutdown until Bun's own idle timeout.
+     */
+    async stopServer(): Promise<void> {
+      const bound = server;
+      if (!bound) {
+        return;
+      }
+      const deadline = new AbortController();
+      const expired = clock.sleep(DRAIN_MS, deadline.signal).then(
+        () => true,
+        () => false,
+      );
+      const cut = await Promise.race([bound.stop().then(() => false), expired]);
+      deadline.abort();
+      if (cut) {
+        const running = bound.pendingRequests;
+        attention(
+          `Stopping: ${running} request${running === 1 ? "" : "s"} still running after ` +
+            `${DRAIN_MS / 1000} s ${running === 1 ? "was" : "were"} cut`,
+        );
+        await bound.stop(true);
+      }
     },
     close: closeAll,
     add,

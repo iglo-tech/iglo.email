@@ -1,11 +1,11 @@
 // A deleted project's final snapshot (14-projects sections 1 and 10; B143a, D157). Native: listmonk
-// has no projects. The project is already stopped and its database closed: the database file moves
-// to `backups/deleted/<slug>-<timestamp>.db` (with `-2`, `-3`… when that name is taken; never
+// has no projects. The project is already stopped and its database closed: the database file is
+// linked as `backups/deleted/<slug>-<timestamp>.db` (with `-2`, `-3`… when that name is taken; never
 // replaced), every other file of the directory (its uploads) goes into `<slug>-<timestamp>.tar`
 // beside it, and then the directory is removed.
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { link, lstat, mkdir, open, readdir, rename, rm, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Clock } from "@/clock";
 import { PROJECT_DATABASE, projectDirectory } from "@/projects/layout";
@@ -32,65 +32,82 @@ const databaseFiles = new Set([
 const STAGE = "stage";
 
 /**
+ * How far one project's archive got (B149a, D164). The caller keeps it across attempts, so a retry
+ * after a failure resumes from the step that failed and never repeats a finished one: the snapshot
+ * is claimed once, the tarball written once, and only then is the directory removed.
+ */
+export interface ArchiveProgress {
+  /** The snapshot's absolute path once its name is claimed (the database is linked there). */
+  database?: string;
+  /** Once the tarball is written: its absolute path, or null when there was no file to archive. */
+  files?: string | null;
+}
+
+/**
  * Moves a closed project's database to its final snapshot, archives its other files, then removes
  * its directory. The database is checkpointed first so the one file holds every committed write.
+ * Each step records itself in `progress` once done, so calling again with the same `progress`
+ * after a failure finishes from the failed step.
  */
 export async function archiveDeleted(
   dataDir: string,
   slug: string,
   clock: Clock,
+  progress: ArchiveProgress = {},
 ): Promise<DeletedProject> {
   const directory = projectDirectory(dataDir, slug);
   const target = deletedDirectory(dataDir);
-  await mkdir(target, { recursive: true });
   const source = join(directory, PROJECT_DATABASE);
-  if (existsSync(source)) {
-    const db = new Database(source, { strict: true });
-    try {
-      db.run("PRAGMA busy_timeout = 5000");
-      const result = db
-        .query<{ busy: number | bigint }, []>("PRAGMA wal_checkpoint(TRUNCATE)")
-        .get();
-      if (Number(result?.busy ?? 1) !== 0) {
-        throw new Error(`The database of ${slug} is still in use: nothing was moved`);
+  if (progress.database === undefined) {
+    await mkdir(target, { recursive: true });
+    if (existsSync(source)) {
+      const db = new Database(source, { strict: true });
+      try {
+        db.run("PRAGMA busy_timeout = 5000");
+        const result = db
+          .query<{ busy: number | bigint }, []>("PRAGMA wal_checkpoint(TRUNCATE)")
+          .get();
+        if (Number(result?.busy ?? 1) !== 0) {
+          throw new Error(`The database of ${slug} is still in use: nothing was moved`);
+        }
+      } finally {
+        db.close(true);
       }
-    } finally {
-      db.close(true);
     }
+    progress.database = await claimName(
+      source,
+      target,
+      `${slug}-${clock.now().toISOString().replaceAll(":", "-")}`,
+    );
   }
-  const { name, database } = await claimName(
-    source,
-    target,
-    `${slug}-${clock.now().toISOString().replaceAll(":", "-")}`,
-  );
-  const tarball = join(target, `${name}.tar`);
-  let files: string | null;
-  try {
-    files = await tarFiles(directory, tarball);
-  } catch (error) {
-    // The project's directory is whole again, so a new delete archives it from the start.
+  // The snapshot is a second name of the database file: removing the directory drops the first.
+  const database = progress.database;
+  if (progress.files === undefined) {
+    // The name was claimed with no `.tar` beside it, so a tarball there is this delete's partial one.
+    const tarball = `${database.slice(0, -".db".length)}.tar`;
     await rm(tarball, { force: true });
-    await rename(database, source);
-    throw error;
+    try {
+      progress.files = await tarFiles(directory, tarball);
+    } catch (error) {
+      // The database stays in its snapshot; the retry writes the tarball again from the start.
+      await rm(tarball, { force: true }).catch(() => {});
+      throw error;
+    }
   }
   await rm(directory, { recursive: true, force: true });
   return {
     database: relative(dataDir, database),
-    files: files ? relative(dataDir, files) : null,
+    files: progress.files ? relative(dataDir, progress.files) : null,
   };
 }
 
 /**
- * Moves the database to `<base>.db`, or `<base>-2.db`, `-3`… when an earlier snapshot has that name
- * (two deletes of one slug in the same millisecond, or a clock set back; B149a, D164). A hard link
- * is made first and fails on a taken name, where `rename` would replace it, and the source is
- * unlinked after. A name whose `.tar` exists is skipped too, so the pair is always one delete's.
+ * Links the database as `<base>.db`, or `<base>-2.db`, `-3`… when an earlier snapshot has that name
+ * (two deletes of one slug in the same millisecond, or a clock set back; B149a, D164), and returns
+ * the claimed path. A hard link fails on a taken name, where `rename` would replace it. A name whose `.tar` exists is skipped too, so the pair is always one
+ * delete's.
  */
-async function claimName(
-  source: string,
-  target: string,
-  base: string,
-): Promise<{ name: string; database: string }> {
+async function claimName(source: string, target: string, base: string): Promise<string> {
   for (let n = 1; ; n++) {
     const name = n === 1 ? base : `${base}-${n}`;
     const database = join(target, `${name}.db`);
@@ -110,8 +127,7 @@ async function claimName(
       }
       throw error;
     }
-    await unlink(source);
-    return { name, database };
+    return database;
   }
 }
 
