@@ -439,10 +439,11 @@ export function createCampaignRunner(deps: RunnerDeps) {
     const settings = deps.settings();
     const due = store.due(iso(now));
     // D174: a campaign paused, cancelled or finished while it waited for its source starts a later
-    // outage afresh (an attention line, the first wait).
+    // outage afresh (an attention line, the first wait), and a resume does not wait out the old one.
     for (const id of sourceWaits.keys()) {
       if (!pipes.has(id) && !due.includes(id)) {
         sourceWaits.delete(id);
+        retryAt.delete(id);
       }
     }
     for (const id of due) {

@@ -593,7 +593,9 @@ The opt-out field is "set" unless it is null, missing, `false`, `0`, `""`, `"0"`
 opt-out refuses grants (step 6) and blocks marketing at send time: a marketing sequence step ends
 `unsubscribed` and a campaign skips the person (`unsubscribed`), while transactional steps still
 send. iglo.email changes no list membership for it, so clearing the field in your application lets
-marketing reach the person again.
+marketing reach the person again. An opt-out ends the marketing enrollment, as a withdrawn consent
+does: a user who clears the field is not put back into it, but still gets later campaigns and any
+new enrollment their next trigger starts.
 
 **4. Rules.** Set the list and view rules of the events collection and the recipients view so that
 only the service account can read them, for example

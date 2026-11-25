@@ -254,7 +254,10 @@ test("the view's opt-out field ends a marketing step unsent with no membership c
   const { f } = await scheduler();
   const list = await f.list("News");
   const opted = await pb.user({ name: "Opal" });
+  // Already in step with the view (same address and name): the send-time read finds nothing to
+  // update, and the opt-out must still be seen.
   const id = await f.subscriber(emailOf(opted), {
+    name: "Opal",
     external_id: opted.id,
     lists: [list],
     preconfirm_subscriptions: true,
@@ -476,9 +479,17 @@ test("a campaign recipient whose view row has the opt-out field set is skipped u
   const list = await f.list("news");
   const opted = await pb.user({ name: "Opal", marketingOptOut: true });
   const kept = await pb.user({ name: "Kit" });
-  const optedId = (await f.member(emailOf(opted), [list], "confirmed", { external_id: opted.id }))
-    .id;
-  await f.member(emailOf(kept), [list], "confirmed", { external_id: kept.id });
+  // Both already in step with the view (same address and name): the send-time read finds nothing
+  // to update, and the opt-out must still be seen.
+  const optedId = (
+    await f.member(emailOf(opted), [list], "confirmed", { external_id: opted.id, name: "Opal" })
+  ).id;
+  await f.member(emailOf(kept), [list], "confirmed", { external_id: kept.id, name: "Kit" });
+  // A second opted-out user with a stale local name: the read updates the name and still skips.
+  const stale = await pb.user({ name: "Olga", marketingOptOut: true });
+  const staleId = (
+    await f.member(emailOf(stale), [list], "confirmed", { external_id: stale.id, name: "Old" })
+  ).id;
   const c = await f.campaign({
     name: "opt-out",
     subject: "Hi",
@@ -490,8 +501,13 @@ test("a campaign recipient whose view row has the opt-out field set is skipped u
   expect((await f.status(c.id, "running")).status).toBe(200);
   await f.until(c.id, "finished");
   expect(pushCounts(f)).toEqual({ [emailOf(kept)]: 1 });
-  expect(await skippedOf(f, c.id)).toEqual([[optedId, "unsubscribed"]]);
+  expect(await skippedOf(f, c.id)).toEqual([
+    [optedId, "unsubscribed"],
+    [staleId, "unsubscribed"],
+  ]);
   expect(await f.listStatus(optedId, list)).toBe("confirmed");
+  expect(await f.listStatus(staleId, list)).toBe("confirmed");
+  expect(asBody<string>((await f.json(`/api/subscribers/${staleId}`)).body.data.name)).toBe("Olga");
 });
 
 test("a campaign recipient the source has no valid address for is skipped subscriber_unavailable; the rest are sent once", async () => {
@@ -590,4 +606,42 @@ test("a campaign waiting for its source retries after 5 s, doubling to a 5-minut
   o.fail.from = null;
   await f.until(c.id, "finished");
   expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1 });
+});
+
+test("a campaign paused while it waits for its source starts afresh on resume: no leftover wait, a new attention line", async () => {
+  const { f, o } = await runner(false);
+  const list = await f.list("news");
+  const user = await pb.user();
+  await f.member(emailOf(user), [list], "confirmed", { external_id: user.id });
+  const c = await f.campaign({
+    name: "paused wait",
+    subject: "Hi",
+    lists: [list],
+    content_type: "html",
+    body: "<p>x</p>",
+  });
+  o.fail.from = 1;
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  // Up to the 5-minute wait: the ninth read is followed by another 300 s wait.
+  const step = 250;
+  await f.drive(() => o.reads.count >= 9, step, 10_000_000, 30_000);
+  expect(messages(f, "could not be read")).toBe(1);
+  // Paused right after that read, past a scan, then resumed with the source still down.
+  expect((await f.status(c.id, "paused")).status).toBe(200);
+  const paused = f.clock.now().getTime();
+  await f.drive(() => f.clock.now().getTime() - paused >= 10_000, step);
+  const reads = o.reads.count;
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  const resumed = f.clock.now().getTime();
+  // The next read comes at the next scan, not after the rest of the old 300 s wait, and the new
+  // outage writes its own attention line.
+  await f.drive(() => o.reads.count > reads, step);
+  expect(f.clock.now().getTime() - resumed).toBeLessThanOrEqual(5000 + 4 * step);
+  expect(messages(f, "could not be read")).toBe(2);
+  // The source answers: sent once.
+  o.fail.from = null;
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1 });
+  expect((await f.read(c.id)).sent).toBe(1);
 });
