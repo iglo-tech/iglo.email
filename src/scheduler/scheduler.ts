@@ -239,29 +239,34 @@ export function createScheduler(options: SchedulerOptions) {
 
   /**
    * D172: whether the source can still be read for an external enrollment past its 72-hour window
-   * whose step is late: one read of its trigger record. Undefined when the read succeeds (or there
-   * is no record to read), so the late step is skipped as usual.
+   * whose step is late: one read of its trigger record. `read` says whether the source answered; it
+   * is false for an enrollment with no trigger record to read (a manual one), which keeps being
+   * skipped `late` until a step that is not late reads the source.
    */
-  async function probeSource(row: SchedulerContext): Promise<ConditionError | undefined> {
+  async function probeSource(
+    row: SchedulerContext,
+  ): Promise<{ read: boolean } | { error: ConditionError }> {
     const source = options.source?.();
     if (!source) {
-      return { kind: "source_permanent", message: "The project has no source configured" };
+      return {
+        error: { kind: "source_permanent", message: "The project has no source configured" },
+      };
     }
     if (row.trigger_external_id === null) {
-      return undefined;
+      return { read: false };
     }
     try {
       await source.record(
         row.trigger_external_id,
         options.signal ? { signal: options.signal } : {},
       );
-      return undefined;
+      return { read: true };
     } catch (error) {
       const failure = sourceError(error);
       if (!failure) {
         throw error;
       }
-      return failure;
+      return { error: failure };
     }
   }
 
@@ -299,18 +304,21 @@ export function createScheduler(options: SchedulerOptions) {
     if (late !== undefined && now.getTime() > Date.parse(row.due_at) + late) {
       // D172: the 72-hour source window is the enrollment's, not the step's. A late step keeps
       // `error_since`; once the window has passed, a source that still cannot be read ends the
-      // enrollment `source_error` rather than skipping step after step.
+      // enrollment `source_error` rather than skipping step after step. A probe that reads the
+      // source restarts the window: the skip then clears `error_since`.
+      let read = false;
       if (
         row.source === "external" &&
         row.error_since !== null &&
         now.getTime() - Date.parse(row.error_since) >= SOURCE_RETRY_MS
       ) {
-        const failure = await probeSource(row);
-        if (failure) {
-          return sourceFailed(claim, row, failure);
+        const probe = await probeSource(row);
+        if ("error" in probe) {
+          return sourceFailed(claim, row, probe.error);
         }
+        read = probe.read;
       }
-      return skipped(claim, subscriber.email, "late", true);
+      return skipped(claim, subscriber.email, "late", !read);
     }
     const marketing = row.kind === "marketing";
     if (marketing) {

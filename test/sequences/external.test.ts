@@ -475,6 +475,127 @@ test("a source that recovers after a late marketing step clears error_since on t
   expect(attention(f)).not.toContain(`enrollment ${id}`);
 });
 
+/**
+ * A marketing sequence on `own`'s source whose second step comes due 71.5 hours after the first
+ * step's source failure, each step with `max_late: PT20M`. The source is down from the first step;
+ * the first step is skipped `late` and the second step's retries carry its decision past the
+ * window's 72 hours. Returns once the second step has failed and retried at +71.75 hours.
+ */
+async function lateAfterWindow(own: PocketBase, email: string) {
+  const f = await open(adapter(own));
+  const news = await f.list("News");
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const step = (wait: string) => ({
+    wait,
+    kind: "marketing",
+    template_id: template,
+    condition: { event: "order_paid" },
+    max_late: "PT20M",
+  });
+  const seq = await f.sequence({
+    list_id: news,
+    ...external([step("PT1H"), step("PT70H30M"), step("PT1H")]),
+  });
+  const subscriber = await f.subscriber(email, {
+    external_id: ada.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  expect((await f.enrollment(id)).trigger_external_id).not.toBeNull();
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+  // An hour on, the first step is past max_late: skipped late, the window carried over.
+  await f.pass(hour);
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[1]!.id,
+    error_since: new Date(failedAt).toISOString(),
+  });
+  while (f.clock.now().getTime() < failedAt + 71 * hour) {
+    await f.pass(hour);
+  }
+  // The second step is due at +71.5 h: its read fails and is retried at +71.75 h (15 minutes
+  // late, within max_late), which fails again and retries 15 minutes later, at +72 h.
+  const quarter = hour / 4;
+  for (let n = 0; n < 3; n++) {
+    await f.pass(quarter);
+  }
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[1]!.id,
+    error_since: new Date(failedAt).toISOString(),
+  });
+  expect((await f.sendLog()).filter((s) => s.enrollment_id === id)).toMatchObject([
+    { step_id: seq.steps[0]!.id, skip_reason: "late" },
+  ]);
+  return { f, seq, id, failedAt, quarter };
+}
+
+test("a late step past the 72-hour window reads its trigger record once and ends source_error when that fails", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const { f, seq, id, failedAt, quarter } = await lateAfterWindow(own, "probe-down@example.test");
+  // At +72 h the step is 30 minutes late, past the window: the probe read fails, so it ends now
+  // rather than being skipped late.
+  await f.pass(quarter);
+  const ended = await f.enrollment(id);
+  expect(ended).toMatchObject({
+    status: "exited",
+    exit_reason: "source_error",
+  });
+  expect(Date.parse(ended.finished_at)).toBe(failedAt + 72 * hour);
+  expect((await f.sendLog()).filter((s) => s.enrollment_id === id)).toMatchObject([
+    { step_id: seq.steps[0]!.id, skip_reason: "late" },
+  ]);
+  expect(f.sink.messages).toHaveLength(0);
+  expect(f.errors.map(String).filter((line) => line.includes(`enrollment ${id}`))).toHaveLength(1);
+  expect(attention(f)).toContain(`Sequence enrollment ${id} ended with source_error`);
+});
+
+test("a late step whose probe reads the source is skipped late and restarts the window; the next step retries a transient failure", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const { f, seq, id, quarter } = await lateAfterWindow(own, "probe-up@example.test");
+  await own.start();
+  // The probe reads the trigger record: the step is still skipped late (nothing stale is sent),
+  // and since the source just answered, error_since is cleared.
+  await f.pass(quarter);
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[2]!.id,
+    error_since: null,
+  });
+  expect(
+    (await f.sendLog())
+      .filter((s) => s.enrollment_id === id)
+      .map((s) => [s.step_id, s.skip_reason]),
+  ).toEqual([
+    [seq.steps[0]!.id, "late"],
+    [seq.steps[1]!.id, "late"],
+  ]);
+  // The third step meets one transient failure: a fresh window, so it retries.
+  await own.stop();
+  const blipAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(id)).error_since !== null, "transient failure");
+  expect(await f.enrollment(id)).toMatchObject({
+    status: "active",
+    step_id: seq.steps[2]!.id,
+    error_since: new Date(blipAt).toISOString(),
+  });
+  await own.start();
+  await f.pass(quarter);
+  await f.until(() => f.sink.messages.length === 1, "the third step's mail");
+  await f.until(async () => (await f.enrollment(id)).status !== "active", "completed");
+  expect((await f.enrollment(id)).status).toBe("completed");
+  expect(attention(f)).not.toContain(`enrollment ${id}`);
+});
+
 test("a pushed event in an external sequence's exit_on leaves its enrollment active", async () => {
   const f = await open();
   const ada = await pb.user();
