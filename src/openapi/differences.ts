@@ -668,6 +668,17 @@ export const differences: Array<Difference> = [
     ],
   },
   {
+    area: "Send time on a source (B150e)",
+    summary:
+      "No request or answer changes shape (D174). With a source configured, a step or campaign to a subscriber with an `external_id` uses the recipients view's current address and name, which `GET /api/subscribers/:id` then shows; a user the view no longer has is removed at send time (enrollment `canceled`, `subscriber_deleted`). A campaign recipient the source cannot give, or who left, is a `skipped` send with `subscriber_unavailable`; a view row with the opt-out field set is a `skipped` send with `unsubscribed`, and a marketing step to them ends the enrollment `exited`, `unsubscribed`. A campaign whose source is down stays `running` and sends nothing until the source answers.",
+    applies: [
+      "GET /api/subscribers/{id}",
+      "/api/sends",
+      "/api/enrollments",
+      "GET /api/campaigns/{id}",
+    ],
+  },
+  {
     area: "`marketing.min_interval` setting",
     summary:
       "Native key in GET/PUT `/api/settings` and `PUT /api/settings/marketing.min_interval`: an ISO 8601 duration (default `P7D`, empty disables), invalid values 400 with no write.",

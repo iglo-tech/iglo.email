@@ -614,7 +614,9 @@ in.
 
 **6. Settings.** On the project's Settings page, "Source" tab (or the `source.*` keys of
 `PUT /api/settings`): the URL (a direct internal URL is best, because a proxy that cuts quiet
-streams makes the stream reconnect more often), the auth collection, identity and password, the
+streams makes the stream reconnect more often; it must use a host name, not an IP address, because
+`sources.private_hosts` takes only host names: use `http://localhost:8090`, not
+`http://127.0.0.1:8090`), the auth collection, identity and password, the
 events and recipients mappings, the users collection and filter, and the grant rules. A grant rule
 says "an event named E, with these `data.*` equalities, adds the user to these lists": it is how
 consent reaches iglo.email. A grant never overrides an unsubscribe, a suppression, a blocklist or a
@@ -622,13 +624,18 @@ set opt-out, and does not add to double opt-in lists. Save, then press "Test con
 in, reads one row of each collection, names any field that is missing and fails a step a guest can
 read. When PocketBase runs on a private address (a Docker service name, `localhost`) and the
 webhook private-address block is on, add its host name to `sources.private_hosts` on the instance
-Settings page under Security.
+Settings page under Security. That setting rejects IP addresses, so the source URL needs a host
+name.
 
 **7. Sequences.** Create a sequence with source `external`: its trigger is an event name with
 optional `data.*` equalities and an optional `trigger.condition` read from the source when the
 event arrives. Steps can use conditions, aggregates and the `recipient` condition kind against the
 source. A user gets a subscriber the first time an event grants a list or starts a sequence: events
-that do neither create nothing.
+that do neither create nothing. Step templates must be Transactional-type templates. A new sequence
+is a draft: activate it, or its trigger starts nothing. A marketing step also follows the project's
+marketing frequency cap (`marketing.min_interval`, default 7 days): when marketing steps are only a
+short wait apart, a later one is deferred until the cap allows it (or skipped, under the step's
+`skip` cap policy), so it does not go out when its wait ends.
 
 **Send time.** For every sequence step and campaign to a subscriber with an `external_id`, the
 address and name are read from the recipients view just before the mail is rendered, so a renamed or
