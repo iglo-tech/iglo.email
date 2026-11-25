@@ -22,7 +22,7 @@ import { createDispatcher } from "@/messaging/dispatcher";
 import type { Dispatcher } from "@/messaging/dispatcher";
 import type { SMTPServer } from "@/messaging/email";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
-import { archiveDeleted } from "@/projects/deleted";
+import { archiveDeleted, hasDeletedSnapshots } from "@/projects/deleted";
 import type { ArchiveProgress, DeletedProject } from "@/projects/deleted";
 import {
   INSTANCE_DATABASE,
@@ -393,6 +393,11 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       });
     }
     registry.followInstanceHost(instanceHost);
+    // B149b r2 (D165): a deleted project's snapshot is proof the instance served several projects,
+    // for one that deleted it before the registry recorded that.
+    if (hasDeletedSnapshots(root)) {
+      registry.markSeveral();
+    }
     const records = registry.list();
     for (const name of directories) {
       if (!records.some((record) => record.slug === name)) {
@@ -729,6 +734,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       clientAddress: instanceClientAddress,
     }),
     projects: sesProjects,
+    servedSeveral: () => registered.servedSeveral(),
     logger: instanceLogger,
   });
 

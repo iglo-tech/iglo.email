@@ -1,6 +1,7 @@
 // Adapted from listmonk internal/core/bounces.go and queries/bounces.sql at 6fcd95f. Native
 // additions: `send_id`, a null `subscriber_id` for an unlinked send, and provider receipts.
 import type { Database } from "bun:sqlite";
+import { messageIdentity } from "@/bounces/ses";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import type { BounceTarget } from "@/messaging/sends";
@@ -185,10 +186,12 @@ export function createBounceStore(
       }
       return { subscriber, send, meta: event.meta, source: event.source };
     }
-    // The address fallback (upstream's) serves one project only: with several, the subscriber is
-    // the one the notice's own record names (B149b r1, D165).
-    const subscriber = event.subscriberUuid
-      ? owner.byUuid(event.subscriberUuid)
+    // The address fallback (upstream's) serves an instance that has only ever had one project:
+    // otherwise the subscriber is the one the notice's own Message-ID names, never a header's
+    // (B149b r1/r2, D165).
+    const uuid = ownRecord ? messageIdentity(event.messageId).subscriberUuid : event.subscriberUuid;
+    const subscriber = uuid
+      ? owner.byUuid(uuid)
       : event.email && !ownRecord
         ? owner.byEmail(event.email)
         : null;

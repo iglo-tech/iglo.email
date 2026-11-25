@@ -45,8 +45,9 @@ export interface SesNotice {
   expiresAt: Date;
   events: Array<BounceEvent>;
   /**
-   * B149b r1 (D165): true with several projects. The events act only on the subscriber their own
-   * send or delivery names: no address fallback, and no subscriber a header contradicts.
+   * B149b r1/r2 (D165): true once the instance has served several projects, even with one left.
+   * The events act only on the subscriber their own send or delivery names: no address fallback,
+   * and no subscriber a header contradicts.
    */
   ownRecord: boolean;
 }
@@ -161,18 +162,22 @@ const invalidData = (c: RequestContext) =>
   new HttpError(400, c.app.i18n.T("globals.messages.invalidData"));
 
 /**
- * The project a notice is for (section 8): the only project; else the one project whose own
+ * The project a notice is for (section 8): the only project of an instance that has never served
+ * more than one; else the one project whose own
  * sends, campaign deliveries or test sends the Message-ID names. Its domain decides nothing: a
  * project user can choose a test send's Message-ID, and a hostname can move to another project
  * (B149b, D165). Never by address: the same address can be a subscriber in two projects. A
  * delivery's `X-Listmonk-Campaign` and `X-Listmonk-Subscriber` must name the Message-ID's own
- * UUIDs (B149b r1): a project can't route by one record and act on another subscriber.
+ * UUIDs (B149b r1): a project can't route by one record and act on another subscriber. Once a
+ * project is deleted, the one left gets only what its own records name (B149b r2): the deleted
+ * project's late notices are no longer that project's, and its address must not match them.
  */
 function routeOf(
   projects: ReadonlyArray<SesProject>,
   events: Array<BounceEvent>,
+  several: boolean,
 ): SesProject | undefined {
-  if (projects.length === 1) {
+  if (!several) {
     return projects[0];
   }
   const messageId = events[0]?.messageId ?? "";
@@ -210,6 +215,8 @@ export function registerSesRoute(
     /** SNS signature checks and confirmations; tests inject the network. */
     sns?: SnsClient;
     projects: () => ReadonlyArray<SesProject>;
+    /** Whether the instance has ever served more than one project (B149b r2, D165). */
+    servedSeveral: () => boolean;
     /** The instance's log: a notice no single project claims is named there. */
     logger: ErrorLogger;
   },
@@ -262,7 +269,8 @@ export function registerSesRoute(
       throw invalidData(c);
     }
     const projects = deps.projects();
-    const project = routeOf(projects, events);
+    const several = projects.length > 1 || deps.servedSeveral();
+    const project = routeOf(projects, events, several);
     if (!project) {
       // Accepted, so SNS does not retry a notice that would match nothing again.
       logger.attention(`${UNMATCHED_NOTICE}: SNS message ${id}`, UNMATCHED_NOTICE);
@@ -275,7 +283,7 @@ export function registerSesRoute(
       key: `sns:${id}`,
       expiresAt: new Date(sent + SNS_MAX_AGE_MS + 1000),
       events,
-      ownRecord: projects.length > 1,
+      ownRecord: several,
     });
     return ok(true);
   };

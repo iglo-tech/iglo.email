@@ -880,8 +880,11 @@ once; a repeated message is recorded once.
 
 **One topic for the whole account.** The topic, its subscription and the allowed ARNs belong to the
 instance, and every project's bounces arrive through them: do not create a topic per project. With
-one project, every notice goes to it. With several, a notice goes to the one project whose own
-sends, campaign deliveries or test sends the IDs in its Message-ID name. The Message-ID's domain
+one project, every notice goes to it, matched by its recipient address when its Message-ID names
+nothing. Once the instance has served a second project, even if it was deleted since, the rules for
+several projects apply for good, so a late bounce of a deleted project's mail never acts on the
+subscriber of the same address in a project that is left. With several, a notice goes to the one
+project whose own sends, campaign deliveries or test sends the IDs in its Message-ID name. The Message-ID's domain
 decides nothing: a hostname can move to another project, and a campaign test's Message-ID can be
 chosen, so a late bounce follows the project that sent the message. A notice that names no project,
 or more than one, is answered 200 so SNS does not retry it, is recorded nowhere, and writes

@@ -4,7 +4,7 @@
 // replaced), every other file of the directory (its uploads) goes into `<slug>-<timestamp>.tar`
 // beside it, and then the directory is removed.
 import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { link, lstat, mkdir, open, readdir, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Clock } from "@/clock";
@@ -13,6 +13,15 @@ import { PROJECT_DATABASE, projectDirectory } from "@/projects/layout";
 /** Where the final snapshots of deleted projects go. */
 export function deletedDirectory(dataDir: string): string {
   return join(dataDir, "backups", "deleted");
+}
+
+/**
+ * B149b r2 (D165): whether a deleted project's final snapshot is kept, so the instance has served
+ * more than one project (an instance that deleted one before it recorded that in its registry).
+ */
+export function hasDeletedSnapshots(dataDir: string): boolean {
+  const target = deletedDirectory(dataDir);
+  return existsSync(target) && readdirSync(target).some((name) => name.endsWith(".db"));
 }
 
 export interface DeletedProject {

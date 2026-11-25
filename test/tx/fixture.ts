@@ -347,6 +347,7 @@ export async function txFixture(
       limit: bounceLimit,
       sns: createSnsClient({ clock, fetch: options.snsFetch ?? refuseNetwork }),
       projects: () => [sesProject],
+      servedSeveral: () => false,
       logger: app.logger,
     });
   }

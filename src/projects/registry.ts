@@ -1,6 +1,6 @@
 // The project registry in instance.db (14-projects sections 1 and 3, D142, D151). Native: listmonk
-// serves one database per process. This module owns the `projects` and `hostnames` tables; nothing
-// else reads them.
+// serves one database per process. This module owns the `projects`, `hostnames` and
+// `several_projects` tables; nothing else reads them.
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -156,6 +156,10 @@ export function createRegistry(db: Database, clock: Clock) {
   const deleteExtra = db.query<null, [string]>(
     "DELETE FROM hostnames WHERE project = ? AND kind = 'extra'",
   );
+  const severalRow = db.query<{ id: bigint }, []>("SELECT id FROM several_projects");
+  const insertSeveral = db.query<null, []>(
+    "INSERT OR IGNORE INTO several_projects (id) VALUES (1)",
+  );
 
   function list(): Array<ProjectRecord> {
     const hosts = hostnames.all();
@@ -201,6 +205,9 @@ export function createRegistry(db: Database, clock: Clock) {
           }
         }
         insertProject.run(input.slug, name, clock.now().toISOString(), input.primary ? 1n : 0n);
+        if (!input.primary) {
+          insertSeveral.run();
+        }
         insertHostname.run(main, input.slug, "main");
         for (const hostname of extra) {
           insertHostname.run(hostname, input.slug, "extra");
@@ -246,6 +253,18 @@ export function createRegistry(db: Database, clock: Clock) {
         "updated project",
       );
     },
+    /**
+     * B149b r2 (D165): whether the instance has ever served more than one project. Set when a
+     * project besides the primary is registered, or by `markSeveral`; never cleared, so it stays
+     * after a delete leaves one project.
+     */
+    servedSeveral(): boolean {
+      return severalRow.get() !== null;
+    },
+    /** Records that the instance has served more than one project (a deleted project's snapshot). */
+    markSeveral(): void {
+      insertSeveral.run();
+    },
     /** Removes a project's rows, its hostnames with it. Returns whether it was registered. */
     remove(slug: string): boolean {
       return writeTransaction(db, () => deleteProject.run(slug).changes > 0);
@@ -285,6 +304,8 @@ export function createRegistry(db: Database, clock: Clock) {
         updateMain,
         renameProject,
         deleteExtra,
+        severalRow,
+        insertSeveral,
       ]) {
         statement.finalize();
       }
