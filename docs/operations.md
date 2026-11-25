@@ -1150,7 +1150,7 @@ command releases `instance.db`'s hold:
 ```sh
 systemctl stop iglo.email
 runuser -u iglo-email -- iglo.email backup --release-hold --consent-reconciled \
-  --data-dir /var/lib/iglo.email --project main
+  --data-dir /var/lib/iglo.email --project main || [ $? -eq 3 ]
 runuser -u iglo-email -- iglo.email backup --release-hold --consent-reconciled \
   --data-dir /var/lib/iglo.email
 systemctl start iglo.email
@@ -1162,7 +1162,9 @@ project a, …`, or `Nothing is held; sending starts with the server`. Releasing
 release `instance.db`, and releasing `instance.db` does not release a restored project: while
 either is held, that project sends nothing. The exit code says the same to a script: 0 when nothing
 is held afterwards, 3 when the run worked but a database is still held (the first command above
-exits 3 while `instance.db` is held), and 1 when it was refused or failed.
+exits 3 while `instance.db` is held), and 1 when it was refused or failed. So `|| [ $? -eq 3 ]`
+lets a `set -e` script go on past every release but the last, still stopping on a 1, and the
+last command's code says whether everything is released.
 
 What is left then goes out: scheduled and running campaigns continue from the restored cursor,
 queued mail is checked against current consent and sent, sequences catch up within their
