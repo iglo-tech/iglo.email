@@ -11,13 +11,14 @@ import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from 
 import { createRealClock } from "@/clock";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createPocketBaseSource } from "@/sources/pocketbase";
+import type { PocketBaseConfig } from "@/sources/pocketbase";
 import type { SourceProvider } from "@/sources/project";
 import { createSendTimeLookup } from "@/sources/send-time";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
-import { day, schedulerFixture } from "@/test/scheduler/fixture";
+import { day, hour, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
 import type { PocketBase, PocketBaseRecord } from "@/test/sources/pocketbase";
@@ -28,7 +29,29 @@ setDefaultTimeout(120_000);
 let pb: PocketBase;
 beforeAll(async () => {
   pb = await startPocketBase();
+  // A second recipients view whose address is a plain text field, so a user can have none.
+  const users = await pb.api("GET", "/api/collections/users");
+  await pb.api("PATCH", "/api/collections/users", {
+    fields: [...users.fields, { name: "contact", type: "text", required: false }],
+  });
+  const rule = '@request.auth.collectionName = "services"';
+  await pb.api("POST", "/api/collections", {
+    name: "contacts",
+    type: "view",
+    listRule: rule,
+    viewRule: rule,
+    viewQuery:
+      "SELECT u.id, u.contact AS email, u.name, u.marketingOptOut AS optOut FROM users u WHERE u.deletedAt = '' OR u.deletedAt IS NULL",
+  });
 });
+/** Recipients from `contacts` (address: the `contact` text field). */
+const CONTACTS: Partial<PocketBaseConfig> = {
+  recipients: { collection: "contacts", email: "email", name: "name", optOut: "optOut" },
+};
+/** A recipients view the source does not have: every read is a 404 (a `SettingsMismatch`). */
+const REFUSED: Partial<PocketBaseConfig> = {
+  recipients: { collection: "nowhere", email: "email", name: "name", optOut: "" },
+};
 afterAll(async () => {
   await pb?.close();
 });
@@ -55,7 +78,7 @@ afterEach(async () => {
   }
 });
 
-function observedSource(): Observed {
+function observedSource(config: Partial<PocketBaseConfig> = {}): Observed {
   const o: Observed = {
     provider: () => null,
     db: { current: null },
@@ -64,7 +87,7 @@ function observedSource(): Observed {
     fail: { from: null },
   };
   const source = createPocketBaseSource({
-    config: sourceConfig(pb.url, pb.service),
+    config: { ...sourceConfig(pb.url, pb.service), ...config },
     clock: createRealClock(),
     guard: openGuard,
     transport: {
@@ -72,7 +95,7 @@ function observedSource(): Observed {
         if (o.db.current?.inTransaction) {
           o.inTransaction.push(`${init.method ?? "GET"} ${input.pathname}`);
         }
-        if (/^\/api\/collections\/recipients\/records\//.test(input.pathname)) {
+        if (/^\/api\/collections\/(recipients|contacts|nowhere)\/records\//.test(input.pathname)) {
           o.reads.count++;
           if (o.fail.from !== null && o.reads.count >= o.fail.from) {
             return Promise.resolve(new Response("unavailable", { status: 503 }));
@@ -107,8 +130,10 @@ const fresh = () => `moved-${crypto.randomUUID().slice(0, 8)}@example.com`;
 // ---------------------------------------------------------------------------------------------
 // Sequence steps.
 
-async function scheduler(): Promise<{ f: SchedulerFixture; o: Observed }> {
-  const o = observedSource();
+async function scheduler(
+  config: Partial<PocketBaseConfig> = {},
+): Promise<{ f: SchedulerFixture; o: Observed }> {
+  const o = observedSource(config);
   const f = await schedulerFixture({ source: o.provider, sendTime: true });
   o.db.current = f.db;
   closers.push(() => f.close());
@@ -225,11 +250,99 @@ test("an address change at send time takes the conflict path: a gone holder's bl
   expect(f.sink.messages).toEqual([]);
 });
 
+test("the view's opt-out field ends a marketing step unsent with no membership change; a transactional step to the user still sends", async () => {
+  const { f } = await scheduler();
+  const list = await f.list("News");
+  const opted = await pb.user({ name: "Opal" });
+  const id = await f.subscriber(emailOf(opted), {
+    external_id: opted.id,
+    lists: [list],
+    preconfirm_subscriptions: true,
+  });
+  const template = await f.template();
+  const news = await f.sequence({
+    source: "external",
+    list_id: list,
+    trigger: { event: "order_paid" },
+    steps: [{ wait: "P1D", kind: "marketing", template_id: template }],
+  });
+  const marketing = asBody<number>(
+    (await f.json("/api/enrollments", "POST", { sequence_id: news.id, subscriber_id: id })).body
+      .data.id,
+  );
+  const receipt = await enrolled(f, [tx(template)], id);
+  // Opted out in the source after the enrollment: only the send-time read can see it.
+  await pb.update("users", opted.id, { marketingOptOut: true });
+  await f.pass(day);
+  await f.until(async () => (await f.enrollment(marketing)).status !== "active", "the exit");
+  expect(await f.enrollment(marketing)).toMatchObject({
+    status: "exited",
+    exit_reason: "unsubscribed",
+  });
+  await f.until(async () => (await f.enrollment(receipt)).status === "completed", "the receipt");
+  await f.until(() => f.sink.messages.length === 1, "the receipt mail");
+  await f.pass(day);
+  expect(f.sink.messages.map((m) => m.to)).toEqual([[emailOf(opted)]]);
+  expect(f.sink.messages[0]!.data).not.toContain("List-Unsubscribe:");
+  // The source owns the flag: the list membership is left as it was.
+  const lists = asBody<Array<{ id: number; subscription_status: string }>>(
+    (await f.json(`/api/subscribers/${id}`)).body.data.lists,
+  );
+  expect(lists.find((l) => l.id === list)?.subscription_status).toBe("confirmed");
+});
+
+test("a user the source has no valid address for ends the enrollment source_error at once, with nothing sent", async () => {
+  const { f } = await scheduler(CONTACTS);
+  const nobody = await pb.user({ name: "Ned", contact: "" });
+  const id = await f.subscriber(`ned-${crypto.randomUUID().slice(0, 8)}@example.com`, {
+    external_id: nobody.id,
+  });
+  const template = await f.template();
+  const enrollment = await enrolled(f, [tx(template)], id);
+  await f.pass(day);
+  await f.until(async () => (await f.enrollment(enrollment)).status !== "active", "the end");
+  expect(await f.enrollment(enrollment)).toMatchObject({
+    status: "exited",
+    exit_reason: "source_error",
+  });
+  expect(f.errors.map(String).join("\n")).toContain(
+    `Sequence enrollment ${enrollment} ended with source_error`,
+  );
+  expect(f.errors.map(String).join("\n")).toContain("has no valid address");
+  expect(f.sink.messages).toEqual([]);
+});
+
+test("a recipients view the source refuses makes a step wait inside the 72-hour window, then end source_error; nothing is sent", async () => {
+  const { f, o } = await scheduler(REFUSED);
+  const rae = await pb.user({ name: "Rae" });
+  const id = await f.subscriber(emailOf(rae), { external_id: rae.id });
+  const template = await f.template();
+  const enrollment = await enrolled(f, [tx(template)], id);
+  await f.pass(day);
+  await f.until(async () => (await f.enrollment(enrollment)).error_since !== null, "the wait");
+  const failedAt = Date.parse(asBody<string>((await f.enrollment(enrollment)).error_since));
+  expect(o.reads.count).toBeGreaterThan(0);
+  while (f.clock.now().getTime() + hour < failedAt + 72 * hour) {
+    await f.pass(hour);
+  }
+  expect((await f.enrollment(enrollment)).status).toBe("active");
+  await f.pass(hour);
+  await f.until(async () => (await f.enrollment(enrollment)).status !== "active", "the end");
+  expect(await f.enrollment(enrollment)).toMatchObject({
+    status: "exited",
+    exit_reason: "source_error",
+  });
+  expect(f.sink.messages).toEqual([]);
+});
+
 // ---------------------------------------------------------------------------------------------
 // Campaigns.
 
-async function runner(realEmailer: boolean): Promise<{ f: RunnerFixture; o: Observed }> {
-  const o = observedSource();
+async function runner(
+  realEmailer: boolean,
+  config: Partial<PocketBaseConfig> = {},
+): Promise<{ f: RunnerFixture; o: Observed }> {
+  const o = observedSource(config);
   const f = await runnerFixture({
     realEmailer,
     sendTime: (fixture) =>
@@ -338,4 +451,143 @@ test("a source outage in a campaign batch hands the batch back; every recipient 
   expect(
     f.errors.filter((e) => e instanceof Error && e.message.includes("could not be read")).length,
   ).toBe(1);
+});
+
+/** The campaign's skipped deliveries as [subscriber id, reason], by subscriber ID. */
+async function skippedOf(f: RunnerFixture, campaign: number): Promise<Array<[number, string]>> {
+  const r = await f.json(`/api/campaigns/${campaign}/skipped`);
+  expect(r.status).toBe(200);
+  return asBody<Array<{ subscriber_id: number; reason: string }>>(r.body.data.results)
+    .map((row): [number, string] => [row.subscriber_id, row.reason])
+    .sort((x, y) => x[0] - y[0]);
+}
+const messages = (f: RunnerFixture, part: string) =>
+  f.errors.filter((e) => e instanceof Error && e.message.includes(part)).length;
+const pushCounts = (f: RunnerFixture) => {
+  const counts: Record<string, number> = {};
+  for (const push of f.pushes) {
+    counts[push.to] = (counts[push.to] ?? 0) + 1;
+  }
+  return counts;
+};
+
+test("a campaign recipient whose view row has the opt-out field set is skipped unsubscribed, with no membership change", async () => {
+  const { f } = await runner(false);
+  const list = await f.list("news");
+  const opted = await pb.user({ name: "Opal", marketingOptOut: true });
+  const kept = await pb.user({ name: "Kit" });
+  const optedId = (await f.member(emailOf(opted), [list], "confirmed", { external_id: opted.id }))
+    .id;
+  await f.member(emailOf(kept), [list], "confirmed", { external_id: kept.id });
+  const c = await f.campaign({
+    name: "opt-out",
+    subject: "Hi",
+    lists: [list],
+    content_type: "html",
+    body: "<p>x</p>",
+  });
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual({ [emailOf(kept)]: 1 });
+  expect(await skippedOf(f, c.id)).toEqual([[optedId, "unsubscribed"]]);
+  expect(await f.listStatus(optedId, list)).toBe("confirmed");
+});
+
+test("a campaign recipient the source has no valid address for is skipped subscriber_unavailable; the rest are sent once", async () => {
+  const { f } = await runner(false, CONTACTS);
+  const list = await f.list("news");
+  const good: Array<string> = [];
+  for (let i = 0; i < 3; i++) {
+    const address = `good${i}-${crypto.randomUUID().slice(0, 8)}@example.com`;
+    const user = await pb.user({ contact: address });
+    await f.member(address, [list], "confirmed", { external_id: user.id });
+    good.push(address);
+  }
+  const nobody = await pb.user({ contact: "" });
+  const nobodyId = (
+    await f.member(`ned-${crypto.randomUUID().slice(0, 8)}@example.com`, [list], "confirmed", {
+      external_id: nobody.id,
+    })
+  ).id;
+  const c = await f.campaign({
+    name: "no address",
+    subject: "Hi",
+    lists: [list],
+    content_type: "html",
+    body: "<p>x</p>",
+  });
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual(Object.fromEntries(good.map((address) => [address, 1])));
+  expect(await skippedOf(f, c.id)).toEqual([[nobodyId, "subscriber_unavailable"]]);
+  expect(messages(f, `subscriber ${nobodyId} skipped`)).toBe(1);
+  expect(messages(f, "has no valid address")).toBe(1);
+});
+
+test("a recipients view the source refuses pauses the campaign with one attention line and nothing pushed", async () => {
+  const { f } = await runner(false, REFUSED);
+  const list = await f.list("news");
+  for (let i = 0; i < 3; i++) {
+    const user = await pb.user();
+    await f.member(emailOf(user), [list], "confirmed", { external_id: user.id });
+  }
+  const c = await f.campaign({
+    name: "refused",
+    subject: "Hi",
+    lists: [list],
+    content_type: "html",
+    body: "<p>x</p>",
+  });
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "paused");
+  // Stays paused: nothing is claimed again until a resume.
+  await f.drive(() => false, 1000, 60).catch(() => {});
+  expect((await f.read(c.id)).status).toBe("paused");
+  expect(f.pushes).toEqual([]);
+  expect(messages(f, "the source refused a recipient read")).toBe(1);
+  expect((await f.read(c.id)).sent).toBe(0);
+});
+
+test("a campaign waiting for its source retries after 5 s, doubling to a 5-minute cap, with one attention line", async () => {
+  const { f, o } = await runner(false);
+  const list = await f.list("news");
+  const user = await pb.user();
+  await f.member(emailOf(user), [list], "confirmed", { external_id: user.id });
+  const c = await f.campaign({
+    name: "backoff",
+    subject: "Hi",
+    lists: [list],
+    content_type: "html",
+    body: "<p>x</p>",
+  });
+  o.fail.from = 1;
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  // One recipient: each attempt is one recipients-view read. The time between attempts is the
+  // wait, plus at most the runner's 5 s scan and the drive's step.
+  const step = 250;
+  const waits = [5, 10, 20, 40, 80, 160, 300, 300].map((s) => s * 1000);
+  await f.drive(() => o.reads.count >= 1, step);
+  let last = f.clock.now().getTime();
+  const gaps: Array<number> = [];
+  for (let n = 2; n <= waits.length + 1; n++) {
+    await f.drive(() => o.reads.count >= n, step, 10_000_000, 30_000);
+    const now = f.clock.now().getTime();
+    gaps.push(now - last);
+    last = now;
+  }
+  for (const [i, wait] of waits.entries()) {
+    expect(gaps[i]).toBeGreaterThanOrEqual(wait - step);
+    expect(gaps[i]).toBeLessThanOrEqual(wait + 5000 + 4 * step);
+  }
+  expect(f.pushes).toEqual([]);
+  expect((await f.read(c.id)).status).toBe("running");
+  expect(messages(f, "could not be read")).toBe(1);
+  // The source answers: the next attempt sends, once.
+  o.fail.from = null;
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1 });
 });

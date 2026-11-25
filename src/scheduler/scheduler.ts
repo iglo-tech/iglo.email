@@ -310,7 +310,8 @@ export function createScheduler(options: SchedulerOptions) {
    * is leaving: its enrollments (this one too) end and the subscriber is removed. A transient
    * failure, or a view the settings name wrongly, waits like any source read of the step (D172);
    * an address the source cannot give (none, two users holding it, a blocked domain) ends the
-   * enrollment `source_error`. Nothing is sent on any of these paths.
+   * enrollment `source_error`. A marketing step to a user whose view row has the opt-out field set
+   * exits `unsubscribed`. Nothing is sent on any of these paths.
    */
   async function refreshed(
     claim: Decision,
@@ -319,11 +320,13 @@ export function createScheduler(options: SchedulerOptions) {
     externalId: string,
   ) {
     const lookup = must(options.sendTime, "send-time lookup");
+    let optedOut: boolean;
     try {
       const planned = await lookup.read(subscriberId, externalId, options.signal);
       if (planned && !planned.unchanged && lookup.apply(planned).kind === "left") {
         return null;
       }
+      optedOut = planned?.plan.kind === "present" && planned.plan.recipient.optOut;
     } catch (error) {
       if (isSubscriberChanged(error)) {
         // Another write moved the user or the address meanwhile: decide again with fresh reads.
@@ -350,6 +353,12 @@ export function createScheduler(options: SchedulerOptions) {
     }
     if (current.status === "blocklisted") {
       end(claim, "exited", "blocklisted");
+      return null;
+    }
+    if (optedOut && row.kind === "marketing") {
+      // The view's opt-out field is set: the user declined marketing. The step's consent exit,
+      // as `marketingReason` gives it, with no membership change; a transactional step still sends.
+      end(claim, "exited", "unsubscribed");
       return null;
     }
     return current;

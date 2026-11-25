@@ -134,6 +134,11 @@ const SKIP_REASON = {
   unsubscribed: "unsubscribed",
   membership_changed: "membership_changed",
 } as const;
+/** D174: a recipient the send-time lookup skips, with why; `message` is logged when not empty. */
+interface SourceSkip {
+  reason: (typeof SKIP_REASON)[keyof typeof SKIP_REASON];
+  message: string;
+}
 
 /** In-process owners of live campaign pipes. */
 export function createCampaignRunnerRegistry() {
@@ -432,7 +437,15 @@ export function createCampaignRunner(deps: RunnerDeps) {
     }
     const now = nowDate.getTime();
     const settings = deps.settings();
-    for (const id of store.due(iso(now))) {
+    const due = store.due(iso(now));
+    // D174: a campaign paused, cancelled or finished while it waited for its source starts a later
+    // outage afresh (an attention line, the first wait).
+    for (const id of sourceWaits.keys()) {
+      if (!pipes.has(id) && !due.includes(id)) {
+        sourceWaits.delete(id);
+      }
+    }
+    for (const id of due) {
       if (pipes.has(id) || (retryAt.get(id) ?? 0) > now) {
         continue;
       }
@@ -662,8 +675,8 @@ export function createCampaignRunner(deps: RunnerDeps) {
    * - a permanent failure of one recipient (no valid address, two users with one address, a
    *   blocked domain) skips that recipient only.
    */
-  async function fresh(batch: Batch): Promise<Map<number, string> | null> {
-    const skip = new Map<number, string>();
+  async function fresh(batch: Batch): Promise<Map<number, SourceSkip> | null> {
+    const skip = new Map<number, SourceSkip>();
     const lookup = deps.sendTime;
     const { pipe, recipients } = batch;
     const c = pipe.campaign;
@@ -692,7 +705,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
           }
         } catch (error) {
           if (isSourceError(error) && error.kind === "permanent" && !isSettingsMismatch(error)) {
-            skip.set(i, error.message);
+            skip.set(i, { reason: SKIP_REASON.unavailable, message: error.message });
           } else {
             failure ??= { error };
           }
@@ -703,23 +716,27 @@ export function createCampaignRunner(deps: RunnerDeps) {
     if (!failure) {
       try {
         for (const [i, planned] of plans) {
-          if (planned.unchanged) {
-            continue;
+          if (!planned.unchanged) {
+            const result = lookup.apply(planned);
+            if (result.kind === "left") {
+              skip.set(i, { reason: SKIP_REASON.unavailable, message: "" });
+              continue;
+            }
+            const { row } = result;
+            recipients[i] = {
+              id: row.id,
+              uuid: row.uuid,
+              email: row.email,
+              name: row.name,
+              attribs: row.attribs,
+              external_id: row.external_id,
+            };
           }
-          const result = lookup.apply(planned);
-          if (result.kind === "left") {
-            skip.set(i, "");
-            continue;
+          // The view's opt-out field set: the user declined marketing, which a campaign is.
+          // Skipped as unsubscribed, with no membership change (the source owns the flag).
+          if (planned.plan.kind === "present" && planned.plan.recipient.optOut) {
+            skip.set(i, { reason: SKIP_REASON.unsubscribed, message: "" });
           }
-          const { row } = result;
-          recipients[i] = {
-            id: row.id,
-            uuid: row.uuid,
-            email: row.email,
-            name: row.name,
-            attribs: row.attribs,
-            external_id: row.external_id,
-          };
         }
       } catch (error) {
         failure = { error };
@@ -761,7 +778,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
       return null;
     }
     sourceWaits.delete(c.id);
-    for (const [i, message] of skip) {
+    for (const [i, { message }] of skip) {
       if (message) {
         log(
           "campaign recipient skipped: the source has no usable address",
@@ -781,7 +798,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
     const c = pipe.campaign;
     // The reads can wait on a slow source: the lease is renewed meanwhile.
     const stopReading = heartbeat();
-    let skip: Map<number, string> | null;
+    let skip: Map<number, SourceSkip> | null;
     try {
       skip = await fresh(batch);
     } finally {
@@ -838,13 +855,14 @@ export function createCampaignRunner(deps: RunnerDeps) {
           return;
         }
         const sub = must(recipients[i], "recipient");
-        if (skip.has(i)) {
-          // D174: the source has no usable address for it, or the user left (and the subscriber
-          // with it). Nothing is rendered or pushed.
+        const skipped = skip.get(i);
+        if (skipped) {
+          // D174: the source has no usable address for it, the user left (and the subscriber
+          // with it), or the user opted out of marketing. Nothing is rendered or pushed.
           outcomes.set(i, {
             status: "skipped",
             at: clock.now().getTime(),
-            reason: SKIP_REASON.unavailable,
+            reason: skipped.reason,
           });
           unused();
           continue;

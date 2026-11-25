@@ -590,7 +590,10 @@ WHERE u.deletedAt = '' OR u.deletedAt IS NULL
 ```
 
 The opt-out field is "set" unless it is null, missing, `false`, `0`, `""`, `"0"` or `"false"`. A set
-opt-out refuses grants (step 6).
+opt-out refuses grants (step 6) and blocks marketing at send time: a marketing sequence step ends
+`unsubscribed` and a campaign skips the person (`unsubscribed`), while transactional steps still
+send. iglo.email changes no list membership for it, so clearing the field in your application lets
+marketing reach the person again.
 
 **4. Rules.** Set the list and view rules of the events collection and the recipients view so that
 only the service account can read them, for example
@@ -638,7 +641,11 @@ blocklist and unsubscribes are carried over and it is deleted). When the source 
   `running`, and one attention line says it is waiting for its source. When the source answers, it
   continues where it stopped, and every recipient gets the campaign once.
 - a recipients view that PocketBase refuses (a renamed collection or field, a changed rule) pauses a
-  campaign with an attention line. Fix the settings and resume it.
+  campaign with an attention line. Fix the settings and resume it. A sequence step treats the same
+  refusal as an outage: it waits and retries within the 72-hour window, then the enrollment ends
+  `source_error`. Fix the settings within that window and the step sends.
+- a user the view has with no valid address ends a sequence enrollment `source_error` at once, and a
+  campaign skips that person (`subscriber_unavailable`) with an attention line.
 
 **Monitoring.** Attention lines (the Logs page and stderr) report a stream that cannot connect for
 15 minutes or that the source refuses, records that failed for good, enrollments ended
