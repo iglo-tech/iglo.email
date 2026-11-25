@@ -5,6 +5,7 @@
 // clock with a stand-in for SES v2 GetAccount; its loops are not started, so every read is the
 // on-demand one a page or a forecast triggers (at most one a minute). Everything is read through
 // the rendered page, the project API and the stand-in's request count.
+import { Database } from "bun:sqlite";
 import { afterEach, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -171,6 +172,18 @@ async function sendingInstance(options: { setting: number; keys: boolean; accoun
     operator,
     page,
     reads: () => reads,
+    /** Writes into the primary project's database, as a fixture does (capacity.test.ts). */
+    seed: (statements: ReadonlyArray<string>) => {
+      const db = new Database(join(dataDir, "projects", "main", "iglo-email.db"));
+      try {
+        db.run("PRAGMA busy_timeout = 5000");
+        for (const statement of statements) {
+          db.run(statement);
+        }
+      } finally {
+        db.close();
+      }
+    },
     /** Past the on-demand rule's minute, so the next page reads the account again. */
     nextMinute: () => clock.advance(61_000),
   };
@@ -249,6 +262,17 @@ test("with a snapshot: values, age, sandbox, SendingEnabled false, effective rat
       refuse: null,
     },
   });
+  // One app send two hours ago and one running campaign with 1,500 to go (B149e item 3), so the
+  // page and the API compare a forecast with an app share, an outside share and planned mail.
+  const at = (offset: number) => new Date(sending.clock.now().getTime() + offset).toISOString();
+  sending.seed([
+    `INSERT INTO sends (uuid, source, kind, to_email, status, created_at, attempted_at, sent_at)
+     VALUES ('page-send-1', 'tx', 'transactional', 'x@example.test', 'sent', '${at(-2 * 3_600_000)}',
+       '${at(-2 * 3_600_000)}', '${at(-2 * 3_600_000)}')`,
+    `INSERT INTO campaigns (id, uuid, name, subject, from_email, body, messenger, status, to_send, sent, created_at, updated_at)
+     VALUES (1, 'page-camp-1', 'C1', 's', 'a@example.test', 'b', 'email', 'running', 2000, 500,
+       '${at(-48 * 3_600_000)}', '${at(-25 * 3_600_000)}')`,
+  ]);
   const read = await sending.page();
   expect(sending.reads()).toBe(1);
   // SES's 14/s is lower than the setting's 20/s: the effective rate is SES's, not the setting.
@@ -304,9 +328,16 @@ test("with a snapshot: values, age, sandbox, SendingEnabled false, effective rat
     headroom: shown(forecast.headroom),
     fits: shown(forecast.fits),
   });
-  // By hand: no app sends, so all 1,200 are outside sends still counted at F = now.
-  expect(text.get("forecast-demand")).toBe("1,200");
-  expect(text.get("forecast-headroom")).toBe("48,800");
+  // By hand (14-projects section 7), F = now: SES's 1,200 are the app's one send and 1,199 outside
+  // sends, all still counted; no baseline, as no part of the window is ahead; planned is the
+  // running campaign's 1,500. Demand 2,700 of 50,000.
+  expect(text.get("forecast-still-counted")).toBe("1,200");
+  expect(text.get("forecast-outside")).toBe("1,199");
+  expect(text.get("forecast-baseline")).toBe("0");
+  expect(text.get("forecast-planned")).toBe("1,500");
+  expect(text.get("forecast-demand")).toBe("2,700");
+  expect(text.get("forecast-headroom")).toBe("47,300");
+  expect(text.get("forecast-fits")).toBe("Yes");
   expect(sending.reads()).toBe(1);
 });
 
