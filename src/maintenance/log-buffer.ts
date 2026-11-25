@@ -38,6 +38,8 @@ const SAFE_MESSAGES = [
   "Outbox failed",
   "Password reset mail not sent",
   "Sequence condition failed: retrying later",
+  "Sequence source read failed: retrying later",
+  "Sequence enrollment ended: the source could not be read",
   "Sequence aggregates failed: retrying later",
   "Sequence step has an aggregate past its limit: skipped",
   "Sequence decision failed: retrying later",

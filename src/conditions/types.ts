@@ -20,7 +20,9 @@ export type Condition =
   | { event: string; since?: Since; where?: Record<string, Scalar>; count?: EventCount }
   | { attr: string; op: AttrOp; value?: Scalar | Array<Scalar> }
   | { list: number; status?: Array<string> }
-  | { sql: string };
+  | { sql: string }
+  /** External sequences only (D172): a field of the subscriber's recipients-view row. */
+  | { recipient: string; op: AttrOp; value?: Scalar | Array<Scalar> };
 
 /**
  * What a condition is evaluated against. Times are the stored ISO 8601 instants (or Dates);
@@ -91,7 +93,11 @@ export type ConditionErrorKind =
   /** A `sql` fragment was refused or did not compile. */
   | "query"
   /** Any other failure while running the query. */
-  | "execution";
+  | "execution"
+  /** External sequences (D172): the source failed in a way a later retry may fix. */
+  | "source_transient"
+  /** External sequences (D172): the source refused the read; a retry cannot fix it. */
+  | "source_permanent";
 
 export interface ConditionError {
   kind: ConditionErrorKind;

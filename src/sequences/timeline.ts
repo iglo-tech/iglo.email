@@ -8,6 +8,17 @@ import type { EventRow } from "@/events/store";
 import type { EnrollmentSend, Sends } from "@/messaging/sends";
 import { numberID, project } from "@/sequences/enrollments";
 import type { EnrollmentRow, Enrollments } from "@/sequences/enrollments";
+import type { SourceEvent } from "@/sources/source";
+
+/**
+ * An external enrollment's trigger record as the timeline read it (D172): the record, null when the
+ * source no longer has it, or `unavailable` when the read failed.
+ */
+export interface SourceTrigger {
+  id: string;
+  occurredAt: string | null;
+  record: SourceEvent | null | "unavailable";
+}
 
 type Step = ReturnType<Enrollments["steps"]>[number];
 
@@ -64,6 +75,7 @@ export function timeline(
   steps: Array<Step>,
   sends: Array<EnrollmentSend>,
   heldUntil: Date | null,
+  source: SourceTrigger | null = null,
 ) {
   const byId = new Map(steps.map((step) => [step.id, step]));
   const current = row.step_id === null ? undefined : byId.get(row.step_id);
@@ -84,7 +96,31 @@ export function timeline(
         ]
       : [];
   });
+  const record = source?.record;
   return [
+    // D172: an external trigger names its record, and says when the source no longer has it or
+    // could not be read.
+    ...(source
+      ? [
+          record && record !== "unavailable"
+            ? {
+                type: "trigger",
+                at: record.occurredAt.toISOString(),
+                name: record.name,
+                data: record.data,
+                external_id: source.id,
+                unavailable: null,
+              }
+            : {
+                type: "trigger",
+                at: source.occurredAt,
+                name: null,
+                data: null,
+                external_id: source.id,
+                unavailable: record === "unavailable" ? "source_error" : "missing",
+              },
+        ]
+      : []),
     ...(event
       ? [
           {

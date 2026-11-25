@@ -43,7 +43,8 @@ import { createSettings } from "@/settings/store";
 import type { InstanceSettingsReader } from "@/settings/instance";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
-import { registerSourceRoutes, sourceListsCheck } from "@/sources/routes";
+import { registerSourceRoutes, sourceGuard, sourceListsCheck } from "@/sources/routes";
+import { createSourceProvider } from "@/sources/project";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
 import type { Dispatcher, Sender } from "@/messaging/dispatcher";
 import { createSMTPTest } from "@/messaging/test";
@@ -597,6 +598,13 @@ export async function createProject(
       grantCheck(next, current);
     });
     registerSourceRoutes(router, { settings, auth, clock });
+    // D172: one adapter per configured source, shared by the sequence routes and the scheduler.
+    const projectSettings = settings;
+    const externalSource = createSourceProvider({
+      settings: () => projectSettings.read(),
+      clock,
+      guard: sourceGuard(() => projectSettings.read()),
+    });
     const marketing = () => marketingSettings(must(settings, "settings").read());
     const pages = () => publicSettings(must(settings, "settings").read());
     // Each limit is the process's one table for its kind; this project's peers are its own in it.
@@ -915,6 +923,7 @@ export async function createProject(
       templates,
       lists,
       enrollments,
+      sourceConfigured: () => externalSource() !== null,
     });
     registerSequenceRoutes(router, {
       testSends,
@@ -938,6 +947,7 @@ export async function createProject(
       },
       roles,
       auth,
+      source: externalSource,
     });
     purge = createPurge({
       db,
@@ -965,6 +975,7 @@ export async function createProject(
       renderer,
       tracking,
       conditions,
+      source: externalSource,
       settings: () => {
         const current = must(settings, "settings").read();
         return {

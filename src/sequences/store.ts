@@ -9,7 +9,7 @@ import type { ListReferences } from "@/lists/references";
 import type { StepLabel } from "@/messaging/sends";
 import { numberID } from "@/sequences/enrollments";
 import type { Enrollments } from "@/sequences/enrollments";
-import type { DefinitionInput, SequenceStatus } from "@/sequences/input";
+import type { DefinitionInput, SequenceSource, SequenceStatus } from "@/sequences/input";
 import type { TemplateStore } from "@/templates/store";
 import sql from "@/sequences/store.sql" with { type: "text" };
 
@@ -18,6 +18,7 @@ interface SequenceRow {
   uuid: string;
   name: string;
   status: SequenceStatus;
+  source: SequenceSource;
   trigger: string;
   exit_on: string;
   reentry: string;
@@ -59,6 +60,7 @@ const summary = (row: SequenceRow) => ({
   uuid: row.uuid,
   name: row.name,
   status: row.status,
+  source: row.source,
   trigger: JSON.parse(row.trigger) as unknown,
   exit_on: JSON.parse(row.exit_on) as unknown,
   reentry: row.reentry,
@@ -94,6 +96,8 @@ export function createSequenceStore(
     templates: Pick<TemplateStore, "get">;
     lists: Pick<ListReferences, "name">;
     enrollments: Pick<Enrollments, "archive">;
+    /** The project has a source configured, which activating an external sequence needs (D172). */
+    sourceConfigured?: () => boolean;
   },
 ) {
   const q = prepareNamedQueries(db, [{ name: "sequences/store", sql }]);
@@ -111,7 +115,11 @@ export function createSequenceStore(
     if (!current.length) {
       throw new SequenceConflict("steps", "an active sequence needs a step");
     }
-    const listId = must(row(id), "sequence").list_id;
+    const sequence = must(row(id), "sequence");
+    if (sequence.source === "external" && !(deps.sourceConfigured?.() ?? false)) {
+      throw new SequenceConflict("source", "the project has no source configured (source.url)");
+    }
+    const listId = sequence.list_id;
     for (const [i, s] of current.entries()) {
       if (s.template_id === null || templateType(s.template_id) !== "tx") {
         throw new SequenceConflict(
@@ -194,6 +202,8 @@ export function createSequenceStore(
   return {
     templateType,
     listExists: (id: bigint) => deps.lists.name(id) !== null,
+    /** The stored source of a sequence, or null when it does not exist. */
+    sourceOf: (id: bigint): SequenceSource | null => row(id)?.source ?? null,
     get: full,
     /** The sequence and position of each step, for the send log's labels (B127). */
     stepLabels(ids: Array<bigint>): Map<bigint, StepLabel> {
@@ -239,6 +249,7 @@ export function createSequenceStore(
             crypto.randomUUID(),
             input.name,
             input.status ?? "draft",
+            input.source,
             input.trigger,
             JSON.stringify(input.exitOn),
             input.reentry,
@@ -259,11 +270,16 @@ export function createSequenceStore(
       if (!current) {
         return null;
       }
+      // An enrollment's trigger reference is a pushed event or a source record: the kind stays (D172).
+      if (input.source !== current.source && q.get("sequence-has-enrollments").get(id)) {
+        throw new SequenceConflict("source", "cannot change while the sequence has enrollments");
+      }
       const now = clock.now().toISOString();
       const status = input.status ?? current.status;
       q.get("sequence-update").run(
         input.name,
         status,
+        input.source,
         input.trigger,
         JSON.stringify(input.exitOn),
         input.reentry,

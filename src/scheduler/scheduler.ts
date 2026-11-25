@@ -8,6 +8,9 @@ import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import type { ConditionEvaluator } from "@/conditions/evaluate";
 import { parseDuration } from "@/conditions/duration";
+import { aggregateOnSource, evaluateStoredOnSource } from "@/conditions/source";
+import type { SourceContext, SourceReads } from "@/conditions/source";
+import type { ConditionError } from "@/conditions/types";
 import { writeTransaction } from "@/db/transaction";
 import { AGGREGATE_LIMIT } from "@/events/aggregate";
 import type { EventStore } from "@/events/store";
@@ -26,6 +29,9 @@ import type { TemplateStore } from "@/templates/store";
 import { messageLinks } from "@/unsubscribe/message";
 import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
+import type { SourceProvider } from "@/sources/project";
+import { isSourceError } from "@/sources/source";
+import type { SourceEvent } from "@/sources/source";
 
 export const SCHEDULER_INTERVAL_MS = 15_000;
 const LEASE_MS = 5 * 60_000;
@@ -35,6 +41,8 @@ const MARKETING_MAX_LATE = "P2D";
 /** Condition errors retry after the time already spent late, between these bounds. */
 const BACKOFF_MIN_MS = 60_000;
 const BACKOFF_MAX_MS = 3_600_000;
+/** D172: transient source failures of one step are retried this long before `source_error`. */
+export const SOURCE_RETRY_MS = 72 * 3_600_000;
 /** A deferred step is never due again sooner than this, so a capped row cannot spin. */
 const DEFER_MIN_MS = 60_000;
 /** Renderer capacity is shared with the HTTP producers; a full renderer retries soon. */
@@ -70,6 +78,15 @@ export interface SchedulerSettings {
   marketing: MarketingSettings;
 }
 
+/** A source failure as a condition error (D172), or undefined for any other error. */
+const sourceError = (error: unknown): ConditionError | undefined =>
+  isSourceError(error)
+    ? {
+        kind: error.kind === "transient" ? "source_transient" : "source_permanent",
+        message: error.message,
+      }
+    : undefined;
+
 /** Create and start, for callers that decide at once. The server calls `createScheduler` (B52). */
 export function startScheduler(options: SchedulerOptions) {
   const scheduler = createScheduler(options);
@@ -89,6 +106,8 @@ export interface SchedulerOptions {
   renderer: TemplateRenderer;
   tracking: Tracking;
   conditions: Pick<ConditionEvaluator, "evaluate">;
+  /** The project's source, which external sequences read (D172); none without it. */
+  source?: SourceProvider;
   settings: () => SchedulerSettings;
   signal?: AbortSignal;
 }
@@ -194,6 +213,32 @@ export function createScheduler(options: SchedulerOptions) {
       Math.max(BACKOFF_MIN_MS, clock.now().getTime() - Date.parse(row.due_at)),
     );
 
+  /**
+   * D172: a source failure of an external step. A transient one is retried with the condition
+   * backoff, keeping `error_since`, until 72 hours have passed since the first; then, and at once for
+   * a permanent one, the enrollment ends `source_error`. Nothing is sent past an unread condition.
+   */
+  function sourceFailed(claim: Decision, row: SchedulerContext, error: ConditionError) {
+    const now = clock.now().getTime();
+    const since = row.error_since === null ? now : Date.parse(row.error_since);
+    if (error.kind === "source_transient" && now - since < SOURCE_RETRY_MS) {
+      attention(
+        "Sequence source read failed: retrying later",
+        `Sequence source read failed for enrollment ${row.id} at step ${row.step_id}; retrying later: ${error.message}`,
+      );
+      return commit(claim, () =>
+        enrollments.releaseSourceRetry(claim, new Date(now + lateBackoff(row)), clock.now()),
+      );
+    }
+    if (end(claim, "exited", "source_error")) {
+      attention(
+        "Sequence enrollment ended: the source could not be read",
+        `Sequence enrollment ${row.id} ended with source_error at step ${row.step_id}: ${error.message}`,
+      );
+    }
+    return undefined;
+  }
+
   async function decide(item: { id: bigint; lease: string }) {
     const row = enrollments.schedulerContext(item.id);
     if (!row || row.status !== "active" || row.claimed_until !== item.lease) {
@@ -236,17 +281,45 @@ export function createScheduler(options: SchedulerOptions) {
       }
     }
 
+    const external = row.source === "external";
     const trigger = row.trigger_event_id === null ? null : options.events.get(row.trigger_event_id);
     const context = {
       subscriberId: row.subscriber_id,
-      // A manual enrollment (or one whose trigger event expired) counts from its start.
-      triggerAt: trigger?.occurred_at ?? row.created_at,
+      // A manual enrollment (or one whose trigger event expired) counts from its start. An external
+      // enrollment counts from its trigger record's `occurredAt`, kept locally (D172).
+      triggerAt: (external ? row.trigger_occurred_at : trigger?.occurred_at) ?? row.created_at,
       enrolledAt: row.created_at,
       lastStepAt: row.updated_at > row.created_at ? row.updated_at : null,
       now,
     };
+    // D172: an external sequence reads its source. Without one configured, every read is refused.
+    let reads: SourceReads | undefined;
+    if (external) {
+      const source = options.source?.();
+      if (!source) {
+        return sourceFailed(claim, row, {
+          kind: "source_permanent",
+          message: "The project has no source configured",
+        });
+      }
+      reads = {
+        source,
+        local: options.conditions,
+        ...(options.signal ? { signal: options.signal } : {}),
+      };
+    }
+    const sourceContext: SourceContext = {
+      ...context,
+      subscriberId: row.subscriber_id,
+      externalId: subscriber.external_id,
+    };
     if (row.condition !== null) {
-      const result = await options.conditions.evaluate(JSON.parse(row.condition), context);
+      const result = reads
+        ? await evaluateStoredOnSource(JSON.parse(row.condition), sourceContext, reads)
+        : await options.conditions.evaluate(JSON.parse(row.condition), context);
+      if (!result.ok && reads && result.error.kind.startsWith("source_")) {
+        return sourceFailed(claim, row, result.error);
+      }
       if (!result.ok) {
         attention(
           "Sequence condition failed: retrying later",
@@ -284,13 +357,39 @@ export function createScheduler(options: SchedulerOptions) {
       }
     }
 
+    // An external step's trigger data is the source record, read when the step renders. A record the
+    // source no longer has ends the enrollment (`trigger_missing`); the subscriber stays (D172).
+    let record: SourceEvent | null = null;
+    if (reads && row.trigger_external_id !== null) {
+      try {
+        record = await reads.source.record(
+          row.trigger_external_id,
+          reads.signal ? { signal: reads.signal } : {},
+        );
+      } catch (error) {
+        const failure = sourceError(error);
+        if (!failure) {
+          throw error;
+        }
+        return sourceFailed(claim, row, failure);
+      }
+      if (!record) {
+        return end(claim, "exited", "trigger_missing");
+      }
+    }
+
     // Aggregates are read once the condition and the cap admit the step, before rendering (D100).
     // A failure waits like a condition error and never sends. An aggregate that cannot be computed
     // within its bounds (over AGGREGATE_LIMIT events, or a sum outside the exact integer range) is
     // not a failure to retry: the step is skipped, with no total and no retry loop.
     let aggregates: Record<string, number> = {};
     if (row.aggregates !== null) {
-      const result = options.events.aggregate(JSON.parse(row.aggregates), context);
+      const result = reads
+        ? await aggregateOnSource(JSON.parse(row.aggregates), sourceContext, reads)
+        : options.events.aggregate(JSON.parse(row.aggregates), context);
+      if (!result.ok && "error" in result && reads && result.error.kind.startsWith("source_")) {
+        return sourceFailed(claim, row, result.error);
+      }
       if (!result.ok && "limit" in result) {
         if (skipped(claim, subscriber.email, "aggregate_limit")) {
           attention(
@@ -333,9 +432,15 @@ export function createScheduler(options: SchedulerOptions) {
         external_id: subscriber.external_id ?? "",
         attribs: subscriber.attribs,
       },
-      trigger: trigger
-        ? { name: trigger.name, data: trigger.data, occurred_at: trigger.occurred_at }
-        : null,
+      trigger: record
+        ? {
+            name: record.name,
+            data: JSON.stringify(record.data),
+            occurred_at: record.occurredAt.toISOString(),
+          }
+        : trigger && !external
+          ? { name: trigger.name, data: trigger.data, occurred_at: trigger.occurred_at }
+          : null,
       sequence: { id: row.sequence_id, name: row.sequence_name },
       step: {
         id: row.step_id,

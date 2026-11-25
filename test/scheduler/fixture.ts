@@ -57,6 +57,7 @@ import type { MarketingSettings } from "@/unsubscribe/policy";
 import { createPrivacy } from "@/public/privacy";
 import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
+import type { SourceProvider } from "@/sources/project";
 
 export const admin = {
   user: "fixture-admin",
@@ -67,8 +68,14 @@ export const hour = 3_600_000;
 export const day = 86_400_000;
 
 export async function schedulerFixture(
-  options: { sinkReject?: (to: string) => boolean; snsFetch?: SnsFetch } = {},
+  options: {
+    sinkReject?: (to: string) => boolean;
+    snsFetch?: SnsFetch;
+    /** The project's external source (B150c, D172); none by default. */
+    source?: SourceProvider;
+  } = {},
 ) {
+  const source: SourceProvider = options.source ?? (() => null);
   const sink = await startSink(options.sinkReject ? { reject: options.sinkReject } : {});
   const directory = mkdtempSync(join(tmpdir(), "iglo-scheduler-"));
   const clock = new TestClock();
@@ -204,6 +211,7 @@ export async function schedulerFixture(
     templates,
     lists,
     enrollments,
+    sourceConfigured: () => source() !== null,
   });
   const conditions = createConditionEvaluator({ readonly, runner });
   // A test may act while a condition is being evaluated (an admin edit racing the scheduler),
@@ -245,6 +253,7 @@ export async function schedulerFixture(
     renderer,
     tracking,
     conditions: observed,
+    source,
     settings: () => ({
       fromEmail: "Fixture <noreply@fixture.test>",
       marketing,
@@ -349,6 +358,7 @@ export async function schedulerFixture(
     }),
     roles,
     auth,
+    source,
   });
   const notices = wireNotices(router, {
     db,

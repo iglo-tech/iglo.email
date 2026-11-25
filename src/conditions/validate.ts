@@ -8,8 +8,9 @@ import { limits } from "@/conditions/types";
 import type { AttrOp, Condition, FieldError, Scalar, ValidationResult } from "@/conditions/types";
 import { checkFragment, formatSQLExp } from "@/subscribers/query-filter";
 
-const kinds = ["all", "any", "not", "event", "attr", "list", "sql"] as const;
-const fieldsOf: Record<(typeof kinds)[number], ReadonlyArray<string>> = {
+const kinds = ["all", "any", "not", "event", "attr", "list", "sql", "recipient"] as const;
+type Kind = (typeof kinds)[number];
+const fieldsOf: Record<Kind, ReadonlyArray<string>> = {
   all: ["all"],
   any: ["any"],
   not: ["not"],
@@ -17,7 +18,25 @@ const fieldsOf: Record<(typeof kinds)[number], ReadonlyArray<string>> = {
   attr: ["attr", "op", "value"],
   list: ["list", "status"],
   sql: ["sql"],
+  recipient: ["recipient", "op", "value"],
 };
+/** The kinds each place accepts (D169, D172): the source has no `sql`, and pushed events no `recipient`. */
+const pushedKinds: ReadonlyArray<Kind> = ["all", "any", "not", "event", "attr", "list", "sql"];
+const externalKinds: ReadonlyArray<Kind> = [
+  "all",
+  "any",
+  "not",
+  "event",
+  "attr",
+  "list",
+  "recipient",
+];
+/** `trigger.condition` runs before the subscriber is written, so it reads the source only. */
+const triggerKinds: ReadonlyArray<Kind> = ["all", "any", "not", "event", "recipient"];
+const kindList = (allowed: ReadonlyArray<Kind>) =>
+  `${allowed.slice(0, -1).join(", ")} or ${allowed.at(-1) ?? ""}`;
+/** A recipients-view field: a PocketBase field name, then optional JSON keys. */
+const recipientField = /^[A-Za-z_][A-Za-z0-9_]{0,99}$/;
 const attrOps: ReadonlyArray<AttrOp> = ["eq", "ne", "gt", "gte", "lt", "lte", "in", "exists"];
 const isAttrOp = (value: string): value is AttrOp => attrOps.some((name) => name === value);
 const subscriberStatuses = new Set(["enabled", "disabled", "blocklisted"]);
@@ -51,10 +70,24 @@ const unsafeNumber =
 
 class Stop extends Error {}
 
-export function validate(
-  condition: unknown,
-  options: { canUseSql: boolean; field?: string },
-): ValidationResult {
+export interface ValidateOptions {
+  canUseSql: boolean;
+  field?: string;
+  /**
+   * Where the condition runs (D172). `events` (the default): pushed events and SQLite, with `sql`.
+   * `external`: the project's source, which adds `recipient` and refuses `sql`.
+   */
+  source?: "events" | "external";
+  /**
+   * An external sequence's `trigger.condition` (D172): only `event` and `recipient` predicates, and
+   * `since` only as a duration, counted back from the trigger record's `occurredAt`.
+   */
+  trigger?: boolean;
+}
+
+export function validate(condition: unknown, options: ValidateOptions): ValidationResult {
+  const external = options.source === "external";
+  const allowed = options.trigger ? triggerKinds : external ? externalKinds : pushedKinds;
   const errors: Array<FieldError> = [];
   let nodes = 0,
     sqls = 0;
@@ -106,8 +139,18 @@ export function validate(
       return void fail(field, "must be a condition object");
     }
     const present = kinds.filter((kind) => Object.hasOwn(value, kind));
-    if (present.length !== 1) {
-      return void fail(field, "must have exactly one of all, any, not, event, attr, list or sql");
+    if (present.length !== 1 || !allowed.includes(must(present[0], "condition kind"))) {
+      const kind = present.length === 1 ? present[0] : undefined;
+      if (kind === "sql" && external) {
+        return void fail(`${field}.sql`, "sql conditions are not available on an external source");
+      }
+      if ((kind === "attr" || kind === "list") && options.trigger) {
+        return void fail(
+          `${field}.${kind}`,
+          "a trigger condition reads the source only: use event or recipient",
+        );
+      }
+      return void fail(field, `must have exactly one of ${kindList(allowed)}`);
     }
     const kind = must(present[0], "condition kind");
     // Stops at the first unknown key, so a wide object is never walked further.
@@ -185,19 +228,37 @@ export function validate(
     if (kind === "attr") {
       return attr(value, field);
     }
+    if (kind === "recipient") {
+      return attr(value, field, true);
+    }
     return event(value, field);
   };
 
-  const attr = (value: Record<string, unknown>, field: string): Condition | undefined => {
-    const path = value.attr,
+  /** `attr`, or with `recipient` set the `recipient` kind: the same operators and type rules. */
+  const attr = (
+    value: Record<string, unknown>,
+    field: string,
+    recipient = false,
+  ): Condition | undefined => {
+    const path = recipient ? value.recipient : value.attr,
       op = value.op;
-    if (typeof path !== "string" || (path !== "status" && !validPath(path))) {
+    if (recipient) {
+      if (
+        typeof path !== "string" ||
+        !validPath(path) ||
+        !recipientField.test(path.split(".", 1)[0] ?? "")
+      ) {
+        return void fail(`${field}.recipient`, "must be a recipients field name or dotted path");
+      }
+    } else if (typeof path !== "string" || (path !== "status" && !validPath(path))) {
       return void fail(`${field}.attr`, "must be an attribute name or dotted path");
     }
     if (typeof op !== "string" || !isAttrOp(op)) {
       return void fail(`${field}.op`, "unknown operator");
     }
-    const status = path === "status";
+    const status = !recipient && path === "status";
+    const done = (out: { op: AttrOp; value?: Scalar | Array<Scalar> }): Condition =>
+      recipient ? { recipient: path, ...out } : { attr: path, ...out };
     if (status && !["eq", "ne", "in"].includes(op)) {
       return void fail(`${field}.op`, "status supports eq, ne and in");
     }
@@ -214,7 +275,7 @@ export function validate(
       if (value.value !== undefined) {
         return void fail(`${field}.value`, "exists takes no value");
       }
-      return { attr: path, op };
+      return done({ op });
     }
     if (op === "in") {
       const list = value.value;
@@ -228,14 +289,14 @@ export function validate(
           out.push(v);
         }
       }
-      return out.length === list.length ? { attr: path, op, value: out } : undefined;
+      return out.length === list.length ? done({ op, value: out }) : undefined;
     }
     if (value.value === undefined) {
       return void fail(`${field}.value`, "is required");
     }
     const ordered = op !== "eq" && op !== "ne";
     const v = checkStatus(scalar(value.value, `${field}.value`, ordered), `${field}.value`);
-    return v === undefined ? undefined : { attr: path, op, value: v };
+    return v === undefined ? undefined : done({ op, value: v });
   };
 
   const event = (value: Record<string, unknown>, field: string): Condition | undefined => {
@@ -253,7 +314,13 @@ export function validate(
     let valid = true;
     const since = value.since;
     if (since !== undefined) {
-      if (
+      if (options.trigger && (typeof since !== "string" || parseDuration(since) === undefined)) {
+        fail(
+          `${field}.since`,
+          "must be an ISO 8601 duration, counted back from the trigger record",
+        );
+        valid = false;
+      } else if (
         typeof since !== "string" ||
         (!["trigger", "enrollment", "last_step"].includes(since) &&
           parseDuration(since) === undefined)

@@ -12,6 +12,9 @@ export const sequenceStatuses = ["draft", "active", "paused", "archived"] as con
 export type SequenceStatus = (typeof sequenceStatuses)[number];
 const reentries = ["never", "after_exit", "always"] as const;
 export type Reentry = (typeof reentries)[number];
+/** Where a sequence reads what users did (D169, D172): pushed events, or the project's source. */
+export const sequenceSources = ["events", "external"] as const;
+export type SequenceSource = (typeof sequenceSources)[number];
 
 /** Bounds against hostile definitions. Conditions are bounded by conditions/types limits. */
 export const limits = {
@@ -46,7 +49,8 @@ export interface StepInput {
 export interface DefinitionInput {
   name: string;
   status: SequenceStatus | undefined;
-  /** Validated `{event, where?}` as JSON text. */
+  source: SequenceSource;
+  /** Validated `{event, where?, condition?}` as JSON text (`condition` on external sequences only). */
   trigger: string;
   exitOn: Array<string>;
   reentry: Reentry;
@@ -70,6 +74,10 @@ export interface DefinitionContext {
   templateType(id: bigint): string | null;
   /** The list exists and the caller may see it. */
   listUsable(id: bigint): boolean;
+  /** The project has a source configured (`source.url`), which an external sequence needs. */
+  sourceConfigured(): boolean;
+  /** The stored sequence's source on an update: an absent `source` keeps it. */
+  storedSource?: SequenceSource;
 }
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -128,7 +136,11 @@ function checked(result: ReturnType<typeof validate>, field: string): Condition 
  * subscriber after the event's upsert. Raw `sql` is refused: triggers run inside the event's
  * write transaction, where the read-only child runner cannot see the uncommitted event.
  */
-function triggerWhere(where: unknown, event: string): Record<string, unknown> | Condition {
+function triggerWhere(
+  where: unknown,
+  event: string,
+  source: SequenceSource,
+): Record<string, unknown> | Condition {
   if (!isObject(where)) {
     return fail("trigger.where", "must be an object");
   }
@@ -148,6 +160,13 @@ function triggerWhere(where: unknown, event: string): Record<string, unknown> | 
       "trigger.where",
     ) as { where: Record<string, unknown> };
     return result.where;
+  }
+  // D169: an external sequence states its history check as `trigger.condition`, one way each.
+  if (source === "external") {
+    return fail(
+      "trigger.where",
+      "an external sequence takes data.* equalities here; use trigger.condition for a history check",
+    );
   }
   const condition = checked(
     validate(where, { canUseSql: true, field: "trigger.where" }),
@@ -281,7 +300,12 @@ function duration(value: unknown, field: string): string {
   return value;
 }
 
-function step(value: unknown, i: number, context: DefinitionContext): StepInput {
+function step(
+  value: unknown,
+  i: number,
+  context: DefinitionContext,
+  source: SequenceSource,
+): StepInput {
   const field = `steps.${i}`;
   if (!isObject(value)) {
     return fail(field, "must be a step object");
@@ -319,6 +343,7 @@ function step(value: unknown, i: number, context: DefinitionContext): StepInput 
         validate(value.condition, {
           canUseSql: context.canUseSql,
           field: `${field}.condition`,
+          source,
         }),
         `${field}.condition`,
       ),
@@ -377,12 +402,17 @@ export function definitionInput(value: unknown, context: DefinitionContext): Def
       ? undefined
       : choice(value.status, sequenceStatuses, "status", "draft");
 
+  const source = choice(value.source, sequenceSources, "source", context.storedSource ?? "events");
+  if (source === "external" && !context.sourceConfigured()) {
+    fail("source", "the project has no source configured (source.url)");
+  }
+
   const trigger = value.trigger;
   if (!isObject(trigger)) {
     return fail("trigger", "must be an object");
   }
   for (const key in trigger) {
-    if (Object.hasOwn(trigger, key) && key !== "event" && key !== "where") {
+    if (Object.hasOwn(trigger, key) && key !== "event" && key !== "where" && key !== "condition") {
       fail("trigger", "unknown field");
     }
   }
@@ -390,7 +420,23 @@ export function definitionInput(value: unknown, context: DefinitionContext): Def
     return fail("trigger.event", "must be an event name");
   }
   const where =
-    trigger.where === undefined ? undefined : triggerWhere(trigger.where, trigger.event);
+    trigger.where === undefined ? undefined : triggerWhere(trigger.where, trigger.event, source);
+  // D172: a history check read from the source when the trigger arrives; external sequences only.
+  let triggerCondition: Condition | undefined;
+  if (trigger.condition !== undefined && trigger.condition !== null) {
+    if (source !== "external") {
+      fail("trigger.condition", "is only for external sequences; use trigger.where");
+    }
+    triggerCondition = checked(
+      validate(trigger.condition, {
+        canUseSql: false,
+        field: "trigger.condition",
+        source,
+        trigger: true,
+      }),
+      "trigger.condition",
+    );
+  }
 
   const exitOn: Array<string> = [];
   if (value.exit_on !== undefined && value.exit_on !== null) {
@@ -416,7 +462,7 @@ export function definitionInput(value: unknown, context: DefinitionContext): Def
   if (!Array.isArray(steps) || steps.length > limits.steps) {
     return fail("steps", `must be an array of at most ${limits.steps} steps`);
   }
-  const parsed = steps.map((item, i) => step(item, i, context));
+  const parsed = steps.map((item, i) => step(item, i, context, source));
   const ids = parsed.flatMap((s) => (s.id === null ? [] : [s.id]));
   if (new Set(ids).size !== ids.length) {
     fail("steps", "step IDs must be unique");
@@ -430,9 +476,11 @@ export function definitionInput(value: unknown, context: DefinitionContext): Def
   return {
     name,
     status,
+    source,
     trigger: JSON.stringify({
       event: trigger.event,
       ...(where ? { where } : {}),
+      ...(triggerCondition ? { condition: triggerCondition } : {}),
     }),
     exitOn,
     reentry,
