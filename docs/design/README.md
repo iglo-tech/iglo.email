@@ -17,6 +17,7 @@ Kickoff design for porting listmonk v7 to Bun + SQLite and adding lifecycle sequ
 | 11 | [Work plan](11-work-plan.md) | Tasks, briefs, council review and merge, run by agents |
 | 12 | [Completeness audit](12-completeness-audit.md) | Audit against typical newsletter, lifecycle and transactional needs (D89) |
 | 14 | [Projects](14-projects.md) | Implemented (D142): several projects in one instance, one configuration, one admin, a global send queue with SES quota planning, project-scoped API and MCP |
+| 15 | [External sources](15-external-sources.md) | Planned (D169, B150): sequences read user activity from a project's PocketBase instead of pushed events |
 
 ## Decisions at a glance
 
