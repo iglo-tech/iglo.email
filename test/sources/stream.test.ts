@@ -552,6 +552,58 @@ test("the retry queue: a permanent failure, and 72 hours of transient ones, are 
   expect(s.eventIds()).toEqual([after.id]);
 });
 
+test("the retry queue: a settings mismatch waits past 72 hours and does not use up the window", async () => {
+  const events = await eventsCollection();
+  const name = unique("retrymap");
+  const s = stream({ config: events.settings, names: () => [name] });
+  await s.live();
+  const user = await pb.user();
+  const id = recordId();
+  s.fail.set(
+    id,
+    Array.from({ length: 200 }, () => "transient" as const),
+  );
+  await pb.create(events.name, { id, user: user.id, name, occurredAt: stamp(0), data: {} });
+  await s.until(() => s.stream.retries().length === 1, "the queued record");
+  const attemptsOf = () => s.stream.retries()[0]?.attempts ?? 0n;
+  const retryAfter = async (ms: number) => {
+    const tries = attemptsOf();
+    s.clock.advance(ms);
+    s.stream.wakeRetries();
+    await s.until(() => attemptsOf() > tries, "a retry");
+  };
+  // Transient handler failures for 71 hours of the 72-hour window.
+  const first = s.clock.now().getTime();
+  while (s.clock.now().getTime() - first < RETRY_WINDOW_MS - 3_600_000) {
+    await retryAfter(3_600_000);
+  }
+  const handlerCalls = s.attempts.get(id);
+  // The configured data field goes missing: the next retry, past the window, meets the
+  // mismatch, and so does every retry for 72 hours more.
+  await pb.renameField(events.name, "data", "payload");
+  const start = s.clock.now().getTime();
+  while (s.clock.now().getTime() - start <= RETRY_WINDOW_MS + 3_600_000) {
+    await retryAfter(2 * 3_600_000);
+  }
+  expect(s.attempts.get(id)).toBe(handlerCalls);
+  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n }]);
+  expect(s.stream.retries()[0]?.last_error).toContain('no field "data"');
+  expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
+  expect(s.attention.some((line) => line.startsWith(REFUSED))).toBe(true);
+  // The field is back. The window started again at the last mismatch, so one more transient
+  // failure still retries, and the next retry delivers the record once.
+  await pb.renameField(events.name, "payload", "data");
+  s.fail.set(id, ["transient"]);
+  for (const handled of [1, 2].map((n) => (handlerCalls ?? 0) + n)) {
+    s.clock.advance(3_600_000);
+    s.stream.wakeRetries();
+    await s.until(() => s.attempts.get(id) === handled, `handler call ${handled}`);
+  }
+  await s.until(() => s.stream.retries().length === 0, "the queue to empty");
+  expect(s.eventIds()).toEqual([id]);
+  expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
+});
+
 test("the subscribed names: active triggers, active or paused exits, and grant rules", () => {
   const sequences = [
     { status: "active", trigger: { event: "signup" }, exit_on: ["churned"] },

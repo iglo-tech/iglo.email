@@ -94,12 +94,16 @@ export function createStreamStore(db: Database) {
         throw new Error("The retry queue row is no longer claimed");
       }
     },
-    /** Sets a claimed row's next attempt, or makes it terminal (in a transaction). */
+    /**
+     * Sets a claimed row's next attempt, or makes it terminal (in a transaction); `restart`
+     * becomes the row's first failure, so its retry window starts again.
+     */
     failed(
       claim: Pick<RetryClaim, "id" | "attempts">,
       next: Date,
       error: string,
       terminal: boolean,
+      restart?: Date,
     ) {
       return (
         q
@@ -108,6 +112,7 @@ export function createStreamStore(db: Database) {
             next.toISOString(),
             error.slice(0, MAX_ERROR),
             terminal ? 1 : 0,
+            restart ? restart.toISOString() : null,
             claim.id,
             claim.attempts,
           ).changes === 1

@@ -36,7 +36,9 @@ UPDATE source_stream_retries SET attempts = attempts + 1, next_attempt_at = ?1
 -- name: retry-done
 DELETE FROM source_stream_retries WHERE id = ? AND attempts = ? AND terminal = 0;
 -- name: retry-failed
-UPDATE source_stream_retries SET next_attempt_at = ?, last_error = ?, terminal = ?
+-- A non-null fourth parameter restarts the 72-hour window (a settings mismatch).
+UPDATE source_stream_retries SET next_attempt_at = ?, last_error = ?, terminal = ?,
+    first_failed_at = coalesce(?, first_failed_at)
   WHERE id = ? AND attempts = ? AND terminal = 0;
 -- name: retry-expire
 DELETE FROM source_stream_retries WHERE terminal = 1 AND next_attempt_at < ?;
