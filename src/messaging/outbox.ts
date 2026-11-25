@@ -305,13 +305,23 @@ export function createOutbox(options: OutboxOptions) {
       const lease = new Date(now.getTime() + leaseMs);
       const marketing = options.sends.queuedOfKind(ids, "marketing");
       const batch = options.sends.claimQueued(ids, now, lease, "transactional");
-      const all = Promise.all([
+      // Both halves settle before this does: a failed transactional half must not let stop() pass
+      // while the marketing half still pushes and journals (its requeues need the open database).
+      const all = Promise.allSettled([
         deliver(batch),
         marketing.length ? dispatchMarketing(marketing) : null,
-      ]).then(
-        () => arm(),
-        () => options.logger.attention("Outbox dispatch failed", "Outbox dispatch failed"),
-      );
+      ])
+        .then((results) => {
+          for (const result of results) {
+            if (result.status === "rejected") {
+              throw result.reason;
+            }
+          }
+        })
+        .then(
+          () => arm(),
+          () => options.logger.attention("Outbox dispatch failed", "Outbox dispatch failed"),
+        );
       inflight.add(all);
       void all.finally(() => inflight.delete(all));
       return all;
