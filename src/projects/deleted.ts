@@ -4,7 +4,8 @@
 // replaced), every other file of the directory (its uploads) goes into `<slug>-<timestamp>.tar`
 // beside it, and then the directory is removed.
 import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
+import { existsSync, opendirSync } from "node:fs";
+import type { Dir } from "node:fs";
 import { link, lstat, mkdir, open, readdir, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Clock } from "@/clock";
@@ -14,6 +15,45 @@ import { PROJECT_DATABASE, projectDirectory } from "@/projects/layout";
 export function deletedDirectory(dataDir: string): string {
   return join(dataDir, "backups", "deleted");
 }
+
+/**
+ * B149b r2/r3 (D165): whether a deleted project's final snapshot is kept, so the instance has served
+ * more than one project (an instance that deleted one before it recorded that in its registry).
+ * Only names are read, one at a time, stopping at the first `.db`. A missing directory is the usual
+ * case; one that cannot be listed fails no start: `attention` names it and the answer is true, the
+ * safe side (no recipient-address lookup).
+ */
+export function hasDeletedSnapshots(dataDir: string, attention: (line: string) => void): boolean {
+  let dir: Dir;
+  try {
+    dir = opendirSync(deletedDirectory(dataDir));
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      return false;
+    }
+    attention(unlisted(error));
+    return true;
+  }
+  try {
+    for (let entry = dir.readSync(); entry !== null; entry = dir.readSync()) {
+      if (entry.name.endsWith(".db")) {
+        return true;
+      }
+    }
+    return false;
+  } catch (error) {
+    attention(unlisted(error));
+    return true;
+  } finally {
+    dir.closeSync();
+  }
+}
+
+const errorCode = (error: unknown) =>
+  typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+const unlisted = (error: unknown) =>
+  `backups/deleted cannot be listed (${errorCode(error) || String(error)}): the instance is ` +
+  "treated as one that has served several projects";
 
 export interface DeletedProject {
   /** The database snapshot, relative to the data directory. */

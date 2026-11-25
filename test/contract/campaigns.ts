@@ -897,6 +897,24 @@ export async function runCampaignsContract(target: {
       "Unknown messenger .",
       "test-messenger",
     );
+    // D165 (B149b r1): a chosen Message-ID in the app's own send or delivery form is refused
+    // natively, as it could name another project's record; upstream sends it.
+    const ownForm = await call(`/api/campaigns/${testCampaign.id}/test`, "POST", {
+      name: "t",
+      subject: `${marker} Own form`,
+      lists: [news.id],
+      messenger: "email",
+      headers: [{ "Message-ID": `<${testCampaign.uuid}.${ada.uuid}@example.test>` }],
+      subscribers: [ada.email],
+    });
+    check(
+      reference
+        ? ownForm.status === 200
+        : ownForm.status === 400 &&
+            message(ownForm) ===
+              "Invalid Message-ID: the form <uuid@host> or <uuid.uuid@host> is the app's own.",
+      "test-own-message-id-d165",
+    );
 
     // List-scoped permissions.
     const apiUser = async (name: string, permissions: Array<string>, lists: Array<object>) => {

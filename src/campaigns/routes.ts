@@ -6,6 +6,7 @@ import { writeTransaction } from "@/db/transaction";
 import { must } from "@/invariant";
 import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
+import { messageIdentity } from "@/bounces/ses";
 import { newMessageId } from "@/messaging/email";
 import type { Message, MessageHeaders } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
@@ -996,6 +997,16 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
             const prior = headers[name];
             headers[name] = prior === undefined ? header : [...[prior].flat(), header];
           }
+        }
+        // B149b r1 (D165): a chosen Message-ID in the app's own send or delivery form could name
+        // another project's record and route its late bounces there.
+        const chosen = headerMessageId(headers);
+        const named = chosen ? messageIdentity(chosen) : null;
+        if (named && (named.sendUuid || named.campaignUuid)) {
+          throw new HttpError(
+            400,
+            "Invalid Message-ID: the form <uuid@host> or <uuid.uuid@host> is the app's own.",
+          );
         }
         messages.push({
           from: out.from,

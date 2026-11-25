@@ -22,7 +22,7 @@ import { createDispatcher } from "@/messaging/dispatcher";
 import type { Dispatcher } from "@/messaging/dispatcher";
 import type { SMTPServer } from "@/messaging/email";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
-import { archiveDeleted } from "@/projects/deleted";
+import { archiveDeleted, hasDeletedSnapshots } from "@/projects/deleted";
 import type { ArchiveProgress, DeletedProject } from "@/projects/deleted";
 import {
   INSTANCE_DATABASE,
@@ -336,6 +336,8 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     // Last in the shutdown order (14-projects section 7): every project has stopped asking for
     // slots and drained; the pools close. After stop() this is the same, already settled close.
     await dispatcher?.close();
+    // Its settings listener goes before the store closes, also after a partial open (B149b).
+    await ses?.stop();
     registry?.close();
     account?.close();
     settings?.close();
@@ -391,6 +393,11 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       });
     }
     registry.followInstanceHost(instanceHost);
+    // B149b r2 (D165): a deleted project's snapshot is proof the instance served several projects,
+    // for one that deleted it before the registry recorded that.
+    if (hasDeletedSnapshots(root, attention)) {
+      registry.markSeveral();
+    }
     const records = registry.list();
     for (const name of directories) {
       if (!records.some((record) => record.slug === name)) {
@@ -727,7 +734,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       clientAddress: instanceClientAddress,
     }),
     projects: sesProjects,
-    byHost: (hostname) => hosts.get(hostname)?.project.ses,
+    servedSeveral: () => registered.servedSeveral(),
     logger: instanceLogger,
   });
 

@@ -1,7 +1,7 @@
 // The SES notification route (B142, D156; 14-projects section 8). Adapted from the `ses` branch of
 // listmonk cmd/bounce.go at 6fcd95f (BounceWebhook), which src/bounces/routes.ts served per install.
 // Native: the route is the instance's, with the instance's bounce settings and topic ARNs; a notice
-// is routed to the one project its Message-ID names, and each project records it in its own database.
+// is routed to the one project whose own records its Message-ID names, and each project records it in its own database.
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import type { BounceEvent, BounceStore } from "@/bounces/store";
@@ -44,6 +44,12 @@ export interface SesNotice {
   key: string;
   expiresAt: Date;
   events: Array<BounceEvent>;
+  /**
+   * B149b r1/r2 (D165): true once the instance has served several projects, even with one left.
+   * The events act only on the subscriber their own send or delivery names: no address fallback,
+   * and no subscriber a header contradicts.
+   */
+  ownRecord: boolean;
 }
 
 /** What the instance's route reaches of one project: narrow functions, never its database. */
@@ -111,7 +117,7 @@ export function createSesProject(deps: {
           if (test) {
             tests.push({ event, test });
           } else {
-            store.record(event);
+            store.record(event, { ownRecord: notice.ownRecord });
           }
         }
       });
@@ -156,8 +162,46 @@ const invalidData = (c: RequestContext) =>
   new HttpError(400, c.app.i18n.T("globals.messages.invalidData"));
 
 /**
+ * The project a notice is for (section 8): the only project of an instance that has never served
+ * more than one; else the one project whose own
+ * sends, campaign deliveries or test sends the Message-ID names. Its domain decides nothing: a
+ * project user can choose a test send's Message-ID, and a hostname can move to another project
+ * (B149b, D165). Never by address: the same address can be a subscriber in two projects. A
+ * delivery's `X-Listmonk-Campaign` and `X-Listmonk-Subscriber` must name the Message-ID's own
+ * UUIDs (B149b r1): a project can't route by one record and act on another subscriber. Once a
+ * project is deleted, the one left gets only what its own records name (B149b r2): the deleted
+ * project's late notices are no longer that project's, and its address must not match them.
+ */
+function routeOf(
+  projects: ReadonlyArray<SesProject>,
+  events: Array<BounceEvent>,
+  several: boolean,
+): SesProject | undefined {
+  if (!several) {
+    return projects[0];
+  }
+  const messageId = events[0]?.messageId ?? "";
+  if (!messageId) {
+    return undefined;
+  }
+  const delivery = messageIdentity(messageId);
+  if (
+    delivery.campaignUuid &&
+    events.some(
+      (event) =>
+        event.campaignUuid !== delivery.campaignUuid ||
+        event.subscriberUuid !== delivery.subscriberUuid,
+    )
+  ) {
+    return undefined;
+  }
+  const matches = projects.filter((project) => project.claims(messageId));
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/**
  * `POST /webhooks/service/ses` on `router`, the instance's (14-projects section 8). `projects` are
- * the served projects in slug order; `byHost` is the routing table's project for a hostname.
+ * the served projects in slug order.
  */
 export function registerSesRoute(
   router: Router,
@@ -171,7 +215,8 @@ export function registerSesRoute(
     /** SNS signature checks and confirmations; tests inject the network. */
     sns?: SnsClient;
     projects: () => ReadonlyArray<SesProject>;
-    byHost: (hostname: string) => SesProject | undefined;
+    /** Whether the instance has ever served more than one project (B149b r2, D165). */
+    servedSeveral: () => boolean;
     /** The instance's log: a notice no single project claims is named there. */
     logger: ErrorLogger;
   },
@@ -182,28 +227,6 @@ export function registerSesRoute(
   /** Upstream has no route at all without `bounce.webhooks_enabled`. */
   const webhooksEnabled: Middleware = (c, next) =>
     settings().webhooksEnabled ? next() : publicNotFound(c.app.i18n, c.request.method, page());
-
-  /**
-   * The project a notice is for (section 8): the only project; else the Message-ID's domain among
-   * hostnames; else the one project whose sends, campaigns or test sends its UUIDs name. Never by
-   * address: the same address can be a subscriber in two projects.
-   */
-  const routeOf = (messageId: string): SesProject | undefined => {
-    const projects = deps.projects();
-    if (projects.length === 1) {
-      return projects[0];
-    }
-    if (!messageId) {
-      return undefined;
-    }
-    const { domain } = messageIdentity(messageId);
-    const hosted = domain ? deps.byHost(domain) : undefined;
-    if (hosted) {
-      return hosted;
-    }
-    const matches = projects.filter((project) => project.claims(messageId));
-    return matches.length === 1 ? matches[0] : undefined;
-  };
 
   /** cmd/bounce.go's `ses` branch. Every refusal is upstream's 400 and changes nothing. */
   const ses: Handler = async (c) => {
@@ -245,7 +268,9 @@ export function registerSesRoute(
     if (!events) {
       throw invalidData(c);
     }
-    const project = routeOf(events[0]?.messageId ?? "");
+    const projects = deps.projects();
+    const several = projects.length > 1 || deps.servedSeveral();
+    const project = routeOf(projects, events, several);
     if (!project) {
       // Accepted, so SNS does not retry a notice that would match nothing again.
       logger.attention(`${UNMATCHED_NOTICE}: SNS message ${id}`, UNMATCHED_NOTICE);
@@ -258,6 +283,7 @@ export function registerSesRoute(
       key: `sns:${id}`,
       expiresAt: new Date(sent + SNS_MAX_AGE_MS + 1000),
       events,
+      ownRecord: several,
     });
     return ok(true);
   };

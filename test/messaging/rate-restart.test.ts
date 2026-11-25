@@ -81,6 +81,26 @@ describe("B118a: send-rate restart boundary", () => {
     expect(h.starts[1]! - previous).toBeGreaterThanOrEqual(1000);
   });
 
+  test("the interval counts from the first send asked for, not from the dispatcher's creation", async () => {
+    // B149b (B141 r1): the instance builds the dispatcher before its projects open, which can take
+    // longer than one interval at a low rate.
+    const clock = new TestClock();
+    const h = await harness(clock, 1);
+    const emailer = h.make();
+    clock.advance(5000);
+    const askedAt = clock.now().getTime();
+    void emailer.push(sinkMessage("a@example.test"));
+
+    await flush();
+    expect(h.starts).toEqual([]);
+    clock.advance(999);
+    await flush();
+    expect(h.starts).toEqual([]);
+    clock.advance(1);
+    await flush();
+    expect(h.starts).toEqual([askedAt + 1000]);
+  });
+
   test("a rate of zero starts at once and sets no wait", async () => {
     const clock = new TestClock();
     const h = await harness(clock, 0);

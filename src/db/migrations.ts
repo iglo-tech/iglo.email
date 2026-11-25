@@ -44,6 +44,7 @@ import sendsStarted from "@/migrations/0035_sends_started.sql" with { type: "tex
 import instanceRegistry from "@/migrations/instance/0001_registry.sql" with { type: "text" };
 import adminAccount from "@/migrations/instance/0002_admin_account.sql" with { type: "text" };
 import instanceSettings from "@/migrations/instance/0003_settings.sql" with { type: "text" };
+import severalProjects from "@/migrations/instance/0004_several_projects.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -94,6 +95,7 @@ export const instanceMigrations: ReadonlyArray<Migration> = [
   { version: 1, sql: instanceRegistry },
   { version: 2, sql: adminAccount },
   { version: 3, sql: instanceSettings },
+  { version: 4, sql: severalProjects },
 ];
 
 /** Where a pre-migration snapshot goes and what its file is called. */

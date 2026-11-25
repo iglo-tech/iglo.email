@@ -210,10 +210,20 @@ export function createDispatcher(options: DispatcherOptions) {
   const grants = new WeakMap<Grant, { member: Member; slots: Array<Slot>; used: Array<Slot> }>();
   let stopped = false;
   let rate = options.rate();
-  // The start stands in for the last start: a process has no record of the sends before it (a
-  // restart), so its first send waits one interval after the start (B118a). Rate 0 waits for none.
-  let lastStart = clock.now().getTime();
-  let nextAt = lastStart + intervalOf(rate);
+  // The first request stands in for the last start: a process has no record of the sends before
+  // it (a restart), so its first send waits one interval after the first time a project asks to
+  // send (B118a), not after the dispatcher was built, before the projects opened (B149b). Rate 0
+  // waits for none.
+  let lastStart = 0;
+  let nextAt = 0;
+  let begun = false;
+  function begin() {
+    if (!begun) {
+      begun = true;
+      lastStart = clock.now().getTime();
+      nextAt = lastStart + intervalOf(rate);
+    }
+  }
   let timer: AbortController | undefined;
   let pumping = false;
 
@@ -433,6 +443,7 @@ export function createDispatcher(options: DispatcherOptions) {
     if (stopped || member.closed) {
       return false;
     }
+    begin();
     if (rate > 0) {
       const now = clock.now().getTime();
       if (slot || tx.length || nextAt > now) {
@@ -458,6 +469,7 @@ export function createDispatcher(options: DispatcherOptions) {
           reject(stoppedError());
           return;
         }
+        begin();
         let limit: AbortController | undefined;
         const start: Start = {
           member,
@@ -634,6 +646,7 @@ export function createDispatcher(options: DispatcherOptions) {
             cleanup: () => signal?.removeEventListener("abort", onAbort),
           };
           signal?.addEventListener("abort", onAbort, { once: true });
+          begin();
           member.requests[cls].push(request);
           if (!grantTurn[cls].includes(member)) {
             grantTurn[cls].push(member);
@@ -682,7 +695,9 @@ export function createDispatcher(options: DispatcherOptions) {
       timer?.abort();
       timer = undefined;
       rate = options.rate();
-      nextAt = rate > 0 ? lastStart + 1000 / rate : 0;
+      if (begun) {
+        nextAt = rate > 0 ? lastStart + 1000 / rate : 0;
+      }
       pump();
     },
     /** True once close() has begun. */

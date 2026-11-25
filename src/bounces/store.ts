@@ -1,6 +1,7 @@
 // Adapted from listmonk internal/core/bounces.go and queries/bounces.sql at 6fcd95f. Native
 // additions: `send_id`, a null `subscriber_id` for an unlinked send, and provider receipts.
 import type { Database } from "bun:sqlite";
+import { messageIdentity } from "@/bounces/ses";
 import type { Clock } from "@/clock";
 import { prepareNamedQueries } from "@/db/queries";
 import type { BounceTarget } from "@/messaging/sends";
@@ -159,7 +160,7 @@ export function createBounceStore(
         filter.limit < 1 ? -1 : filter.limit,
       );
   };
-  const identify = (event: BounceEvent) => {
+  const identify = (event: BounceEvent, ownRecord: boolean) => {
     const owner = deps.subscribers();
     const addressed = (email: string) =>
       !event.recipient || sanitizeEmail(email) === event.recipient;
@@ -171,6 +172,11 @@ export function createBounceStore(
       const subscriber = send.subscriber_id === null ? null : owner.get(send.subscriber_id);
       const claimed =
         !subscriber || !event.subscriberUuid || subscriber.uuid === event.subscriberUuid;
+      // B149b r1 (D165): with several projects a header that names another subscriber than the
+      // send's is not believed, and the notice is stored nowhere.
+      if (ownRecord && !claimed) {
+        return null;
+      }
       if (!addressed(send.to_email) || !claimed) {
         const meta = { ...(JSON.parse(event.bareMeta) as object), send_uuid: send.uuid };
         return { ...coded(event), meta: JSON.stringify(meta) };
@@ -180,9 +186,13 @@ export function createBounceStore(
       }
       return { subscriber, send, meta: event.meta, source: event.source };
     }
-    const subscriber = event.subscriberUuid
-      ? owner.byUuid(event.subscriberUuid)
-      : event.email
+    // The address fallback (upstream's) serves an instance that has only ever had one project:
+    // otherwise the subscriber is the one the notice's own Message-ID names, never a header's
+    // (B149b r1/r2, D165).
+    const uuid = ownRecord ? messageIdentity(event.messageId).subscriberUuid : event.subscriberUuid;
+    const subscriber = uuid
+      ? owner.byUuid(uuid)
+      : event.email && !ownRecord
         ? owner.byEmail(event.email)
         : null;
     if (!subscriber) {
@@ -217,14 +227,16 @@ export function createBounceStore(
     /**
      * record-bounce, inside the caller's write transaction. Rows stop at the count and for a
      * blocklisted subscriber, but the action still applies past the count. A malformed campaign
-     * UUID drops the event, as upstream's failed cast does.
+     * UUID drops the event, as upstream's failed cast does. `ownRecord` (an SES notice with several
+     * projects, B149b r1): the subscriber is only the one the event's send or UUID names, never one
+     * found by address, and a send whose subscriber the event's header contradicts records nothing.
      */
-    record(event: BounceEvent) {
+    record(event: BounceEvent, options: { ownRecord?: boolean } = {}) {
       const action = deps.actions()[event.type];
       if (!action || (event.campaignUuid && !reUUID.test(event.campaignUuid))) {
         return;
       }
-      const named = identify(event);
+      const named = identify(event, options.ownRecord === true);
       if (!named) {
         return;
       }

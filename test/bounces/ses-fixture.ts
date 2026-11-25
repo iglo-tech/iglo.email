@@ -182,6 +182,8 @@ export const bounceMessage = (
   recipients: Array<string>,
   extra: JsonObject = {},
   headers: Array<object> = [],
+  /** Fields of `mail` to replace, such as `headersTruncated` and `commonHeaders`. */
+  mail: JsonObject = {},
 ) =>
   JSON.stringify({
     notificationType: "Bounce",
@@ -201,5 +203,6 @@ export const bounceMessage = (
       destination: recipients,
       headersTruncated: false,
       headers,
+      ...mail,
     },
   });

@@ -18,6 +18,8 @@ interface Answer {
   headers?: Record<string, string>;
   /** Answer this status with a body that never ends: 16 KiB chunks for as long as it is read. */
   endless?: boolean;
+  /** Answer only once this settles: a read stays in flight until then. */
+  gate?: Promise<void>;
 }
 
 const calls: Array<{ path: string; authorization: string; date: string }> = [];
@@ -38,12 +40,13 @@ beforeAll(() => {
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
-    fetch(request) {
+    async fetch(request) {
       calls.push({
         path: new URL(request.url).pathname,
         authorization: request.headers.get("authorization") ?? "",
         date: request.headers.get("x-amz-date") ?? "",
       });
+      await answer.gate;
       if (answer.endless) {
         const chunk = new TextEncoder().encode(" ".repeat(16 * 1024));
         const body = new ReadableStream({
@@ -318,6 +321,43 @@ test("the check button reads now and shows the AWS error; new credentials drop t
   expect(checked.snapshot?.sentLast24Hours).toBe(100);
   settings.update((current) => ({ ...current, "ses.api_access_key_id": "AKIAIOSFODNN7EXAMPLF" }));
   expect(account.current()).toEqual({ configured: true, snapshot: null, error: null });
+});
+
+test("a key change during a read: the loop reads again with the new keys at once, not after 5 minutes", async () => {
+  // B149b (B145a r1): the read in flight uses the old keys and is discarded.
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  answer = { ...quota(50_000, 100), gate };
+  const { account, clock, settings } = setup();
+  account.start();
+  while (calls.length === 0) {
+    await Bun.sleep(1);
+  }
+  settings.update((current) => ({ ...current, "ses.api_access_key_id": "AKIAIOSFODNN7EXAMPLF" }));
+  answer = quota(50_000, 200);
+  release();
+  // No time passes on the clock: the new keys are read before the loop sleeps.
+  await clock.whenSleeping();
+  expect(calls).toHaveLength(2);
+  expect(calls[1]!.authorization).toContain("Credential=AKIAIOSFODNN7EXAMPLF/");
+  expect(account.current().snapshot?.sentLast24Hours).toBe(200);
+});
+
+test("a key change during a read: a forecast's read waits for it, then reads with the new keys", async () => {
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  answer = { ...quota(50_000, 100), gate };
+  const { account, settings } = setup();
+  const first = account.fresh();
+  while (calls.length === 0) {
+    await Bun.sleep(1);
+  }
+  settings.update((current) => ({ ...current, "ses.api_access_key_id": "AKIAIOSFODNN7EXAMPLF" }));
+  const second = account.fresh();
+  answer = quota(50_000, 200);
+  release();
+  await first;
+  expect((await second).snapshot?.sentLast24Hours).toBe(200);
+  expect(calls).toHaveLength(2);
+  expect(calls[1]!.authorization).toContain("Credential=AKIAIOSFODNN7EXAMPLF/");
 });
 
 test("hold line: max(2% of the quota, effective rate × 60 s); never without a snapshot or a daily limit", () => {

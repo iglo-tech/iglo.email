@@ -84,7 +84,7 @@ export function wireNotices(
     limit: (_context, next) => next(),
     sns: createSnsClient({ clock, fetch: deps.snsFetch }),
     projects: () => [sesProject],
-    byHost: () => undefined,
+    servedSeveral: () => false,
     logger: deps.logger,
   });
   registerMaintenanceRoutes(router, {
