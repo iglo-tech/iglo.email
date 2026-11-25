@@ -63,11 +63,24 @@ async function guarded(options: { setting: number; quota: Quota; credentials?: b
   cleanup.push(() => sink.close());
   const quota = { ...options.quota };
   let reads = 0;
+  /** When each read began, on the test clock: its signed `x-amz-date`, to the second. */
+  const begun: Array<number> = [];
+  /** How long the stand-in takes to answer, on the test clock. */
+  let latency = 0;
   const ses = Bun.serve({
     port: 0,
     hostname: HOST,
-    fetch: () => {
+    fetch: async (request) => {
       reads++;
+      const stamp = request.headers.get("x-amz-date") ?? "";
+      begun.push(
+        Date.parse(
+          stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"),
+        ),
+      );
+      if (latency > 0) {
+        await clock.sleep(latency);
+      }
       return Response.json({
         SendQuota: {
           Max24HourSend: quota.max,
@@ -241,6 +254,12 @@ async function guarded(options: { setting: number; quota: Quota; credentials?: b
     sink,
     quota,
     reads: () => reads,
+    /** When each read so far began, in ms on the test clock (to the second). */
+    begun: () => [...begun],
+    /** Makes the stand-in answer each later read `ms` later on the test clock. */
+    answerIn: (ms: number) => {
+      latency = ms;
+    },
     lines,
     call,
     run,
@@ -362,10 +381,25 @@ async function holdAndResume(quota: Quota, line: number) {
     f.peek<{ cursor: number }>(`SELECT last_subscriber_id AS cursor FROM campaigns`).cursor;
   const startCursor = cursor();
   const firstLease = leaseAt();
-  // Three minutes pass with the same answer from SES, read every minute: still held.
+  // Three minutes pass with the same answer from SES, read every minute: still held. SES answers
+  // each read two seconds late, as a slow GetAccount may (up to its 10 s timeout): the refresh
+  // counts from when a read began, so a read still begins every minute (B151, D175).
+  f.answerIn(2000);
   const readsBefore = f.reads();
   await f.run(180_000, 1000);
-  expect(f.reads()).toBeGreaterThanOrEqual(readsBefore + 3);
+  // A read that began in a step reaches the stand-in in real time: wait for it with the clock
+  // still. Two reads began well before the last step; their gaps are checked before the third.
+  const gaps = async (count: number) => {
+    await f.until(() => f.reads() >= readsBefore + count, 0, `the hold's read ${count}`);
+    const begun = f.begun().slice(readsBefore - 1, readsBefore + count);
+    return begun.slice(1).map((at, index) => at - begun[index]!);
+  };
+  const [first, second] = await gaps(2);
+  // The first gap counts from a read before the 1 s steps began, so it ends at the step after.
+  expect(first).toBeGreaterThanOrEqual(60_000);
+  expect(first).toBeLessThanOrEqual(61_000);
+  expect(second).toBe(60_000);
+  expect((await gaps(3))[2]).toBe(60_000);
   let count = await f.sends();
   expect(count("marketing", "queued")).toBe(5);
   expect(count("marketing", "sending")).toBe(0);
