@@ -707,8 +707,8 @@ pages each step follows are listed under [References](#references); they were ch
    `eu-west-1`), the access key ID (`AKIA…`) and the secret, which the page then masks, and press
    **Check SES account**: it reads the account now and shows its rate, 24-hour quota, sent count,
    production access and whether sending is enabled, or AWS's error. The three keys are saved
-   together or not at all; an empty secret keeps the stored one, and clearing the region and the
-   key ID removes all three. What they turn on is in
+   together or not at all; an empty secret keeps the stored one, and clearing the key ID removes
+   all three. What they turn on is in
    [Sending capacity](#sending-capacity-rate-quota-guard-and-forecast). The server needs outbound
    HTTPS to `email.<region>.amazonaws.com`.
 
