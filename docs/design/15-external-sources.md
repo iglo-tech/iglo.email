@@ -22,6 +22,18 @@ The events API and the local `events` table stay for applications that push. A s
 
 Every operation takes an `AbortSignal` and a timeout. Errors are classified as **transient** (network error, timeout, 5xx, 429) or **permanent** (400, 403, 404 where a record was not expected to vanish, a missing field). No operation ever runs inside a SQLite transaction.
 
+### As built (B150a)
+
+[D170](09-decisions.md#d170-source-settings-pocketbase-adapter-and-test-harness-b150a-lead-2026-11-25) records the choices this section left open. Where this list and the text above differ, this list is the code.
+
+- **Modules.** `src/sources/source.ts` is the interface (`ExternalSource`, `SourceError` with `kind` transient or permanent and the answered `status`, `isSourceError`, `EventQuery`, `SourceEvent`, `ScannedEvent`, `SourceRecipient`, `PAGE_LIMIT` 1000, `SCAN_LIMIT` 100,000, `DEFAULT_TIMEOUT_MS` 15 s). `src/sources/pocketbase.ts` is the adapter (`createPocketBaseSource({config, clock, guard, transport?, maxResponseBytes?})`), `src/sources/filter.ts` the filter literals and dates, `src/sources/connect.ts` the private-address guard, `src/sources/json.ts` the typed JSON boundary. B150b adds `subscribe` and `catchUp` beside the adapter.
+- **Queries.** An `EventQuery` is `{user?, names?, after?, through?, data?}`: the user relation equals, the name is one of `names` (an empty list matches nothing, at most 100), `occurredAt` strictly after `after` and at or before `through`, and each `data.<path>` equals a scalar. The adapter writes the filter from the mapped field names; every query also requires a non-empty `occurredAt`, so a record without one is never counted. B150c re-checks `data` strictly on fetched rows.
+- **Operations.** `recipient(id)` and `record(id)` read one row; an ID outside `[A-Za-z0-9_-]{1,100}` is a permanent error before any request. `latest` sorts `-occurredAt,-id`, one row. `scan(query, fields, limit)` is an async generator of pages sorted `occurredAt,id`, keyset on the last row's raw `occurredAt` text and ID, `perPage` at most 1000, `skipTotal=1`, `fields=id,occurredAt` plus the requested mapped fields; `count(query, upTo)` scans IDs only up to `upTo`, and `exists` is `count(…, 1)` (`perPage=1`).
+- **Absent answers are confirmed.** PocketBase 0.40.5 reads an invalid or revoked token as a guest: a rule-protected list answers `200` with no items and a view answers `404`, never `401` (measured). So `null`, an empty or short last page are confirmed with `POST /api/collections/<auth>/auth-refresh`: `200` proves the read was authenticated (a token is never revalidated once revoked); `401` signs in again and the read is repeated once. A `404` by ID is also checked against the collection (a missing collection is a `404` too, and is permanent). A `401` or `403` on a read signs in again and repeats it once.
+- **Tokens.** Signed in with `auth-with-password`; renewed half way to the token's `exp`, measured against the answer's `Date` header and kept on the injected clock (60 s when either is missing). One sign-in runs at a time.
+- **Limits.** Each request has its own time limit on the injected clock and races the caller's signal (DNS cannot be cancelled). A body is read up to 32 MiB; a page over it is read again with a quarter of the page size, down to one record, and a single record over it is permanent. A JSON body nested deeper than 64 levels is permanent. Redirects are never followed.
+- **Errors.** Network failure and the time limit are transient, as are `429` and `5xx`; `400` (an unknown field in a filter, measured), `403`, a refused sign-in, a missing collection or mapped field, a body that is not JSON and the private-address refusal are permanent. A caller's abort rejects with the signal's reason, not a `SourceError`.
+
 ## 2. Settings (project keys)
 
 Secrets are stored and masked as the SES secret key is.
@@ -33,6 +45,17 @@ Secrets are stored and masked as the SES secret key is.
 - `grant_lists` rules: "an event matching P grants lists L" (P: event name plus optional `data.*` equality; L: list IDs of this project).
 
 The source URL is refused by `webhooks.block_private_addresses` (instance key, D122) exactly as a webhook target is: a project admin chooses the URL, so the same server-side request guard applies. One narrow exemption (D169, amended): the instance key `sources.private_hosts`, a list of host names an instance admin sets, lets a source URL whose host is on the list resolve to a private, loopback, link-local or unique-local address while the block stays on. Matching is exact and case-insensitive on the URL's host (no wildcards, no IP ranges, at most 20 entries); the resolved address is still checked at every connection, so the exemption covers only those names. Project admins and API tokens cannot change it (instance key, instance session only). Webhook targets never use it. With the block off, nothing changes.
+
+### As built (B150a)
+
+[D170](09-decisions.md#d170-source-settings-pocketbase-adapter-and-test-harness-b150a-lead-2026-11-25) records the choices this section left open.
+
+- **Keys** (project, `src/sources/settings.ts`): `source.url` (empty: no source; http or https, no credentials, query or fragment, stored without a trailing slash), `source.auth_collection` (default `services`), `source.identity`, `source.password` (masked; required with a URL), `source.events` `{collection, user, name, data, occurred_at, key}` (defaults `events`, `user`, `name`, `data`, `occurredAt`, no key), `source.recipients` `{collection, email, name, opt_out}` (defaults `recipients`, `email`, `name`, no opt-out field), `source.users` `{collection, leaving_filter}` (no collection by default; a collection needs a filter, at most 2,000 characters, passed to PocketBase as written) and `source.grant_lists`. A blank required name takes its default; every name is a PocketBase identifier (`[A-Za-z_][A-Za-z0-9_]*`, at most 100).
+- **Password.** A blank password, or the mask a GET served, keeps the stored one only while the URL and the identity stay the same, so a stored password is never sent to a server it was not entered for; a one-key write of another `source.*` key carries no password either. An empty URL clears it.
+- **Opt-out.** The opt-out field is "set" unless it is null, missing, `false`, `0`, `""`, `"0"` or `"false"`, so a boolean and a date field both work.
+- **Grant rules.** At most 50 rules, each `{event, where, lists}`: an event name (at most 200 bytes, no control characters), at most 8 `data.<path>` equalities with a text (at most 1,000 bytes), finite number or boolean value, and 1 to 100 list IDs. A save naming a list this project does not have is a `400`; a list the stored rules already named is not checked again, so deleting a list does not block other saves.
+- **Instance key** `sources.private_hosts`: exact host names, lower-cased, letters, digits, `_` and `-` per label (a Docker service name may hold `_`), at most 20; an IP address or a wildcard is refused. A full write without it keeps it. The guard (`src/sources/connect.ts`) resolves the host at every request with the block on: an unlisted host must resolve only to public unicast (`blockedAddress`, the webhook rule, called, not copied); a listed name may also resolve to 10/8, 172.16/12, 192.168/16, 127/8, 169.254/16, `::1`, `fe80::/10` or `fc00::/7`, and nothing else; an address literal is never listed. The request connects to a checked address, trying the next checked one when a connection is refused (a name such as `localhost` may resolve to `::1` first).
+- **Test connection.** `POST /api/settings/source/test` (`settings:manage`): the saved source, or the form's unsaved `source.*` keys over it (a password only when given, else the saved one under the same rule as a save). Steps `auth`, `recipients`, `events` (the mapped fields and `created`), and `users` when set; a field probe is one filter naming each field (`f = f`), and a `400` is narrowed to the missing fields one probe each. A step that reads no rows says to check the list rule. The admin view is the project Settings page's "Source" tab; the private hosts are under Security on the instance Settings page.
 
 ## 3. What iglo.email stores
 
@@ -80,9 +103,17 @@ Not stored: the events themselves, or any recipients-view field other than addre
 - **Leaving.** A user absent from the recipients view is leaving: end the enrollments and remove the subscriber, at send time and in real time on a matching users update. PocketBase does not broadcast a hard delete of a user that does not match the subscription filter, so send time is the backstop.
 - **Names.** A generic Liquid filter `first_name`: the first word if it starts with a letter, contains no `@` and is at most 24 characters, else empty (`{{ subscriber.name | first_name | default: "there" }}`). A source-linked subscriber's name may be empty; there is no name-from-email fallback.
 
+### As built (B150a)
+
+`first_name` (`src/templates/filters.ts`): the first whitespace-separated word of a text when it starts with a Unicode letter, holds no `@` and is at most 24 code points; any other text, and any value that is not text, is empty. It takes no argument.
+
 ## 8. Tests
 
 Against the real PocketBase 0.40.5 binary (official release, checksum-pinned, downloaded into an owned test-excluded cache such as `node_modules/.cache/`, and downloaded in CI), never a mock of its protocol: realtime and reconnect catch-up, the lookback and dedupe, the retry queue, conflict resolution and leaving, condition and aggregate compilation including the loose-JSON re-check, `trigger.condition`, `source_error`, and `first_name`. The binary is a test tool only; the shipped executable gains no dependency.
+
+### As built (B150a)
+
+The harness is `test/sources/pocketbase.ts` (`startPocketBase()`, `sourceConfig(url, service)`) with `test/sources/pocketbase-binary.ts` (download, SHA-256 check, cache); see `test/sources/README.md`. `bun run pocketbase:download` fetches it ahead of time; the first test that needs it downloads it, so CI (both architectures) gets it inside `bun run check`; a separate `ci.yml` step running `bun run pocketbase:download` is left to a push with the `workflow` scope, which B150a's token lacked.
 
 ## 9. PocketBase facts (0.40.5, measured 2026-11-25)
 
@@ -91,3 +122,5 @@ Against the real PocketBase 0.40.5 binary (official release, checksum-pinned, do
 - **Paging.** `perPage` is silently capped at 1000; `skipTotal=1` returns `totalItems: -1`.
 - **Errors.** A duplicate unique value is a 400 with `data.<field>.code = "validation_not_unique"`.
 - **Auth collections** hide `email` from non-owners unless `emailVisibility` is on.
+- **Invalid tokens** (B150a): an invalid, expired or revoked token in `Authorization` is read as a guest, not refused: a list with a rule answers `200` with no items and a view by ID `404`. Only routes that require auth (`auth-refresh`) answer `401`.
+- **Filter literals** (B150a): a single-quoted literal with each `\` and `'` escaped by a backslash reads back exactly; escaping only the quote breaks on a trailing backslash (`400`). An unknown field in a filter or sort is a `400` "Something went wrong while processing your request.". Dates are stored as `YYYY-MM-DD HH:mm:ss.sssZ` text and compare as text. A new auth collection's token lasts 7 days; the minimum is 10 s.

@@ -614,6 +614,20 @@ function Security({ t, side }: { t: Translation; side: SettingsSide }) {
             label={t.T("settings.security.blockPrivateAddresses")}
             hint={t.T("settings.security.blockPrivateAddressesHelp")}
           />
+          <label data-field="">
+            Private source hosts
+            <textarea
+              rows="3"
+              name="sources.private_hosts"
+              placeholder="pocketbase"
+              x-model="form['sources.private_hosts']"
+            ></textarea>
+            <Hint>
+              One host name per line, at most 20: a project source URL on one of these hosts may
+              reach a private, loopback, link-local or unique-local address while the block is on.
+              Exact names only, no addresses or wildcards. Webhooks never use this list.
+            </Hint>
+          </label>
         </fieldset>
       </div>
     );
@@ -1178,6 +1192,132 @@ function Ses() {
   );
 }
 
+/** One member of an object setting, such as `source.events` `collection`. */
+const sourceField = (key: string, member: string, label: string, placeholder: string) => (
+  <TextField
+    model={`form['${key}'].${member}`}
+    name={`${key}.${member}`}
+    label={label}
+    placeholder={placeholder}
+    maxlength="100"
+  />
+);
+/**
+ * The project's external source (B150a, D170; 15-external-sources section 2): the PocketBase URL
+ * and service account, the field mappings, the leaving filter and the grant rules. "Test connection"
+ * checks the form's values without saving them.
+ */
+function Source() {
+  return (
+    <div class="settings-items" data-testid="source-settings">
+      <fieldset
+        class="card"
+        data-keywords="source pocketbase url service account identity password"
+      >
+        <legend>PocketBase</legend>
+        <p class="text-light">
+          Sequences can read user activity from the PocketBase of this project. Leave the URL empty
+          for no source. A saved password stays masked; enter it again when the URL or identity
+          changes.
+        </p>
+        <TextField
+          model="form['source.url']"
+          name="source.url"
+          label="URL"
+          placeholder="http://pocketbase:8090"
+          maxlength="2000"
+          hint="A direct internal address is best. A private address needs its host name listed in the instance's private source hosts."
+        />
+        <TextField
+          model="form['source.auth_collection']"
+          name="source.auth_collection"
+          label="Service account collection"
+          placeholder="services"
+          maxlength="100"
+        />
+        <TextField
+          model="form['source.identity']"
+          name="source.identity"
+          label="Service account identity"
+          placeholder="iglo@example.com"
+          maxlength="255"
+        />
+        <TextField
+          model="form['source.password']"
+          name="source.password"
+          label="Service account password"
+          type="password"
+          maxlength="1000"
+        />
+      </fieldset>
+      <fieldset class="card" data-keywords="source events collection fields mapping">
+        <legend>Events collection</legend>
+        {sourceField("source.events", "collection", "Collection", "events")}
+        {sourceField("source.events", "user", "User field (relation)", "user")}
+        {sourceField("source.events", "name", "Name field", "name")}
+        {sourceField("source.events", "data", "Data field (JSON)", "data")}
+        {sourceField("source.events", "occurred_at", "Occurred-at field", "occurredAt")}
+        {sourceField("source.events", "key", "Idempotency key field (optional)", "")}
+      </fieldset>
+      <fieldset class="card" data-keywords="source recipients view email name opt-out">
+        <legend>Recipients view</legend>
+        {sourceField("source.recipients", "collection", "Collection", "recipients")}
+        {sourceField("source.recipients", "email", "Email field", "email")}
+        {sourceField("source.recipients", "name", "Name field (optional)", "name")}
+        {sourceField("source.recipients", "opt_out", "Opt-out field (optional)", "")}
+      </fieldset>
+      <fieldset class="card" data-keywords="source users leaving filter deleted">
+        <legend>Users leaving</legend>
+        {sourceField("source.users", "collection", "Users collection (optional)", "users")}
+        <TextField
+          model="form['source.users'].leaving_filter"
+          name="source.users.leaving_filter"
+          label="Leaving filter"
+          placeholder="deletedAt != ''"
+          maxlength="2000"
+        />
+      </fieldset>
+      <fieldset class="card" data-keywords="source grant lists consent rules">
+        <legend>Grant lists</legend>
+        <label data-field="">
+          Rules (JSON)
+          <textarea
+            rows="6"
+            name="source.grant_lists"
+            placeholder='[{"event": "order_paid", "where": {"data.plan": "pro"}, "lists": [1]}]'
+            x-model="form['source.grant_lists']"
+          ></textarea>
+          <Hint>
+            An event named <code>event</code> whose data equals <code>where</code> grants the lists
+            (IDs of this project). A grant never overrides an unsubscribe.
+          </Hint>
+        </label>
+      </fieldset>
+      <fieldset class="card" data-keywords="source test connection check">
+        <legend>Test connection</legend>
+        <div class="hstack">
+          <button
+            type="button"
+            data-testid="source-test"
+            x-bind:disabled="isLoading('settings.testSource')"
+            {...{ "x-on:click.prevent": "doSourceTest()" }}
+          >
+            Test connection
+          </button>
+          <span class="text-light">Signs in and reads one page of each collection.</span>
+        </div>
+        <template x-if="sourceTest">
+          <ul data-testid="source-test-result">
+            <template x-for="line in sourceTestLines">
+              <li x-text="line"></li>
+            </template>
+          </ul>
+        </template>
+      </fieldset>
+    </div>
+  );
+}
+
 const editor = (key: string, lang: string, legend: string, keywords: string) => (
   <fieldset class="card" data-keywords={keywords}>
     <legend>{legend}</legend>
@@ -1301,6 +1441,7 @@ export function settingsPage(
         ["security", t.T("globals.terms.security"), <Security t={t} side={side} />],
         ["media", t.T("settings.media.title"), <Media t={t} side={side} />],
         ["bounces", t.T("globals.terms.bounces"), <Bounces t={t} side={side} />],
+        ["source", "Source", <Source />],
         ["appearance", t.T("globals.terms.appearance"), <Appearance t={t} side={side} />],
       ]
     : [

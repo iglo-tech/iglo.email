@@ -651,6 +651,12 @@ export const differences: Array<Difference> = [
     applies: ["POST /api/tx"],
   },
   {
+    area: "`source.*` settings (B150a)",
+    summary:
+      "Native project keys in GET/PUT `/api/settings` for the external source (15-external-sources section 2, D170): `source.url` (empty is no source), `source.auth_collection`, `source.identity`, `source.password` (masked; a blank or masked value keeps the stored one only for the same URL and identity), the `source.events`, `source.recipients` and `source.users` mappings and `source.grant_lists` rules on this project's lists. A full PUT that omits them keeps them. The instance key `sources.private_hosts` lists host names a source URL may resolve privately under `webhooks.block_private_addresses`.",
+    applies: ["/api/settings"],
+  },
+  {
     area: "`marketing.min_interval` setting",
     summary:
       "Native key in GET/PUT `/api/settings` and `PUT /api/settings/marketing.min_interval`: an ISO 8601 duration (default `P7D`, empty disables), invalid values 400 with no write.",
@@ -753,7 +759,7 @@ export const differences: Array<Difference> = [
   {
     area: "Settings split (B139, D154)",
     summary:
-      "A project host's `GET` and `PUT /api/settings` read and write its project keys only (14-projects section 4): the brand, consent, content, public pages and the read-only `app.root_url`. The instance keys (SMTP, `messaging.max_send_rate`, the `ses.api_*` keys, bounce processing and its providers, `security.trusted_proxies`, `security.session_duration`, `security.oidc`, `webhooks.block_private_addresses`, maintenance, slow-query caching, `upload.provider` and `upload.s3.*` and the admin appearance) are stored once for every project and change only through the instance host's `/api/instance/settings`, with the instance session; they are not in this document. A `PUT /api/settings` that names any other key, an instance key or a key that is no setting, is a 400 that names it, with nothing written; upstream ignores an unknown key and stores every key in one table.",
+      "A project host's `GET` and `PUT /api/settings` read and write its project keys only (14-projects section 4): the brand, consent, content, public pages and the read-only `app.root_url`. The instance keys (SMTP, `messaging.max_send_rate`, the `ses.api_*` keys, bounce processing and its providers, `security.trusted_proxies`, `security.session_duration`, `security.oidc`, `webhooks.block_private_addresses`, `sources.private_hosts`, maintenance, slow-query caching, `upload.provider` and `upload.s3.*` and the admin appearance) are stored once for every project and change only through the instance host's `/api/instance/settings`, with the instance session; they are not in this document. A `PUT /api/settings` that names any other key, an instance key or a key that is no setting, is a 400 that names it, with nothing written; upstream ignores an unknown key and stores every key in one table.",
     applies: ["/api/settings"],
   },
   {

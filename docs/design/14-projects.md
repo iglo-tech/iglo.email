@@ -149,7 +149,7 @@ A new key must be classified in this table when it is added.
 | `bounce.enabled`, `bounce.webhooks_enabled`, `bounce.ses_enabled`, `bounce.ses_topic_arns`, inert provider keys (`bounce.azure`, `bounce.sendgrid_*`, `bounce.postmark`, `bounce.forwardemail`, `bounce.lettermint`, `bounce.mailboxes`) | `bounce.actions` |
 | `security.trusted_proxies`, `security.session_duration`, `security.oidc` | `security.captcha`, `security.trusted_urls`, `security.public_rate_limit` |
 | `app.check_updates`, `app.cache_slow_queries`, `app.cache_slow_queries_interval`, `maintenance.db` | `app.enable_public_archive`, `app.enable_public_subscription_page`, `app.show_optin_page`, `app.enable_public_archive_rss_content`, `app.send_optin_confirmation`, `app.notify_emails`, `app.lang` |
-| `webhooks.block_private_addresses` | `privacy.*`, `marketing.min_interval` |
+| `webhooks.block_private_addresses`, `sources.private_hosts` (B150a) | `privacy.*`, `marketing.min_interval`, `source.*` (B150a: the external source, [15-external-sources](15-external-sources.md#2-settings-project-keys)) |
 | `upload.provider`, `upload.s3.*` (inert), `appearance.admin.custom_css`, `appearance.admin.custom_js` | `upload.extensions`, `upload.filesystem.*` (paths resolve inside the project directory), `appearance.brand.*`, `appearance.public.*` |
 
 **API:**

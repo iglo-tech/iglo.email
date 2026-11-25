@@ -1,0 +1,388 @@
+// B150a (15-external-sources sections 1 and 9, D170): every PocketBase adapter operation against the
+// real 0.40.5 binary started by the harness. No protocol mock: the transport wrapper below only
+// counts and records the requests the adapter makes.
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { createRealClock } from "@/clock";
+import type { Clock } from "@/clock";
+import type { Guard } from "@/sources/connect";
+import { createPocketBaseSource } from "@/sources/pocketbase";
+import type { PocketBaseConfig } from "@/sources/pocketbase";
+import { isSourceError } from "@/sources/source";
+import type { SourceError } from "@/sources/source";
+import { TestClock } from "@/test/server/fixture";
+import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
+import type { PocketBase } from "@/test/sources/pocketbase";
+
+setDefaultTimeout(60_000);
+
+let pb: PocketBase;
+const open: Guard = { blockPrivate: () => false, privateHosts: () => [] };
+
+/** An adapter on `pb` and the request paths it sent. */
+function adapter(
+  options: {
+    clock?: Clock;
+    guard?: Guard;
+    config?: Partial<PocketBaseConfig>;
+    maxResponseBytes?: number;
+  } = {},
+) {
+  const requests: Array<string> = [];
+  const source = createPocketBaseSource({
+    config: { ...sourceConfig(pb.url, pb.service), ...options.config },
+    clock: options.clock ?? createRealClock(),
+    guard: options.guard ?? open,
+    ...(options.maxResponseBytes ? { maxResponseBytes: options.maxResponseBytes } : {}),
+    transport: {
+      fetch: (input: URL, init: RequestInit) => {
+        requests.push(`${init.method ?? "GET"} ${input.pathname}${input.search}`);
+        return fetch(input, init);
+      },
+    },
+  });
+  const signIns = () => requests.filter((line) => line.includes("/auth-with-password")).length;
+  return { source, requests, signIns };
+}
+
+async function failure(work: Promise<unknown>): Promise<SourceError> {
+  try {
+    await work;
+  } catch (error) {
+    if (isSourceError(error)) {
+      return error;
+    }
+    throw error;
+  }
+  throw new Error("expected a SourceError");
+}
+
+const at = (iso: string) => new Date(iso);
+
+beforeAll(async () => {
+  pb = await startPocketBase();
+});
+
+afterAll(async () => {
+  await pb?.close();
+});
+
+test("recipient: the view's row, its opt-out field, and null for a user the view does not have", async () => {
+  const { source } = adapter();
+  const ada = await pb.user({ name: "Ada Lovelace" });
+  const row = await source.recipient(ada.id);
+  expect(row).toMatchObject({ id: ada.id, email: ada.email, name: "Ada Lovelace", optOut: false });
+  expect(row?.fields.email).toBe(String(ada.email));
+  await pb.update("users", ada.id, { marketingOptOut: true });
+  expect((await source.recipient(ada.id))?.optOut).toBe(true);
+  // Leaving: the view leaves out a user with deletedAt set.
+  await pb.update("users", ada.id, { deletedAt: new Date().toISOString() });
+  expect(await source.recipient(ada.id)).toBeNull();
+  expect(await source.recipient("nosuchuser00000")).toBeNull();
+  // An ID that is not a PocketBase ID never reaches a path.
+  expect((await failure(source.recipient("../x"))).kind).toBe("permanent");
+  expect((await failure(source.recipient(""))).kind).toBe("permanent");
+});
+
+test("record: one events record with the mapped fields, and null for an ID with no record", async () => {
+  const { source } = adapter();
+  const user = await pb.user();
+  const made = await pb.event(
+    user.id,
+    "order_paid",
+    { total: 12.5, items: [1, 2] },
+    {
+      occurredAt: "2026-03-04T05:06:07.890Z",
+      key: `k-${crypto.randomUUID()}`,
+    },
+  );
+  const record = await source.record(made.id);
+  expect(record).toMatchObject({
+    id: made.id,
+    user: user.id,
+    name: "order_paid",
+    data: { total: 12.5, items: [1, 2] },
+    key: String(made.key),
+  });
+  expect(record?.occurredAt.toISOString()).toBe("2026-03-04T05:06:07.890Z");
+  expect(record?.created).toBeInstanceOf(Date);
+  expect(await source.record("nosuchrecord000")).toBeNull();
+});
+
+test("latest, count and exists: the user, names, a strict window and data equality", async () => {
+  const { source, requests } = adapter();
+  const user = await pb.user();
+  const other = await pb.user();
+  const times = [
+    "2026-05-01T00:00:00.000Z",
+    "2026-05-02T00:00:00.000Z",
+    "2026-05-03T00:00:00.000Z",
+  ];
+  for (const [index, time] of times.entries()) {
+    await pb.event(
+      user.id,
+      "visit",
+      { plan: index === 2 ? "pro" : "free", n: index },
+      {
+        occurredAt: time,
+      },
+    );
+  }
+  await pb.event(other.id, "visit", { plan: "pro" }, { occurredAt: "2026-06-01T00:00:00.000Z" });
+  await pb.event(user.id, "signup", {}, { occurredAt: "2026-04-01T00:00:00.000Z" });
+
+  const latest = await source.latest({ user: user.id, names: ["visit"] });
+  expect(latest?.occurredAt.toISOString()).toBe(times[2]);
+  expect((await source.latest({ user: user.id }))?.name).toBe("visit");
+  expect(await source.latest({ user: user.id, names: ["nothing"] })).toBeNull();
+  expect(await source.latest({ user: user.id, names: [] })).toBeNull();
+
+  expect(await source.count({ user: user.id, names: ["visit"] }, 10)).toBe(3);
+  expect(await source.count({ user: user.id, names: ["visit", "signup"] }, 10)).toBe(4);
+  expect(await source.count({ user: user.id, names: ["visit"] }, 2)).toBe(2);
+  // `after` is strict, `through` inclusive.
+  expect(await source.count({ user: user.id, names: ["visit"], after: at(times[0]!) }, 10)).toBe(2);
+  expect(
+    await source.count(
+      { user: user.id, names: ["visit"], after: at(times[0]!), through: at(times[1]!) },
+      10,
+    ),
+  ).toBe(1);
+  expect(await source.count({ user: user.id, data: { plan: "pro" } }, 10)).toBe(1);
+  expect(await source.count({ user: user.id, data: { n: 1 } }, 10)).toBe(1);
+  expect(await source.exists({ user: user.id, names: ["signup"] })).toBe(true);
+  expect(await source.exists({ user: other.id, names: ["signup"] })).toBe(false);
+  // Every list read skips the total, and exists reads one record.
+  const lists = requests.filter((line) => line.includes("/records?"));
+  expect(lists.length).toBeGreaterThan(0);
+  expect(lists.every((line) => line.includes("skipTotal=1"))).toBe(true);
+  expect(requests.some((line) => line.includes("perPage=1&"))).toBe(true);
+});
+
+test("scan: keyset pages of at most 1000 over (occurredAt, id), ties included, stopping at the limit", async () => {
+  const { source, requests } = adapter();
+  const user = await pb.user();
+  const base = Date.parse("2026-07-01T00:00:00.000Z");
+  const batch: Array<Promise<unknown>> = [];
+  // 2,500 records, three on each instant, so pages break inside a tie.
+  for (let index = 0; index < 2500; index++) {
+    batch.push(
+      pb.event(
+        user.id,
+        "tick",
+        { i: index },
+        {
+          occurredAt: new Date(base + Math.floor(index / 3) * 1000).toISOString(),
+        },
+      ),
+    );
+    if (batch.length === 50) {
+      await Promise.all(batch.splice(0));
+    }
+  }
+  await Promise.all(batch);
+  requests.length = 0;
+  const seen: Array<string> = [];
+  const sizes: Array<number> = [];
+  let previous = "";
+  for await (const page of source.scan({ user: user.id, names: ["tick"] }, ["data"], 5000)) {
+    sizes.push(page.length);
+    for (const row of page) {
+      const keyOf = `${row.occurredAt.toISOString()}|${row.id}`;
+      expect(keyOf > previous).toBe(true);
+      previous = keyOf;
+      seen.push(row.id);
+      expect(row.data).toHaveProperty("i");
+    }
+  }
+  expect(sizes).toEqual([1000, 1000, 500]);
+  expect(new Set(seen).size).toBe(2500);
+  const pages = requests.filter((line) => line.includes("/records?"));
+  expect(pages.every((line) => Number(/perPage=(\d+)/.exec(line)![1]) <= 1000)).toBe(true);
+  expect(pages.every((line) => line.includes("skipTotal=1"))).toBe(true);
+  expect(pages.every((line) => line.includes("fields=id%2CoccurredAt%2Cdata"))).toBe(true);
+
+  // A limit stops the read; a count stops at its bound.
+  let total = 0;
+  for await (const page of source.scan({ user: user.id }, [], 1500)) {
+    total += page.length;
+  }
+  expect(total).toBe(1500);
+  expect(await source.count({ user: user.id, names: ["tick"] }, 2400)).toBe(2400);
+});
+
+test("hostile literals read back exactly: quotes, backslashes, && and ||, unicode", async () => {
+  const { source } = adapter();
+  const user = await pb.user();
+  const backslash = String.fromCodePoint(92);
+  const hostile = [
+    "it's",
+    'say "hi"',
+    `back${backslash}slash`,
+    `trailing${backslash}`,
+    `${backslash}'`,
+    "x' || name != '",
+    'x" || name != "',
+    "a && b",
+    "zażółć 😀",
+    "",
+  ];
+  for (const name of hostile) {
+    await pb.event(user.id, name || "empty-name", { s: name });
+  }
+  for (const name of hostile) {
+    if (name) {
+      expect(await source.count({ user: user.id, names: [name] }, 100)).toBe(1);
+      expect((await source.latest({ user: user.id, names: [name] }))?.name).toBe(name);
+    }
+    expect(await source.count({ user: user.id, data: { s: name } }, 100)).toBe(1);
+  }
+  // A hostile user ID or data path is refused before any request.
+  expect((await failure(source.count({ user: "a' || user != '" }, 10))).kind).toBe("permanent");
+  expect((await failure(source.count({ data: { "a') || (1": 1 } }, 10))).kind).toBe("permanent");
+  expect((await failure(source.count({ data: { n: Number.POSITIVE_INFINITY } }, 10))).kind).toBe(
+    "permanent",
+  );
+});
+
+test("the token is renewed half way to its expiry on the injected clock", async () => {
+  const clock = new TestClock();
+  const { source, signIns } = adapter({ clock });
+  const user = await pb.user();
+  await source.recipient(user.id);
+  expect(signIns()).toBe(1);
+  // The services collection keeps PocketBase's default token duration of 7 days.
+  clock.advance(2 * 86_400_000);
+  await source.recipient(user.id);
+  expect(signIns()).toBe(1);
+  clock.advance(2 * 86_400_000);
+  await source.recipient(user.id);
+  expect(signIns()).toBe(2);
+});
+
+test("a revoked token is noticed although PocketBase reads it as a guest: one sign-in, then the right answer", async () => {
+  const { source, signIns, requests } = adapter();
+  const user = await pb.user();
+  await pb.event(user.id, "revoked", {});
+  expect(await source.count({ user: user.id }, 10)).toBe(1);
+  expect(signIns()).toBe(1);
+  // A password change gives the account a new token key: every token issued before is invalid.
+  // Changing it back keeps the configured password working.
+  const [account] = (await pb.api("GET", "/api/collections/services/records")).items;
+  for (const password of ["temporary-password-9", pb.service.password]) {
+    await pb.update("services", account.id, { password, passwordConfirm: password });
+  }
+  // As a guest the read is a 404 and an empty list; the adapter checks its token (401) and reads again.
+  expect((await source.recipient(user.id))?.id).toBe(user.id);
+  expect(signIns()).toBe(2);
+  expect(requests.some((line) => line.includes("/auth-refresh"))).toBe(true);
+  await pb.update("services", account.id, {
+    password: "temporary-password-9",
+    passwordConfirm: "temporary-password-9",
+  });
+  await pb.update("services", account.id, {
+    password: pb.service.password,
+    passwordConfirm: pb.service.password,
+  });
+  expect(await source.count({ user: user.id }, 10)).toBe(1);
+  expect(await source.exists({ user: user.id })).toBe(true);
+  expect(signIns()).toBe(3);
+});
+
+test("a wrong password is a permanent failure", async () => {
+  const { source } = adapter({ config: { password: "not-the-password" } });
+  const error = await failure(source.recipient("nosuchuser00000"));
+  expect(error.kind).toBe("permanent");
+  expect(error.status).toBe(400);
+});
+
+test("a missing collection is permanent, never an absent record", async () => {
+  const { source } = adapter({
+    config: {
+      recipients: { collection: "nobody", email: "email", name: "name", optOut: "" },
+    },
+  });
+  expect((await failure(source.recipient("nosuchuser00000"))).kind).toBe("permanent");
+});
+
+test("a response over the size limit is permanent for one record; a scan reads smaller pages", async () => {
+  const user = await pb.user();
+  for (let index = 0; index < 20; index++) {
+    await pb.event(user.id, "large", { text: "x".repeat(500) });
+  }
+  const { source, requests } = adapter({ maxResponseBytes: 4000 });
+  let total = 0;
+  for await (const page of source.scan({ user: user.id }, ["data"], 100)) {
+    total += page.length;
+  }
+  expect(total).toBe(20);
+  expect(requests.some((line) => /perPage=(?:[1-9]|1\d|2\d)&/.test(line))).toBe(true);
+  const tiny = adapter({ maxResponseBytes: 300 });
+  const [first] = (
+    await pb.api(
+      "GET",
+      `/api/collections/events/records?filter=${encodeURIComponent(`user = '${user.id}'`)}&perPage=1`,
+    )
+  ).items;
+  expect((await failure(tiny.source.record(first.id))).kind).toBe("permanent");
+});
+
+test("the private-address block: refused unless the host is listed; a listed name still resolves to a checked address", async () => {
+  const user = await pb.user();
+  const blocked: Guard = { blockPrivate: () => true, privateHosts: () => [] };
+  const refused = await failure(adapter({ guard: blocked }).source.recipient(user.id));
+  expect(refused.kind).toBe("permanent");
+  expect(refused.message).toContain("block_private_addresses");
+  const named = `http://localhost:${pb.port}`;
+  const other: Guard = { blockPrivate: () => true, privateHosts: () => ["pocketbase"] };
+  expect(
+    (await failure(adapter({ guard: other, config: { url: named } }).source.recipient(user.id)))
+      .message,
+  ).toContain("block_private_addresses");
+  const listed: Guard = { blockPrivate: () => true, privateHosts: () => ["localhost"] };
+  expect(
+    (await adapter({ guard: listed, config: { url: named } }).source.recipient(user.id))?.id,
+  ).toBe(user.id);
+  // An address literal is never listed, even when its text is on the list.
+  const literal: Guard = { blockPrivate: () => true, privateHosts: () => ["127.0.0.1"] };
+  expect((await failure(adapter({ guard: literal }).source.recipient(user.id))).kind).toBe(
+    "permanent",
+  );
+});
+
+test("a paused server times out as transient; a caller's abort rejects with its reason", async () => {
+  const { source } = adapter();
+  const user = await pb.user();
+  await source.recipient(user.id);
+  pb.pause();
+  try {
+    const slow = await failure(source.recipient(user.id, { timeoutMs: 300 }));
+    expect(slow.kind).toBe("transient");
+    const controller = new AbortController();
+    const pending = source.recipient(user.id, { signal: controller.signal });
+    controller.abort(new Error("caller stopped"));
+    expect(pending).rejects.toThrow("caller stopped");
+  } finally {
+    pb.resume();
+  }
+});
+
+test("a renamed field is permanent; a stopped server is transient", async () => {
+  const local = await startPocketBase();
+  try {
+    const config = sourceConfig(local.url, local.service);
+    const source = createPocketBaseSource({ config, clock: createRealClock(), guard: open });
+    const user = await local.user();
+    const made = await local.event(user.id, "renamed", {});
+    expect(await source.count({ user: user.id }, 10)).toBe(1);
+    await local.renameField("events", "occurredAt", "happenedAt");
+    const renamed = await failure(source.count({ user: user.id }, 10));
+    expect(renamed.kind).toBe("permanent");
+    expect(renamed.status).toBe(400);
+    expect((await failure(source.record(made.id))).kind).toBe("permanent");
+    await local.stop();
+    const stopped = await failure(source.recipient(user.id));
+    expect(stopped.kind).toBe("transient");
+  } finally {
+    await local.close();
+  }
+});

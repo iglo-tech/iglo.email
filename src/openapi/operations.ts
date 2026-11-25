@@ -1546,6 +1546,18 @@ const settings: Array<Operation> = [
     errors: [429],
   },
   {
+    route: "POST /api/settings/source/test",
+    id: "testSourceSettings",
+    tag: "Settings",
+    summary: "Test the external source: sign in and read one page of each collection.",
+    description:
+      "Signs in with the service account, reads one page of the recipients view and of the events collection (and the users collection with the leaving filter, when set), and reports each step and the mapped fields a collection lacks (15-external-sources section 2, D170). The source URL is checked by `webhooks.block_private_addresses` and the instance's `sources.private_hosts`. A 400 without a source URL.",
+    native: true,
+    permissions: ["settings:manage"],
+    body: ref("SourceTestInput"),
+    data: ref("SourceTestReport"),
+  },
+  {
     route: "GET /api/logs",
     id: "getLogs",
     tag: "Settings",

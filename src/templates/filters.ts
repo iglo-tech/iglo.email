@@ -275,6 +275,28 @@ export function capitalize(value: unknown, b: FilterBudget): string {
   return head + tail.toLowerCase();
 }
 
+/**
+ * `first_name` (B150a, D170; 15-external-sources section 7): the first word of a name when it
+ * starts with a letter, holds no `@` and is at most 24 characters (code points), else empty, so
+ * `{{ subscriber.name | first_name | default: "there" }}` never greets an address or a code. A
+ * value that is not text has no first name.
+ */
+export function firstName(value: unknown, b: FilterBudget): string {
+  b.step();
+  // Only text is a name: a number, a boolean, a list or an object has none.
+  if (typeof value !== "string") {
+    return "";
+  }
+  const input = value;
+  b.step(Math.ceil(byteLength(input) / 1024));
+  const word = /^\s*(\S+)/u.exec(input)?.[1] ?? "";
+  if (!/^\p{L}/u.test(word) || word.includes("@") || Array.from(word).length > 24) {
+    return "";
+  }
+  b.charge(byteLength(word));
+  return word;
+}
+
 /** `prepend` and `append` join a literal string to the text; both are charged before the join. */
 export function prepend(value: unknown, argument: unknown, b: FilterBudget): string {
   b.step();

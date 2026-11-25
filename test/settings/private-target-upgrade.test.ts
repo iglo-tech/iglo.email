@@ -32,6 +32,10 @@ function earlierRelease() {
   const db = openDatabase(path);
   runMigrations(db, path, clock, productionMigrations.slice(0, 23));
   for (const [name, value] of Object.entries(defaults)) {
+    // Keys added after migration 33 (B150a's source keys) were never in an earlier release.
+    if (name.startsWith("source.") || name.startsWith("sources.")) {
+      continue;
+    }
     db.run("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING", [
       name,
       JSON.stringify(value),

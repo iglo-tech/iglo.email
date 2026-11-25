@@ -36,6 +36,7 @@ import {
   escapedBytes,
   escapeHtml,
   first,
+  firstName,
   join,
   json,
   kindOf,
@@ -101,6 +102,7 @@ const filterArguments = new Map([
   ["last", 0],
   ["newline_to_br", 0],
   ["url_encode", 0],
+  ["first_name", 0],
 ]);
 /** The filters the renderer registers, in the order of its arity table (the documented allow-list). */
 export const registeredFilters: ReadonlyArray<string> = [...filterArguments.keys()];
@@ -1164,6 +1166,9 @@ export function createRenderer(clock: Clock, translation: Translation) {
     });
     liquid.registerFilter("url_encode", function (value: unknown) {
       return urlEncode(value, budget(this.context));
+    });
+    liquid.registerFilter("first_name", function (value: unknown) {
+      return firstName(value, budget(this.context));
     });
     // Not a raw filter: its output is a LineBreaks value, which an HTML output writes as its markup (escaped once)
     // and a later filter reads as its text, so that filter escapes it once (B135 review N5).

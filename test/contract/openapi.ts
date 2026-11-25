@@ -1375,6 +1375,16 @@ export async function runOpenApiContract(target: {
         email: "smtp-test@fixture.test",
       },
     });
+    // B150a (D170): Test connection of unsaved source keys. A loopback URL is refused by the
+    // private-address block, so the report's sign-in step fails without a PocketBase.
+    const sourceTest = await op("POST /api/settings/source/test", {
+      body: {
+        "source.url": "http://127.0.0.1:9",
+        "source.identity": "iglo@fixture.test",
+        "source.password": "fixture-password",
+      },
+    });
+    check(sourceTest.body.data.ok === false, "source-test-refused");
     // A configured project: a secret that exists once set comes back masked. B139 (D154): the
     // project's secret is the hCaptcha one; SMTP, DKIM, S3, the bounce providers and their secrets are
     // instance keys, served on the instance host outside this document.
