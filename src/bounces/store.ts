@@ -285,6 +285,28 @@ export function createBounceStore(
     pruneReceipts() {
       q.get("receipts-expire").run(clock.now().toISOString(), RECEIPT_PRUNE_BATCH);
     },
+    /**
+     * B142 (D156): whether a Message-ID's UUIDs name one of this project's sends, campaigns or
+     * test sends. Mine or not mine: nothing of the row leaves the project (invariant 1).
+     */
+    claims(identity: {
+      sendUuid: string;
+      campaignUuid: string;
+      subscriberUuid: string;
+      messageId: string;
+    }): boolean {
+      // A campaign delivery is this project's when both its campaign and its subscriber are.
+      const delivery =
+        !!identity.campaignUuid &&
+        !!identity.subscriberUuid &&
+        deps.campaignID(identity.campaignUuid) !== null &&
+        deps.subscribers().byUuid(identity.subscriberUuid) !== null;
+      return (
+        (!!identity.sendUuid && deps.sendTarget(identity.sendUuid) !== null) ||
+        delivery ||
+        (!!identity.messageId && deps.testSend(identity.messageId) !== null)
+      );
+    },
     deleteIDs(ids: Array<bigint | number>) {
       q.get("bounces-delete-ids").run(json(ids));
     },
