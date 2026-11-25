@@ -1,7 +1,13 @@
 // B145a (14-projects sections 7 and 15, D159): the SES account snapshot on the injected clock,
 // against a stand-in for SES v2 GetAccount. Tests never call AWS: the endpoint is injected.
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { createSesAccount, effectiveRate, refreshDelay } from "@/messaging/ses-account";
+import {
+  createSesAccount,
+  effectiveRate,
+  holdLine,
+  quotaHeld,
+  refreshDelay,
+} from "@/messaging/ses-account";
 import { createTestInstanceSettings } from "@/test/settings/instance-fixture";
 import type { TestInstanceSettings } from "@/test/settings/instance-fixture";
 import { TestClock } from "@/test/server/fixture";
@@ -96,11 +102,16 @@ function setup(options: { credentials?: boolean; rate?: number } = {}) {
         }),
   }));
   const attention: Array<string> = [];
+  /** The hold at each `onChange`. */
+  const changes: Array<boolean> = [];
   const account = createSesAccount({
     clock,
     settings: settings.reader,
     endpoint: () => `http://127.0.0.1:${server.port}`,
     attention: (line) => attention.push(line),
+    onChange: () => {
+      changes.push(account.held());
+    },
   });
   open.push(account);
   /** Moves the clock and waits for the loop to sleep again: a read it started is finished. */
@@ -108,7 +119,7 @@ function setup(options: { credentials?: boolean; rate?: number } = {}) {
     clock.advance(ms);
     await clock.whenSleeping();
   };
-  return { clock, settings, account, attention, step };
+  return { clock, settings, account, attention, changes, step };
 }
 
 test("GetAccount is signed with SigV4 for ses in the instance's region, and its five fields are read", async () => {
@@ -307,4 +318,88 @@ test("the check button reads now and shows the AWS error; new credentials drop t
   expect(checked.snapshot?.sentLast24Hours).toBe(100);
   settings.update((current) => ({ ...current, "ses.api_access_key_id": "AKIAIOSFODNN7EXAMPLF" }));
   expect(account.current()).toEqual({ configured: true, snapshot: null, error: null });
+});
+
+test("hold line: max(2% of the quota, effective rate × 60 s); never without a snapshot or a daily limit", () => {
+  // 1,000,000 quota: 2% = 20,000 beats 14 × 60 = 840.
+  expect(holdLine(snapshot(1_000_000, 0), 14)).toBe(20_000);
+  expect(quotaHeld(snapshot(1_000_000, 980_000), 14)).toBe(true);
+  expect(quotaHeld(snapshot(1_000_000, 979_999), 14)).toBe(false);
+  // 10,000 quota at rate 14: 840 beats 2% = 200.
+  expect(holdLine(snapshot(10_000, 0), 14)).toBe(840);
+  expect(quotaHeld(snapshot(10_000, 9160), 14)).toBe(true);
+  expect(quotaHeld(snapshot(10_000, 9159), 14)).toBe(false);
+  // Past the quota is held too.
+  expect(quotaHeld(snapshot(10_000, 12_000), 14)).toBe(true);
+  expect(quotaHeld(null, 14)).toBe(false);
+  expect(quotaHeld(snapshot(-1, 5_000_000), 14)).toBe(false);
+});
+
+test("guard: one line when holding starts and one when it stops; a failed read keeps the hold and writes no guard line", async () => {
+  answer = quota(10_000, 9160);
+  const { account, attention, changes, step } = setup();
+  expect(account.held()).toBe(false);
+  account.start();
+  await step(0);
+  expect(account.held()).toBe(true);
+  expect(changes).toEqual([true]);
+  expect(attention).toEqual([
+    "SES quota guard: holding marketing and campaign sends: 840 of the 24-hour quota of 10000 left, at or below the hold line of 840 (snapshot read at 2026-01-02T03:04:05.000Z)",
+  ]);
+  // Unchanged reads every minute: no repeat line, no wake.
+  await step(60_000);
+  await step(60_000);
+  expect(calls).toHaveLength(3);
+  expect(attention).toHaveLength(1);
+  expect(changes).toEqual([true]);
+  // A failed read keeps the last snapshot, so the hold stays; only the read's own line is written.
+  answer = { status: 500, body: { message: "Internal" } };
+  await step(60_000);
+  expect(account.held()).toBe(true);
+  expect(attention).toHaveLength(2);
+  expect(attention[1]).toStartWith("SES GetAccount answered 500");
+  expect(changes).toEqual([true]);
+  // A newer snapshot above the line lifts it.
+  answer = quota(10_000, 9159);
+  await step(60_000);
+  expect(account.held()).toBe(false);
+  expect(changes).toEqual([true, false]);
+  expect(attention).toHaveLength(3);
+  expect(attention[2]).toBe(
+    "SES quota guard: resuming marketing and campaign sends: 841 of the 24-hour quota of 10000 left, above the hold line of 840 (snapshot read at 2026-01-02T03:08:05.000Z)",
+  );
+});
+
+test("guard: removing the API keys ends a hold, with its line; a rate change wakes the dispatcher", async () => {
+  // 200 left: held at rate 14 (line 840) and at rate 5 (line 300).
+  answer = quota(10_000, 9800, 14);
+  const { account, attention, changes, settings, step } = setup({ rate: 20 });
+  account.start();
+  await step(0);
+  // Effective rate min(20, 14) = 14: the rate moved and the hold started, one wake.
+  expect(account.rate()).toBe(14);
+  expect(account.held()).toBe(true);
+  expect(changes).toEqual([true]);
+  // The setting lowered under SES's rate: the rate moves again, the hold stays.
+  settings.update((current) => ({ ...current, "messaging.max_send_rate": 5 }));
+  expect(account.rate()).toBe(5);
+  expect(changes).toEqual([true, true]);
+  // An unrelated setting: no wake.
+  settings.update((current) => ({
+    ...current,
+    "bounce.ses_enabled": !current["bounce.ses_enabled"],
+  }));
+  expect(changes).toEqual([true, true]);
+  settings.update((current) => ({
+    ...current,
+    "ses.api_region": "",
+    "ses.api_access_key_id": "",
+    "ses.api_secret_access_key": "",
+  }));
+  expect(account.held()).toBe(false);
+  expect(changes).toEqual([true, true, false]);
+  expect(attention.at(-1)).toBe(
+    "SES quota guard: resuming marketing and campaign sends: the SES API keys changed",
+  );
+  expect(attention.filter((line) => line.startsWith("SES quota guard"))).toHaveLength(2);
 });

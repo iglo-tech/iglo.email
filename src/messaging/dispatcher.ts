@@ -97,12 +97,12 @@ export interface DispatcherOptions {
   /** The instance's SMTP servers (invariant 5). */
   smtp: () => Array<SMTPServer>;
   /**
-   * The effective rate in messages per second; 0 is no cap. `messaging.max_send_rate` until B145
-   * adds SES's own. Re-read on `wake`.
+   * The effective rate in messages per second; 0 is no cap: the lower of `messaging.max_send_rate`
+   * and SES's `MaxSendRate` (B145b). Re-read on `wake`.
    */
   rate: () => number;
   /**
-   * True while no marketing or campaign slot may be granted (B145's quota guard). Transactional
+   * True while no marketing or campaign slot may be granted (B145b's quota guard). Transactional
    * starts are never held. Call `wake` when it turns false.
    */
   held?: () => boolean;
