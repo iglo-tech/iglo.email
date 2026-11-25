@@ -262,10 +262,11 @@ function SesRate({ ses }: { ses: SesRateLine }) {
   const rate = String(ses.maxSendRate);
   // `0` is no cap, not a rate above SES's (B149a, D164): it has its own wording. Both follow the
   // field; the server renders the saved value's state so the page is right before Alpine starts.
-  // `x-model.number` keeps it a number; Alpine's CSP build has no `Number()` to call.
+  // `x-model.number` keeps it a number, and an emptied field is `""`, which is above nothing: only
+  // a number above SES's rate warns. Alpine's CSP build has no `Number()` to call.
   const field = "form['messaging.max_send_rate']";
   const unpaced = `${field} === 0`;
-  const higher = `${field} !== 0 && !(${field} > 0 && ${field} <= ${rate})`;
+  const higher = `${field} > ${rate}`;
   const saved = ses.setting;
   const hidden = { style: "display: none" };
   return (
@@ -275,7 +276,7 @@ function SesRate({ ses }: { ses: SesRateLine }) {
         data-testid="ses-rate-warning"
         x-show={higher}
         role="alert"
-        {...(saved !== 0 && !(saved > 0 && saved <= ses.maxSendRate) ? {} : hidden)}
+        {...(saved > ses.maxSendRate ? {} : hidden)}
       >
         The setting is higher than the rate SES allows: sending runs at {rate}/s.
       </p>
