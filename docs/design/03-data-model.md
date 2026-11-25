@@ -172,6 +172,10 @@ Deleting a subscriber anonymizes their sends in the same transaction (D25), whic
 
 `webhook_deliveries`: `id`, `uuid` (the delivery ID in webhook bodies), `webhook_id`, `event`, `payload` (the exact body, fixed at queueing and changed only by a deletion clearing it, and by the end of a `subscriber.deleted` delivery clearing its external ID and list IDs), `subscriber_id` (no foreign key, so the row outlives the subscriber; it finds the rows to clear on deletion), `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error` (a safe code, never a response body), `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`. At most 20 webhooks can be configured. `delivered` and `failed` rows are deleted 30 days after their last change, found through the partial `idx_webhook_deliveries_finished` (migration 14, D70). `queued` rows are never deleted.
 
+### `source_stream_markers`, `source_stream_seen`, `source_stream_retries` (B150b, D171)
+
+The realtime stream's own state (migration 36, [15-external-sources](15-external-sources.md) section 4), owned by `src/sources/stream-store.ts`; no source data beyond record IDs and their stamps. `source_stream_markers`: `topic` (one per subscribed event name, or the users filter, keyed by a digest of the source's URL, collection and field or filter), `marker` (PocketBase date text). `source_stream_seen`: the dedupe entries `(kind, record_id, stamp)`, `kind` `event` or `user`, pruned relative to the markers through `idx_source_stream_seen_stamp`. `source_stream_retries`: the per-record retry queue: `kind`, `record_id`, `stamp` (unique together), `attempts`, `first_failed_at`, `next_attempt_at` (also the claim lease), `last_error` (at most 500 characters), `terminal`; due rows found through `idx_source_stream_retries_due`, terminal rows deleted 30 days after they became terminal.
+
 ## Instance database
 
 `instance.db`, with its own migration manifest in `migrations/instance/`. Each table belongs to one module ([Projects](14-projects.md) section 3):

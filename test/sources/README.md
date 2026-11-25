@@ -54,3 +54,10 @@ server.
 - `settings.test.ts`: the `source.*` settings, `sources.private_hosts` and Test connection through
   the compiled executable.
 - `first-name.test.ts`: the `first_name` Liquid filter through `POST /api/tx` and the SMTP sink.
+- `stream.test.ts` (B150b): the realtime stream: live delivery, catch-up after a reset mid-stream
+  and mid-catch-up, the lookback, the forced and idle closes on the injected clock, refused
+  connects and a permanent refusal, topic split and re-subscribe, the retry queue, restart and a
+  new source. `stream-fixture.ts` runs a stream on a fresh database with a recording handler;
+  `stream-proxy.ts` is a byte-forwarding TCP proxy that cuts connections on demand (the one
+  transport fault the binary cannot produce when asked). `stream-measure.ts` is the catch-up
+  measurement of `docs/perf/B150b-stream.md`, not a test.

@@ -433,6 +433,7 @@ export default defineConfig({
         "src/sequences/store.ts", // SQL rows
         "src/settings/store.ts", // SQL rows
         "src/settings/stored.ts", // SQL row
+        "src/sources/stream-store.ts", // SQL rows
         "src/subscribers/campaign-recipients.ts", // SQL rows
         "src/subscribers/condition-sql.ts", // SQL rows
         "src/subscribers/list-counts.ts", // SQL rows
