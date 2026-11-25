@@ -1123,6 +1123,23 @@ const campaigns: Array<Operation> = [
     data: array(ref("CampaignStats")),
   },
   {
+    route: "GET /api/sending/capacity",
+    id: "getSendingCapacity",
+    tag: "Campaigns",
+    summary: "Whether the busiest 24 hours around a campaign fit the SES account's quota.",
+    description:
+      "Instance totals only. `campaign_id` takes a campaign's audience and send time and counts it once; `at` and `count` override them. Without any, the 24 hours up to now.",
+    native: true,
+    permissions: ["campaigns:get", "campaigns:get_all"],
+    errors: [404],
+    query: [
+      { name: "at", schema: { type: "string", format: "date-time" } },
+      { name: "count", schema: { ...integer, minimum: 0, maximum: 1_000_000_000 } },
+      { name: "campaign_id", schema: { ...integer, minimum: 1 } },
+    ],
+    data: ref("SendingCapacity"),
+  },
+  {
     route: "GET /api/campaigns/analytics/{type}",
     id: "getCampaignAnalytics",
     tag: "Analytics",

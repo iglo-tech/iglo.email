@@ -14,6 +14,7 @@ import { parseAddress } from "@/settings/mail";
 import { HttpError } from "@/server/response";
 import { createHash } from "node:crypto";
 import type { EndedSend } from "@/webhooks/effects";
+import type { StartCounts } from "@/messaging/capacity";
 
 export type SendSource = "tx" | "sequence";
 export type SendKind = "transactional" | "marketing";
@@ -1005,6 +1006,21 @@ export function createSends(options: {
     enqueue,
     enqueueRequest,
     replayRequest,
+    /**
+     * The capacity forecast's counts (14-projects section 7, B145a): this project's sends that
+     * started after `day` and after `from` (ISO times, `from` not before `day`), in one scan. A
+     * count, never rows. A `sending`, `sent` or `unknown` row reached SMTP or may have; `failed`
+     * and `skipped` rows are left out.
+     */
+    starts(day: string, from: string): StartCounts {
+      const row = db
+        .query<{ day: number | bigint; window: number | bigint | null }, [string, string]>(
+          `SELECT COUNT(*) AS day, SUM(coalesce(attempted_at, sent_at) > ?2) AS window FROM sends
+           WHERE status IN ('sending', 'sent', 'unknown') AND coalesce(attempted_at, sent_at) > ?1`,
+        )
+        .get(day, from);
+      return { day: Number(row?.day ?? 0), window: Number(row?.window ?? 0) };
+    },
     /** The send recorded for a sequence step of an enrollment, if any. */
     sequenceSend(enrollmentId: bigint, stepId: bigint) {
       return db

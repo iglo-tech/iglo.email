@@ -52,6 +52,10 @@ import { initialAdmin } from "@/users/bootstrap";
 import { createHandoffTokens } from "@/users/handoff";
 import { createInstanceAuth } from "@/users/instance-auth";
 import { hashPassword } from "@/users/password";
+import { createCapacity } from "@/messaging/capacity";
+import type { Capacity } from "@/messaging/capacity";
+import { createSesAccount } from "@/messaging/ses-account";
+import type { SesAccount } from "@/messaging/ses-account";
 
 /** The paths the instance answers on the instance host and on an unclaimed one (section 2). */
 function instancePath(pathname: string): boolean {
@@ -76,6 +80,8 @@ export interface InstanceConfig {
    * the API user, seeded as before into the primary project while it has no users (D151).
    */
   readonly seed: ProjectOptions["seed"];
+  /** SES's API base URL for a region (B145a); AWS's own unless a test gives its stand-in. */
+  readonly sesEndpoint?: (region: string) => string;
 }
 
 interface Entry {
@@ -157,6 +163,9 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   /** The one dispatcher every project sends through (B141): its pools, rate and start schedule. */
   let dispatcher: Dispatcher | undefined;
   let unsubscribeRate: (() => void) | undefined;
+  /** The SES account snapshot and the capacity forecast over every project (B145a). */
+  let ses: SesAccount | undefined;
+  let capacity: Capacity | undefined;
   /** Wired projects in registration order (slug order at start). */
   const entries: Array<Entry> = [];
   /** The routing table: hostname to project, and the primary for every other host. */
@@ -180,6 +189,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
 
   const options = (record: ProjectRecord): ProjectOptions => ({
     slug: record.slug,
+    name: record.name,
     directory: projectDirectory(root, record.slug),
     // The primary project's root URL is `--root-url` itself, so one install's links are unchanged.
     rootUrl: record.primary ? config.rootUrl : projectRootUrl(config.rootUrl, record.hostname),
@@ -217,6 +227,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
           changed: (slug, credentials) => admin.change(slug, credentials),
           redeem: (slug, token) => tokens.redeem(slug, token),
         },
+        capacity: must(capacity, "capacity"),
       },
       options(record),
     );
@@ -270,6 +281,17 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         paced.wake();
       }
     });
+    ses = createSesAccount({
+      clock,
+      settings: settings.reader,
+      attention: instanceAttention,
+      endpoint: config.sesEndpoint,
+    });
+    capacity = createCapacity({
+      clock,
+      account: ses,
+      sources: () => entries.map((entry) => entry.project.capacity),
+    });
     const directories = existsSync(resolve(root, PROJECTS))
       ? readdirSync(resolve(root, PROJECTS), { withFileTypes: true })
           .filter((entry) => entry.isDirectory())
@@ -317,6 +339,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     return entry ? options(entry.record).rootUrl : undefined;
   };
   const instanceSettings = must(settings, "instance settings");
+  const sesAccount = must(ses, "SES account");
   const instanceLogger = createSourceLogger("instance");
   const instanceClientAddress = createClientAddress(
     () => instanceLoginSettings(instanceSettings.read()).trustedProxies,
@@ -346,6 +369,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     settings: instanceSettings,
     // The login limit's address honours security.trusted_proxies, as a project's login does.
     clientAddress: instanceClientAddress,
+    ses: must(ses, "SES account"),
     smtpTest: () => {
       const project = primary?.project;
       return project && ((body, revalidate) => project.smtpTest(body, revalidate));
@@ -453,6 +477,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     /** Starts every project's loops, in registration order. A loop's failure calls `onFail`. */
     start(onFail: (failure?: unknown) => void): void {
       fail = onFail;
+      sesAccount.start();
       for (const entry of entries) {
         startProject(entry);
       }
@@ -464,7 +489,10 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
      * that drain (5 s, then it cancels the sockets), as each project's own emailer did before B141.
      */
     stop(): Array<unknown> {
-      const stops = entries.toReversed().flatMap((entry) => entry.project.stop());
+      const stops = [
+        ...entries.toReversed().flatMap((entry) => entry.project.stop()),
+        sesAccount.stop(),
+      ];
       return dispatcher ? [...stops, dispatcher.close()] : stops;
     },
     close: closeAll,
