@@ -427,7 +427,10 @@ export function createEnrollments(db: Database, clock: Clock) {
    * on the event's own subscriber state; a marketing start asks for the suppression only when that
    * can refuse it.
    */
-  function blockedStart(event: RecordedEvent, sequenceId: bigint): string | null {
+  function blockedStart(
+    event: Pick<RecordedEvent, "subscriberStatus" | "suppressed">,
+    sequenceId: bigint,
+  ): string | null {
     if (event.subscriberStatus === "blocklisted") {
       return "subscriber_blocklisted";
     }
@@ -435,6 +438,101 @@ export function createEnrollments(db: Database, clock: Clock) {
       return "suppressed";
     }
     return null;
+  }
+
+  /**
+   * D173: exit-then-trigger for a source record (15-external-sources sections 4 and 6), inside the
+   * record handler's write transaction. The exits end the subscriber's enrollments in external
+   * sequences whose `exit_on` names the record; then each of `sequences` (the active external
+   * sequences whose trigger the handler matched and whose `trigger.condition` it evaluated before
+   * the transaction) starts under the same reentry and consent rules as a pushed event, with the
+   * record as its trigger and its first wait counted from the record's `occurredAt` (never later
+   * than now). A sequence whose trigger changed since the handler read it makes the whole call
+   * `stale`: its condition was evaluated against another definition, so the caller rolls back and
+   * reads again. A sequence no longer active is passed over.
+   */
+  function recordExitThenTrigger(input: {
+    subscriberId: bigint;
+    subscriberStatus: string;
+    suppressed: () => boolean;
+    record: TriggerRecord;
+    sequences: ReadonlyArray<{ id: bigint; trigger: string }>;
+  }): ReturnType<ExitThenTrigger> & { stale: boolean } {
+    const now = at();
+    const reason = `event:${input.record.name}`;
+    const ended = (
+      q
+        .get("exit-by-record")
+        .all(reason, now, now, input.subscriberId, input.record.name) as Array<{
+        id: bigint;
+        sequence_id: bigint;
+      }>
+    )
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .map((row) => ({
+        id: numberID(row.id),
+        sequence_id: numberID(row.sequence_id),
+        exit_reason: reason,
+      }));
+    const started: Array<{ id: number | object; sequence_id: number | object }> = [];
+    const skipped: Array<{ sequence_id: number | object; reason: string }> = [];
+    const occurred = input.record.occurredAt.toISOString();
+    const from = occurred < now ? occurred : now;
+    for (const candidate of input.sequences) {
+      const sequence = q.get("external-sequence").get(candidate.id) as {
+        id: bigint;
+        trigger: string;
+        reentry: string;
+      } | null;
+      if (!sequence) {
+        continue;
+      }
+      if (sequence.trigger !== candidate.trigger) {
+        return { started: [], ended: [], skipped: [], stale: true };
+      }
+      const first = q.get("first-step").get(sequence.id) as { id: bigint; wait: string } | null;
+      if (!first) {
+        continue;
+      }
+      if (
+        sequence.reentry === "never" &&
+        q.get("any-enrollment").get(input.subscriberId, sequence.id)
+      ) {
+        continue;
+      }
+      const active = q.get("active-enrollment").get(input.subscriberId, sequence.id) as {
+        id: bigint;
+      } | null;
+      if (active && sequence.reentry !== "always") {
+        continue;
+      }
+      const refused = blockedStart(input, sequence.id);
+      if (refused) {
+        skipped.push({ sequence_id: numberID(sequence.id), reason: refused });
+        continue;
+      }
+      if (active) {
+        end(active.id, "exited", reason, now);
+        ended.push({
+          id: numberID(active.id),
+          sequence_id: numberID(sequence.id),
+          exit_reason: reason,
+        });
+      }
+      const id = start(
+        sequence.id,
+        input.subscriberId,
+        null,
+        first,
+        from,
+        now,
+        false,
+        true,
+        input.record,
+      );
+      started.push({ id: numberID(id), sequence_id: numberID(sequence.id) });
+    }
+    return { started, ended, skipped, stale: false };
   }
 
   const at = () => clock.now().toISOString();
@@ -502,6 +600,31 @@ export function createEnrollments(db: Database, clock: Clock) {
 
   return {
     exitThenTrigger,
+    recordExitThenTrigger,
+    /** D173: the active external sequences a record under `name` may start, with their trigger JSON. */
+    externalTriggers(name: string) {
+      return q.get("external-triggered-by").all(name) as Array<{
+        id: bigint;
+        trigger: string;
+        reentry: string;
+      }>;
+    },
+    /**
+     * D173: the names external sequences use, for the source stream's subscription: active
+     * triggers, and active or paused `exit_on`. One read, sorted and unique.
+     */
+    externalEventNames(): Array<string> {
+      return (q.get("external-names").all() as Array<{ name: string }>).map((row) => row.name);
+    },
+    /**
+     * D173: end every active enrollment of a subscriber row whose person is gone (an address
+     * conflict, 15-external-sources section 4): `canceled`, `subscriber_deleted`, as the scheduler
+     * ends one whose subscriber was deleted. The caller holds the write.
+     */
+    endSubscriber(subscriberId: bigint): void {
+      const now = at();
+      q.get("end-by-subscriber").run("canceled", "subscriber_deleted", now, now, subscriberId);
+    },
     subscriberEffects,
     unsubscribeEffects,
     get: byId,

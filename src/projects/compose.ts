@@ -45,6 +45,9 @@ import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import { registerSourceRoutes, sourceGuard, sourceListsCheck } from "@/sources/routes";
 import { createSourceProvider } from "@/sources/project";
+import { createSourceRecords, storedGrantRules } from "@/sources/records-stream";
+import type { SourceRecords } from "@/sources/records-stream";
+import { sourceConfig } from "@/sources/settings";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
 import type { Dispatcher, Sender } from "@/messaging/dispatcher";
 import { createSMTPTest } from "@/messaging/test";
@@ -280,6 +283,7 @@ export async function createProject(
   let sequences: ReturnType<typeof createSequenceStore> | undefined;
   let conditions: ReturnType<typeof createConditionEvaluator> | undefined;
   let scheduler: ReturnType<typeof createScheduler> | undefined;
+  let sourceRecords: SourceRecords | undefined;
   let campaignStore: ReturnType<typeof createCampaignStore> | undefined;
   let mediaStore: ReturnType<typeof createMediaStore> | undefined;
   let runnerStore: ReturnType<typeof createRunnerStore> | undefined;
@@ -316,6 +320,8 @@ export async function createProject(
   // A wiring failure runs it before the error propagates, so nothing that was opened stays open.
   const closeAll: () => Promise<void> = async () => {
     enrollments?.onDue(() => {});
+    // D173: the source stream writes subscribers and enrollments, so it stops before any store.
+    await sourceRecords?.stop();
     await importer?.close();
     await maintenance?.close();
     const running = runner?.stop();
@@ -985,6 +991,31 @@ export async function createProject(
       },
     });
     enrollments.onDue(() => must(scheduler, "scheduler").wake());
+    // D173: the project's source stream with the record handler, started with the other loops.
+    const recordSettings = projectSettings;
+    sourceRecords = createSourceRecords({
+      db,
+      clock,
+      logger: app.logger,
+      config: () => sourceConfig(recordSettings.read()),
+      grantRules: () => storedGrantRules(recordSettings.read()),
+      guard: sourceGuard(() => recordSettings.read()),
+      subscribers: subscriberStore,
+      enrollments,
+      emailAllowed: (email) => {
+        const current = recordSettings.read();
+        return allowedDomain(
+          email,
+          current["privacy.domain_allowlist"],
+          current["privacy.domain_blocklist"],
+        );
+      },
+    });
+    const records = sourceRecords;
+    // A saved setting (a source, a grant rule, the private hosts) is compared at once.
+    recordSettings.onUpdate(
+      () => void records.refresh().catch((error: unknown) => app.logger.error(error)),
+    );
     deliveries = createWebhookDelivery({
       db,
       clock,
@@ -1103,6 +1134,7 @@ export async function createProject(
           must(scheduler, "scheduler").start();
           must(deliveries, "deliveries").start();
           must(summaryRefresh, "summaryRefresh").start();
+          must(sourceRecords, "sourceRecords").start();
         } catch (error) {
           fail(error);
         }
@@ -1110,6 +1142,8 @@ export async function createProject(
       stop() {
         // An import stops at its next batch and uploads end, so nothing new reaches the writer.
         const importStop = must(importer, "importer").close();
+        // D173: no new source record reaches the writer either.
+        const recordsStop = must(sourceRecords, "sourceRecords").stop();
         const maintenanceStop = must(maintenance, "maintenance").close();
         // Stop campaign and sequence claims first, and this project's sending with them: its
         // requests and unused slots go back, a push still waiting for its start ends not-started
@@ -1125,6 +1159,7 @@ export async function createProject(
         const messagingClose = must(sender, "sender").close();
         return [
           importStop,
+          recordsStop,
           maintenanceStop,
           runnerStop,
           schedulerStop,

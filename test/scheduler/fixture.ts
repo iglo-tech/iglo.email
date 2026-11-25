@@ -535,6 +535,8 @@ export async function schedulerFixture(
     emailer,
     marketing,
     scheduler,
+    /** The owners a source stream's record handler writes through (B150d, D173). */
+    stores: { subscribers, enrollments },
     request,
     json,
     apiUser,

@@ -18,6 +18,9 @@ SELECT s.id, s.email FROM subscribers s
 INSERT INTO subscribers (uuid,email,name,status,attribs,external_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?) RETURNING id;
 -- name: subscriber-update
 UPDATE subscribers SET email=?, name=?, status=?, attribs=?, external_id=?, updated_at=? WHERE id=?;
+-- name: subscriber-source-update
+-- D173: a source writes only the fields it owns; status and attributes are never rewritten from a copy.
+UPDATE subscribers SET email=?, name=?, external_id=?, updated_at=? WHERE id=?;
 -- name: subscriber-delete
 DELETE FROM subscribers WHERE id=?;
 -- name: membership-insert
@@ -65,6 +68,11 @@ SELECT secret FROM suppression_keys WHERE id = 1;
 -- name: suppression-match
 -- B124 (D125): a suppression names this e-mail (?1) or external ID (?2, NULL when there is none).
 SELECT 1 FROM suppressions WHERE email_hash = ?1 OR external_hash = ?2 LIMIT 1;
+-- name: suppression-names-both
+-- D173: 1 when suppressions name this e-mail (?1) and, when it has one, this external ID (?2), in
+-- the same row or not; a leaving subscriber's withdrawal is recorded under each key it lacks.
+SELECT EXISTS (SELECT 1 FROM suppressions WHERE email_hash = ?1)
+  AND (?2 IS NULL OR EXISTS (SELECT 1 FROM suppressions WHERE external_hash = ?2)) AS named;
 -- name: suppression-insert
 INSERT INTO suppressions (email_hash, external_hash, lists, wiped_at) VALUES (?, ?, ?, ?);
 -- name: suppression-clear
