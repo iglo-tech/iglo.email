@@ -288,6 +288,121 @@ test("a revoked token is noticed although PocketBase reads it as a guest: one si
   expect(signIns()).toBe(3);
 });
 
+/** Invalidates every token issued so far: a password round-trip gives the account a new token key. */
+async function revokeTokens() {
+  const [account] = (await pb.api("GET", "/api/collections/services/records")).items;
+  for (const password of ["temporary-password-9", pb.service.password]) {
+    await pb.update("services", account.id, { password, passwordConfirm: password });
+  }
+}
+
+/**
+ * An adapter whose transport (the test seam) can hold one response: `hold(pattern)` holds the
+ * response of the next request whose path matches until `release()`, and resolves once that
+ * request has been answered.
+ */
+function holding() {
+  let armed: RegExp | undefined;
+  const gate = Promise.withResolvers<void>();
+  const answered = Promise.withResolvers<void>();
+  let signIns = 0;
+  const source = createPocketBaseSource({
+    config: sourceConfig(pb.url, pb.service),
+    clock: createRealClock(),
+    guard: open,
+    transport: {
+      fetch: async (input: URL, init: RequestInit) => {
+        if (input.pathname.endsWith("/auth-with-password")) {
+          signIns++;
+        }
+        const held = armed?.test(`${input.pathname}${input.search}`) ?? false;
+        if (held) {
+          armed = undefined;
+        }
+        const response = await fetch(input, init);
+        if (held) {
+          answered.resolve();
+          await gate.promise;
+        }
+        return response;
+      },
+    },
+  });
+  return {
+    source,
+    signIns: () => signIns,
+    hold(pattern: RegExp) {
+      armed = pattern;
+      return answered.promise;
+    },
+    release: () => gate.resolve(),
+  };
+}
+
+type Source = ReturnType<typeof createPocketBaseSource>;
+interface Raced {
+  user: string;
+  event: string;
+}
+/** The operation, the read it holds, and its true answer ("user" and "event" name the IDs). */
+const races: Array<[string, RegExp, (source: Source, raced: Raced) => Promise<unknown>, unknown]> =
+  [
+    ["count", /\/events\/records\?/, (source, { user }) => source.count({ user }, 10), 1],
+    ["exists", /\/events\/records\?/, (source, { user }) => source.exists({ user }), true],
+    [
+      "scan (a short page)",
+      /\/events\/records\?/,
+      async (source, { user }) => {
+        const ids: Array<string> = [];
+        for await (const page of source.scan({ user }, [], 10)) {
+          ids.push(...page.map((row) => row.id));
+        }
+        return ids.length;
+      },
+      1,
+    ],
+    [
+      "latest",
+      /\/events\/records\?/,
+      async (source, { user }) => (await source.latest({ user }))?.name,
+      "raced",
+    ],
+    [
+      "record",
+      /\/events\/records\/[^?]+$/,
+      async (source, { event }) => (await source.record(event))?.id,
+      "event",
+    ],
+    [
+      "recipient",
+      /\/recipients\/records\/[^?]+$/,
+      async (source, { user }) => (await source.recipient(user))?.id,
+      "user",
+    ],
+  ];
+
+test.each(races)(
+  "%s: an empty or 404 answer read with a revoked token is not trusted after another caller signs in again",
+  async (_name, pattern, operation, expected) => {
+    const user = await pb.user();
+    const event = await pb.event(user.id, "raced", {});
+    const { source, signIns, hold, release } = holding();
+    expect(await source.count({ user: user.id }, 10)).toBe(1);
+    await revokeTokens();
+    // Caller A reads with the revoked token and, as a guest, gets an empty list or a 404; its
+    // answer is held while caller B notices the revoked token and signs in again.
+    const answered = hold(pattern);
+    const held = operation(source, { user: user.id, event: event.id });
+    await answered;
+    const other = await pb.user();
+    expect((await source.recipient(other.id))?.id).toBe(other.id);
+    expect(signIns()).toBe(2);
+    release();
+    const want = expected === "user" ? user.id : expected === "event" ? event.id : expected;
+    expect(await held).toBe(want);
+  },
+);
+
 test("a wrong password is a permanent failure", async () => {
   const { source } = adapter({ config: { password: "not-the-password" } });
   const error = await failure(source.recipient("nosuchuser00000"));

@@ -84,6 +84,11 @@ interface Answer {
   tooLarge: boolean;
 }
 type Page = { items: ReadonlyArray<SourceObject> } | { tooLarge: true };
+/** A read's result and the token it was sent with: an absent result is checked against that token. */
+interface Read<T> {
+  value: T;
+  used: string;
+}
 
 const tooLargeError = () =>
   new SourceError("permanent", "A source response is larger than the response limit");
@@ -361,58 +366,78 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     return signIn(call);
   }
 
+  /** Drops `used` as the held token, unless another caller has replaced it already. */
+  function drop(used: string) {
+    if (token === used) {
+      token = "";
+    }
+  }
+
   /**
-   * Whether the current token is still accepted. PocketBase reads an invalid token as a guest, so
+   * Whether the token `used` is still accepted. PocketBase reads an invalid token as a guest, so
    * an empty answer proves nothing until this succeeds (401 means the token was not valid).
    */
-  async function confirm(call: CallOptions): Promise<boolean> {
-    if (!token) {
+  async function confirm(used: string, call: CallOptions): Promise<boolean> {
+    if (!used) {
       return false;
     }
     const answer = await send(
       "POST",
       `api/collections/${authCollection}/auth-refresh`,
-      token,
+      used,
       undefined,
       call,
     );
     if (answer.status === 401 || answer.status === 403 || answer.status === 404) {
-      token = "";
+      drop(used);
       return false;
     }
     const next = member(answer.body, "token");
     if (answer.status !== 200 || typeof next !== "string") {
       throw failure(answer, "the token check");
     }
-    accept(next, answer.date);
+    // A token another caller got meanwhile is as good, so it is kept.
+    if (token === used) {
+      accept(next, answer.date);
+    }
     return true;
   }
 
-  /** An authenticated GET; a 401 or 403 signs in again and repeats it once. */
-  async function get(path: string, call: CallOptions): Promise<Answer> {
-    const first = await send("GET", path, await currentToken(call), undefined, call);
-    if (first.status !== 401 && first.status !== 403) {
-      return first;
+  /** An authenticated GET and the token it used; a 401 or 403 signs in again and repeats it once. */
+  async function get(path: string, call: CallOptions): Promise<Read<Answer>> {
+    const first = await currentToken(call);
+    const answer = await send("GET", path, first, undefined, call);
+    if (answer.status !== 401 && answer.status !== 403) {
+      return { value: answer, used: first };
     }
-    token = "";
-    return send("GET", path, await currentToken(call), undefined, call);
+    drop(first);
+    const used = await currentToken(call);
+    return { value: await send("GET", path, used, undefined, call), used };
   }
 
   /**
-   * Runs `read`; an absent answer is confirmed with the token check, and read once more after a
-   * new sign-in when the token was no longer valid.
+   * Runs `read`; an absent answer counts only once the token that read was sent with passes the
+   * check. When that token is no longer valid, or another caller has signed in again since the
+   * read (the held token is not the one the read used), it reads once more with the current token
+   * and checks that answer the same way. A second unconfirmed absent answer is transient.
    */
   async function confirmed<T>(
-    read: () => Promise<T>,
+    read: () => Promise<Read<T>>,
     absent: (value: T) => boolean,
     call: CallOptions,
   ): Promise<T> {
-    const value = await read();
-    if (!absent(value) || (await confirm(call))) {
-      return value;
+    for (let attempt = 0; ; attempt++) {
+      const { value, used } = await read();
+      if (!absent(value) || (used === token && (await confirm(used, call)))) {
+        return value;
+      }
+      if (attempt > 0) {
+        throw new SourceError(
+          "transient",
+          "The source did not confirm the service account's token for an empty answer",
+        );
+      }
     }
-    await signIn(call);
-    return read();
   }
 
   /** One page of a collection's records, or `tooLarge`. */
@@ -420,7 +445,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     collection: string,
     params: { filter: string; sort: string; perPage: number; fields?: Array<string> },
     call: CallOptions,
-  ): Promise<Page> {
+  ): Promise<Read<Page>> {
     const search = new URLSearchParams({
       page: "1",
       perPage: String(params.perPage),
@@ -431,9 +456,12 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     if (params.fields) {
       search.set("fields", params.fields.join(","));
     }
-    const answer = await get(`api/collections/${collection}/records?${search}`, call);
+    const { value: answer, used } = await get(
+      `api/collections/${collection}/records?${search}`,
+      call,
+    );
     if (answer.tooLarge) {
-      return { tooLarge: true };
+      return { value: { tooLarge: true }, used };
     }
     if (answer.status !== 200) {
       throw failure(answer, `a read of ${collection}`);
@@ -442,7 +470,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     if (!isSourceList(items) || !items.every(isSourceObject)) {
       throw new SourceError("permanent", `The source's ${collection} list has no items`);
     }
-    return { items };
+    return { value: { items }, used };
   }
 
   /** The filter of a query, or `null` for a query that matches nothing. */
@@ -598,21 +626,24 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     const what = `a read of ${collection}`;
     const row = await confirmed(
       async () => {
-        const answer = await get(`api/collections/${collection}/records/${id}`, call);
+        const { value: answer, used } = await get(
+          `api/collections/${collection}/records/${id}`,
+          call,
+        );
         if (answer.status === 404 && !answer.tooLarge) {
-          return null;
+          return { value: null, used };
         }
         if (answer.status !== 200 || !isSourceObject(answer.body)) {
           throw failure(answer, what);
         }
-        return answer.body;
+        return { value: answer.body, used };
       },
       (value) => value === null,
       call,
     );
     if (row === null) {
       const search = new URLSearchParams({ page: "1", perPage: "1", skipTotal: "1", fields: "id" });
-      const answer = await get(`api/collections/${collection}/records?${search}`, call);
+      const { value: answer } = await get(`api/collections/${collection}/records?${search}`, call);
       if (answer.status !== 200) {
         throw failure(answer, what);
       }
@@ -683,7 +714,10 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       call: CallOptions = {},
     ): Promise<{ status: number; rows: number; message: string }> {
       const search = new URLSearchParams({ page: "1", perPage: "1", skipTotal: "1", filter });
-      const answer = await get(`api/collections/${fieldName(collection)}/records?${search}`, call);
+      const { value: answer } = await get(
+        `api/collections/${fieldName(collection)}/records?${search}`,
+        call,
+      );
       const items = member(answer.body, "items");
       return {
         status: answer.status,
