@@ -665,7 +665,7 @@ export const differences: Array<Difference> = [
   {
     area: "Bounces (M3.4)",
     summary:
-      "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast. `POST /webhooks/service/ses` believes only the SNS topics listed in `bounce.ses_topic_arns` and records at most 50 recipients, where upstream believes any signed message. Its certificate and confirmation URLs must name a real AWS region (`sns.eu-west-1.amazonaws.com`); upstream's pattern also matches the S3 bucket host `sns.s3.amazonaws.com`. Provider webhooks have a budget of 6,000 POSTs per client per minute, apart from the public forms, so a bounce burst is not refused at 300.",
+      "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast. `POST /webhooks/service/ses` believes only the SNS topics listed in `bounce.ses_topic_arns` and records at most 50 recipients, where upstream believes any signed message. Its certificate and confirmation URLs must name a real AWS region (`sns.eu-west-1.amazonaws.com`); upstream's pattern also matches the S3 bucket host `sns.s3.amazonaws.com`. Provider webhooks have a budget of 6,000 POSTs per client per minute, apart from the public forms, so a bounce burst is not refused at 300. With projects (B142, D156) the SES route is the instance's, with its bounce keys: served on the instance host and on hosts no project claims, `400 Unknown service.` on a project host, and with several projects a notice that names no single project is answered 200 and stored nowhere.",
     applies: ["/api/bounces", "/bounces", "POST /webhooks/service"],
   },
   {

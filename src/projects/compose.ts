@@ -90,6 +90,7 @@ import { createCampaignRunner } from "@/campaigns/runner/runner";
 import { createCampaignRecipients } from "@/subscribers/campaign-recipients";
 import { registerArchiveRoutes } from "@/public/archive";
 import { googleFontUrl } from "@/public/brand";
+import type { PageSite } from "@/public/layout";
 import { createSubscriberMail, createSignupMail } from "@/public/mail";
 import type { SubscriberMail } from "@/public/mail";
 import { createPrivacy } from "@/public/privacy";
@@ -98,6 +99,8 @@ import { registerPublicRoutes } from "@/public/routes";
 import { publicSettings } from "@/public/settings";
 import { createBounceStore } from "@/bounces/store";
 import { registerBounceRoutes } from "@/bounces/routes";
+import { createSesProject } from "@/bounces/ses-route";
+import type { SesProject } from "@/bounces/ses-route";
 import { createWebhookDelivery } from "@/webhooks/delivery";
 import { createWebhookEffects } from "@/webhooks/effects";
 import { registerWebhookRoutes } from "@/webhooks/routes";
@@ -162,6 +165,14 @@ export interface ProjectOptions {
 
 export type ProjectServer = RoutedServer;
 
+/** The SES route's narrow view of a project: mine or not mine, record, and its public page. */
+export interface ProjectSes extends SesProject {
+  /** The branding of the route's 404 and 429 pages. */
+  page(): PageSite;
+  /** Bounces a minute this project's settings allow the provider's route. */
+  bounceLimit(): number;
+}
+
 /** A wired project. main() binds `router` on `app`, then calls start(), then stop() and close(). */
 export interface Project {
   readonly app: App;
@@ -181,6 +192,8 @@ export interface Project {
   stop(): Array<unknown>;
   /** Closes every store and the database. main() calls it last, after the lock is still held. */
   close(): Promise<void>;
+  /** What the instance's SES route reaches of this project (B142). */
+  readonly ses: ProjectSes;
   /** Writes the instance admin account into this project's copy (B140). */
   syncAdmin(account: AdminAccount): void;
   /**
@@ -237,6 +250,7 @@ export async function createProject(
   let webhooks: ReturnType<typeof createWebhookStore> | undefined;
   let bounces: ReturnType<typeof createBounceStore> | undefined;
   let deliveries: ReturnType<typeof createWebhookDelivery> | undefined;
+  let ses: ProjectSes | undefined;
   let analyticsReader: AnalyticsReader | undefined;
   let summaries: ReturnType<typeof createSummaries> | undefined;
   let summaryRefresh: ReturnType<typeof createSummaryRefresh> | undefined;
@@ -729,7 +743,6 @@ export async function createProject(
       clock,
       store: bounces,
       page: pages,
-      logger: app.logger,
       subscribers: subscriberStore,
       roles,
       auth,
@@ -738,8 +751,6 @@ export async function createProject(
         return {
           enabled: current["bounce.enabled"],
           webhooksEnabled: current["bounce.webhooks_enabled"],
-          ses: current["bounce.ses_enabled"],
-          sesTopics: current["bounce.ses_topic_arns"],
         };
       },
       // Providers post from shared addresses too, with a budget of their own. A large campaign's
@@ -754,6 +765,13 @@ export async function createProject(
         clientAddress,
       }),
     });
+    // The instance's SES route reaches this project only through these (B142, D156).
+    const sesProject = createSesProject({ db, store: bounces, logger: app.logger });
+    ses = {
+      ...sesProject,
+      page: pages,
+      bounceLimit: () => Math.max(budgets.bounceWebhookPerMinute, pages().rateLimits.unsubscribe),
+    };
     recipients = createCampaignRecipients(db);
     const templateStore = templates;
     runner = createCampaignRunner({
@@ -986,6 +1004,7 @@ export async function createProject(
       app,
       db,
       router,
+      ses: must(ses, "ses"),
       attach(server: ProjectServer) {
         serverRef.server = server;
       },

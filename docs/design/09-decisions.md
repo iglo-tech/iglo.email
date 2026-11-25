@@ -1975,3 +1975,19 @@ Brief B117a, from an adopter's checks and reviews of B126, B127, B131, B134f and
   - *An instance reader that caches until its own write.* Cheaper per read, but a write by another connection (a fixture, a future CLI) would go unseen, against D88.
   - *Validating OIDC role IDs against the primary project's roles.* It gives one project's roles a meaning for all, and fails with no primary.
   - *Moving the SMTP test to the instance only.* The project route writes nothing and the existing contract and API users keep it; the instance page needs its own, which reaches the one place with a from address.
+
+## D156. SES routing (B142, lead, 2026-11-25)
+
+- **Decision:** the choices [14-projects](14-projects.md) section 8 leaves open, as B142 built them ([section 8, "As built"](14-projects.md#as-built-b142)):
+  - **One instance route.** `POST /webhooks/service/ses` is registered on an instance router with the instance's `bounce.*` keys and dispatched on the instance host and on unclaimed hosts, with or without a primary project. A project host answers it `400 Unknown service.`, as a disabled provider.
+  - **Narrow project side.** Each project exports `claims(messageId)` (true or false only) and `receive(notice)` (records a verified notice with today's rules in its own database). The instance never sees a project's rows or database (invariant 1).
+  - **A campaign delivery needs its subscriber too.** `<campaign>.<subscriber>@host` is claimed only by a project that holds both UUIDs, so a project that shares a campaign UUID (a copy of another's database) does not make an ordinary delivery ambiguous.
+  - **Unmatched is accepted.** A notice that names no project or several is answered `200`, stored nowhere, and named by one `[instance]` attention line. A `400` would make SNS retry a message that can never match.
+  - **Rate limit.** One bounce webhook peer table entry per client under the empty slug, limited to the largest of the floor and every project's own budget.
+  - **Log.** The attention line goes to stderr with the `[instance]` prefix; its fixed text is added to the safe messages so B143's instance buffer can show it.
+- **Unchanged:** SNS signature, topic ARN, age and body checks; `SubscriptionConfirmation` confirmed once; `bounce_receipts` deduplication per project; the recipient-address fallback, inside the routed project only; `POST /webhooks/bounce` a project route; every existing bounce suite, unedited, against the primary project.
+- **Considered:**
+  - *Delivering an unmatched notice to every project and letting each apply its address fallback.* Acts on a project the message did not come from (section 8 forbids it).
+  - *First match in slug order.* Silently picks one of two projects that both claim the notice.
+  - *Claiming a campaign delivery by its campaign UUID alone.* Simpler, but ambiguous whenever two projects share a campaign UUID, although the subscriber names one.
+  - *Keeping the route on every project host with the instance's settings.* A project host would then reach other projects' data through a route its own host serves, against the routing in section 2.

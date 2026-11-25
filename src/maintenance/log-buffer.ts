@@ -22,6 +22,7 @@ const SAFE_MESSAGES = [
   "A test send got a complaint",
   "Admin notification address is not valid: skipped",
   "Admin notifications not sent: app.from_email is not valid",
+  "An SES notice matched no project",
   "campaign claims abandoned after the runner stopped: resend manually if needed",
   "campaign subscriber changed after its claim: message not sent",
   "error count limit reached: campaign paused",

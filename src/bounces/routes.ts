@@ -4,19 +4,9 @@
 import type { Database } from "bun:sqlite";
 import type { BounceStore, BounceEvent, BounceType } from "@/bounces/store";
 import { bounceTypes, reUUID } from "@/bounces/store";
-import {
-  SES_BODY_LIMIT,
-  SNS_MAX_AGE_MS,
-  createSnsClient,
-  parseSns,
-  sesEvents,
-  topicAllowed,
-} from "@/bounces/ses";
-import type { SnsClient } from "@/bounces/ses";
-import type { ErrorLogger } from "@/app";
+import type { SesSettings } from "@/bounces/ses-route";
 import type { Clock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
-import type { TestSendRecord } from "@/messaging/test-sends";
 import type { PageSite } from "@/public/layout";
 import { publicNotFound } from "@/public/message";
 import { parseBool } from "@/public/form";
@@ -30,16 +20,10 @@ import type { SubscriberStore } from "@/subscribers/store";
 import type { Authentication } from "@/users/auth";
 import { readBodyBytes } from "@/users/input";
 
-const MAX_RECEIPT_ID = 256;
 const reRFC3339 = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
 
-export interface BounceSettings {
-  enabled: boolean;
-  webhooksEnabled: boolean;
-  ses: boolean;
-  /** `bounce.ses_topic_arns`: empty accepts no SES message (D75). */
-  sesTopics: Array<string>;
-}
+/** The instance keys a project's bounce routes read (B139: `bounce.*` is the instance's). */
+export type BounceSettings = Pick<SesSettings, "enabled" | "webhooksEnabled">;
 // Go strconv.Atoi, ignoring its error.
 const atoi = (value: string | null) => {
   if (!value || !/^[+-]?\d+$/.test(value)) {
@@ -97,34 +81,6 @@ const unavailable = (c: RequestContext) =>
 // A type outside the enum fails upstream's cast with a 500: here it matches nothing.
 const typeFilter = (value: string) =>
   value && !(bounceTypes as ReadonlyArray<string>).includes(value) ? "none" : value;
-/** The body, up to SNS's own message limit; a larger one is refused before it is parsed. */
-const readSns = async (request: Request) => {
-  if (Number(request.headers.get("content-length")) > SES_BODY_LIMIT) {
-    throw new HttpError(413);
-  }
-  const chunks: Array<Uint8Array> = [];
-  let size = 0;
-  const reader = request.body?.getReader();
-  if (reader) {
-    try {
-      for (;;) {
-        const item = await reader.read();
-        if (item.done) {
-          break;
-        }
-        size += item.value.length;
-        if (size > SES_BODY_LIMIT) {
-          await reader.cancel();
-          throw new HttpError(413);
-        }
-        chunks.push(item.value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-  }
-  return Buffer.concat(chunks).toString("utf-8");
-};
 const campaignFilter = (c: RequestContext) => {
   const raw = c.url.searchParams.get("campaign_id");
   if (!raw) {
@@ -150,13 +106,9 @@ export function registerBounceRoutes(
     page: () => PageSite;
     /** The public rate limit for the provider's route. */
     limit: Middleware;
-    /** SNS signature checks and confirmations; tests inject the network. */
-    sns?: SnsClient;
-    logger: ErrorLogger;
   },
 ) {
-  const { db, clock, store, subscribers, roles, auth, settings, page, logger } = deps;
-  const sns = deps.sns ?? createSnsClient({ clock });
+  const { db, clock, store, subscribers, roles, auth, settings, page } = deps;
 
   /** Upstream has no route at all without `bounce.webhooks_enabled`. */
   const webhooksEnabled: Middleware = (c, next) =>
@@ -355,100 +307,12 @@ export function registerBounceRoutes(
     writeTransaction(db, () => store.record(event));
     return ok(true);
   };
-  /**
-   * B108 (D114): one attention line for a test send's bounce or complaint. The fixed text is what
-   * GET /api/logs shows; stderr also names the kind, the IDs, the recipient and the bounce or feedback type.
-   */
-  const testNotice = (event: BounceEvent, test: TestSendRecord) => {
-    const codes = JSON.parse(event.meta) as Record<string, unknown>;
-    const named =
-      test.kind === "campaign"
-        ? `campaign ${test.campaign_id}`
-        : `sequence ${test.sequence_id} step ${test.step_id}`;
-    // The address is the notice's own (bouncedRecipients or complainedRecipients), not a stored one.
-    const where = `kind ${test.kind}, ${named}, recipient ${event.email}`;
-    if (event.type === "complaint") {
-      logger.attention(
-        `Test send got a complaint: ${where}, feedback ${String(codes.feedback_type ?? "unknown")}`,
-        "A test send got a complaint",
-      );
-    } else {
-      logger.attention(
-        `Test send bounced: ${where}, bounce ${String(codes.bounce_type ?? "unknown")} ${String(codes.bounce_sub_type ?? "")}`.trimEnd(),
-        "A test send bounced",
-      );
-    }
-  };
-  /** cmd/bounce.go's `ses` branch. Every refusal is upstream's 400 and changes nothing. */
-  const ses: Handler = async (c) => {
-    const raw = await readSns(c.request);
-    const type = c.request.headers.get("X-Amz-Sns-Message-Type");
-    if (
-      type !== "SubscriptionConfirmation" &&
-      type !== "UnsubscribeConfirmation" &&
-      type !== "Notification"
-    ) {
-      throw invalidData(c);
-    }
-    const message = parseSns(raw);
-    // The header is not signed: it must agree with the signed type.
-    if (!message || message.Type !== type || !(await sns.verify(message))) {
-      throw invalidData(c);
-    }
-    // Anyone with an AWS account can sign a message: only the operator's topics are believed.
-    if (!topicAllowed(message.TopicArn, settings().sesTopics)) {
-      throw invalidData(c);
-    }
-    if (type === "SubscriptionConfirmation") {
-      if (!(await sns.confirm(message))) {
-        throw invalidData(c);
-      }
-      return ok(true);
-    }
-    // An unsubscription is acknowledged: the link it carries would end the subscription.
-    if (type === "UnsubscribeConfirmation") {
-      return ok(true);
-    }
-    const id = message.MessageId ?? "";
-    if (!id || id.length > MAX_RECEIPT_ID) {
-      throw invalidData(c);
-    }
-    const now = clock.now();
-    const events = sesEvents(message.Message ?? "", now);
-    if (!events) {
-      throw invalidData(c);
-    }
-    const tests: Array<{ event: BounceEvent; test: TestSendRecord }> = [];
-    writeTransaction(db, () => {
-      store.pruneReceipts();
-      // SNS delivers at least once: a repeated message is recorded once. The receipt outlasts the
-      // last moment the message verifies (its Timestamp plus the age limit), even when it is dated ahead.
-      const sent = Math.max(now.getTime(), Date.parse(message.Timestamp ?? ""));
-      if (!store.receive(`sns:${id}`, new Date(sent + SNS_MAX_AGE_MS + 1000))) {
-        return;
-      }
-      for (const event of events) {
-        const test = store.testOf(event);
-        if (test) {
-          tests.push({ event, test });
-        } else {
-          store.record(event);
-        }
-      }
-    });
-    // Named after the commit, so a line is never written for a notice that did not land.
-    for (const { event, test } of tests) {
-      testNotice(event, test);
-    }
-    return ok(true);
-  };
   const service: Handler = (c) => {
     if (!settings().enabled) {
       throw unavailable(c);
     }
-    if (c.params.service === "ses" && settings().ses) {
-      return ses(c);
-    }
+    // Amazon SES is the instance's route (B142, src/bounces/ses-route.ts): on a project's own host
+    // it is a service this route does not know.
     throw unknownService(c);
   };
   router.route("GET", "/api/bounces", collection, auth.middleware("bounces:get"));

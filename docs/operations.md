@@ -666,7 +666,8 @@ and bounce provider (D89).
    subscription confirmation.
 
 4. **Subscribe the endpoint.** In SNS, create a subscription on the topic with protocol HTTPS and
-   endpoint `https://news.example.com/webhooks/service/ses`. SNS posts a
+   endpoint `https://news.example.com/webhooks/service/ses`, on the instance host (`--root-url`'s
+   host); a project's own host answers it with 400 `Unknown service.`. SNS posts a
    `SubscriptionConfirmation`; with the switch on, iglo.email verifies it and confirms by itself,
    and the subscription shows "Confirmed". Turn the switch on first: a confirmation sent while it
    is off is refused, and SNS needs a new request (delete and recreate the subscription).
@@ -680,6 +681,17 @@ The server needs outbound HTTPS to `sns.<region>.amazonaws.com` to fetch the sig
 and to confirm subscriptions, and its clock must be right (a message more than 24 hours old, or
 15 minutes ahead, is refused). The endpoint accepts bodies up to 256 KiB. SNS delivers at least
 once; a repeated message is recorded once.
+
+**One topic for the whole account.** The topic, its subscription and the allowed ARNs belong to the
+instance, and every project's bounces arrive through them: do not create a topic per project. With
+one project, every notice goes to it. With several, a notice goes to the project its Message-ID
+names: first by the Message-ID's domain among the projects' hostnames and extra hostnames, then by
+asking each project whether the IDs in it name one of its sends, campaign deliveries or test sends.
+A notice that names no project, or more than one, is answered 200 so SNS does not retry it, is
+recorded nowhere, and writes `[instance] An SES notice matched no project` to stderr. So with
+several projects keep "Include original email headers" on: without the headers there is no
+Message-ID, and a notice is never matched to a project by its recipient address, because the same
+address can be a subscriber in two projects.
 
 Amazon signs every SNS message with the same certificates, whoever's topic it comes from, so a
 valid signature only proves the message passed through SNS. Any AWS account could create a topic,
