@@ -1,4 +1,5 @@
-// The instance pages on the instance host (14-projects sections 2, 5 and 13; B140, D153). Native:
+// The instance pages on the instance host (14-projects sections 2, 5, 10 and 13; B140, D153,
+// B143a, D157). Native:
 // listmonk has no instance. `/admin/instance/**` and `/api/instance/**` are answered here, before the
 // primary project's router; they never accept API credentials and are not in OpenAPI or MCP.
 import { renderAdminShell } from "@/admin/layout/shell";
@@ -21,6 +22,16 @@ import type { Translation } from "@/i18n/i18n";
 import { settingsHandlers } from "@/settings/routes";
 import type { InstanceSettingsStore } from "@/settings/instance";
 import type { NavigationLink } from "@/admin/layout/shell";
+import {
+  LOGS_PATH,
+  LogsBody,
+  PROJECTS_PATH,
+  ProjectsBody,
+  projectJson,
+  summaryJson,
+} from "@/admin/instance/projects";
+import type { InstanceProjects } from "@/admin/instance/projects";
+import { RegistryError } from "@/projects/registry";
 
 export const ACCOUNT_PATH = "/admin/instance/account";
 export const SETTINGS_PATH = "/admin/instance/settings";
@@ -31,10 +42,14 @@ export interface InstanceRouteDeps {
   readonly tokens: HandoffTokens;
   /** `--root-url`, without a trailing slash. */
   readonly rootUrl: string;
+  /** `--root-url`'s host: the only hostname a primary project may have. */
+  readonly instanceHost: string;
   /** A served project's root URL by slug, or undefined for a slug no project has. */
   readonly projectRootUrl: (slug: string) => string | undefined;
   /** The instance keys (B139, D154): `/api/instance/settings` and the instance Settings page. */
   readonly settings: InstanceSettingsStore;
+  /** The projects: the Projects and Logs pages and `/api/instance/projects` (B143a, D157). */
+  readonly projects: InstanceProjects;
   /** The login limit's client address, with security.trusted_proxies; the peer without it. */
   readonly clientAddress?: (context: RequestContext) => string;
   /** The primary project's SMTP test, or undefined without a primary project. */
@@ -60,6 +75,7 @@ export function instanceSettingsPage(i18n: Translation, rootUrl: string): string
 /** The instance pages' sidebar, with `current` marked. */
 function instanceNavigation(current: string): ReadonlyArray<NavigationLink> {
   return [
+    { label: "Projects", href: PROJECTS_PATH, current: current === PROJECTS_PATH, icon: "grid" },
     { label: "Account", href: ACCOUNT_PATH, current: current === ACCOUNT_PATH, icon: "user" },
     {
       label: "Instance settings",
@@ -67,15 +83,16 @@ function instanceNavigation(current: string): ReadonlyArray<NavigationLink> {
       current: current === SETTINGS_PATH,
       icon: "settings",
     },
+    { label: "Logs", href: LOGS_PATH, current: current === LOGS_PATH, icon: "terminal" },
   ];
 }
 
 const htmlHeaders = { "Content-Type": "text/html; charset=UTF-8", "Cache-Control": "no-store" };
 
-/** After a login: a safe local `next`, else the Account page (the Projects page is B143's). */
+/** After a login: a safe local `next`, else the Projects page. */
 function loginNext(value: string | null): string {
   const next = safeNext(value);
-  return next === "/admin" && value !== "/admin" ? ACCOUNT_PATH : next;
+  return next === "/admin" && value !== "/admin" ? PROJECTS_PATH : next;
 }
 
 function plainNotFound(): Response {
@@ -95,8 +112,8 @@ async function formFields(context: RequestContext): Promise<URLSearchParams> {
   return new URLSearchParams(await readBody(context.request));
 }
 
-/** A JSON object body's string fields; any other value of a field reads as empty. */
-async function jsonFields(request: Request): Promise<Map<string, string>> {
+/** A JSON object body's fields; an empty body has none. */
+async function jsonObject(request: Request): Promise<Map<string, unknown>> {
   const body = await readBody(request);
   if (
     body &&
@@ -113,13 +130,64 @@ async function jsonFields(request: Request): Promise<Map<string, string>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new HttpError(400);
   }
+  return new Map<string, unknown>(Object.entries(value));
+}
+
+/** A JSON object body's string fields; any other value of a field reads as empty. */
+async function jsonFields(request: Request): Promise<Map<string, string>> {
+  const value = await jsonObject(request);
   const fields = new Map<string, string>();
-  for (const [key, field] of Object.entries(value)) {
+  for (const [key, field] of value) {
     if (typeof field === "string") {
       fields.set(key, field);
     }
   }
   return fields;
+}
+
+/** A string field of a JSON body; a missing field reads as empty, any other value is a 400. */
+function text(body: Map<string, unknown>, name: string): string {
+  const value = body.get(name) ?? "";
+  if (typeof value !== "string") {
+    throw new HttpError(400, `${name} must be a string`);
+  }
+  return value;
+}
+
+/** `extra`: an array of strings, missing as none. */
+function hostnames(value: unknown): Array<string> {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  const items: ReadonlyArray<unknown> = Array.isArray(value) ? value : [];
+  const strings = items.filter((item): item is string => typeof item === "string");
+  if (!Array.isArray(value) || strings.length !== items.length) {
+    throw new HttpError(400, "extra must be an array of hostnames");
+  }
+  return strings;
+}
+
+/** `primary`: a boolean, missing as false. */
+function flag(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value !== "boolean") {
+    throw new HttpError(400, "primary must be true or false");
+  }
+  return value;
+}
+
+/** A refused registry change as its HTTP status and message. */
+async function refused<T>(work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error) {
+    if (error instanceof RegistryError) {
+      throw new HttpError(error.status, error.message);
+    }
+    throw error;
+  }
 }
 
 // Instance routes never accept API credentials (14-projects section 6): 401, whatever the path.
@@ -544,11 +612,55 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
     });
   });
 
+  const projectsView = page((context) => {
+    const projects = deps.projects.list();
+    const html = renderAdminShell({
+      title: "Projects",
+      siteName: "iglo.email",
+      assetVersion,
+      i18n: context.app.i18n,
+      script: "instance-projects",
+      translationKeys: ["globals.messages.done"],
+      config: {
+        root_url: deps.rootUrl,
+        instance_host: deps.instanceHost,
+        projects: projects.map((project) => ({
+          slug: project.slug,
+          name: project.name,
+          extra: [...project.extra],
+        })),
+      },
+      navigation: instanceNavigation(PROJECTS_PATH),
+      children: (
+        <ProjectsBody
+          projects={projects}
+          leftovers={deps.projects.leftovers()}
+          instanceHost={deps.instanceHost}
+        />
+      ),
+    });
+    return new Response(html, { headers: htmlHeaders });
+  });
+  const logsView = page((context) => {
+    const html = renderAdminShell({
+      title: "Logs",
+      siteName: "iglo.email",
+      assetVersion,
+      i18n: context.app.i18n,
+      config: { root_url: deps.rootUrl },
+      navigation: instanceNavigation(LOGS_PATH),
+      children: <LogsBody lines={deps.projects.logs()} />,
+    });
+    return new Response(html, { headers: htmlHeaders });
+  });
+
   router.route(
     "GET",
     "/admin/instance",
-    () => new Response(null, { status: 302, headers: { Location: ACCOUNT_PATH } }),
+    () => new Response(null, { status: 302, headers: { Location: PROJECTS_PATH } }),
   );
+  router.route("GET", PROJECTS_PATH, projectsView);
+  router.route("GET", LOGS_PATH, logsView);
   router.route("GET", LOGIN_PATH, getLogin);
   router.route("POST", LOGIN_PATH, postLogin);
   router.route("GET", `${LOGIN_PATH}/twofa`, getTwofa);
@@ -666,6 +778,60 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
       }
       await test(value, () => auth.authorize(context.request));
       return ok([]);
+    }),
+  );
+  // The projects (B143a, D157): the lifecycle, serialized by the instance, with no restart.
+  router.route(
+    "GET",
+    "/api/instance/projects",
+    api(() => ok(deps.projects.list().map(summaryJson))),
+  );
+  router.route(
+    "POST",
+    "/api/instance/projects",
+    api(async (context) => {
+      const body = await jsonObject(context.request);
+      const record = await refused(() =>
+        deps.projects.create({
+          slug: text(body, "slug"),
+          name: text(body, "name"),
+          hostname: text(body, "hostname"),
+          extra: hostnames(body.get("extra")),
+          primary: flag(body.get("primary")),
+        }),
+      );
+      return ok(projectJson(record));
+    }),
+  );
+  router.route(
+    "PUT",
+    "/api/instance/projects/:slug",
+    api(async (context) => {
+      const body = await jsonObject(context.request);
+      // A field left out keeps its value.
+      const change = {
+        name: body.has("name") ? text(body, "name") : undefined,
+        extra: body.has("extra") ? hostnames(body.get("extra")) : undefined,
+      };
+      const record = await refused(() => deps.projects.update(context.params.slug ?? "", change));
+      return ok(projectJson(record));
+    }),
+  );
+  router.route(
+    "DELETE",
+    "/api/instance/projects/:slug",
+    api(async (context) => {
+      const slug = context.params.slug ?? "";
+      const body = await jsonObject(context.request);
+      // The admin types the slug (14-projects section 10): a delete names it twice.
+      if (body.get("confirm") !== slug) {
+        throw new HttpError(400, "Type the project's slug in `confirm` to delete it");
+      }
+      const deleted = await refused(() => deps.projects.remove(slug));
+      if (!deleted) {
+        throw new HttpError(404, `No project ${slug}`);
+      }
+      return ok({ database: deleted.database, files: deleted.files });
     }),
   );
   // Any other instance page is the plain 404 an unclaimed host answers.

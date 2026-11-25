@@ -164,6 +164,60 @@ process.exitCode = await withStack(async ({ origin, blankOrigin, mailbox }) => {
     see("after the factor", path());
     browser("open", link);
     see("the link again", value('document.querySelector(".wrap").innerText'));
+
+    // The instance pages (B143a): Projects with a project created through its API, Logs, and the
+    // project header's switcher after the handoff to the primary project.
+    browser("open", `${origin}/admin/instance/login`);
+    fillLogin(admin.user, admin.password);
+    see("instance login lands on", path());
+    see(
+      "project created",
+      value(`(async () => {
+        const csrf = document.cookie.split("; ").find((c) => c.startsWith("instance_csrf=")).slice(14);
+        const response = await fetch("/api/instance/projects", { method: "POST",
+          headers: { "content-type": "application/json", "x-csrf-token": csrf },
+          body: JSON.stringify({ slug: "browser", name: "Browser project",
+            hostname: "browser.example.test", extra: ["old-browser.example.test"] }) });
+        return response.status;
+      })()`),
+    );
+    browser("open", `${origin}/admin/instance/projects`);
+    settle();
+    see(
+      "projects rows",
+      value(
+        String.raw`[...document.querySelectorAll("[data-testid=project-row]")].map((r) => r.innerText.replace(/\s+/g, " "))`,
+      ),
+    );
+    shot("instance-projects");
+    browser("click", "[data-testid=project-edit][data-slug=browser]");
+    browser("fill", "[data-testid=project-edit-extra]", "");
+    see(
+      "removing an extra hostname warns",
+      value('document.querySelector("[data-testid=project-extra-warning]").innerText'),
+    );
+    shot("instance-project-edit");
+    browser("open", `${origin}/admin/instance/logs`);
+    settle();
+    see(
+      "logs page",
+      value(
+        String.raw`document.querySelector(".logs").innerText.replace(/\s+/g, " ").slice(0, 400)`,
+      ),
+    );
+    shot("instance-logs");
+    browser("open", `${origin}/admin/instance/open/main?next=%2Fadmin`);
+    settle();
+    see("handoff reaches", path());
+    browser("click", "[data-testid=project-switcher-button]");
+    see(
+      "switcher",
+      value(
+        String.raw`[...document.querySelectorAll("#project-menu a")].map((a) => a.textContent.trim() + " " + a.getAttribute("href"))`,
+      ),
+    );
+    shot("switcher");
+
     browser("open", `${blankOrigin}/admin/login`);
     see("fresh install", value('document.querySelector(".login").innerText'));
     shot("first-time");

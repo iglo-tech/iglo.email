@@ -1,6 +1,7 @@
-// The instance (14-projects sections 1–3 and 9, D142, D151): instance.db with its registry, one
-// wired project per registered project, and the routing table that picks a project by `Host`.
-// Native: listmonk serves one database per process. main() owns the lock, the bind and the signals.
+// The instance (14-projects sections 1–3, 9 and 10, D142, D151, D157): instance.db with its
+// registry, one wired project per registered project, the routing table that picks a project by
+// `Host`, and the lifecycle that creates, edits and deletes projects while it runs. Native: listmonk
+// serves one database per process. main() owns the lock, the bind and the signals.
 import type { Database } from "bun:sqlite";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -10,12 +11,16 @@ import { openDatabase } from "@/db/connection";
 import { instanceMigrations, runMigrations } from "@/db/migrations";
 import { createApp } from "@/app";
 import { createInstanceRouter } from "@/admin/instance/routes";
+import type { InstanceProjects, ProjectSummary } from "@/admin/instance/projects";
 import { createTranslation } from "@/i18n/i18n";
+import { createInstanceLogBuffer, mergeLogs } from "@/maintenance/log-buffer";
 import { createAdminSync } from "@/projects/admin-sync";
 import { createInstanceBudgets } from "@/projects/budgets";
 import type { InstanceBudgets } from "@/projects/budgets";
 import { createProject } from "@/projects/compose";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
+import { archiveDeleted } from "@/projects/deleted";
+import type { DeletedProject } from "@/projects/deleted";
 import {
   INSTANCE_DATABASE,
   PROJECTS,
@@ -24,14 +29,16 @@ import {
   projectDirectory,
   usesOldLayout,
 } from "@/projects/layout";
-import { createSourceLogger, instanceAttention } from "@/projects/logger";
+import { createInstanceLogger } from "@/projects/logger";
 import {
+  RegistryError,
   SLUG_PATTERN,
   createRegistry,
   normalizeHostname,
+  projectName,
   requestHostname,
 } from "@/projects/registry";
-import type { NewProject, ProjectRecord, Registry } from "@/projects/registry";
+import type { NewProject, ProjectChange, ProjectRecord, Registry } from "@/projects/registry";
 import { SES_PATH, registerSesRoute } from "@/bounces/ses-route";
 import type { PageSite } from "@/public/layout";
 import { Router } from "@/server/router";
@@ -63,6 +70,9 @@ function instancePath(pathname: string): boolean {
 /** The fresh install's one project (D151). Its name is the site name's default. */
 export const PRIMARY_SLUG = "main";
 
+/** The Projects page's "sent" window. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export interface InstanceConfig {
   readonly dataDir: string;
   /** `--root-url`: its host is the instance host, and the primary project's root URL is it. */
@@ -76,8 +86,15 @@ export interface InstanceConfig {
 }
 
 interface Entry {
-  readonly record: ProjectRecord;
+  /** Replaced by an edit (a rename or new extra hostnames). */
+  record: ProjectRecord;
   readonly project: Project;
+  /** Requests the project's router is answering now. */
+  requests: number;
+  /** Set by a delete waiting for `requests` to reach 0. */
+  idle: (() => void) | undefined;
+  /** Off the routing table, being deleted: a loop's failure no longer stops the process. */
+  removed: boolean;
 }
 
 /**
@@ -114,6 +131,20 @@ const notFound = () =>
       "X-Content-Type-Options": "nosniff",
     },
   });
+
+/** The directories under `projects/`, by name. */
+function projectDirectories(root: string): Array<string> {
+  return existsSync(resolve(root, PROJECTS))
+    ? readdirSync(resolve(root, PROJECTS), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .toSorted()
+    : [];
+}
+
+function newEntry(record: ProjectRecord, project: Project): Entry {
+  return { record, project, requests: 0, idle: undefined, removed: false };
+}
 
 export type Instance = Awaited<ReturnType<typeof openInstance>>;
 
@@ -160,6 +191,22 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   let fail: ((failure?: unknown) => void) | undefined;
   /** Projects whose loops failed: the instance health route turns unhealthy. */
   const down = new Set<string>();
+  /** Slugs whose directory a create or a delete is working on: not leftovers. */
+  const busy = new Set<string>();
+  // The instance's own lines: stderr and the buffer the instance Logs page shows (D157).
+  const instanceLogs = createInstanceLogBuffer(clock);
+  const { logger: instanceLogger, attention } = createInstanceLogger(instanceLogs);
+
+  /**
+   * Create, edit and delete run one at a time (D157): a create that loses a same-slug race sees the
+   * winner's directory and removes nothing, and no edit sees a half-deleted project.
+   */
+  let queue: Promise<unknown> = Promise.resolve();
+  const serial = <T>(work: () => Promise<T>): Promise<T> => {
+    const run = queue.then(work, work);
+    queue = run.catch(() => undefined);
+    return run;
+  };
 
   const rebuild = () => {
     const next = new Map<string, Entry>();
@@ -192,7 +239,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
           syncAdmin: (current: Parameters<Project["syncAdmin"]>[0]) =>
             entry.project.syncAdmin(current),
         })),
-      attention: instanceAttention,
+      attention,
     });
   let sync: ReturnType<typeof adminSync> | undefined;
 
@@ -210,6 +257,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
           changed: (slug, credentials) => admin.change(slug, credentials),
           redeem: (slug, token) => tokens.redeem(slug, token),
         },
+        projects: () => entries.map(({ record: r }) => ({ slug: r.slug, name: r.name })),
       },
       options(record),
     );
@@ -221,11 +269,16 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   /** Only the primary project may hold the instance host (14-projects section 2). */
   const checkInstanceHost = (record: Pick<ProjectRecord, "primary" | "hostname" | "extra">) => {
     if (!record.primary && [record.hostname, ...record.extra].includes(instanceHost)) {
-      throw new Error(`The instance host ${instanceHost} can only be the primary project's`);
+      throw new RegistryError(
+        409,
+        `The instance host ${instanceHost} can only be the primary project's`,
+      );
     }
   };
 
   const closeAll = async () => {
+    // A create or delete in progress finishes first: it may still write the registry.
+    await queue;
     for (const entry of entries.toReversed()) {
       await entry.project.close();
     }
@@ -239,14 +292,17 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   try {
     registry = createRegistry(db, clock);
     settings = createInstanceSettings(db, clock);
-    const directories = existsSync(resolve(root, PROJECTS))
-      ? readdirSync(resolve(root, PROJECTS), { withFileTypes: true })
-          .filter((entry) => entry.isDirectory())
-          .map((entry) => entry.name)
-      : [];
+    account = createAdminAccountStore(db, clock);
+    const directories = projectDirectories(root);
     // A fresh install, or one whose first start stopped before its registry row: register the
-    // primary project. Its directory is created by its wiring, or used as it is (D151).
-    if (registry.list().length === 0 && directories.every((name) => name === PRIMARY_SLUG)) {
+    // primary project. Its directory is created by its wiring, or used as it is (D151). An instance
+    // with an admin account has started before, so an empty registry there means every project
+    // was deleted, and nothing is registered again (D157).
+    if (
+      registry.list().length === 0 &&
+      account.get() === null &&
+      directories.every((name) => name === PRIMARY_SLUG)
+    ) {
       registry.add({
         slug: PRIMARY_SLUG,
         name: defaults["app.site_name"],
@@ -258,13 +314,12 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     const records = registry.list();
     for (const name of directories) {
       if (!records.some((record) => record.slug === name)) {
-        instanceAttention(`${PROJECTS}/${name} has no registry row: it is not served`);
+        attention(`${PROJECTS}/${name} has no registry row: it is not served`);
       }
     }
     budgets = await createInstanceBudgets(clock);
     // The admin account (B140): created from the environment on a start with none. Once it exists
     // the variables are not read, as a project with users never read them (D153).
-    account = createAdminAccountStore(db, clock);
     const first = account.get() ? null : initialAdmin(config.seed.admin, config.seed.api);
     if (first) {
       account.create(first.username, await hashPassword(first.password));
@@ -272,7 +327,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     sync = adminSync();
     for (const record of records) {
       checkInstanceHost(record);
-      entries.push({ record, project: await wire(record) });
+      entries.push(newEntry(record, await wire(record)));
     }
     rebuild();
   } catch (error) {
@@ -285,8 +340,156 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     const entry = entries.find((item) => item.record.slug === slug);
     return entry ? options(entry.record).rootUrl : undefined;
   };
+
+  /**
+   * Wires a project, registers it and serves it, without a restart (14-projects section 10).
+   * Everything is checked before the directory is made. The registry row is written last: a
+   * failure before it removes the new directory, and a crash before it leaves a directory with no
+   * row, which a start reports and never serves.
+   */
+  const add = (input: NewProject): Promise<ProjectRecord> =>
+    serial(async () => {
+      if (!SLUG_PATTERN.test(input.slug)) {
+        throw new RegistryError(400, `Invalid project slug: ${input.slug}`);
+      }
+      const name = projectName(input.name);
+      const hostname = normalizeHostname(input.hostname);
+      const extra = (input.extra ?? []).map(normalizeHostname);
+      if (new Set([hostname, ...extra]).size !== extra.length + 1) {
+        throw new RegistryError(400, "A hostname is listed twice");
+      }
+      if (input.primary && primary) {
+        throw new RegistryError(409, "There is a primary project already");
+      }
+      if (input.primary && hostname !== instanceHost) {
+        throw new RegistryError(400, "The primary project's hostname is the instance host");
+      }
+      checkInstanceHost({ primary: input.primary ?? false, hostname, extra });
+      if (entries.some((entry) => entry.record.slug === input.slug)) {
+        throw new RegistryError(409, `A project named ${input.slug} exists`);
+      }
+      const directory = projectDirectory(root, input.slug);
+      if (existsSync(directory)) {
+        throw new RegistryError(409, `${PROJECTS}/${input.slug} exists already`);
+      }
+      // Checked again, with the registry's own rules, when the row is written below.
+      const taken = new Set(entries.flatMap((e) => [e.record.hostname, ...e.record.extra]));
+      if ([hostname, ...extra].some((h) => taken.has(h))) {
+        throw new RegistryError(409, "A hostname belongs to another project");
+      }
+      const pending: ProjectRecord = {
+        slug: input.slug,
+        name,
+        createdAt: clock.now().toISOString(),
+        primary: input.primary ?? false,
+        hostname,
+        extra,
+      };
+      busy.add(input.slug);
+      try {
+        let project: Project;
+        try {
+          project = await wire(pending);
+        } catch (error) {
+          rmSync(directory, { recursive: true, force: true });
+          throw error;
+        }
+        let record: ProjectRecord;
+        try {
+          record = registered.add({ ...input, name, hostname, extra });
+        } catch (error) {
+          await project.close();
+          rmSync(directory, { recursive: true, force: true });
+          throw error;
+        }
+        const entry = newEntry(record, project);
+        if (server) {
+          project.attach(server);
+        }
+        entries.push(entry);
+        rebuild();
+        if (fail) {
+          startProject(entry);
+        }
+        return record;
+      } finally {
+        busy.delete(input.slug);
+      }
+    });
+
+  /** Renames a project or replaces its extra hostnames; the routing table follows at once. */
+  const update = (slug: string, change: ProjectChange): Promise<ProjectRecord> =>
+    serial(async () => {
+      const entry = entries.find((item) => item.record.slug === slug);
+      if (!entry) {
+        throw new RegistryError(404, `No project ${slug}`);
+      }
+      if (change.extra !== undefined) {
+        checkInstanceHost({
+          primary: entry.record.primary,
+          hostname: entry.record.hostname,
+          extra: change.extra.map(normalizeHostname),
+        });
+      }
+      entry.record = registered.update(slug, change);
+      rebuild();
+      return entry.record;
+    });
+
+  /**
+   * Deletes a project (14-projects section 10): it leaves the routing table, its in-flight requests
+   * finish against its open database, its loops stop under today's deadlines, it closes, its
+   * registry rows go, then its database moves to `backups/deleted/` with a tarball of its other
+   * files, and its directory is removed. A crash before the rows go serves it again at the next
+   * start; a crash after leaves a directory with no row, reported and never served, with nothing
+   * lost. Returns null for a slug no project has.
+   */
+  const remove = (slug: string): Promise<DeletedProject | null> =>
+    serial(async () => {
+      const index = entries.findIndex((entry) => entry.record.slug === slug);
+      if (index === -1) {
+        return null;
+      }
+      const entry = must(entries.splice(index, 1)[0], "project entry");
+      entry.removed = true;
+      busy.add(slug);
+      try {
+        rebuild();
+        await drain(entry);
+        await Promise.allSettled(entry.project.stop());
+        await entry.project.close();
+        down.delete(slug);
+        registered.remove(slug);
+        return await archiveDeleted(root, slug, clock);
+      } finally {
+        busy.delete(slug);
+      }
+    });
+
+  const projects: InstanceProjects = {
+    list: (): Array<ProjectSummary> => {
+      const since = new Date(clock.now().getTime() - DAY_MS);
+      return entries.map((entry) => ({
+        ...entry.record,
+        rootUrl: options(entry.record).rootUrl,
+        activity: entry.project.activity(since),
+      }));
+    },
+    leftovers: () =>
+      projectDirectories(root).filter(
+        (name) => !busy.has(name) && !entries.some((entry) => entry.record.slug === name),
+      ),
+    create: add,
+    update,
+    remove,
+    logs: () =>
+      mergeLogs([
+        { source: "instance", lines: instanceLogs.lines() },
+        ...entries.map((entry) => ({ source: entry.record.slug, lines: entry.project.logs() })),
+      ]),
+  };
+
   const instanceSettings = must(settings, "instance settings");
-  const instanceLogger = createSourceLogger("instance");
   const instanceClientAddress = createClientAddress(
     () => instanceLoginSettings(instanceSettings.read()).trustedProxies,
     instanceLogger,
@@ -311,8 +514,10 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     auth: instanceAuth,
     tokens,
     rootUrl: config.rootUrl.replace(/\/+$/, ""),
+    instanceHost,
     projectRootUrl: rootUrlOf,
     settings: instanceSettings,
+    projects,
     // The login limit's address honours security.trusted_proxies, as a project's login does.
     clientAddress: instanceClientAddress,
     smtpTest: () => {
@@ -405,7 +610,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       }
       const entry = claimed ?? primary;
       if (entry) {
-        return entry.project.router.handle(entry.project.app, request, peerAddress);
+        return serve(entry, request, peerAddress);
       }
       // Without a primary, the instance pages still need the admin's stylesheet and scripts.
       if (pathname.startsWith("/admin/static/")) {
@@ -431,89 +636,38 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       return entries.toReversed().flatMap((entry) => entry.project.stop());
     },
     close: closeAll,
-    /**
-     * Wires a project, registers it and serves it, without a restart (14-projects section 10).
-     * The registry row is written last: a failure before it removes the new directory, and a crash
-     * before it leaves a directory with no row, which a start reports and never serves.
-     */
-    async add(input: NewProject): Promise<ProjectRecord> {
-      if (!SLUG_PATTERN.test(input.slug)) {
-        throw new Error(`Invalid project slug: ${input.slug}`);
-      }
-      const hostname = normalizeHostname(input.hostname);
-      const extra = (input.extra ?? []).map(normalizeHostname);
-      if (input.primary && primary) {
-        throw new Error("There is a primary project already");
-      }
-      if (input.primary && hostname !== instanceHost) {
-        throw new Error("The primary project's hostname is the instance host");
-      }
-      checkInstanceHost({ primary: input.primary ?? false, hostname, extra });
-      const directory = projectDirectory(root, input.slug);
-      if (existsSync(directory)) {
-        throw new Error(`${PROJECTS}/${input.slug} exists already`);
-      }
-      const pending: ProjectRecord = {
-        slug: input.slug,
-        name: input.name,
-        createdAt: clock.now().toISOString(),
-        primary: input.primary ?? false,
-        hostname,
-        extra,
-      };
-      // Checked again, with the registry's own rules, when the row is written below.
-      const taken = new Set(entries.flatMap((e) => [e.record.hostname, ...e.record.extra]));
-      if ([hostname, ...extra].some((h) => taken.has(h))) {
-        throw new Error("A hostname belongs to another project");
-      }
-      let project: Project;
-      try {
-        project = await wire(pending);
-      } catch (error) {
-        rmSync(directory, { recursive: true, force: true });
-        throw error;
-      }
-      let record: ProjectRecord;
-      try {
-        record = registered.add({ ...input, hostname, extra });
-      } catch (error) {
-        await project.close();
-        rmSync(directory, { recursive: true, force: true });
-        throw error;
-      }
-      const entry = { record, project };
-      if (server) {
-        project.attach(server);
-      }
-      entries.push(entry);
-      rebuild();
-      if (fail) {
-        startProject(entry);
-      }
-      return record;
-    },
-    /**
-     * Takes a project off the routing table, stops and closes it, then removes its registry rows.
-     * A crash before the rows go serves it again at the next start, with nothing lost. Its directory
-     * stays: the final snapshot and the removal are the lifecycle's (B143).
-     */
-    async remove(slug: string): Promise<boolean> {
-      const index = entries.findIndex((entry) => entry.record.slug === slug);
-      if (index === -1) {
-        return false;
-      }
-      const entry = must(entries.splice(index, 1)[0], "project entry");
-      rebuild();
-      await Promise.allSettled(entry.project.stop());
-      await entry.project.close();
-      down.delete(slug);
-      registered.remove(slug);
-      return true;
-    },
+    add,
+    update,
+    remove,
   };
+
+  /** One request to a project's router, counted until its handler answers (a delete's drain). */
+  async function serve(entry: Entry, request: Request, peerAddress: string): Promise<Response> {
+    entry.requests++;
+    try {
+      return await entry.project.router.handle(entry.project.app, request, peerAddress);
+    } finally {
+      entry.requests--;
+      if (entry.requests === 0) {
+        entry.idle?.();
+      }
+    }
+  }
+
+  /** Resolves once the project's counted requests have all answered. */
+  function drain(entry: Entry): Promise<void> {
+    return entry.requests === 0
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+          entry.idle = resolve;
+        });
+  }
 
   function startProject(entry: Entry): void {
     entry.project.start((failure) => {
+      if (entry.removed) {
+        return;
+      }
       down.add(entry.record.slug);
       must(fail, "instance failure handler")(failure);
     });
@@ -531,7 +685,6 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       (pathname === "/admin" || pathname.startsWith("/admin/")) &&
       !pathname.startsWith("/admin/instance/")
     ) {
-      // The page itself is later work (B143); the target may 404 until then.
       const target = new URL(config.rootUrl);
       target.pathname = `${target.pathname.replace(/\/$/, "")}/admin/instance/projects`;
       return new Response(null, {

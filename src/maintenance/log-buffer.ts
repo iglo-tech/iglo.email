@@ -62,7 +62,8 @@ const stamp = (at: Date) => {
   return `${iso.slice(0, 10).replaceAll("-", "/")} ${iso.slice(11, 23)}000`;
 };
 
-export function createLogBuffer(clock: Clock, maxLines = MAX_LOG_LINES) {
+/** Upstream's ring: at most `maxLines` kept, trimmed in steps so a push is amortized O(1). */
+function createLines(clock: Clock, maxLines: number) {
   let lines: Array<string> = [];
   const push = (text: string) => {
     if (lines.length >= maxLines * 2) {
@@ -70,6 +71,11 @@ export function createLogBuffer(clock: Clock, maxLines = MAX_LOG_LINES) {
     }
     lines.push(`${stamp(clock.now())} *: ${text}`);
   };
+  return { push, lines: () => lines.slice(-maxLines) };
+}
+
+export function createLogBuffer(clock: Clock, maxLines = MAX_LOG_LINES) {
+  const { push, lines } = createLines(clock, maxLines);
   return {
     /** An unexpected error's line, in upstream's log format with `*` for its source file. */
     add(error: unknown) {
@@ -79,7 +85,56 @@ export function createLogBuffer(clock: Clock, maxLines = MAX_LOG_LINES) {
     attention(safe: SafeMessage) {
       push(safeMessages.has(safe) ? safe : UNEXPECTED);
     },
-    lines: () => lines.slice(-maxLines),
+    lines,
   };
 }
 export type LogBuffer = ReturnType<typeof createLogBuffer>;
+
+/** Longest instance line kept; stderr has the whole text. */
+const MAX_INSTANCE_TEXT = 1000;
+
+/**
+ * The instance's own lines (14-projects section 9; B143a, D157): the instance's attention lines
+ * with their text, since only the instance admin reads them (the instance Logs page), and an
+ * unexpected error as its class, as in a project's buffer.
+ */
+export function createInstanceLogBuffer(clock: Clock, maxLines = MAX_LOG_LINES) {
+  const { push, lines } = createLines(clock, maxLines);
+  return {
+    add(error: unknown) {
+      push(`${UNEXPECTED} (${className(error)})`);
+    },
+    attention(message: string) {
+      push(message.replaceAll(/[\r\n]+/g, " ").slice(0, MAX_INSTANCE_TEXT));
+    },
+    lines,
+  };
+}
+export type InstanceLogBuffer = ReturnType<typeof createInstanceLogBuffer>;
+
+export interface LabelledLine {
+  /** `instance` or a project's slug. */
+  readonly source: string;
+  readonly line: string;
+}
+
+/** The stamp every line starts with: `YYYY/MM/DD HH:MM:SS.ffffff`. */
+const STAMP_LENGTH = 26;
+
+/**
+ * The instance Logs page's lines (B143a): every source's lines labelled by it, in time order (a
+ * stable sort, so one source's lines keep their order), the newest `maxLines` of them, as bounded
+ * as one buffer.
+ */
+export function mergeLogs(
+  sources: ReadonlyArray<{ readonly source: string; readonly lines: ReadonlyArray<string> }>,
+  maxLines = MAX_LOG_LINES,
+): Array<LabelledLine> {
+  const all = sources.flatMap(({ source, lines }) => lines.map((line) => ({ source, line })));
+  all.sort((a, b) => {
+    const left = a.line.slice(0, STAMP_LENGTH);
+    const right = b.line.slice(0, STAMP_LENGTH);
+    return left < right ? -1 : left > right ? 1 : 0;
+  });
+  return all.slice(-maxLines);
+}

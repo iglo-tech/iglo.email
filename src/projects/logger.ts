@@ -2,7 +2,7 @@
 // createErrorLogger (src/app.ts), each prefixed with the project's slug or `instance`, so one
 // process's stderr says where every line came from.
 import type { ErrorLogger } from "@/app";
-import type { LogBuffer } from "@/maintenance/log-buffer";
+import type { InstanceLogBuffer, LogBuffer } from "@/maintenance/log-buffer";
 
 /** `[<slug>] ` or `[instance] `: the prefix of every stderr line. */
 export function logPrefix(source: string): string {
@@ -28,7 +28,30 @@ export function createSourceLogger(
   };
 }
 
-/** An instance line has no buffer yet: the instance Logs page is B143's. */
+/**
+ * An instance line on stderr only. The instance's own lines also go to its buffer through
+ * createInstanceLogger; this is for a module that is given no logger (the instance settings).
+ */
 export function instanceAttention(message: string): void {
   console.error(logPrefix("instance") + message.replaceAll(/[\r\n]+/g, " "));
+}
+
+/**
+ * The instance's logger (B143a, D157): stderr as before, and the instance buffer the instance Logs
+ * page shows, with each attention line's whole text (only the instance admin reads it).
+ */
+export function createInstanceLogger(buffer: InstanceLogBuffer) {
+  const prefix = logPrefix("instance");
+  const attention = (message: string) => {
+    instanceAttention(message);
+    buffer.attention(message);
+  };
+  const logger: ErrorLogger = {
+    error(error) {
+      console.error(`${prefix}Unexpected request error:`, error);
+      buffer.add(error);
+    },
+    attention: (message) => attention(message),
+  };
+  return { logger, attention };
 }

@@ -26,6 +26,18 @@ export interface NavigationGroup {
   readonly open: boolean;
   readonly links: ReadonlyArray<NavigationLink>;
 }
+/** The header's project switcher (B143a, D157): links to the instance host's handoff. */
+export interface ProjectSwitcher {
+  /** This project's name. */
+  readonly name: string;
+  readonly projects: ReadonlyArray<{
+    readonly name: string;
+    readonly href: string;
+    readonly current: boolean;
+  }>;
+  /** The instance Projects page. */
+  readonly instance: string;
+}
 export interface AdminShellProps {
   readonly title: string;
   readonly siteName: string;
@@ -35,6 +47,8 @@ export interface AdminShellProps {
   readonly config: Readonly<Record<string, JSONValue>>;
   readonly navigation?: ReadonlyArray<NavigationLink | NavigationGroup>;
   readonly profile?: { readonly name: string };
+  /** The project name and switcher, for the instance admin's copy only. */
+  readonly switcher?: ProjectSwitcher;
   readonly faviconUrl?: string;
   /** Module under /admin/static/js/views, without its extension. */
   readonly script?: string;
@@ -143,6 +157,37 @@ function Navigation({ items }: { items: ReadonlyArray<NavigationLink | Navigatio
     </nav>
   );
 }
+/** The project's name and a menu of every project, each opened through the handoff. */
+function Switcher({ switcher }: { switcher: ProjectSwitcher }) {
+  return (
+    <ot-dropdown class="project-switcher" data-testid="project-switcher">
+      <button
+        popovertarget="project-menu"
+        type="button"
+        class="ghost small"
+        data-testid="project-switcher-button"
+      >
+        <Icon name="grid" /> <span data-testid="project-name">{switcher.name}</span>
+      </button>
+      <menu popover="" id="project-menu">
+        {switcher.projects.map((project) => (
+          <a
+            href={project.href}
+            role="menuitem"
+            class="button ghost"
+            {...(project.current ? { "aria-current": "true" } : {})}
+          >
+            {project.name}
+          </a>
+        ))}
+        <hr />
+        <a href={switcher.instance} role="menuitem" class="button ghost">
+          <Icon name="settings" /> Projects
+        </a>
+      </menu>
+    </ot-dropdown>
+  );
+}
 const themeModes = [
   ["auto", "monitor", "globals.terms.system"],
   ["light", "sun", "globals.terms.light"],
@@ -194,6 +239,7 @@ function Chrome(props: AdminShellProps) {
               <img src={`${base}/favicon.png?v=${assetVersion}`} alt={siteName} />
             </a>
           </div>
+          {props.switcher ? <Switcher switcher={props.switcher} /> : null}
           {profile && (
             <ot-dropdown>
               <button
