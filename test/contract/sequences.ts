@@ -93,10 +93,20 @@ export async function runSequencesContract(target: {
     trigger: { event: "order_paid", where: { sql: "1=1" } },
   });
   check(sql.status === 400, "trigger-sql");
+  // B150c (D172): `source: external` needs the project's source, which this project has not; a
+  // history `trigger.condition` is an external sequence's only.
+  const external = await call("/api/sequences", "POST", { ...definition, source: "external" });
+  check(external.status === 400 && /source/.test(external.body.message), "source-external");
+  const history = await call("/api/sequences", "POST", {
+    ...definition,
+    trigger: { event: "order_paid", condition: { event: "order_paid", count: { gte: 2 } } },
+  });
+  check(history.status === 400 && /trigger\.condition/.test(history.body.message), "trigger-cond");
 
   const created = await call("/api/sequences", "POST", definition);
   check(created.status === 200 && created.body.data.steps.length === 2, "create");
   const seq = created.body.data;
+  check(seq.source === "events", "source-default");
   check(seq.steps[1].max_late === "P2D" && seq.steps[0].max_late === null, "max-late");
 
   // An event triggers it inside the event transaction and replays by idempotency key.

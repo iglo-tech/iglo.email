@@ -45,7 +45,7 @@ const tx = (template: number, extra: JsonObject = {}) => ({
 const iso = (f: SchedulerFixture, plus = 0) =>
   new Date(f.clock.now().getTime() + plus).toISOString();
 /** An external sequence with these steps, active. */
-const external = (steps: Array<object>, extra: JsonObject = {}) => ({
+const external = (steps: Array<JsonObject>, extra: JsonObject = {}): JsonObject => ({
   source: "external",
   trigger: { event: "order_paid" },
   steps,

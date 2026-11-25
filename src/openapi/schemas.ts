@@ -82,7 +82,26 @@ const listFields = {
   status: listStatus,
 };
 const roleList = object({ id: integer, name: string, permissions: array(listPermission) });
-const trigger = input({ event: string, where: free }, ["event"]);
+const trigger = input(
+  {
+    event: string,
+    where: free,
+    // B150c (D172): an external sequence's history check, read from its source.
+    condition: {
+      ...ref("Condition"),
+      description:
+        "External sequences only (D172): a condition of `event` and `recipient` predicates read from the source when the trigger record arrives. A `since` is a duration counted back from the record's occurredAt, every window ends at the record, and counts include it. On an external sequence `where` takes only `data.*` equalities.",
+    },
+  },
+  ["event"],
+);
+/** B150c (D172): a source record an external sequence's preview, test or enrollment starts from. */
+const externalTrigger = {
+  ...string,
+  pattern: "^[A-Za-z0-9_-]{1,100}$",
+  description:
+    "External sequences only (D172): a record of the subscriber's in the source, under the trigger's name. Absent: the subscriber's latest such record. Not with `trigger_event_id`.",
+};
 const step = {
   wait: { ...string, description: "ISO 8601 duration." },
   kind: stepKind,
@@ -99,6 +118,11 @@ const step = {
 const sequenceFields = () => ({
   name: string,
   status: choice("draft", "active", "paused", "archived"),
+  source: {
+    ...choice("events", "external"),
+    description:
+      "Where the trigger, conditions and aggregates read what users did (D172): pushed events (default) or the project's source, which must be configured. An update without it keeps the stored one; it cannot change while the sequence has enrollments.",
+  },
   trigger,
   exit_on: array(string),
   reentry: choice("never", "after_exit", "always"),
@@ -705,7 +729,7 @@ export const schemas = {
   Condition: {
     ...free,
     description:
-      "Exactly one of `all`, `any`, `not`, `event`, `attr`, `list` or `sql`. See docs/design/05-sequences.md.",
+      "Exactly one of `all`, `any`, `not`, `event`, `attr`, `list` or `sql`; on an external sequence (D172) `recipient` instead of `sql`. See docs/design/05-sequences.md.",
   },
   Aggregate: object(
     {
@@ -807,6 +831,21 @@ export const schemas = {
       updated_at: time,
       finished_at: nullable(time),
       test: boolean,
+      trigger_external_id: {
+        ...nullable(string),
+        description:
+          "Only for an external sequence (D172): the source record the enrollment started from.",
+      },
+      trigger_occurred_at: {
+        ...nullable(time),
+        description:
+          "Only for an external sequence (D172): that record's occurredAt, which `since: trigger`, waits from the trigger and reschedules read.",
+      },
+      error_since: {
+        ...nullable(time),
+        description:
+          "Only for an external sequence (D172): when the current step's source reads began failing transiently; after 72 hours the enrollment exits with `source_error`.",
+      },
       sequence_name: string,
       subscriber_email: {
         ...string,
@@ -818,7 +857,7 @@ export const schemas = {
           "Only in a subscriber's enrollment list (B127): when the frequency cap holds this enrollment's wait, the time it frees the step; null when nothing holds it.",
       },
     },
-    ["subscriber_email", "held_until"],
+    ["subscriber_email", "held_until", "trigger_external_id", "trigger_occurred_at", "error_since"],
   ),
   StepSample: object(
     {
@@ -855,12 +894,14 @@ export const schemas = {
       ...integer,
       description: "One of that subscriber's events under the sequence's trigger name.",
     },
+    trigger_external_id: externalTrigger,
     sample: ref("StepSample"),
   }),
   StepTestInput: input(
     {
       subscriber_id: integer,
       trigger_event_id: integer,
+      trigger_external_id: externalTrigger,
       sample: ref("StepSample"),
       emails: { ...array(string), minItems: 1, maxItems: 5 },
     },
@@ -882,12 +923,27 @@ export const schemas = {
         description:
           "An event of this subscriber named as the sequence's `trigger.event`, to start from (D101): its time is the trigger for conditions and aggregates, and its data the template's `trigger`. The first wait still counts from the enrollment, not from the event. Else 400.",
       },
+      trigger_external_id: externalTrigger,
     },
     ["sequence_id", "subscriber_id"],
   ),
   TimelineEntry: {
     oneOf: [
+      // Closed objects (the validator reads every object closed): the external entry has external_id.
       object({ type: { const: "trigger" }, at: time, name: string, data: free }),
+      // B150c (D172): an external enrollment's trigger is a source record, read with the timeline.
+      object({
+        type: { const: "trigger" },
+        at: nullable(time),
+        name: nullable(string),
+        data: { ...free, description: "The record's data; null when it was not read." },
+        external_id: string,
+        unavailable: {
+          anyOf: [choice("missing", "source_error"), { type: "null" }],
+          description:
+            "missing: the source no longer has the record; source_error: the read failed. Null when the record was read.",
+        },
+      }),
       object({ type: { const: "enrolled" }, at: time }),
       object({
         type: { const: "step" },
