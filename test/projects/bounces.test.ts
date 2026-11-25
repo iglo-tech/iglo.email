@@ -136,6 +136,11 @@ function notice(
     ),
   });
 }
+/** A signed SES bounce whose header list is `headers` as given (the message as it was sent). */
+const sentAs = (recipients: Array<string>, headers: Array<{ name: string; value: string }>) =>
+  envelope(real, {
+    Message: bounceMessage(real, recipients, { bounceType: "Permanent" }, headers),
+  });
 /** Posts a notice on `host` (the instance host unless named). */
 async function deliver(body: unknown, host = PRIMARY) {
   const response = await request(port, host, "/webhooks/service/ses", {
@@ -293,7 +298,8 @@ test("a test send's chosen Message-ID with another project's host stays in the s
     messenger: "email",
     body: "Body",
   });
-  const chosen = `<${crypto.randomUUID()}@${B}>`;
+  // Not in the app's own `<uuid@host>` form, which a campaign test refuses (B149b r1).
+  const chosen = `<chosen-${crypto.randomUUID()}@${B}>`;
   const tested = await api(port, A, key(A), "POST", `/api/campaigns/${id}/test`, {
     name: "chosen",
     subject: "Chosen",
@@ -325,6 +331,162 @@ test("an unknown domain falls back to the projects' sends, campaigns and test se
     must(campaigns.get(B)).id,
   );
   expect((await bounces(A)).filter((row) => row.type === "soft").length).toBe(1);
+});
+
+test("a campaign test refuses a Message-ID in the app's own send or delivery form", async () => {
+  // B149b r1: the review's probe. A user of A names B's campaign delivery (B's campaign, the
+  // user's own B subscription, both public) and overrides the subscriber header; once A's test
+  // record aged out, B alone claimed the late bounce and blocklisted its own subscriber of the
+  // test's address. The test is refused, so no such message is ever sent.
+  const victimA = await subscriber(A, "probe-victim@example.com");
+  const victimB = await subscriber(B, "probe-victim@example.com");
+  const attackerB = await subscriber(B, "probe-attacker@example.com");
+  const bCampaign = must(campaigns.get(B));
+  const list = await call<{ id: number }>(A, "POST", "/api/lists", {
+    name: "probe",
+    type: "private",
+    optin: "single",
+  });
+  const fields = {
+    name: "probe",
+    subject: "Probe",
+    lists: [list.id],
+    type: "regular",
+    content_type: "plain",
+    messenger: "email",
+    body: "Body",
+  };
+  const { id } = await call<{ id: number }>(A, "POST", "/api/campaigns", fields);
+  const forms = [
+    `<${bCampaign.uuid}.${attackerB.uuid}@x.example.test>`,
+    `<${bCampaign.uuid}.${attackerB.uuid}@${A}>`.toUpperCase(),
+    `${crypto.randomUUID()}@${B}`,
+    ` <${crypto.randomUUID()}@x.example.test> `,
+  ];
+  for (const forged of forms) {
+    const tested = await api(port, A, key(A), "POST", `/api/campaigns/${id}/test`, {
+      ...fields,
+      headers: [{ "Message-ID": forged }, { "x-listmonk-subscriber": "x" }],
+      subscribers: [victimA.email],
+    });
+    expect({ forged, status: tested.status }).toEqual({ forged, status: 400 });
+  }
+  // The late notice that message would have produced: B's delivery is the only record it names.
+  const before = await counts();
+  const late = sentAs(
+    [victimA.email],
+    [
+      { name: "X-Listmonk-Campaign", value: must(campaigns.get(A)).uuid },
+      { name: "x-listmonk-subscriber", value: "x" },
+      { name: "Message-ID", value: must(forms[0]) },
+    ],
+  );
+  expect((await deliver(late)).status).toBe(200);
+  unmatchedSent++;
+  expect(await counts()).toEqual(before);
+  expect(await statusOf(B, victimB.id)).toBe("enabled");
+  expect(await statusOf(A, victimA.id)).toBe("enabled");
+});
+
+test("a delivery whose X-Listmonk headers disagree with its Message-ID routes nowhere", async () => {
+  // B149b r1: with several projects a delivery routes by the UUIDs its Message-ID names, and its
+  // events act on that subscriber only; a header that names anything else is not believed.
+  const victimA = await subscriber(A, "headers-victim@example.com");
+  const victimB = await subscriber(B, "headers-victim@example.com");
+  const named = await subscriber(B, "headers-named@example.com");
+  const id = `<${must(campaigns.get(B)).uuid}.${named.uuid}@x.example.test>`;
+  const variants: Array<Array<{ name: string; value: string }>> = [
+    // Not a UUID: before, the subscriber was looked up by the recipient's address.
+    [{ name: "x-listmonk-subscriber", value: "x" }],
+    // Another subscriber of B, the one whose address bounced.
+    [{ name: "X-Listmonk-Subscriber", value: victimB.uuid }],
+    // Another campaign.
+    [{ name: "X-Listmonk-Campaign", value: must(campaigns.get(A)).uuid }],
+    [{ name: "X-Listmonk-Campaign", value: "not-a-campaign" }],
+  ];
+  const before = await counts();
+  for (const headers of variants) {
+    const answer = await deliver(
+      sentAs([victimA.email], [...headers, { name: "Message-ID", value: id }]),
+    );
+    expect(answer.status).toBe(200);
+    unmatchedSent++;
+  }
+  expect(await counts()).toEqual(before);
+  expect(await statusOf(B, victimB.id)).toBe("enabled");
+  expect(await statusOf(B, named.id)).toBe("enabled");
+  expect(await statusOf(A, victimA.id)).toBe("enabled");
+  // Headers that agree (in any case) still route, and act on the delivery's own subscriber.
+  const agreeing = sentAs(
+    [named.email],
+    [
+      { name: "X-Listmonk-Campaign", value: must(campaigns.get(B)).uuid.toUpperCase() },
+      { name: "X-Listmonk-Subscriber", value: named.uuid },
+      { name: "Message-ID", value: id },
+    ],
+  );
+  expect((await deliver(agreeing)).status).toBe(200);
+  expect(await statusOf(B, named.id)).toBe("blocklisted");
+});
+
+test("a transactional send's notice acts only on the send's own subscriber", async () => {
+  // B149b r1: the same forgery against a send record. A send routes by its UUID; its subscriber
+  // is the send's, never one looked up by address or named by a header.
+  const recipient = await subscriber(B, "tx-recipient@example.com");
+  const victimB = await subscriber(B, "tx-victim@example.com");
+  const victimA = await subscriber(A, "tx-victim@example.com");
+  const templates = await call<Array<{ id: number; type: string }>>(B, "GET", "/api/templates");
+  await call(B, "POST", "/api/tx", {
+    subscriber_email: recipient.email,
+    template_id: templates.find((item) => item.type === "tx")?.id,
+    async: true,
+  });
+  const sends = await call<{ results: Array<{ uuid: string; to_email: string }> }>(
+    B,
+    "GET",
+    "/api/sends?per_page=100",
+  );
+  const send = must(sends.results.find((row) => row.to_email === recipient.email));
+  const id = `<${send.uuid}@x.example.test>`;
+  const before = await counts();
+  for (const headers of [
+    [{ name: "x-listmonk-subscriber", value: "x" }],
+    [{ name: "X-Listmonk-Subscriber", value: victimB.uuid }],
+  ]) {
+    expect(
+      (await deliver(sentAs([victimB.email], [...headers, { name: "Message-ID", value: id }])))
+        .status,
+    ).toBe(200);
+  }
+  // The bounced address is not the send's: at most a row with codes only, no subscriber touched.
+  const [a, b] = [(await counts())[1], (await counts())[2]];
+  expect(a).toBe(before[1]);
+  expect(must(b) - must(before[2])).toBeLessThanOrEqual(1);
+  expect((await bounces(B)).some((row) => row.subscriber_id === victimB.id)).toBe(false);
+  expect(await statusOf(B, victimB.id)).toBe("enabled");
+  expect(await statusOf(A, victimA.id)).toBe("enabled");
+  // A header naming another subscriber than the send's stores nothing at all.
+  const named = await counts();
+  expect(
+    (
+      await deliver(
+        sentAs(
+          [recipient.email],
+          [
+            { name: "X-Listmonk-Subscriber", value: victimB.uuid },
+            { name: "Message-ID", value: id },
+          ],
+        ),
+      )
+    ).status,
+  ).toBe(200);
+  expect(await counts()).toEqual(named);
+  expect(await statusOf(B, recipient.id)).toBe("enabled");
+  // The send's own notice still lands on its subscriber.
+  expect(
+    (await deliver(sentAs([recipient.email], [{ name: "Message-ID", value: id }]))).status,
+  ).toBe(200);
+  expect(await statusOf(B, recipient.id)).toBe("blocklisted");
 });
 
 test("a notice no project claims stores nothing anywhere and names itself once", async () => {

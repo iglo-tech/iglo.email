@@ -44,6 +44,11 @@ export interface SesNotice {
   key: string;
   expiresAt: Date;
   events: Array<BounceEvent>;
+  /**
+   * B149b r1 (D165): true with several projects. The events act only on the subscriber their own
+   * send or delivery names: no address fallback, and no subscriber a header contradicts.
+   */
+  ownRecord: boolean;
 }
 
 /** What the instance's route reaches of one project: narrow functions, never its database. */
@@ -111,7 +116,7 @@ export function createSesProject(deps: {
           if (test) {
             tests.push({ event, test });
           } else {
-            store.record(event);
+            store.record(event, { ownRecord: notice.ownRecord });
           }
         }
       });
@@ -156,6 +161,40 @@ const invalidData = (c: RequestContext) =>
   new HttpError(400, c.app.i18n.T("globals.messages.invalidData"));
 
 /**
+ * The project a notice is for (section 8): the only project; else the one project whose own
+ * sends, campaign deliveries or test sends the Message-ID names. Its domain decides nothing: a
+ * project user can choose a test send's Message-ID, and a hostname can move to another project
+ * (B149b, D165). Never by address: the same address can be a subscriber in two projects. A
+ * delivery's `X-Listmonk-Campaign` and `X-Listmonk-Subscriber` must name the Message-ID's own
+ * UUIDs (B149b r1): a project can't route by one record and act on another subscriber.
+ */
+function routeOf(
+  projects: ReadonlyArray<SesProject>,
+  events: Array<BounceEvent>,
+): SesProject | undefined {
+  if (projects.length === 1) {
+    return projects[0];
+  }
+  const messageId = events[0]?.messageId ?? "";
+  if (!messageId) {
+    return undefined;
+  }
+  const delivery = messageIdentity(messageId);
+  if (
+    delivery.campaignUuid &&
+    events.some(
+      (event) =>
+        event.campaignUuid !== delivery.campaignUuid ||
+        event.subscriberUuid !== delivery.subscriberUuid,
+    )
+  ) {
+    return undefined;
+  }
+  const matches = projects.filter((project) => project.claims(messageId));
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/**
  * `POST /webhooks/service/ses` on `router`, the instance's (14-projects section 8). `projects` are
  * the served projects in slug order.
  */
@@ -181,24 +220,6 @@ export function registerSesRoute(
   /** Upstream has no route at all without `bounce.webhooks_enabled`. */
   const webhooksEnabled: Middleware = (c, next) =>
     settings().webhooksEnabled ? next() : publicNotFound(c.app.i18n, c.request.method, page());
-
-  /**
-   * The project a notice is for (section 8): the only project; else the one project whose own
-   * sends, campaign deliveries or test sends the Message-ID names. Its domain decides nothing: a
-   * project user can choose a test send's Message-ID, and a hostname can move to another project
-   * (B149b, D165). Never by address: the same address can be a subscriber in two projects.
-   */
-  const routeOf = (messageId: string): SesProject | undefined => {
-    const projects = deps.projects();
-    if (projects.length === 1) {
-      return projects[0];
-    }
-    if (!messageId) {
-      return undefined;
-    }
-    const matches = projects.filter((project) => project.claims(messageId));
-    return matches.length === 1 ? matches[0] : undefined;
-  };
 
   /** cmd/bounce.go's `ses` branch. Every refusal is upstream's 400 and changes nothing. */
   const ses: Handler = async (c) => {
@@ -240,7 +261,8 @@ export function registerSesRoute(
     if (!events) {
       throw invalidData(c);
     }
-    const project = routeOf(events[0]?.messageId ?? "");
+    const projects = deps.projects();
+    const project = routeOf(projects, events);
     if (!project) {
       // Accepted, so SNS does not retry a notice that would match nothing again.
       logger.attention(`${UNMATCHED_NOTICE}: SNS message ${id}`, UNMATCHED_NOTICE);
@@ -253,6 +275,7 @@ export function registerSesRoute(
       key: `sns:${id}`,
       expiresAt: new Date(sent + SNS_MAX_AGE_MS + 1000),
       events,
+      ownRecord: projects.length > 1,
     });
     return ok(true);
   };

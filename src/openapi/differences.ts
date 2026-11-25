@@ -517,6 +517,12 @@ export const differences: Array<Difference> = [
     applies: ["POST /api/campaigns/{id}/test"],
   },
   {
+    area: "Campaign test Message-ID (D165)",
+    summary:
+      "A custom `Message-ID` in the app's own send or delivery form (`<uuid@host>`, `<uuid.uuid@host>`, any case, with or without brackets) is refused with 400 and nothing is sent. Upstream sends it.",
+    applies: ["POST /api/campaigns/{id}/test"],
+  },
+  {
     area: "Campaign test subject (D124)",
     summary:
       "A campaign test message's subject starts with `[Test] `, as a step test's does. Upstream sends the subject as given, so a test reads like a real send.",
