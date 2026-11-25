@@ -2,6 +2,8 @@
 // controllable sender that stands in for the dispatcher (B141): it grants `control.grant` slots per
 // request, so that is the batch size, and records each push on the injected clock.
 import { campaignsFixture } from "@/test/campaigns/fixture";
+import type { CampaignsFixture } from "@/test/campaigns/fixture";
+import type { SendTimeLookup } from "@/sources/send-time";
 import type { JsonObject } from "@/test/json-object";
 import { createRunnerStore } from "@/campaigns/runner/store";
 import { createCampaignRunnerRegistry, startCampaignRunner } from "@/campaigns/runner/runner";
@@ -22,9 +24,15 @@ export interface Push {
 }
 
 export async function runnerFixture(
-  options: { hold?: boolean; realEmailer?: boolean } & Parameters<typeof campaignsFixture>[0] = {},
+  options: {
+    hold?: boolean;
+    realEmailer?: boolean;
+    /** D174: the send-time source lookup, wired over the fixture's stores; none by default. */
+    sendTime?: (f: CampaignsFixture) => SendTimeLookup;
+  } & Parameters<typeof campaignsFixture>[0] = {},
 ) {
   const f = await campaignsFixture(options);
+  const sendTime = options.sendTime?.(f);
   const store = createRunnerStore(f.db);
   const recipients = createCampaignRecipients(f.db);
   const pushes: Array<Push> = [];
@@ -137,6 +145,7 @@ export async function runnerFixture(
       },
       embedImages: f.owners.embedImages,
       leaseMs,
+      ...(sendTime ? { sendTime } : {}),
     });
     runners.push(runner);
     f.runnerWake.current = () => runner.wake();
