@@ -2,6 +2,8 @@
 
 The starting point is listmonk v7's `schema.sql` and `queries/*.sql`. Tables keep their names and meaning so the port can be checked side by side. Postgres-only features are mapped to SQLite as below.
 
+There are two kinds of database ([Projects](14-projects.md) section 1, [D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23)). Each **project database** (`projects/<slug>/iglo-email.db`) holds the whole schema described in this document, for one audience; nothing in it names a project, so a project's queries are those of a single install. The **instance database** (`instance.db`) holds only what exists once ([Instance database](#instance-database)). No query reads two files and no transaction spans them.
+
 ## Postgres to SQLite
 
 | Postgres in listmonk | SQLite in iglo.email |
@@ -64,6 +66,8 @@ Changes to kept tables:
 | `bounce_receipts` (M3.4, new) | `key`, `expires_at`: provider tokens and event IDs already handled | A repeated delivery must not count twice or be accepted after a restart ([D63](09-decisions.md#d63-bounce-receipts-and-retained-provider-text)) |
 | `test_sends` (B108, migration 22) | `message_id` (lowercase, no brackets), `kind` (`campaign` or `sequence_step`), `campaign_id`, `sequence_id`, `step_id`, `created_at`; no address | The Message-ID of each step and campaign test, so a bounce or complaint of a test is named in the log. Never a send, and no personal data; kept seven days by the retention loop ([D114](09-decisions.md#d114-test-sends-leave-a-trace-lead-2026-11-19)) |
 | `templates` | `body` holds Liquid instead of Go template syntax | [Templates](06-templates.md) |
+| `users` (B140, migration 32) | add `admin_copy`, with a unique index on the marked row | Marks the project's copy of the instance's admin account, which a project's API and UI cannot delete, disable, rename or re-role ([D153](09-decisions.md#d153-one-admin-b140-lead-2026-11-24)) |
+| `settings` (B139, migration 33) | the instance keys are deleted; only project keys (and `restore.hold`) stay | Instance settings live once in `instance.db` ([D154](09-decisions.md#d154-settings-split-b139-lead-2026-11-25)) |
 
 ## New tables
 
@@ -150,7 +154,7 @@ One row per individual message that is not part of a campaign: transactional API
 | `attempted_at` | TEXT NULL | Latest outbox claim, committed with `sending` before SMTP and kept through `unknown` recovery (migration 3, M2.4) |
 | `created_at`, `sent_at` | TEXT | |
 
-Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the frequency cap (M2.4). `idx_sends_unlinked_to` (`to_email COLLATE NOCASE`, partial on `subscriber_id IS NULL`, migration 9) finds a deleted subscriber's unlinked rows. `idx_sends_compactable` (`created_at`, partial on finished rows that still hold a `payload`, migration 14) finds what retention takes next.
+Indexes: `(status, created_at)`, `(status, next_attempt_at, id)` for due work, `idx_sends_due_kind` (`status, kind, next_attempt_at, id`, migration 34, B141) so the transactional and marketing outbox loops each claim their own kind without scanning the other's backlog, `idx_sends_started` (`status, coalesce(attempted_at, sent_at)`, migration 35, B143b) for the capacity forecast's count of started sends, unique non-null `retry_of`, and `(subscriber_id, kind, sent_at)` for the frequency cap (M2.4). `idx_sends_unlinked_to` (`to_email COLLATE NOCASE`, partial on `subscriber_id IS NULL`, migration 9) finds a deleted subscriber's unlinked rows. `idx_sends_compactable` (`created_at`, partial on finished rows that still hold a `payload`, migration 14) finds what retention takes next.
 
 Rows are kept. Thirty days after creation a finished row (`sent`, `failed`, `skipped`, `unknown`) loses its `payload`, and `tracked_links` keeps what the link redirect checks, so an old email's links, unsubscribe, pixel and bounce match, the frequency cap, at-most-once and analytics all work as before. Afterwards a `failed` or `unknown` row can no longer be resent ([D70](09-decisions.md#d70-send-history-is-kept-and-its-bodies-are-dropped-retention-shares-one-paced-loop)).
 
@@ -168,9 +172,22 @@ Deleting a subscriber anonymizes their sends in the same transaction (D25), whic
 
 `webhook_deliveries`: `id`, `uuid` (the delivery ID in webhook bodies), `webhook_id`, `event`, `payload` (the exact body, fixed at queueing and changed only by a deletion clearing it, and by the end of a `subscriber.deleted` delivery clearing its external ID and list IDs), `subscriber_id` (no foreign key, so the row outlives the subscriber; it finds the rows to clear on deletion), `status` (`queued`, `delivered`, `failed`), `attempts`, `next_attempt_at`, `last_error` (a safe code, never a response body), `claimed_until`, timestamps. Retried with backoff for up to 24 hours, then marked `failed`. At most 20 webhooks can be configured. `delivered` and `failed` rows are deleted 30 days after their last change, found through the partial `idx_webhook_deliveries_finished` (migration 14, D70). `queued` rows are never deleted.
 
+## Instance database
+
+`instance.db`, with its own migration manifest in `migrations/instance/`. Each table belongs to one module ([Projects](14-projects.md) section 3):
+
+| Table | Owner | Content |
+|---|---|---|
+| `projects` (instance migration 1, B138b) | `src/projects/registry.ts` | `slug` (`[a-z0-9][a-z0-9-]{0,39}`, the directory name, never changed), `name`, `created_at`, `is_primary` (at most one, by a partial unique index) |
+| `hostnames` (instance migration 1) | `src/projects/registry.ts` | `hostname` (lowercase, no port, unique), `project` → projects (cascade), `kind` (`main`, one per project, or `extra`) |
+| `admin_account`, `admin_sessions` (instance migration 2, B140) | `src/users/account.ts` | The one admin account (row `id = 1`: username, password hash, TOTP, email) and its `instance_session` rows with their CSRF value and expiry |
+| `settings` (instance migration 3, B139) | `src/settings/instance.ts` | The instance settings, in the project `settings` table's shape; `restore.hold` here holds every project ([D158](09-decisions.md#d158-backup-and-restore-per-database-b144a-lead-2026-11-25)) |
+
+The SES account snapshot, the dispatcher's grants and the handoff tokens are held in memory only.
+
 ## Migrations
 
-- Numbered SQL files in `migrations/`, embedded in the executable, applied in order at startup inside one transaction each. The applied version is stored in `PRAGMA user_version`.
+- Numbered SQL files in `migrations/` (a project database) and `migrations/instance/` (`instance.db`), embedded in the executable, each manifest applied in order at startup to its own databases inside one transaction each, with its own pre-migration snapshot. The applied version is stored in `PRAGMA user_version`.
 - **The first migration is the full v1 schema**, not a translation of listmonk's migration history.
 - Forward-only. The runner validates a contiguous manifest and rejects databases ahead of the executable. It takes one SQLite-consistent `VACUUM INTO` snapshot before a pending batch on a database with a previous version or user schema; an error prevents migration. It keeps each successful earlier migration if a later one fails. The public `backup` command is in the [operations guide](../operations.md#backups).
 - The production manifest embeds `0001_init.sql` at version 1. The migrated baseline has no seeded application rows; future owners supply settings, roles, users and templates. Migration bodies omit transaction commands and PRAGMAs, which the runner and connection own.
@@ -179,4 +196,6 @@ Deleting a subscriber anonymizes their sends in the same transaction (D25), whic
 
 ## Importing from listmonk
 
-Not in v1. Later, an `iglo.email import-listmonk <postgres-url>` command can read a listmonk database directly with `Bun.sql` (built-in Postgres client), converting templates from Go syntax where possible and reporting the ones it cannot convert.
+There is no import feature ([D142](09-decisions.md#d142-one-instance-serves-several-projects-owner-2026-11-23), [Projects](14-projects.md) section 11): listmonk data is moved once, outside the app, through the public API, the CSV subscriber import and MCP. No command or endpoint writes chosen IDs or UUIDs.
+
+There is also no upgrade from a data directory of a release before projects: start refuses one with `iglo-email.db` at its root, and nothing converts it.

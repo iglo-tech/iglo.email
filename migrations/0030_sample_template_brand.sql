@@ -1,8 +1,9 @@
 -- B130 (D128): the sample transactional template takes the brand, as the built-in layouts do: its accent
 -- on the button, its link colour and its font. Migration 0027 wrote the B129 body, with the button and
 -- the links fixed to blue, into every install that held the seeded copy. Each UPDATE matches the template
--- type and the whole stored body byte for byte, so only a copy that still holds that body changes. An
--- edited or renamed copy keeps its body, and names, subjects, ids and default flags are not touched. The
+-- type and the whole stored body byte for byte, so only a copy that still holds that body changes,
+-- renamed or not. An edited copy keeps its body, and names, subjects, ids and default flags are not
+-- touched. The
 -- old body is the file as it was on main at B129, the new one is the file as it is now, and single quotes
 -- are doubled in the literals.
 

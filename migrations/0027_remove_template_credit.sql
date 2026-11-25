@@ -1,8 +1,9 @@
 -- B129 (D127): the built-in templates lose the product credit and take the brand. An earlier release
 -- seeded these bodies into every install, and the template store seeds only an empty database, so an
 -- install from before this release still holds them. Each UPDATE matches the template type and the
--- whole stored body byte for byte, so only a copy that still holds the seeded body changes. An edited,
--- renamed or cloned-and-edited template keeps its body. Names, subjects, default flags and campaign
+-- whole stored body byte for byte, so only a copy that still holds the seeded body changes, whatever its
+-- name: a renamed or cloned copy with that body changes too. An edited template keeps its body. Names,
+-- subjects, default flags and campaign
 -- references are not touched. The old bodies are the built-in files as they were on main, the new
 -- ones are the files as they are now, and single quotes are doubled in the literals.
 

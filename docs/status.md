@@ -321,6 +321,11 @@ Audited 2026-11-25 before v1.5.0 (owner rule: nothing stays backlog). Fixed and 
 
 All B118 port races are closed (B118i #214, B118l #215).
 
+Projects definition of done, left over (B144b, [D163](design/09-decisions.md#d163-projects-documentation-pass-and-definition-of-done-b144b-lead-2026-11-25); evidence in [14-projects section 18](design/14-projects.md#evidence-b144b)):
+- **Invariant 9 has no test:** nothing fails when a runtime dependency is added; a test comparing `package.json` `dependencies` with 02's table would.
+- **Invariant 8 is covered only in part:** fresh in-process instances per test would catch a shared dispatcher, snapshot or project map, not every module-level state; review and lint carry the rest.
+- **Stale product text:** the serve `--help` (`src/config/bootstrap.ts`) says the admin variables apply "only when no users exist" (since B140: while `instance.db` has no admin account); `src/settings/validate.ts` says no sender reads the SES keys (B145a reads them).
+
 Captured runs (investigation on #211, 2026-11-25, `oven/bun:1.4.5` arm64 on 56801a71, load recorded):
 - **The unattributed `toBe`** (B112 worker run): did not recur in 3 full test steps (6,218 passing executions). It stays on watch. The v1.5.0 gate runs keep junit output, and any unattributed failure there blocks the tag.
 - **The unattributed test-step error** (B117b, B117e r2): attributed to `cli.test.ts:717` (seven CLI starts in one 12 s budget); fixed in B118i (#214), one test per case.
