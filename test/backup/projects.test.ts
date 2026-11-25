@@ -3,7 +3,8 @@
 // three projects: the primary on the instance host (127.0.0.1), `a` and `b` on their own hostnames.
 // Every request names its project by an explicit Host header.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { cpSync, existsSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { cpSync, existsSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runBackup } from "@/test/backup/fixture";
 import {
@@ -135,6 +136,24 @@ test("backup --project holds that project only, shaped like its directory", asyn
   expect(verified.stdout).toContain("Integrity: ok");
 });
 
+test("--verify refuses a manifest that names something other than a project slug", async () => {
+  // A hand-made whole backup: its instance.db claims a schema ahead of this executable, so the
+  // registry is not compared, and its manifest names a path to a project backup outside it.
+  const crafted = join(base, "crafted");
+  cpSync(whole(), crafted, { recursive: true });
+  const db = new Database(join(crafted, "instance.db"));
+  db.run("PRAGMA user_version = 99");
+  db.close();
+  const outside = "../../only-a";
+  expect(existsSync(join(crafted, "projects", outside, "iglo-email.db"))).toBe(true);
+  writeFileSync(join(crafted, "iglo-email-backup.json"), JSON.stringify({ projects: [outside] }));
+
+  const verified = await runBackup(prepared.executable, ["--verify", crafted]);
+  expect(verified.exitCode).toBe(1);
+  expect(verified.stderr).toContain(`names "${outside}", which is not a project slug`);
+  expect(verified.stdout).toBe("");
+});
+
 test("an unknown project slug fails and writes nothing", async () => {
   const before = names(base);
   const output = join(base, "unknown");
@@ -155,6 +174,13 @@ test("--output inside the projects directory is refused with a plain message", a
     expect(result.stderr).toContain(`is inside ${projects}, where the projects are read from`);
     expect(existsSync(output)).toBe(false);
   }
+  // The projects directory itself, with --force too: once refused as the data directory (D166).
+  for (const args of [[projects], [`${projects}/`], [projects, "--force"]]) {
+    const result = await backup("--output", ...args);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(`is inside ${projects}, where the projects are read from`);
+    expect(result.stdout).toBe("");
+  }
   expect(names(projects)).toEqual(["a", "b", "main"]);
   expect(names(join(projects, "a"))).toEqual(inA);
 });
@@ -168,12 +194,13 @@ test("a restored project database holds only that project, and only its release 
   expect(await heldHosts(await start())).toEqual([A]);
   await stop();
 
+  // Exit 3 whenever a database stays held, so a script sees that sending has not started (D166).
   const other = await release("--project", "b");
-  expect(other.exitCode, other.stderr).toBe(0);
+  expect(other.exitCode, other.stderr).toBe(3);
   expect(other.stdout).toContain("No hold on project b");
   expect(other.stdout).toContain("Still held: project a");
   const instance = await release();
-  expect(instance.exitCode, instance.stderr).toBe(0);
+  expect(instance.exitCode, instance.stderr).toBe(3);
   expect(instance.stdout).toContain("No hold on instance.db");
   expect(instance.stdout).toContain("Still held: project a");
   expect(await heldHosts(await start())).toEqual([A]);
@@ -197,7 +224,7 @@ test("a restored instance.db holds every project until its own release", async (
   await stop();
 
   const project = await release("--project", "a");
-  expect(project.exitCode, project.stderr).toBe(0);
+  expect(project.exitCode, project.stderr).toBe(3);
   expect(project.stdout).toContain("No hold on project a");
   expect(project.stdout).toContain("instance.db is still held, which holds every project");
   expect(await heldHosts(await start())).toEqual(HOSTS);
