@@ -414,9 +414,17 @@ export function createSesAccount(deps: {
       if (keys !== generation) {
         continue;
       }
+      // The refresh counts from when the last read began, not when it answered (B151, D175): a
+      // slow answer (up to the 10 s timeout) never stretches the minute between two fast reads
+      // that the hold line's `rate × 60 s` term assumes.
+      const delay = refreshDelay(snapshot, rate());
+      const wait = lastAttempt === null ? delay : lastAttempt + delay - clock.now().getTime();
+      if (wait <= 0) {
+        continue;
+      }
       sleeping = new AbortController();
       try {
-        await clock.sleep(refreshDelay(snapshot, rate()), sleeping.signal);
+        await clock.sleep(wait, sleeping.signal);
       } catch {
         // Woken early: the credentials changed, or the service stops.
       }

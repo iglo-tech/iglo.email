@@ -278,6 +278,42 @@ test("on demand: a forecast reads again when the snapshot is older than a minute
   expect(state.snapshot?.readAt).toBe("2026-01-02T03:05:05.001Z");
 });
 
+test("refresh counts from a read's start: an answer after the next read is due starts it at once, one at a time", async () => {
+  // B151 (D175): 1,000 left of 10,000 at rate 14 is below the 4,200 line, so reads are a minute
+  // apart, counted from when each began.
+  answer = quota(10_000, 9000);
+  const { account, clock, step } = setup();
+  account.start();
+  await clock.whenSleeping();
+  expect(calls).toHaveLength(1);
+  // The second read begins a minute later and answers only 70 s after it began.
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  answer = { ...quota(10_000, 9000), gate };
+  clock.advance(60_000);
+  while (calls.length < 2) {
+    await Bun.sleep(1);
+  }
+  clock.advance(70_000);
+  await Bun.sleep(5);
+  // No second read starts while one is in flight.
+  expect(calls).toHaveLength(2);
+  answer = quota(10_000, 9000);
+  release();
+  // It was due at 03:06:05, a minute after the second began: the third begins at once, at 03:06:15.
+  await clock.whenSleeping();
+  expect(calls.map((call) => call.date)).toEqual([
+    "20260102T030405Z",
+    "20260102T030505Z",
+    "20260102T030615Z",
+  ]);
+  // No burst: the next read is a minute after the third began.
+  await step(59_999);
+  expect(calls).toHaveLength(3);
+  await step(1);
+  expect(calls).toHaveLength(4);
+  expect(calls[3]!.date).toBe("20260102T030715Z");
+});
+
 test("an answer longer than 64 KiB is read only to the limit and fails the read at once", async () => {
   answer = quota(50_000, 100);
   const { account, clock } = setup();
