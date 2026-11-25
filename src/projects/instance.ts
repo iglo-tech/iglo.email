@@ -37,6 +37,7 @@ import type { PageSite } from "@/public/layout";
 import { Router } from "@/server/router";
 import { ok } from "@/server/response";
 import { defaults } from "@/settings/defaults";
+import { holdForInstance } from "@/settings/hold";
 import { sessionDuration } from "@/settings/duration";
 import { createInstanceSettings, instanceLoginSettings } from "@/settings/instance";
 import type { InstanceSettingsStore } from "@/settings/instance";
@@ -195,9 +196,9 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     });
   let sync: ReturnType<typeof adminSync> | undefined;
 
-  const wire = (record: ProjectRecord) => {
+  const wire = async (record: ProjectRecord) => {
     const admin = must(sync, "admin sync");
-    return createProject(
+    const project = await createProject(
       {
         clock,
         budgets: must(budgets, "budgets"),
@@ -212,6 +213,9 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       },
       options(record),
     );
+    // A restored instance.db holds every project's sending until it is released (D158).
+    holdForInstance(project.db, db);
+    return project;
   };
 
   /** Only the primary project may hold the instance host (14-projects section 2). */

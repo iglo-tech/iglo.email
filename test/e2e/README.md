@@ -46,7 +46,7 @@ restore test starts a third instance with `test/e2e/instance.js`: the production
 writes a snapshot of the stack's data directory, which is copied into a temporary directory and
 served by the same executable. The instance is stopped and its directory removed when the test
 ends, and the restored instance shares the stack's mail sink, since its copied settings point at
-it. The release runs through `backup --release-hold --consent-reconciled` on the stopped instance,
+it. The release runs through `backup --release-hold --consent-reconciled --project main` on the stopped instance,
 as the operations guide describes.
 
 A test fails on any Content-Security-Policy violation or Alpine expression error

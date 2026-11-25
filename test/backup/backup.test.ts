@@ -50,6 +50,8 @@ let base = "";
 let dataDir = "";
 /** B138b layout: the primary project's directory, which backup and restore act on. */
 const project = () => join(dataDir, "projects", "main");
+/** B144a layout: a whole backup holds the primary project at projects/main/. */
+const inBackup = (backup: string) => join(backup, "projects", "main");
 let authorization = "";
 let server: Server | undefined;
 
@@ -143,7 +145,7 @@ test("a backup under write load restores, opens and holds what was committed", a
   await stopped();
 
   expect(statSync(output).mode & 0o777).toBe(0o700);
-  expect(statSync(join(output, "iglo-email.db")).mode & 0o777).toBe(0o600);
+  expect(statSync(join(inBackup(output), "iglo-email.db")).mode & 0o777).toBe(0o600);
   const verified = await runBackup(executable, ["--verify", output]);
   expect(verified.exitCode).toBe(0);
   expect(verified.stdout).toContain(`Schema version: ${version}`);
@@ -208,7 +210,7 @@ test("an existing backup is replaced only when told, and only a backup", async (
   expect(refused.stderr).toContain("--force");
   expect((await runBackup(executable, [...args, "--force"])).exitCode).toBe(0);
   expect(names(base).filter((name) => name.startsWith("."))).toEqual([]);
-  const replaced = new Database(join(output, "iglo-email.db"), { readonly: true });
+  const replaced = new Database(join(inBackup(output), "iglo-email.db"), { readonly: true });
   expect(
     asBody<{ count: number }>(replaced.query("SELECT count(*) AS count FROM subscribers").get()),
   ).toEqual({ count: 1 });
@@ -237,7 +239,7 @@ test("a file with no row is harmless, and a row with no file is reported and sta
   );
   await stopped();
   // As if the file went in the moment after the snapshot.
-  rmSync(join(output, "uploads", "gone.txt"));
+  rmSync(join(inBackup(output), "uploads", "gone.txt"));
 
   const verified = await runBackup(executable, ["--verify", output]);
   expect(verified.exitCode).toBe(0);
@@ -275,7 +277,7 @@ test("an upload directory named by the settings is backed up at its place", asyn
   expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
     0,
   );
-  expect(readFileSync(join(output, "media", "custom.txt"), "utf-8")).toBe("custom");
+  expect(readFileSync(join(inBackup(output), "media", "custom.txt"), "utf-8")).toBe("custom");
   const verified = await runBackup(executable, ["--verify", output]);
   expect(verified.stdout).toContain("Uploads: 1 files");
   expect(verified.stderr).toBe("");
@@ -327,7 +329,7 @@ test("--verify looks where the restored setting does, not only where the manifes
     0,
   );
   // The shape an alias used to leave: the files in one place, the setting naming another.
-  const snapshot = new Database(join(output, "iglo-email.db"));
+  const snapshot = new Database(join(inBackup(output), "iglo-email.db"));
   snapshot
     .query("UPDATE settings SET value = ? WHERE key = ?")
     .run(JSON.stringify("uploads"), "upload.filesystem.upload_path");
@@ -344,8 +346,8 @@ test("backed-up media is closed to everyone but its owner", async () => {
   expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
     0,
   );
-  expect(statSync(join(output, "uploads")).mode & 0o777).toBe(0o700);
-  expect(statSync(join(output, "uploads", "private.txt")).mode & 0o777).toBe(0o600);
+  expect(statSync(join(inBackup(output), "uploads")).mode & 0o777).toBe(0o700);
+  expect(statSync(join(inBackup(output), "uploads", "private.txt")).mode & 0o777).toBe(0o600);
 });
 
 test("overlapping backups to one path: one wins, and neither replaces the other", async () => {
@@ -549,7 +551,7 @@ test("an older executable refuses a backup ahead of it", async () => {
     0,
   );
   await stopped();
-  const ahead = new Database(join(output, "iglo-email.db"));
+  const ahead = new Database(join(inBackup(output), "iglo-email.db"));
   ahead.run(`PRAGMA user_version = ${version + 1}`);
   ahead.close();
 
@@ -568,7 +570,7 @@ test("--verify reports a damaged file and changes nothing", async () => {
   expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
     0,
   );
-  const file = join(output, "iglo-email.db");
+  const file = join(inBackup(output), "iglo-email.db");
   const entries = names(output);
   const before = readFileSync(file);
   expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
@@ -616,7 +618,7 @@ test("on an empty, freshly started data directory, backup --output creates missi
   expect(backup.stderr).toBe("");
   expect(statSync(join(dataDir, "backups")).mode & 0o777).toBe(0o700);
   expect(statSync(monday).mode & 0o777).toBe(0o700);
-  expect(statSync(join(monday, "iglo-email.db")).mode & 0o777).toBe(0o600);
+  expect(statSync(join(inBackup(monday), "iglo-email.db")).mode & 0o777).toBe(0o600);
   const verified = await runBackup(executable, ["--verify", monday]);
   expect(verified.exitCode).toBe(0);
   expect(verified.stdout).toContain("Integrity: ok");
@@ -900,7 +902,7 @@ test("a successful backup into new nested folders creates each one 0700", async 
   ]) {
     expect(statSync(folder).mode & 0o777).toBe(0o700);
   }
-  expect(statSync(join(output, "iglo-email.db")).mode & 0o777).toBe(0o600);
+  expect(statSync(join(inBackup(output), "iglo-email.db")).mode & 0o777).toBe(0o600);
   const verified = await runBackup(executable, ["--verify", output]);
   expect(verified.exitCode).toBe(0);
   expect(verified.stdout).toContain("Integrity: ok");
@@ -960,7 +962,9 @@ test("a parent renamed away after the partial exists is refused as changed meanw
   expect(message).not.toContain("ENOENT");
   const [partial] = entriesStarting(join(base, "x-moved", "a"), PARTIAL_PREFIX);
   expect(partial).toBeDefined();
-  expect(existsSync(join(base, "x-moved", "a", partial!, "iglo-email.db"))).toBe(true);
+  expect(existsSync(join(inBackup(join(base, "x-moved", "a", partial!)), "iglo-email.db"))).toBe(
+    true,
+  );
   expect(warnings.join("\n")).toContain(join(parent, partial!));
   expect(names(base)).toEqual(["data", "x-moved"]);
 });
@@ -1063,10 +1067,10 @@ test("a forced backup whose replaced copy cannot be removed is published, warned
   const args = ["--data-dir", dataDir, "--output", output];
   expect((await runBackup(executable, args)).exitCode).toBe(0);
   // A file in the old backup's upload folder, which the folder's read-only mode keeps from being removed.
-  writeFileSync(join(output, "uploads", "held.txt"), "held");
+  writeFileSync(join(inBackup(output), "uploads", "held.txt"), "held");
   const restore = () => {
     for (const name of entriesStarting(base, REPLACED_PREFIX)) {
-      chmodSync(join(base, name, "uploads"), 0o700);
+      chmodSync(join(inBackup(join(base, name)), "uploads"), 0o700);
     }
   };
   const warnings: Array<string> = [];
@@ -1077,7 +1081,7 @@ test("a forced backup whose replaced copy cannot be removed is published, warned
       force: true,
       clock: createRealClock(),
       supportedVersion: version,
-      beforePublish: () => chmodSync(join(output, "uploads"), 0o500),
+      beforePublish: () => chmodSync(join(inBackup(output), "uploads"), 0o500),
       warn: (message) => warnings.push(message),
     });
     expect(result.path).toBe(realpathSync(output));

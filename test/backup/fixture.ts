@@ -1,6 +1,6 @@
 // A compiled executable and its processes, for tests and the measurement of `backup`.
 import { Database } from "bun:sqlite";
-import { copyFileSync, cpSync, mkdtempSync, renameSync, rmSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { provisionApiUser } from "@/test/contract/owned";
@@ -142,10 +142,15 @@ export function uploadFile(client: Client, name: string, content: string) {
 
 /** The operations guide's restore: a stopped server's directory set aside, the backup in place. */
 export function restoreInto(backup: string, dataDir: string): void {
-  // B138b layout: a backup is the primary project's, and is restored as its directory.
+  // B138b layout: the primary project is restored as its directory. B144a (D158): a whole backup
+  // holds it at projects/main/, and a `--project main` backup is that directory itself.
   const project = join(dataDir, "projects", "main");
+  const whole = join(backup, "projects", "main");
   renameSync(project, `${dataDir}.before-restore`);
-  cpSync(backup, project, { recursive: true, preserveTimestamps: true });
+  cpSync(existsSync(whole) ? whole : backup, project, {
+    recursive: true,
+    preserveTimestamps: true,
+  });
 }
 
 /** Generated subscribers, written while no server runs. */
