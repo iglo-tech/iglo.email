@@ -26,7 +26,12 @@ test("assets and executable are ready", async () => {
 });
 `;
 
-test("a bare parallel run on a checkout with no build prepares it once", async () => {
+/**
+ * Runs `bun test <args>` in a fresh copy of the build's inputs with no `dist/` and no asset
+ * manifest, holding six probe files; returns the exit code, the output and the distinct builds the
+ * probes saw.
+ */
+async function runInCleanCheckout(args: ReadonlyArray<string>) {
   const checkout = mkdtempSync(join(tmpdir(), "iglo-b149e-build-"));
   try {
     for (const path of [
@@ -53,28 +58,41 @@ test("a bare parallel run on a checkout with no build prepares it once", async (
     for (const file of files) {
       writeFileSync(join(checkout, file), probe);
     }
-    const child = Bun.spawn(
-      [process.execPath, "test", "--parallel=2", "--timeout=60000", ...files.map((f) => `./${f}`)],
-      {
-        cwd: checkout,
-        env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+    // Not IGLO_TEST_PREBUILT or BUN_TEST_WORKER_ID: the run is a developer's own.
+    const child = Bun.spawn([process.execPath, "test", "--timeout=60000", ...args], {
+      cwd: checkout,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const [code, stdout, stderr] = await Promise.all([
       child.exited,
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
     ]);
     const output = `${stdout}\n${stderr}`;
-    expect(output).not.toContain("Cannot find module");
-    expect({ code, output }).toMatchObject({ code: 0 });
-    const builds = new Set(output.match(/BUILD \d+:\d+/g));
-    // One build for the whole run: every file of both workers sees the same files.
-    expect(builds.size).toBe(1);
-    expect(output).toContain(`${files.length} pass`);
+    return { code, output, builds: new Set(output.match(/BUILD \d+:\d+/g)).size, files };
   } finally {
     rmSync(checkout, { recursive: true, force: true });
   }
+}
+
+test("a bare parallel run on a checkout with no build prepares it once", async () => {
+  // A directory named as people type it, without `./`: Bun takes it as a filter.
+  const run = await runInCleanCheckout(["--parallel=2", "test"]);
+  expect(run.output).not.toContain("Cannot find module");
+  expect({ code: run.code, output: run.output }).toMatchObject({ code: 0 });
+  // One build for the whole run: every file of both workers sees the same files.
+  expect(run.builds).toBe(1);
+  expect(run.output).toContain(`${run.files.length} pass`);
+}, 120_000);
+
+test("a serial filter run on a checkout with no build prepares it", async () => {
+  // A filter makes Bun scan for test files before the preload builds. Scanning src/ then would keep
+  // a listing of src/server without the manifest the build writes there.
+  const run = await runInCleanCheckout(["test"]);
+  expect(run.output).not.toContain("Cannot find module");
+  expect({ code: run.code, output: run.output }).toMatchObject({ code: 0 });
+  expect(run.builds).toBe(1);
+  expect(run.output).toContain(`${run.files.length} pass`);
 }, 120_000);
