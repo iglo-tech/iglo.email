@@ -124,7 +124,7 @@ export const excluded: Array<Excluded> = [
   {
     routes: ["/admin/instance/*", "/api/instance/*"],
     reason:
-      "instance host, admin session only: the instance pages and JSON routes (B140, B139), answered before any project's router and never with API credentials.",
+      "instance host, admin session only: the instance pages and JSON routes (B140, B139, B143a), answered before any project's router and never with API credentials.",
   },
   {
     routes: ["/public/static/*", "/admin/static/*", "/uploads/*"],

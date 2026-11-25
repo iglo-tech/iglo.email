@@ -28,6 +28,43 @@ export interface ProjectRecord {
   readonly extra: ReadonlyArray<string>;
 }
 
+/** A rename and the new list of extra hostnames; a field left out keeps its value. */
+export interface ProjectChange {
+  readonly name?: string | undefined;
+  readonly extra?: ReadonlyArray<string> | undefined;
+}
+
+/**
+ * A refused registry change, with the HTTP status the instance API answers it with: 400 for input
+ * that is invalid, 404 for a slug no project has, 409 for one that conflicts with another project.
+ */
+export class RegistryError extends Error {
+  constructor(
+    readonly status: 400 | 404 | 409,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** The longest project name. */
+export const NAME_MAX = 200;
+
+/** A project's name as stored: trimmed, not empty, at most NAME_MAX characters, one line. */
+export function projectName(value: string): string {
+  const name = value.trim();
+  if (!name) {
+    throw new RegistryError(400, "A project needs a name");
+  }
+  if (
+    name.length > NAME_MAX ||
+    Array.from(name).some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)
+  ) {
+    throw new RegistryError(400, `A project name is one line of at most ${NAME_MAX} characters`);
+  }
+  return name;
+}
+
 export interface NewProject {
   readonly slug: string;
   readonly name: string;
@@ -45,7 +82,7 @@ export function normalizeHostname(value: string): string {
   try {
     url = new URL(`http://${value}`);
   } catch {
-    throw new Error(`Invalid hostname: ${value}`);
+    throw new RegistryError(400, `Invalid hostname: ${value}`);
   }
   if (
     !value ||
@@ -57,7 +94,7 @@ export function normalizeHostname(value: string): string {
     url.hash !== "" ||
     url.hostname !== value.toLowerCase()
   ) {
-    throw new Error(`Invalid hostname: ${value}`);
+    throw new RegistryError(400, `Invalid hostname: ${value}`);
   }
   return url.hostname;
 }
@@ -111,6 +148,12 @@ export function createRegistry(db: Database, clock: Clock) {
   const updateMain = db.query<null, [string, string]>(
     "UPDATE hostnames SET hostname = ? WHERE project = ? AND kind = 'main'",
   );
+  const renameProject = db.query<null, [string, string]>(
+    "UPDATE projects SET name = ? WHERE slug = ?",
+  );
+  const deleteExtra = db.query<null, [string]>(
+    "DELETE FROM hostnames WHERE project = ? AND kind = 'extra'",
+  );
 
   function list(): Array<ProjectRecord> {
     const hosts = hostnames.all();
@@ -134,28 +177,25 @@ export function createRegistry(db: Database, clock: Clock) {
      */
     add(input: NewProject): ProjectRecord {
       if (!SLUG_PATTERN.test(input.slug)) {
-        throw new Error(`Invalid project slug: ${input.slug}`);
+        throw new RegistryError(400, `Invalid project slug: ${input.slug}`);
       }
-      const name = input.name.trim();
-      if (!name) {
-        throw new Error("A project needs a name");
-      }
+      const name = projectName(input.name);
       const main = normalizeHostname(input.hostname);
       const extra = (input.extra ?? []).map(normalizeHostname);
       const all = [main, ...extra];
       if (new Set(all).size !== all.length) {
-        throw new Error("A hostname is listed twice");
+        throw new RegistryError(400, "A hostname is listed twice");
       }
       writeTransaction(db, () => {
         if (list().some((p) => p.slug === input.slug)) {
-          throw new Error(`A project named ${input.slug} exists`);
+          throw new RegistryError(409, `A project named ${input.slug} exists`);
         }
         if (input.primary && list().some((p) => p.primary)) {
-          throw new Error("There is a primary project already");
+          throw new RegistryError(409, "There is a primary project already");
         }
         for (const hostname of all) {
           if (holder.get(hostname)) {
-            throw new Error(`The hostname ${hostname} belongs to another project`);
+            throw new RegistryError(409, `The hostname ${hostname} belongs to another project`);
           }
         }
         insertProject.run(input.slug, name, clock.now().toISOString(), input.primary ? 1n : 0n);
@@ -167,6 +207,41 @@ export function createRegistry(db: Database, clock: Clock) {
       return must(
         list().find((p) => p.slug === input.slug),
         "registered project",
+      );
+    },
+    /**
+     * Renames a project and replaces its extra hostnames in one transaction (14-projects section
+     * 10). The slug and the main hostname never change. A hostname another project holds, or one
+     * listed twice, is refused with nothing written.
+     */
+    update(slug: string, change: ProjectChange): ProjectRecord {
+      const current = list().find((p) => p.slug === slug);
+      if (!current) {
+        throw new RegistryError(404, `No project ${slug}`);
+      }
+      const name = change.name === undefined ? current.name : projectName(change.name);
+      const extra =
+        change.extra === undefined ? [...current.extra] : change.extra.map(normalizeHostname);
+      const all = [current.hostname, ...extra];
+      if (new Set(all).size !== all.length) {
+        throw new RegistryError(400, "A hostname is listed twice");
+      }
+      writeTransaction(db, () => {
+        for (const hostname of extra) {
+          const owner = holder.get(hostname)?.project;
+          if (owner !== undefined && owner !== slug) {
+            throw new RegistryError(409, `The hostname ${hostname} belongs to another project`);
+          }
+        }
+        renameProject.run(name, slug);
+        deleteExtra.run(slug);
+        for (const hostname of extra) {
+          insertHostname.run(hostname, slug, "extra");
+        }
+      });
+      return must(
+        list().find((p) => p.slug === slug),
+        "updated project",
       );
     },
     /** Removes a project's rows, its hostnames with it. Returns whether it was registered. */
@@ -206,6 +281,8 @@ export function createRegistry(db: Database, clock: Clock) {
         insertHostname,
         deleteProject,
         updateMain,
+        renameProject,
+        deleteExtra,
       ]) {
         statement.finalize();
       }

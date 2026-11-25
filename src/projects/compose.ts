@@ -112,6 +112,8 @@ import { createAnalyticsPurge } from "@/analytics/purge";
 import { createSubscriberTracking } from "@/analytics/subscriber";
 import { registerAnalyticsRoutes } from "@/analytics/routes";
 import { registerAdminRoutes } from "@/admin/routes";
+import { createProjectActivity } from "@/analytics/activity";
+import type { ProjectActivity } from "@/analytics/activity";
 import { createLogBuffer } from "@/maintenance/log-buffer";
 import { registerMaintenanceRoutes } from "@/maintenance/routes";
 import { createSummaries, createSummaryRefresh } from "@/analytics/summaries";
@@ -152,6 +154,11 @@ export interface ProjectServices {
     changed(slug: string, credentials: AdminCredentials): void;
     redeem(slug: string, token: string): boolean;
   };
+  /**
+   * The served projects' slugs and names, for the header's switcher (B143a, D157). Only the
+   * admin's copy sees it, since the admin is the one account that is in every project.
+   */
+  readonly projects?: () => ReadonlyArray<{ readonly slug: string; readonly name: string }>;
   /**
    * The instance's capacity forecast (B145a): `GET /api/sending/capacity` on this project's host
    * asks it with this project's own source. Without it (a fixture) the route is not served.
@@ -208,6 +215,13 @@ export interface Project {
    * they stop. Returns their results in that order; main() appends the HTTP stop after them.
    */
   stop(): Array<unknown>;
+  /**
+   * Stops this project's sending at once, as stop() does later (a delete, D157): its slot requests
+   * and unused slots go back, a push waiting for its start ends not-started (its claim is handed
+   * back), and no new request is answered. Resolves when the pushes in SMTP flight have settled, or
+   * after the sender's 5 s close deadline. stop() and close() then reuse the same close.
+   */
+  stopSending(): Promise<void>;
   /** Closes every store and the database. main() calls it last, after the lock is still held. */
   close(): Promise<void>;
   /** What the instance's SES route reaches of this project (B142). */
@@ -219,6 +233,10 @@ export interface Project {
    * default from address and brand (B139, D154). Only the primary project's is used.
    */
   smtpTest(body: unknown, revalidate: () => void): Promise<void>;
+  /** This project's log lines, as its `GET /api/logs` serves them (the instance Logs page). */
+  logs(): ReadonlyArray<string>;
+  /** Counts only, for the instance Projects page (B143a): queued, running, sent since `since`. */
+  activity(since: Date): ProjectActivity;
 }
 
 /**
@@ -235,6 +253,8 @@ export async function createProject(
   const rootUrl = options.rootUrl;
   const db = openDatabase(directory);
   let lists: ReturnType<typeof createListReferences> | undefined;
+  let activity: ReturnType<typeof createProjectActivity> | undefined;
+  let logs: ReturnType<typeof createLogBuffer> | undefined;
   let listStore: ReturnType<typeof createListStore> | undefined;
   let subscriberStore: ReturnType<typeof createSubscriberStore> | undefined;
   let counts: ReturnType<typeof createListCounts> | undefined;
@@ -341,6 +361,7 @@ export async function createProject(
     enrollments?.close();
     campaigns?.close();
     counts?.close();
+    activity?.close();
     roles?.close();
     lists?.close();
     db.close(true);
@@ -351,6 +372,7 @@ export async function createProject(
     roles = createRoles(db, lists);
     settings = createSettings(db, clock, rootUrl, services.settings);
     counts = createListCounts(db);
+    activity = createProjectActivity(db);
     enrollments = createEnrollments(db, clock);
     webhooks = createWebhookStore(db, clock);
     const webhookEffects = createWebhookEffects(webhooks, () =>
@@ -406,8 +428,9 @@ export async function createProject(
       campaigns,
     );
     users = createUserStore(db, clock, roles);
-    const logs = createLogBuffer(clock);
-    const logger = createSourceLogger(options.slug, logs);
+    const buffer = createLogBuffer(clock);
+    logs = buffer;
+    const logger = createSourceLogger(options.slug, buffer);
     const clientAddress = createClientAddress(
       () => must(settings, "settings").read()["security.trusted_proxies"],
       logger,
@@ -969,7 +992,7 @@ export async function createProject(
     maintenance = registerMaintenanceRoutes(router, {
       subscribers: subscriberStore,
       analytics: analyticsPurge,
-      logs,
+      logs: buffer,
       auth,
       clock,
       keepOpen: (request) => serverRef.server?.timeout(request, 0),
@@ -999,6 +1022,10 @@ export async function createProject(
           customCss: must(settings, "settings").read()["appearance.admin.custom_css"],
           customJs: must(settings, "settings").read()["appearance.admin.custom_js"],
           instanceUrl: services.instanceRootUrl,
+          switcher: services.projects && {
+            current: options.slug,
+            projects: services.projects(),
+          },
         };
       },
       settings: pages,
@@ -1092,6 +1119,7 @@ export async function createProject(
           messagingClose,
         ];
       },
+      stopSending: () => must(sender, "sender").close(),
       close: closeAll,
       syncAdmin(account: AdminAccount) {
         must(users, "users").syncCopy(account);
@@ -1100,6 +1128,8 @@ export async function createProject(
         refuseWhileHeld(db);
         return smtpTest(body, revalidate);
       },
+      logs: () => must(logs, "logs").lines(),
+      activity: (since: Date) => must(activity, "activity").read(since),
     };
   } catch (error) {
     await closeAll();

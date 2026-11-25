@@ -130,7 +130,7 @@ test("the instance login checks instance.db: a wrong password or name is refused
   }
   const signedIn = await instanceLogin(port, PRIMARY, admin);
   expect(signedIn.response.status).toBe(302);
-  expect(signedIn.response.headers.get("location")).toBe("/admin/instance/account");
+  expect(signedIn.response.headers.get("location")).toBe("/admin/instance/projects");
   const page = await request(port, PRIMARY, "/admin/instance/account", {
     headers: { cookie: signedIn.session!.cookie },
   });
@@ -147,7 +147,7 @@ test("the instance login checks instance.db: a wrong password or name is refused
   const next = await instanceLogin(port, PRIMARY, admin, { next: "/admin/instance/open/a" });
   expect(next.response.headers.get("location")).toBe("/admin/instance/open/a");
   const foreign = await instanceLogin(port, PRIMARY, admin, { next: "//evil.example/" });
-  expect(foreign.response.headers.get("location")).toBe("/admin/instance/account");
+  expect(foreign.response.headers.get("location")).toBe("/admin/instance/projects");
 });
 
 test("instance_session has the project session's attributes, and both live on the instance host", async () => {
@@ -728,7 +728,7 @@ test("TOTP enabled on the instance reaches every project; disabled in a project,
     expect(await projectLogin(host, admin)).toBe("/admin");
   }
   expect((await instanceLogin(port, PRIMARY, admin)).response.headers.get("location")).toBe(
-    "/admin/instance/account",
+    "/admin/instance/projects",
   );
 });
 
