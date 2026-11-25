@@ -617,6 +617,55 @@ test("leaving keeps withdrawn consent: a returning user who unsubscribed or was 
   ]);
 });
 
+test("leaving with an address-only suppression also suppresses the user ID: a user returning under a new address is refused the grant and sent nothing", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("order_paid"), where: {}, lists: [news] }];
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    list_id: news,
+    trigger: { event: h.ev("order_paid") },
+    steps: [{ wait: "PT0S", kind: "marketing", template_id: template }],
+  });
+  await resubscribed(h);
+  const user = await pb.user();
+  // Subscribed with no user ID, then the public "all lists" option: an address-only suppression
+  // (D125, D128) and an unsubscribed list. The user ID is linked afterwards.
+  const id = await createSubscriber(h, {
+    email: emailOf(user),
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  writeTransaction(h.f.db, () => h.f.stores.subscribers.unsubscribeAll(BigInt(id)));
+  const linkId = await h.f.json(`/api/subscribers/${id}`, "PATCH", { external_id: user.id });
+  expect(linkId.status).toBe(200);
+  expect(statusOn(await linked(h, user), news)).toBe("unsubscribed");
+
+  await pb.update("users", user.id, { deletedAt: new Date().toISOString() });
+  await until(
+    h,
+    () => h.outcomes.some((o) => o.record === user.id && o.kind === "left"),
+    "leaving",
+  );
+  expect(await linked(h, user)).toBeNull();
+  // Back under a new address with the same user ID.
+  const fresh = `back-${crypto.randomUUID().slice(0, 8)}@example.com`;
+  await pb.update("users", user.id, { deletedAt: "", email: fresh });
+  const order = await record(h, user, "order_paid");
+  await handled(h, order);
+  expect(outcome(h, order)).toMatchObject({
+    grants: [{ list_id: news, result: "suppressed" }],
+    started: 0,
+  });
+  const back = await linked(h, user);
+  expect(back?.email).toBe(fresh);
+  expect(statusOn(back, news)).toBeNull();
+
+  await h.f.pass(0);
+  expect(await h.f.sendLog()).toEqual([]);
+});
+
 test("a subscriber row changed between the record's reads and its transaction rolls the write back and retries it", async () => {
   const h = await start();
   const news = await h.f.list("News");
