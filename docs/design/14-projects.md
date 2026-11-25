@@ -360,6 +360,18 @@ The SES account already knows its limits, so the app reads them instead of havin
   - Transactional is never held.
   - Without API credentials there is no forecast and no guard, and instance settings says so.
 
+### As built (B145a)
+
+[D159](09-decisions.md#d159-ses-account-and-forecast-b145a-lead-2026-11-25) splits B145 and records the choices this section left open. B145a built the account and the forecast; B145b feeds `MaxSendRate` into the dispatcher's rate and adds the guard, so until then `messaging.max_send_rate` alone paces sending. Where this list and the text above differ, this list is the code.
+
+- **Modules.** `src/messaging/sigv4.ts` (the signer), `src/messaging/ses-account.ts` (the client, the snapshot loop, `effectiveRate` and `refreshDelay`, all pure but the loop), `src/messaging/capacity.ts` (the forecast over every project's source), `src/campaigns/planned.ts` and `sends.starts` (each project's counts and send times, never rows). The instance (`src/projects/instance.ts`) owns one account and one forecast and gives each project its source; `InstanceConfig.sesEndpoint` points tests at a stand-in.
+- **Reading.** As above, with the refresh line using the effective rate, no fast refresh for an account without a daily limit, an on-demand read only when the last attempt (good or failed) is over a minute old, and a key change dropping the snapshot. The attention line is "SES GetAccount answered …; keeping the snapshot read at …", at once on the first failure and then hourly.
+- **Forecast.** As above, at exact times rather than hour buckets (a daily run at yesterday's hour is never counted twice), with the outside share and the baseline prorated by the exact past and future parts of the window and rounded up. Starts are `sends` rows `sending`, `sent` or `unknown` by their first push and campaign deliveries `claimed`, `sent` or `unknown`. A candidate by `campaign_id` takes its audience and send time and leaves it out of its own project's planned list; with rate 0 it takes no time; without a daily limit it always fits.
+- **API.** `GET /api/sending/capacity` with `at` (RFC 3339, zone required), `count` and `campaign_id`, `campaigns:get`; `available: false` with `reason` `not_configured` or `not_read` until a read succeeds. A failed read shows project users a fixed text, never AWS's message. OpenAPI component `SendingCapacity`; MCP tool `get_sending_capacity`. The MCP instructions name the project (to 40 characters) and say to check capacity before scheduling a large campaign.
+- **Pages.** The campaign page shows the line for a saved draft, paused or scheduled campaign at the form's send time and adds it to the confirmation when over. Instance settings, Amazon SES: "Check SES account" (`POST /api/instance/settings/ses/check`) shows the values or the AWS error, says when no keys are saved, and warns when the send-rate setting is higher than SES's rate.
+- **Cost.** About 28 ms for 100,000 sends and 100,000 deliveries, 250–280 ms for a million of each ([projects-B145a](../perf/projects-B145a.md)).
+- **Tests.** `test/messaging/sigv4.test.ts`, `test/messaging/ses-account.test.ts` (injected clock, stand-in server), `test/projects/capacity.test.ts` in `contract:projects` (three projects, hand-calculated windows, the MCP call). `test/projects/capacity-serve.ts` runs an instance with the stand-in for the `agent-browser` pass.
+
 ### What does not change
 
 - At-most-once for marketing and campaigns, the transactional retry rules (D24, D53), the frequency cap, the restore hold and the Message-ID format.

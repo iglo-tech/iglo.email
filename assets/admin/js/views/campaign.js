@@ -115,6 +115,63 @@ function component() {
       } catch (e) {
         this.error = e.message;
       }
+      this.loadCapacity();
+      this.$watch('form.sendLater', () => this.loadCapacity());
+      this.$watch('form.sendAtLocal', () => this.loadCapacity());
+    },
+
+    // ===============
+    // The SES capacity forecast (14-projects section 7, B145a): whether the busiest 24 hours
+    // around this campaign fit the quota, for its saved audience at the time set here. Nothing
+    // shows without SES API credentials; scheduling is never refused, only confirmed when over.
+    capacity: null,
+    _capacityRun: 0,
+
+    async loadCapacity() {
+      const run = ++this._capacityRun;
+      if (this.isNew || !this.form.id || !['draft', 'paused', 'scheduled'].includes(this.form.status)) {
+        this.capacity = null;
+        return;
+      }
+      const params = new URLSearchParams({ campaign_id: String(this.form.id) });
+      if (this.form.sendLater && this.form.sendAtLocal) {
+        const at = new Date(this.form.sendAtLocal);
+        if (!Number.isNaN(at.getTime())) {
+          params.set('at', at.toISOString());
+        }
+      } else {
+        params.set('at', new Date().toISOString());
+      }
+      let answer = null;
+      try {
+        const resp = await fetch(`${urls.api}/sending/capacity?${params}`, { headers: { Accept: 'application/json' } });
+        answer = resp.ok ? (await resp.json()).data : null;
+      } catch {
+        answer = null;
+      }
+      if (run === this._capacityRun) {
+        this.capacity = answer?.available && answer.forecast ? answer.forecast : null;
+      }
+    },
+
+    get capacityOver() {
+      return !!this.capacity && !this.capacity.fits;
+    },
+
+    // "Fits: 18,200 of 50,000 in the 24 h up to Tue 13:40" or "Over the quota by 3,100 in …".
+    get capacityLine() {
+      const f = this.capacity;
+      if (!f) {
+        return '';
+      }
+      const until = new Date(f.window_end).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+      const n = (v) => Number(v).toLocaleString();
+      if (f.quota === null) {
+        return `Fits: ${n(f.demand)} in the 24 h up to ${until}; the SES account has no daily limit`;
+      }
+      return f.fits
+        ? `Fits: ${n(f.demand)} of ${n(f.quota)} in the 24 h up to ${until}`
+        : `Over the quota by ${n(f.demand - f.quota)} in the 24 h up to ${until}`;
     },
 
     async _load() {
@@ -465,7 +522,11 @@ function component() {
         return;
       }
       this.changing = true;
-      const msg = status === 'scheduled' ? i18n.t('campaigns.confirmSchedule') : null;
+      let msg = status === 'scheduled' ? i18n.t('campaigns.confirmSchedule') : null;
+      // Over the SES quota (B145a): the user confirms; nothing is refused.
+      if ((status === 'scheduled' || status === 'running') && this.capacityOver) {
+        msg = `${this.capacityLine}. ${msg ?? 'Start anyway?'}`;
+      }
       if (!(await u.confirm(msg))) {
         this.changing = false;
         return;

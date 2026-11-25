@@ -158,6 +158,47 @@ function component() {
     smtpTestItem: null,
     testEmail: '',
     errMsg: '',
+    // "Check SES account" (B145a): the saved credentials' GetAccount values, or the AWS error.
+    sesCheck: null,
+
+    // The check's values as lines; the AWS error is shown on its own.
+    get sesCheckLines() {
+      const a = this.sesCheck?.account;
+      if (!a) {
+        return [];
+      }
+      const n = (v) => Number(v).toLocaleString();
+      const lines = [
+        `Max send rate: ${n(a.max_send_rate)}/s`,
+        `24-hour quota: ${a.max_24_hour_send < 0 ? 'no limit' : n(a.max_24_hour_send)}`,
+        `Sent in the last 24 hours: ${n(a.sent_last_24_hours)}`,
+        `Production access: ${a.production_access_enabled ? 'yes' : 'no (sandbox)'}`,
+        `Sending enabled: ${a.sending_enabled ? 'yes' : 'no'}`,
+        `Read at: ${new Date(a.read_at).toLocaleString()}`,
+      ];
+      if (this.sesCheck.setting > a.max_send_rate || (this.sesCheck.setting === 0 && a.max_send_rate > 0)) {
+        lines.push(`The send rate setting (${this.sesCheck.setting || 'no cap'}) is higher than SES's ${n(a.max_send_rate)}/s.`);
+      }
+      return lines;
+    },
+    get sesCheckError() {
+      if (!this.sesCheck) {
+        return '';
+      }
+      if (!this.sesCheck.configured) {
+        return 'No SES API credentials are saved: there is no capacity forecast.';
+      }
+      return this.sesCheck.error || '';
+    },
+
+    async doSESCheck() {
+      this.sesCheck = null;
+      try {
+        this.sesCheck = await api('settings.checkSES', `${base}/ses/check`, 'POST', {});
+      } catch (err) {
+        this.sesCheck = { configured: true, error: err.message, account: null };
+      }
+    },
 
     async init() {
       try {
