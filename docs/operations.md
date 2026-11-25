@@ -342,7 +342,7 @@ command prints its own options with `--help`.
 | `iglo.email [serve]` | Runs the instance: every registered project, the instance pages and the send queue |
 | `iglo.email backup [--project <slug>] [--output <path>] [--force]` | Snapshots `instance.db` and every project, or one project, beside a running server ([Backups](#backups)) |
 | `iglo.email backup --verify <path>` | Checks a backup read-only and prints its versions and holds |
-| `iglo.email backup --release-hold --consent-reconciled [--project <slug>]` | Ends a restored database's hold: `instance.db`'s, or that project's ([Restore](#restore)) |
+| `iglo.email backup --release-hold --consent-reconciled [--project <slug>]` | Ends a restored database's hold: `instance.db`'s, or that project's; exits 3 while a database is still held ([Restore](#restore)) |
 | `iglo.email reset-password --user <name>` | Sets a password read from stdin. The admin's name changes the admin account in `instance.db` and its copy in every project; any other name is a user of the primary project ([Locked out](#locked-out-of-a-restored-install)) |
 | `iglo.email reset-totp --user <name>` | Turns a user's TOTP off, with the same rule for the admin's name ([Lost TOTP device](#a-user-lost-their-totp-device)) |
 | `iglo.email --help`, `--version` | Print the help or the version |
@@ -969,9 +969,10 @@ An unknown slug exits nonzero and writes nothing. Every database is snapshotted 
 the one partial directory described under **Failure**, and the backup is published only when all of
 them pass: a failure on any database leaves no backup at the final name. A project created or
 deleted while the backup runs fails it; run it again. `--verify` prints each database under its
-place and ends with one `Integrity:` line for the whole backup. The output may not be inside
-`<data-dir>/projects/`, where the projects are read from, or at `<data-dir>/instance.db`: those are
-refused before anything is written.
+place and ends with one `Integrity:` line for the whole backup, and refuses a manifest that names
+anything but a project slug, so it reads nothing outside the backup. The output may not be
+`<data-dir>/projects/` or inside it, where the projects are read from, or at
+`<data-dir>/instance.db`: those are refused before anything is written, `--force` or not.
 
 If the upload directory is reached through a symlink inside the data directory, which D64 allows,
 the backup holds the real directory and its `upload_path` names it. The symlink is not kept and is
@@ -1159,7 +1160,9 @@ Each run prints `Hold released on project main at <time>` (or `on instance.db`),
 then what is still held: `instance.db is still held, which holds every project`, `Still held:
 project a, …`, or `Nothing is held; sending starts with the server`. Releasing a project does not
 release `instance.db`, and releasing `instance.db` does not release a restored project: while
-either is held, that project sends nothing.
+either is held, that project sends nothing. The exit code says the same to a script: 0 when nothing
+is held afterwards, 3 when the run worked but a database is still held (the first command above
+exits 3 while `instance.db` is held), and 1 when it was refused or failed.
 
 What is left then goes out: scheduled and running campaigns continue from the restored cursor,
 queued mail is checked against current consent and sent, sequences catch up within their
@@ -1233,7 +1236,7 @@ login off or converts the user to an API user, so an old key never comes back.
   is refused until the path is right again.
 - **A backup from a release before projects** (one `iglo-email.db` with its uploads) is restored
   into `projects/main/` of a new data directory, as the start's refusal message says. It is held,
-  as every backup is. Its migrations remove what are now instance settings (SMTP, the send rate,
+  as every backup is, and released with `--release-hold --consent-reconciled --project main`. Its migrations remove what are now instance settings (SMTP, the send rate,
   bounce processing and the others under [Settings](#settings-instance-and-project)) without moving
   them: set them again on the instance Settings page.
 
@@ -1251,7 +1254,11 @@ Executable and backup versions:
 directory with `iglo-email.db` at its root is refused at start with nothing written
 ([Data directory](#data-directory)). Start the new release on an empty data directory and set the
 instance up again. An old backup can be restored as the primary project
-([Restore details](#restore-details)), with the instance settings entered again.
+([Restore details](#restore-details)), with the instance settings entered again. It is held: once
+reconciled, release it by its slug with the server stopped,
+`iglo.email backup --release-hold --consent-reconciled --project main` (with `--data-dir` where
+needed). Without `--project` the command releases only `instance.db`, says
+`Still held: project main` and exits 3.
 
 Between releases with projects:
 

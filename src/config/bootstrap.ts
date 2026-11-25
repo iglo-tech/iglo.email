@@ -42,10 +42,12 @@ Start the HTTP server. Bootstrap options override their environment equivalents:
 A port of 0 binds a port the OS chooses, and prints one line, "listening on port <port>", once it
 is bound. It needs --root-url, because the root URL is set before the bind.
 
-IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD initialize the first admin
-only when no users exist. Without them public health is available but login is denied.
-IGLO_EMAIL_API_USER and IGLO_EMAIL_API_TOKEN create an API user with the Super Admin role on the
-same first start, with that token; set both or neither. Nothing is printed. Remove them afterwards.
+IGLO_EMAIL_ADMIN_USER and IGLO_EMAIL_ADMIN_PASSWORD create the admin account on a start while
+instance.db has no admin account; once it exists they are not read. Without them and without an
+account, public health is available but login is denied.
+IGLO_EMAIL_API_USER and IGLO_EMAIL_API_TOKEN create an API user with the Super Admin role in the
+primary project while that project has no users, with that token; set both or neither. Nothing
+is printed. Remove them afterwards.
 `;
 
 export function parseBootstrap(args: Array<string>, env: Environment): BootstrapResult {
