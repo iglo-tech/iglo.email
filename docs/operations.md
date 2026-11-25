@@ -880,14 +880,15 @@ once; a repeated message is recorded once.
 
 **One topic for the whole account.** The topic, its subscription and the allowed ARNs belong to the
 instance, and every project's bounces arrive through them: do not create a topic per project. With
-one project, every notice goes to it. With several, a notice goes to the project its Message-ID
-names: first by the Message-ID's domain among the projects' hostnames and extra hostnames, then by
-asking each project whether the IDs in it name one of its sends, campaign deliveries or test sends.
-A notice that names no project, or more than one, is answered 200 so SNS does not retry it, is
-recorded nowhere, and writes `[instance] An SES notice matched no project` to stderr. So with
-several projects keep "Include original email headers" on: without the headers there is no
-Message-ID, and a notice is never matched to a project by its recipient address, because the same
-address can be a subscriber in two projects.
+one project, every notice goes to it. With several, a notice goes to the one project whose own
+sends, campaign deliveries or test sends the IDs in its Message-ID name. The Message-ID's domain
+decides nothing: a hostname can move to another project, and a campaign test's Message-ID can be
+chosen, so a late bounce follows the project that sent the message. A notice that names no project,
+or more than one, is answered 200 so SNS does not retry it, is recorded nowhere, and writes
+`[instance] An SES notice matched no project` to stderr. So with several projects keep "Include
+original email headers" on: without the headers there is no Message-ID (SES's common headers name
+it when the full list is truncated), and a notice is never matched to a project by its recipient
+address, because the same address can be a subscriber in two projects.
 
 Amazon signs every SNS message with the same certificates, whoever's topic it comes from, so a
 valid signature only proves the message passed through SNS. Any AWS account could create a topic,
