@@ -18,6 +18,7 @@ import { createEmailer, rootDomain } from "@/messaging/email";
 import type {
   Dispatch,
   Message,
+  Outcome,
   PushContext,
   PushDelivery,
   SMTPServer,
@@ -36,6 +37,11 @@ export const HORIZON_MS = 2000;
 export const UNPACED_BOUND = 200;
 /** The SMTP settings test waits at most this long for a start (D92), then is not sent. */
 const SMTP_TEST_WAIT_MS = 10_000;
+/**
+ * A sender's close waits at most this long for its pushes in SMTP flight: the shutdown's bound
+ * (the emailer's close), so a project delete is bounded the same way (D157).
+ */
+export const SENDER_CLOSE_MS = 5000;
 
 /** Granted slots. A push with the grant uses one; `keep` and `release` return slots at once. */
 export interface Grant {
@@ -87,7 +93,10 @@ export interface Sender {
   readonly closed: boolean;
   /**
    * Stops this project's sending: requests and unused slots go back, pushes waiting for a start
-   * end not-started, and it resolves once the pushes already started have settled.
+   * end not-started, and it resolves once the pushes already started have settled, or after
+   * `SENDER_CLOSE_MS`. A push still in flight then settles `ambiguous` for this project (never
+   * retried), as a push the shutdown cuts does; its SMTP connection is left alone, since the pools
+   * are every project's. Calling it again returns the same promise.
    */
   close(): Promise<void>;
 }
@@ -122,6 +131,8 @@ interface Member {
   readonly waiting: Set<Start>;
   /** Pushes not yet settled. */
   readonly inflight: Set<Promise<void>>;
+  /** Settles each unsettled push `ambiguous` for this project: the close deadline. */
+  readonly cut: Set<() => void>;
 }
 interface Start {
   readonly member: Member;
@@ -511,31 +522,52 @@ export function createDispatcher(options: DispatcherOptions) {
       slots: { marketing: [], campaign: [] },
       waiting: new Set(),
       inflight: new Set(),
+      cut: new Set(),
     };
     members.push(member);
+    let closing: Promise<void> | undefined;
     const pushContext = (rootUrl: string): PushContext => ({
       domain: rootDomain(rootUrl),
       copyAllowed: (address) => context.copyAllowed(address),
       refuse: () => context.refuse(),
     });
     const track = (dispatch: Dispatch, slot?: Slot): Dispatch => {
-      const settled = dispatch.result.then(
+      // The project sees the push's own outcome, or `ambiguous` once its close deadline passes.
+      // The slot stays running until the push itself settles, so the horizon's bound holds.
+      let expire!: () => void;
+      const result = new Promise<Outcome>((resolve, reject) => {
+        expire = () =>
+          resolve({
+            messageId: dispatch.messageId,
+            status: "ambiguous",
+            stage: "unknown",
+            accepted: [],
+            rejected: [],
+          });
+        dispatch.result.then(resolve, reject);
+      });
+      member.cut.add(expire);
+      const settled = result.then(
         () => {},
         () => {},
       );
       member.inflight.add(settled);
       void settled.then(() => {
         member.inflight.delete(settled);
+        member.cut.delete(expire);
+      });
+      const ran = () => {
         if (slot && running.delete(slot)) {
           assign();
         }
-      });
+      };
+      void dispatch.result.then(ran, ran);
       // A push that settled before it waited (a local failure, or a closed emailer) never used its
       // slot: the wait is attached synchronously by the push, so an unattached slot goes back now.
       if (slot && !slot.start && slot.member.slots[slot.cls].includes(slot)) {
         drop([slot]);
       }
-      return dispatch;
+      return { messageId: dispatch.messageId, result };
     };
     const closed = () => member.closed || stopped || emailer.closed;
     return {
@@ -600,12 +632,29 @@ export function createDispatcher(options: DispatcherOptions) {
       get closed() {
         return closed();
       },
-      async close() {
+      close() {
         if (!member.closed) {
           stopMember(member);
           remove(members, member);
         }
-        await Promise.allSettled(member.inflight);
+        closing ??= (async () => {
+          if (member.inflight.size === 0) {
+            return;
+          }
+          const timer = new AbortController();
+          const deadline = clock.sleep(SENDER_CLOSE_MS, timer.signal).then(
+            () => {
+              for (const expire of Array.from(member.cut)) {
+                expire();
+              }
+            },
+            () => {},
+          );
+          await Promise.allSettled(member.inflight);
+          timer.abort();
+          await deadline;
+        })();
+        return closing;
       },
     };
   }
