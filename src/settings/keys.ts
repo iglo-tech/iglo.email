@@ -41,6 +41,7 @@ export const settingSides: Readonly<Record<SettingKey, SettingsSide>> = {
   "privacy.allow_export": "project",
   "privacy.allow_wipe": "project",
   "privacy.allow_preferences": "project",
+  "privacy.preference_fields": "project",
   "privacy.exportable": "project",
   "privacy.domain_blocklist": "project",
   "privacy.domain_allowlist": "project",

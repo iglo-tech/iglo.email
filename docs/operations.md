@@ -271,8 +271,9 @@ converts it (there is no upgrade path from it):
 /var/lib/iglo.email is a data directory from an earlier iglo.email: it has iglo-email.db at its root. The data directory layout changed and nothing is converted; start with an empty data directory. An earlier backup is restored into projects/main/ of the new data directory.
 ```
 
-`backup` and `backup --release-hold` act on the primary project's database, under the one instance
-lock. `reset-password` and `reset-totp` with the admin's name act on the admin account and its copy
+`backup` snapshots `instance.db` and every project, or with `--project <slug>` one project, and
+`backup --release-hold` releases `instance.db`'s hold, or with `--project <slug>` that project's,
+under the one instance lock ([Backups](#backups), [Restore](#restore)). `reset-password` and `reset-totp` with the admin's name act on the admin account and its copy
 in every project, under the same lock; with any other name, on that user of the primary project.
 
 **Stderr lines name their project.** Every line the server writes to stderr starts with
@@ -666,7 +667,8 @@ and bounce provider (D89).
    subscription confirmation.
 
 4. **Subscribe the endpoint.** In SNS, create a subscription on the topic with protocol HTTPS and
-   endpoint `https://news.example.com/webhooks/service/ses`. SNS posts a
+   endpoint `https://news.example.com/webhooks/service/ses`, on the instance host (`--root-url`'s
+   host); a project's own host answers it with 400 `Unknown service.`. SNS posts a
    `SubscriptionConfirmation`; with the switch on, iglo.email verifies it and confirms by itself,
    and the subscription shows "Confirmed". Turn the switch on first: a confirmation sent while it
    is off is refused, and SNS needs a new request (delete and recreate the subscription).
@@ -680,6 +682,17 @@ The server needs outbound HTTPS to `sns.<region>.amazonaws.com` to fetch the sig
 and to confirm subscriptions, and its clock must be right (a message more than 24 hours old, or
 15 minutes ahead, is refused). The endpoint accepts bodies up to 256 KiB. SNS delivers at least
 once; a repeated message is recorded once.
+
+**One topic for the whole account.** The topic, its subscription and the allowed ARNs belong to the
+instance, and every project's bounces arrive through them: do not create a topic per project. With
+one project, every notice goes to it. With several, a notice goes to the project its Message-ID
+names: first by the Message-ID's domain among the projects' hostnames and extra hostnames, then by
+asking each project whether the IDs in it name one of its sends, campaign deliveries or test sends.
+A notice that names no project, or more than one, is answered 200 so SNS does not retry it, is
+recorded nowhere, and writes `[instance] An SES notice matched no project` to stderr. So with
+several projects keep "Include original email headers" on: without the headers there is no
+Message-ID, and a notice is never matched to a project by its recipient address, because the same
+address can be a subscriber in two projects.
 
 Amazon signs every SNS message with the same certificates, whoever's topic it comes from, so a
 valid signature only proves the message passed through SNS. Any AWS account could create a topic,
@@ -726,15 +739,41 @@ refuses a directory holding anything and a file, so of two overlapping backups t
 second to finish exits nonzero and the first stays. An empty directory that appears in that moment
 is replaced, which loses nothing.
 
-A backup is the primary project's database and uploads, in a directory shaped like
-`projects/main/` (a backup of `instance.db` and of every project is B144's):
+A backup holds `instance.db` and every registered project, in a directory shaped like the data
+directory (D158). `instance.db` is the instance settings, SMTP and SES included, the admin account
+and the project registry:
 
 ```text
-monday/                    mode 0700
+monday/                      mode 0700
+  instance.db                mode 0600, the snapshot, with the restore hold in it
+  iglo-email-backup.json     mode 0600, the projects it holds, as the registry names them
+  projects/                  mode 0700
+    main/                    mode 0700, one project's backup, as below
+    newsletter/
+```
+
+`--project <slug>` backs up that project only, in a directory shaped like `projects/<slug>/`. A
+project's directory in a whole backup is the same:
+
+```sh
+runuser -u iglo-email -- iglo.email backup --data-dir /var/lib/iglo.email \
+  --project newsletter --output /var/backups/iglo.email/newsletter-monday
+```
+
+```text
+newsletter-monday/         mode 0700
   iglo-email.db            mode 0600, the snapshot, with the restore hold in it
   iglo-email-backup.json   mode 0600, the relative path of the upload directory
   uploads/                 mode 0700, copies of the uploaded files, each mode 0600
 ```
+
+An unknown slug exits nonzero and writes nothing. Every database is snapshotted and checked inside
+the one partial directory described under **Failure**, and the backup is published only when all of
+them pass: a failure on any database leaves no backup at the final name. A project created or
+deleted while the backup runs fails it; run it again. `--verify` prints each database under its
+place and ends with one `Integrity:` line for the whole backup. The output may not be inside
+`<data-dir>/projects/`, where the projects are read from, or at `<data-dir>/instance.db`: those are
+refused before anything is written.
 
 If the upload directory is reached through a symlink inside the data directory, which D64 allows,
 the backup holds the real directory and its `upload_path` names it. The symlink is not kept and is
@@ -828,20 +867,48 @@ data:
 - Marketing is at-most-once only within one database history. Messages sent after the snapshot
   are not on record, so a campaign, a queued message or a sequence step would send them again.
 
-So every backup carries a **hold**, written into its database. A server started on it sends
-nothing until you release it, however the files were copied. There is no step to remember.
+So every database in a backup carries a **hold**, written into it. A server started on it sends
+nothing until you release it, however the files were copied. There is no step to remember. The hold
+is per database (D158):
+
+- A restored **project** database holds that project's sending only. The other projects send.
+- A restored **`instance.db`** holds sending in every project until it is released, since its
+  SMTP, SES and rate settings and its registry are those of the snapshot.
+
+Restore one project, from a whole backup's `projects/<slug>/` or from a `--project` backup:
 
 ```sh
 systemctl stop iglo.email
 runuser -u iglo-email -- iglo.email backup --verify /var/backups/iglo.email/monday
-mv /var/lib/iglo.email/projects/main /var/lib/iglo.email.before-restore
-cp -a /var/backups/iglo.email/monday /var/lib/iglo.email/projects/main
+mv /var/lib/iglo.email/projects/main /var/lib/iglo.email.main.before-restore
+cp -a /var/backups/iglo.email/monday/projects/main /var/lib/iglo.email/projects/main
 systemctl start iglo.email
 curl -fsSi http://127.0.0.1:9000/health
 ```
 
-`--verify` prints `Hold: held since <time>`. `/health` answers `200` and its usual body, with an
-`X-Iglo-Email-Hold: <time>` header, and the admin shows the reason on every page.
+Restore the instance: the server reads `instance.db` alone, with no `-wal` or `-shm` beside it.
+
+```sh
+systemctl stop iglo.email
+mkdir /var/lib/iglo.email.instance.before-restore
+mv /var/lib/iglo.email/instance.db* /var/lib/iglo.email.instance.before-restore/
+cp -a /var/backups/iglo.email/monday/instance.db /var/lib/iglo.email/instance.db
+systemctl start iglo.email
+```
+
+To restore everything, do both, for every project the backup holds. The registry in a restored
+`instance.db` is the snapshot's: a project created since is not served (the start names its
+directory), and a project deleted since is registered again: restore its directory from the same
+backup.
+
+`--verify` prints `Hold: held since <time>` for each held database. `/health` on a held project's
+host answers `200` and its usual body, with an `X-Iglo-Email-Hold: <time>` header, and its admin
+shows the reason on every page.
+
+**The admin account** lives in `instance.db` (B140). A restored project's copy of the admin follows
+the instance's account at the next start, so its password is the current one. A restored
+`instance.db` brings back the admin credentials of its snapshot, which every project's copy then
+follows.
 
 **While held.** The admin and the API can be read, and paused or cancelled work stays so. Public
 unsubscribe, opt-out and preference pages work, and so do bounce webhooks, because a person's
@@ -865,7 +932,7 @@ refusal must always land. Nothing leaves:
 the app after the snapshot may be on no provider's list at all. Before releasing, look for what
 happened since, in this order:
 
-1. The newer database, with its WAL, in `/var/lib/iglo.email.before-restore`, if it survived.
+1. The newer database, with its WAL, in the `.before-restore` directories set aside above, if they survived.
 2. A consumer of the `subscriber.unsubscribed` webhook, or anything else that kept these events.
 3. Your provider's own suppressions, bounces and complaints.
 
@@ -876,15 +943,25 @@ If none of those records survives, keep marketing to the restored audience off: 
 release only after every campaign and marketing sequence is paused and the audience has been
 reconciled or has consented again. Stale consent is not consent.
 
-**Release** is one command on a stopped server. It is refused without the flag, and while anything
-has the database open. It records the time, and `--verify` then prints `Hold: released at <time>`.
+**Release** is one command per database on a stopped server. It is refused without the flag, and
+while anything has the data directory open. It records the time, and `--verify` then prints
+`Hold: released at <time>`. `--project <slug>` releases that project's database; without it the
+command releases `instance.db`'s hold:
 
 ```sh
 systemctl stop iglo.email
 runuser -u iglo-email -- iglo.email backup --release-hold --consent-reconciled \
+  --data-dir /var/lib/iglo.email --project main
+runuser -u iglo-email -- iglo.email backup --release-hold --consent-reconciled \
   --data-dir /var/lib/iglo.email
 systemctl start iglo.email
 ```
+
+Each run prints `Hold released on project main at <time>` (or `on instance.db`), or `No hold on …`,
+then what is still held: `instance.db is still held, which holds every project`, `Still held:
+project a, …`, or `Nothing is held; sending starts with the server`. Releasing a project does not
+release `instance.db`, and releasing `instance.db` does not release a restored project: while
+either is held, that project sends nothing.
 
 What is left then goes out: scheduled and running campaigns continue from the restored cursor,
 queued mail is checked against current consent and sent, sequences catch up within their

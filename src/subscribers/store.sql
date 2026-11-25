@@ -83,6 +83,13 @@ UPDATE subscriber_lists SET status='unsubscribed', updated_at=? WHERE subscriber
 UPDATE subscribers SET updated_at=? WHERE id=?;
 -- name: subscriber-rename
 UPDATE subscribers SET name=?, updated_at=? WHERE id=?;
+-- name: subscriber-attribs
+-- B147 (D160): the preference center's profile fields, merged into the stored attributes by the caller.
+UPDATE subscribers SET attribs=?, updated_at=? WHERE id=?;
+-- name: membership-rejoin
+-- B147 (D160): a public list the subscriber left, joined again from the manage view, as a public signup
+-- restarts it: unconfirmed (active on a single opt-in list, pending on a double one), stamped.
+UPDATE subscriber_lists SET status='unconfirmed', updated_at=? WHERE subscriber_id=? AND list_id=? AND status='unsubscribed';
 -- name: membership-unsubscribe-double-pending
 -- B126 (D123 item 8): a transactional link's cancel ends unconfirmed memberships of double opt-in lists only.
 -- An unconfirmed single opt-in membership is an active subscription, and stays.

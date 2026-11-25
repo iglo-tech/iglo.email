@@ -1,10 +1,13 @@
 // A live backup of a data directory, and the check of one. Not ported: listmonk has no backup
 // command. Design and limits are in docs/operations.md.
 //
-// A backup is a directory shaped like a data directory: `iglo-email.db`, the upload directory at
-// its relative path, and a manifest naming that path, which an absolute setting does not say. It
-// is built under a name that cannot be taken for a finished backup, synced, verified and renamed,
-// so a process killed at any point leaves only that name.
+// A project's backup is a directory shaped like a project directory: `iglo-email.db`, the upload
+// directory at its relative path, and a manifest naming that path, which an absolute setting does
+// not say. A whole backup (14-projects section 12, D158) is shaped like a data directory:
+// `instance.db`, `projects/<slug>/` as a project's backup for every registered project, and a
+// manifest naming the projects. Either is built under one name that cannot be taken for a finished
+// backup, synced, verified as a whole and renamed once, so a process killed at any point, or a
+// failure on any database, leaves only that name.
 //
 // This process is a reader. It opens the database read-only, without `query_only`, which would
 // also refuse the writes to the output file, and without WAL or journal changes. `VACUUM INTO`
@@ -48,16 +51,25 @@ import { open } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Clock } from "@/clock";
-import { withStoppedDatabase } from "@/db/connection";
+import { holdDataDirectory } from "@/db/instance-lock";
+import { instanceMigrations } from "@/db/migrations";
 import { writeTransaction } from "@/db/transaction";
 import { uploadRoot } from "@/media/filesystem";
 import { createMediaStore } from "@/media/store";
-import { primaryProjectDirectory } from "@/projects/registry";
+import {
+  INSTANCE_DATABASE,
+  PROJECT_DATABASE,
+  PROJECTS,
+  oldLayoutMessage,
+  projectDirectory,
+  usesOldLayout,
+} from "@/projects/layout";
+import { createRegistry } from "@/projects/registry";
 import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hold";
 import type { HoldRecord } from "@/settings/hold";
 import { storedUploadPath, writeUploadPath } from "@/settings/stored";
 
-const DATABASE = "iglo-email.db";
+const DATABASE = PROJECT_DATABASE;
 const MANIFEST = "iglo-email-backup.json";
 /** Never a backup: `backup --verify` refuses this name and `backup` reports it left behind. */
 export const PARTIAL = ".iglo-email-backup-partial-";
@@ -105,7 +117,9 @@ function uploadedFiles(directory: string): Array<{ name: string; size: number }>
     if (!entry.isFile() || entry.name.startsWith(".")) {
       return [];
     }
-    const size = lstatSync(join(directory, entry.name), { throwIfNoEntry: false })?.size;
+    const size = lstatSync(join(directory, entry.name), {
+      throwIfNoEntry: false,
+    })?.size;
     return size === undefined ? [] : [{ name: entry.name, size }];
   });
 }
@@ -120,7 +134,11 @@ function sync(path: string): void {
 }
 
 function openSnapshot(path: string): Database {
-  return new Database(path, { readonly: true, strict: true, safeIntegers: true });
+  return new Database(path, {
+    readonly: true,
+    strict: true,
+    safeIntegers: true,
+  });
 }
 
 /** Every stored name of the snapshot, thumbnails included. */
@@ -194,13 +212,86 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
   }
 }
 
-/** Reads a backup, or a bare snapshot file, and changes nothing. Throws if it is damaged. */
-export function inspectBackup(path: string, clock: Clock, supportedVersion: number): Inspection {
+/** One database of a backup: its place in the backup ("" for a project's backup or a bare file). */
+export interface Checked {
+  place: string;
+  inspection: Inspection;
+}
+
+/** Whether a directory is a whole backup: instance.db and the manifest at its root. */
+function isWholeBackup(path: string): boolean {
+  return (
+    !!statSync(path, { throwIfNoEntry: false })?.isDirectory() &&
+    !!statSync(join(path, INSTANCE_DATABASE), {
+      throwIfNoEntry: false,
+    })?.isFile() &&
+    !!statSync(join(path, MANIFEST), { throwIfNoEntry: false })
+  );
+}
+
+/** The registered slugs of an instance database, in slug order. */
+function registeredSlugs(db: Database, clock: Clock): Array<string> {
+  const registry = createRegistry(db, clock);
+  try {
+    return registry.list().map((record) => record.slug);
+  } finally {
+    registry.close();
+  }
+}
+
+/** A whole backup: instance.db, then each project the manifest names, which its registry names too. */
+function inspectWhole(target: string, clock: Clock, supportedVersion: number): Array<Checked> {
+  const instanceFile = join(target, INSTANCE_DATABASE);
+  const instance = inspect(instanceFile, clock, instanceMigrations.length);
+  const { projects } = JSON.parse(readFileSync(join(target, MANIFEST), "utf-8")) as {
+    projects?: unknown;
+  };
+  if (!Array.isArray(projects) || !projects.every((slug) => typeof slug === "string")) {
+    throw new Error(`${join(target, MANIFEST)} names no projects: not a backup`);
+  }
+  if (instance.schemaVersion <= instanceMigrations.length) {
+    const db = openSnapshot(instanceFile);
+    try {
+      const registered = registeredSlugs(db, clock);
+      if (registered.join("\n") !== projects.join("\n")) {
+        throw new Error(
+          `${target} is not one backup: its instance.db registers ${registered.join(", ") || "no project"} ` +
+            `and its manifest names ${projects.join(", ") || "none"}`,
+        );
+      }
+    } finally {
+      db.close(true);
+    }
+  }
+  return [
+    { place: INSTANCE_DATABASE, inspection: instance },
+    ...projects.map((slug: string) => {
+      const place = join(PROJECTS, slug);
+      return {
+        place,
+        inspection: inspect(join(target, place), clock, supportedVersion),
+      };
+    }),
+  ];
+}
+
+/**
+ * Reads a backup, whole or of one project, or a bare snapshot file, and changes nothing. Throws if
+ * any database in it is damaged: one result for the whole backup.
+ */
+export function inspectBackup(
+  path: string,
+  clock: Clock,
+  supportedVersion: number,
+): Array<Checked> {
   const target = resolve(path);
   if (basename(target).startsWith(PARTIAL)) {
     throw new Error(`${path} is an interrupted backup, not a backup`);
   }
-  return inspect(target, clock, supportedVersion);
+  if (isWholeBackup(target)) {
+    return inspectWhole(target, clock, supportedVersion);
+  }
+  return [{ place: "", inspection: inspect(target, clock, supportedVersion) }];
 }
 
 /** Child entry: sync a file until stdin closes. Failing only makes the final sync larger. */
@@ -254,7 +345,10 @@ export interface BackupOptions {
   output?: string | undefined;
   force?: boolean;
   clock: Clock;
+  /** The project schema version of this executable; instance.db's comes from its manifest. */
   supportedVersion: number;
+  /** One project's backup instead of the whole instance (D158). */
+  project?: string | undefined;
   /** Writable bytes at a path; a test's way to fill a disk. */
   available?: (path: string) => number;
   /** Runs at the moment of publication; a test's way to race it. The command line never sets it. */
@@ -267,12 +361,17 @@ function freeBytes(path: string): number {
   return Number(stats.bavail) * Number(stats.bsize);
 }
 
-/** What a forced publication may replace: a directory that holds a backup or nothing. */
+/**
+ * What a forced publication may replace: a directory that holds a backup or nothing. A whole backup
+ * has its manifest beside instance.db, which a data directory does not.
+ */
 function replaceable(path: string): boolean {
   const existing = lstatSync(path, { throwIfNoEntry: false });
   return (
     !!existing?.isDirectory() &&
-    (readdirSync(path).length === 0 || !!statSync(join(path, DATABASE), { throwIfNoEntry: false }))
+    (readdirSync(path).length === 0 ||
+      !!statSync(join(path, DATABASE), { throwIfNoEntry: false }) ||
+      isWholeBackup(path))
   );
 }
 
@@ -288,7 +387,9 @@ function standing(path: string): "missing" | "folder" {
     if (errorCode(error) !== "ENOTDIR") {
       throw error;
     }
-    throw new Error(`${path} is below something that is not a folder`, { cause: error });
+    throw new Error(`${path} is below something that is not a folder`, {
+      cause: error,
+    });
   }
   if (!stats) {
     return "missing";
@@ -427,7 +528,9 @@ function createFolders(folders: Array<string>, made: Array<MadeFolder>): void {
       if (realFolder(folder)) {
         continue;
       }
-      throw new Error(`${folder} changed meanwhile: it is not a folder`, { cause: error });
+      throw new Error(`${folder} changed meanwhile: it is not a folder`, {
+        cause: error,
+      });
     }
   }
 }
@@ -436,12 +539,23 @@ function createFolders(folders: Array<string>, made: Array<MadeFolder>): void {
  * The places an output may never be, checked on the path it has. createBackup runs it once, before
  * the folders are made; the realpath check after them is what keeps that answer true.
  */
-function checkBoundaries(output: string, data: string, uploads: string): void {
-  if (inside(data, output)) {
+function checkBoundaries(output: string, root: string, uploads: Array<string>): void {
+  if (inside(root, output)) {
     throw new Error(`The output ${output} would replace the data directory`);
   }
-  if (inside(output, uploads)) {
+  if (uploads.some((directory) => inside(output, directory))) {
     throw new Error(`The output ${output} is inside the upload directory`);
+  }
+  // Where a restore reads (D158): a backup there could be taken for a project, or for instance.db.
+  const projects = join(root, PROJECTS);
+  if (inside(output, projects)) {
+    throw new Error(
+      `The output ${output} is inside ${projects}, where the projects are read from; ` +
+        `write it outside it, such as under ${join(root, "backups")}`,
+    );
+  }
+  if (dirname(output) === root && basename(output).startsWith(INSTANCE_DATABASE)) {
+    throw new Error(`The output ${output} is where instance.db is read from`);
   }
 }
 
@@ -530,8 +644,8 @@ function whileMade<T>(made: MadeFolder, step: () => T): T {
 }
 
 /** Refuses what no flag may replace; a forced replacement must hold a backup or nothing. */
-function checkDestination(output: string, data: string, force: boolean): void {
-  if (inside(data, output)) {
+function checkDestination(output: string, live: Array<string>, force: boolean): void {
+  if (live.some((data) => inside(data, output))) {
     throw new Error(`The output ${output} would replace the data directory`);
   }
   if (!lstatSync(output, { throwIfNoEntry: false })) {
@@ -562,10 +676,11 @@ function putBack(aside: string, output: string): void {
 /**
  * Rename cannot replace a directory that holds files, so a forced old backup steps aside and goes
  * only once the new one has its name. The checks come after the move, so they are of what moved.
- * The live data directory holds a database, so `replaceable` would accept it. It is refused by
- * identity instead: a path that came to name it cannot fool a comparison of device and inode.
+ * A live project directory holds a database, so `replaceable` would accept it. It and the data
+ * directory are refused by identity instead: a path that came to name one cannot fool a comparison
+ * of device and inode.
  */
-function stepAside(output: string, live: Stats): string | undefined {
+function stepAside(output: string, live: Array<Stats>): string | undefined {
   const aside = join(dirname(output), `${REPLACED}${crypto.randomUUID()}`);
   try {
     renameSync(output, aside);
@@ -576,7 +691,7 @@ function stepAside(output: string, live: Stats): string | undefined {
     throw error;
   }
   const moved = lstatSync(aside);
-  if (moved.dev === live.dev && moved.ino === live.ino) {
+  if (live.some((directory) => moved.dev === directory.dev && moved.ino === directory.ino)) {
     putBack(aside, output);
     throw new Error(`${output} is the live data directory; not replacing it`);
   }
@@ -597,7 +712,7 @@ function publish(
   partial: MadeFolder,
   output: string,
   force: boolean,
-  live: Stats,
+  live: Array<Stats>,
 ): string | undefined {
   if (!isMade(partial)) {
     throw changedMeanwhile(partial.path);
@@ -611,7 +726,9 @@ function publish(
     }
     const code = errorCode(error);
     if (code === "EEXIST" || code === "ENOTEMPTY" || code === "ENOTDIR") {
-      throw new Error(`${output} already exists; pass --force to replace it`, { cause: error });
+      throw new Error(`${output} already exists; pass --force to replace it`, {
+        cause: error,
+      });
     }
     if (code === "ENOENT") {
       throw changedMeanwhile(partial.path);
@@ -694,41 +811,127 @@ function sealSnapshot(path: string, since: string, data: string): string {
   }
 }
 
-export function createBackup(options: BackupOptions): Inspection & { path: string } {
+/** A live database a backup reads: instance.db, or a project's database and its uploads. */
+interface Source {
+  /** Its place in the backup, relative: "" for a project's own backup. */
+  place: string;
+  /** The snapshot's file name. */
+  file: string;
+  /** The live database file. */
+  path: string;
+  /** The real directory it lives in: a project's paths resolve there. */
+  data: string;
+  db: Database;
+  /** A project's live upload directory; instance.db has none. */
+  uploads?: string;
+}
+
+/** Opens a live database read-only, as the server's readers do; it must have a schema. */
+function openSource(path: string): Database {
+  if (!statSync(path, { throwIfNoEntry: false })) {
+    throw new Error(`No database at ${path}`);
+  }
+  const db = new Database(path, {
+    readonly: true,
+    strict: true,
+    safeIntegers: true,
+  });
+  try {
+    db.run("PRAGMA busy_timeout = 5000");
+    if (single<bigint>(db, "user_version") === 0n) {
+      throw new Error(`${path} has no schema yet; start the server once`);
+    }
+    return db;
+  } catch (error) {
+    db.close(true);
+    throw error;
+  }
+}
+
+/** The instance.db snapshot's one write: the hold. It leaves no journal or WAL beside the file. */
+function sealInstance(path: string, since: string): void {
+  const db = new Database(path, { strict: true, safeIntegers: true });
+  try {
+    db.run("PRAGMA journal_mode = DELETE");
+    db.transaction(() => placeRestoreHold(db, since))();
+  } finally {
+    db.close(true);
+  }
+}
+
+/** The result of a backup: where it is and the check of each database in it. */
+export interface BackupReport {
+  path: string;
+  databases: Array<Checked>;
+}
+
+/**
+ * A whole backup (instance.db and every registered project), or with `project` one project's, as
+ * one directory published by one rename (14-projects section 12, D158).
+ */
+export function createBackup(options: BackupOptions): BackupReport {
   const { clock, warn } = options;
   const dataDir = resolve(options.dataDir);
-  // B138b (D151): the primary project's database and uploads, until backup learns about projects
-  // (B144). A backup with no --output still goes to the instance's backups/.
-  const projectDir = primaryProjectDirectory(dataDir);
-  const databasePath = join(projectDir, DATABASE);
-  if (!statSync(databasePath, { throwIfNoEntry: false })) {
-    throw new Error(`No database at ${databasePath}`);
+  if (usesOldLayout(dataDir)) {
+    throw new Error(oldLayoutMessage(dataDir));
   }
-  const data = realpathSync(projectDir);
-  // The identity of the live data directory, taken before anything can move: see stepAside.
-  const live = statSync(data);
-  const wanted = resolve(options.output ?? join(dataDir, "backups", backupName(clock)));
-  // Folders are created only after every check that can refuse; see missingFolders.
-  const folders = missingFolders(dirname(wanted));
-  const parent = resolvedParent(wanted, folders);
-  const output = join(parent, basename(wanted));
-  checkDestination(output, data, options.force ?? false);
-
-  const db = new Database(databasePath, { readonly: true, strict: true, safeIntegers: true });
+  const whole = options.project === undefined;
+  const sources: Array<Source> = [];
   let created: Array<MadeFolder> = [];
   let partial: MadeFolder | undefined;
   let flusher: Bun.Subprocess | undefined;
   try {
-    db.run("PRAGMA busy_timeout = 5000");
-    if (single<bigint>(db, "user_version") === 0n) {
-      throw new Error(`${databasePath} has no schema yet; start the server once`);
+    // Every database is opened, and every check that can refuse is made, before any folder is.
+    const instancePath = join(dataDir, INSTANCE_DATABASE);
+    const instance = openSource(instancePath);
+    const root = realpathSync(dataDir);
+    sources.push({
+      place: INSTANCE_DATABASE,
+      file: INSTANCE_DATABASE,
+      path: instancePath,
+      data: root,
+      db: instance,
+    });
+    const registered = registeredSlugs(instance, clock);
+    if (options.project !== undefined && !registered.includes(options.project)) {
+      throw new Error(`No project ${options.project} in ${dataDir}`);
     }
-    const liveUploads = uploadRoot(data, storedUploadPath(db));
-    checkBoundaries(output, data, liveUploads);
-    const pages = single<bigint>(db, "page_count") - single<bigint>(db, "freelist_count");
-    const needed =
-      Number(pages * single<bigint>(db, "page_size")) +
-      uploadedFiles(liveUploads).reduce((sum, { size }) => sum + size, 0);
+    for (const slug of options.project === undefined ? registered : [options.project]) {
+      const directory = projectDirectory(dataDir, slug);
+      const path = join(directory, DATABASE);
+      const db = openSource(path);
+      const data = realpathSync(directory);
+      sources.push({
+        place: whole ? join(PROJECTS, slug) : "",
+        file: DATABASE,
+        path,
+        data,
+        db,
+        uploads: uploadRoot(data, storedUploadPath(db)),
+      });
+    }
+    // A project's backup has no instance.db.
+    const included = whole ? sources : sources.slice(1);
+    // The identities of the live directories, taken before anything can move: see stepAside.
+    const live = [root, ...sources.slice(1).map(({ data }) => data)].map((path) => statSync(path));
+
+    const wanted = resolve(options.output ?? join(dataDir, "backups", backupName(clock)));
+    const folders = missingFolders(dirname(wanted));
+    const parent = resolvedParent(wanted, folders);
+    const output = join(parent, basename(wanted));
+    checkDestination(
+      output,
+      sources.map(({ data }) => data),
+      options.force ?? false,
+    );
+    const uploadDirectories = included.flatMap(({ uploads }) => (uploads ? [uploads] : []));
+    checkBoundaries(output, root, uploadDirectories);
+    let needed = 0;
+    for (const { db, uploads } of included) {
+      const pages = single<bigint>(db, "page_count") - single<bigint>(db, "freelist_count");
+      needed += Number(pages * single<bigint>(db, "page_size"));
+      needed += uploads ? uploadedFiles(uploads).reduce((sum, { size }) => sum + size, 0) : 0;
+    }
     const available = (options.available ?? freeBytes)(realpathSync(folders.existing));
     if (needed > available) {
       throw new Error(`A backup needs about ${needed} bytes and ${parent} has ${available} free`);
@@ -747,59 +950,80 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
     // checked again.
     const made = openPartial(wanted, parent, folders.missing, created);
     partial = made;
-    const snapshot = join(made.path, DATABASE);
-    // The directory is 0700 from mkdtemp, so only this user and root can reach the database while
-    // VACUUM INTO creates it with the umask mode (0644 under umask 022). It is made 0600 right after.
-    // The flusher runs as this user and may open the file during VACUUM, so the directory is what
-    // protects it in that window.
-    // VACUUM INTO refuses a path that exists, even an empty file (macOS's SQLite does), so the
-    // flusher may start before the file does and waits for it.
-    const source = whileMade(made, () => {
-      flusher = Bun.spawn([process.execPath, flushChildArgument, snapshot], {
-        stdin: "pipe",
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-      const since = clock.now().toISOString();
-      db.run("VACUUM INTO ?", [snapshot]);
-      chmodSync(snapshot, 0o600);
-      flusher.kill();
-      const sealed = sealSnapshot(snapshot, since, data);
-      sync(snapshot);
-      return sealed;
-    });
-
-    // The database comes first. A file that arrives after it is one no row names, which nothing
-    // serves. A file deleted after it is a row without a file, reported below.
-    const uploads = relative(data, source);
-    whileMade(made, () => {
-      const target = join(made.path, uploads);
-      mkdirSync(target, { recursive: true, mode: 0o700 });
-      chmodSync(target, 0o700);
-      for (const { name } of uploadedFiles(source)) {
-        try {
-          copyFileSync(join(source, name), join(target, name), constants.COPYFILE_EXCL);
-        } catch (error) {
-          // A file the live server deleted after it was listed is skipped. Anything else missing is
-          // the backup's own path, which whileMade names.
-          const gone = !lstatSync(join(source, name), { throwIfNoEntry: false });
-          if (errorCode(error) === "ENOENT" && gone) {
-            continue;
-          }
-          throw error;
+    for (const source of included) {
+      const target = join(made.path, source.place === INSTANCE_DATABASE ? "" : source.place);
+      if (target !== made.path) {
+        whileMade(made, () => {
+          mkdirSync(target, { recursive: true, mode: 0o700 });
+          chmodSync(dirname(target), 0o700);
+          chmodSync(target, 0o700);
+        });
+      }
+      const snapshot = join(target, source.file);
+      // The directory is 0700 from mkdtemp, so only this user and root can reach the database while
+      // VACUUM INTO creates it with the umask mode (0644 under umask 022). It is made 0600 right
+      // after. The flusher runs as this user and may open the file during VACUUM, so the directory
+      // is what protects it in that window.
+      // VACUUM INTO refuses a path that exists, even an empty file (macOS's SQLite does), so the
+      // flusher may start before the file does and waits for it.
+      const copied = whileMade(made, () => {
+        flusher = Bun.spawn([process.execPath, flushChildArgument, snapshot], {
+          stdin: "pipe",
+          stdout: "ignore",
+          stderr: "ignore",
+        });
+        const since = clock.now().toISOString();
+        source.db.run("VACUUM INTO ?", [snapshot]);
+        chmodSync(snapshot, 0o600);
+        flusher.kill();
+        flusher = undefined;
+        if (source.uploads === undefined) {
+          sealInstance(snapshot, since);
+          sync(snapshot);
+          return undefined;
         }
-        chmodSync(join(target, name), 0o600);
-        sync(join(target, name));
+        const sealed = sealSnapshot(snapshot, since, source.data);
+        sync(snapshot);
+        return sealed;
+      });
+      if (copied !== undefined) {
+        copyUploads(made, target, source.data, copied, parent);
       }
-      const manifest = join(made.path, MANIFEST);
-      writeFileSync(manifest, `${JSON.stringify({ uploads })}\n`, { mode: 0o600, flag: "wx" });
-      sync(manifest);
-      for (let directory = target; directory !== parent; directory = dirname(directory)) {
-        sync(directory);
-      }
-    });
+    }
+    if (whole) {
+      whileMade(made, () => {
+        // The set is one backup only if the instance.db snapshot registers what was copied: a project
+        // added or removed meanwhile fails the backup, which a rerun takes whole.
+        const db = openSnapshot(join(made.path, INSTANCE_DATABASE));
+        let copied: Array<string>;
+        try {
+          copied = registeredSlugs(db, clock);
+        } finally {
+          db.close(true);
+        }
+        if (copied.join("\n") !== registered.join("\n")) {
+          throw new Error("The registered projects changed while the backup ran; run it again");
+        }
+        const manifest = join(made.path, MANIFEST);
+        writeFileSync(manifest, `${JSON.stringify({ projects: registered })}\n`, {
+          mode: 0o600,
+          flag: "wx",
+        });
+        sync(manifest);
+        sync(made.path);
+      });
+    }
 
-    const inspection = whileMade(made, () => inspect(made.path, clock, options.supportedVersion));
+    const databases = whileMade(made, () =>
+      whole
+        ? inspectWhole(made.path, clock, options.supportedVersion)
+        : [
+            {
+              place: "",
+              inspection: inspect(made.path, clock, options.supportedVersion),
+            },
+          ],
+    );
     options.beforePublish?.();
     const aside = publish(made, output, options.force ?? false, live);
     // The rename is the publication. From here nothing is undone: the partial is no longer a partial,
@@ -830,10 +1054,12 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
         );
       }
     }
-    return { ...inspection, path: output };
+    return { path: output, databases };
   } finally {
     flusher?.kill();
-    db.close(true);
+    for (const { db } of sources) {
+      db.close(true);
+    }
     try {
       if (partial) {
         removePartial(partial, warn);
@@ -844,23 +1070,178 @@ export function createBackup(options: BackupOptions): Inspection & { path: strin
   }
 }
 
+/**
+ * A project's uploads, after its database. A file that arrives after it is one no row names, which
+ * nothing serves. A file deleted after it is a row without a file, which the check reports.
+ */
+function copyUploads(
+  made: MadeFolder,
+  project: string,
+  data: string,
+  source: string,
+  parent: string,
+): void {
+  const uploads = relative(data, source);
+  whileMade(made, () => {
+    const target = join(project, uploads);
+    mkdirSync(target, { recursive: true, mode: 0o700 });
+    chmodSync(target, 0o700);
+    for (const { name } of uploadedFiles(source)) {
+      try {
+        copyFileSync(join(source, name), join(target, name), constants.COPYFILE_EXCL);
+      } catch (error) {
+        // A file the live server deleted after it was listed is skipped. Anything else missing is
+        // the backup's own path, which whileMade names.
+        const gone = !lstatSync(join(source, name), { throwIfNoEntry: false });
+        if (errorCode(error) === "ENOENT" && gone) {
+          continue;
+        }
+        throw error;
+      }
+      chmodSync(join(target, name), 0o600);
+      sync(join(target, name));
+    }
+    const manifest = join(project, MANIFEST);
+    writeFileSync(manifest, `${JSON.stringify({ uploads })}\n`, {
+      mode: 0o600,
+      flag: "wx",
+    });
+    sync(manifest);
+    for (let directory = target; directory !== parent; directory = dirname(directory)) {
+      sync(directory);
+    }
+  });
+}
+
+/** A database a stopped server left, opened alone and exclusively (D67, D69). */
+function openStopped(path: string, supportedVersion: number): Database {
+  if (!statSync(path, { throwIfNoEntry: false })) {
+    throw new Error(`No database at ${path}`);
+  }
+  const db = new Database(path, {
+    readwrite: true,
+    strict: true,
+    safeIntegers: true,
+  });
+  try {
+    // Before the first read: a connection that has read keeps its shared-memory locking.
+    db.run("PRAGMA busy_timeout = 0");
+    db.run("PRAGMA locking_mode = EXCLUSIVE");
+    try {
+      db.run("BEGIN IMMEDIATE");
+    } catch {
+      throw new Error(`${path} is in use: stop what has it open first`);
+    }
+    const version = single<bigint>(db, "user_version");
+    db.run("ROLLBACK");
+    if (version === 0n) {
+      throw new Error(`${path} has no schema yet; start the server once`);
+    }
+    if (Number(version) > supportedVersion) {
+      throw new Error(`Database version ${version} is ahead of this executable`);
+    }
+    return db;
+  } catch (error) {
+    db.close(true);
+    throw error;
+  }
+}
+
+/** instance.db has its settings table, where a hold is, from its migration 3 on. */
+function hasSettings(db: Database): boolean {
+  return !!db.query("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'settings'").get();
+}
+
+/** A database's own hold, read-only; a database with no settings table has none. */
+function heldNow(path: string): boolean {
+  if (!statSync(path, { throwIfNoEntry: false })) {
+    return false;
+  }
+  const db = new Database(path, {
+    readonly: true,
+    strict: true,
+    safeIntegers: true,
+  });
+  try {
+    if (!hasSettings(db)) {
+      return false;
+    }
+    const record = holdRecord(db);
+    return !!record && record.releasedAt === null;
+  } finally {
+    db.close(true);
+  }
+}
+
 export interface ReleaseOptions {
   dataDir: string;
   clock: Clock;
+  /** The project schema version of this executable. */
   supportedVersion: number;
+  /** The project whose database is released; without it, instance.db's (D158). */
+  project?: string | undefined;
 }
 
-/** Ends a restore hold, on a stopped server: otherwise it changes what one reads between claims. */
-export function releaseHold(options: ReleaseOptions): HoldRecord | null {
-  return withStoppedDatabase(options.dataDir, options.supportedVersion, (db) =>
-    writeTransaction(db, () => {
-      const record = holdRecord(db);
-      if (!record || record.releasedAt !== null) {
-        return null;
-      }
-      const at = options.clock.now().toISOString();
-      releaseRestoreHold(db, record, at);
-      return { since: record.since, releasedAt: at };
-    }),
-  );
+export interface Release {
+  /** The released hold, or null when that database had none. */
+  released: HoldRecord | null;
+  /** The databases still held afterwards: `instance.db` and the slugs of held projects. */
+  held: Array<string>;
+}
+
+/**
+ * Ends one database's restore hold, on a stopped server under the one lock: otherwise it changes
+ * what a server reads between claims. instance.db's hold holds every project and a project's holds
+ * that project, so each is released on its own (D158).
+ */
+export function releaseHold(options: ReleaseOptions): Release {
+  const root = resolve(options.dataDir);
+  if (usesOldLayout(root)) {
+    throw new Error(oldLayoutMessage(root));
+  }
+  const instancePath = join(root, INSTANCE_DATABASE);
+  // Before the lock, which would create the directory.
+  if (!statSync(instancePath, { throwIfNoEntry: false })) {
+    throw new Error(`No database at ${instancePath}`);
+  }
+  const lock = holdDataDirectory(root);
+  try {
+    const instance = openStopped(instancePath, instanceMigrations.length);
+    let slugs: Array<string>;
+    try {
+      slugs = registeredSlugs(instance, options.clock);
+    } finally {
+      instance.close(true);
+    }
+    const project = options.project;
+    if (project !== undefined && !slugs.includes(project)) {
+      throw new Error(`No project ${project} in ${root}`);
+    }
+    const databaseOf = (slug: string) => join(projectDirectory(root, slug), DATABASE);
+    const db =
+      project === undefined
+        ? openStopped(instancePath, instanceMigrations.length)
+        : openStopped(databaseOf(project), options.supportedVersion);
+    let released: HoldRecord | null;
+    try {
+      released = writeTransaction(db, () => {
+        const record = hasSettings(db) ? holdRecord(db) : null;
+        if (!record || record.releasedAt !== null) {
+          return null;
+        }
+        const at = options.clock.now().toISOString();
+        releaseRestoreHold(db, record, at);
+        return { since: record.since, releasedAt: at };
+      });
+    } finally {
+      db.close(true);
+    }
+    const held = [
+      ...(project !== undefined && heldNow(instancePath) ? [INSTANCE_DATABASE] : []),
+      ...slugs.filter((slug) => slug !== project && heldNow(databaseOf(slug))),
+    ];
+    return { released, held };
+  } finally {
+    lock.release();
+  }
 }

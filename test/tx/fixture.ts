@@ -63,6 +63,7 @@ import { registerUnsubscribeRoutes } from "@/unsubscribe/routes";
 import type { UnsubscribeEffects } from "@/unsubscribe/routes";
 import { createTracking } from "@/unsubscribe/tracking";
 import { registerBounceRoutes } from "@/bounces/routes";
+import { createSesProject, registerSesRoute } from "@/bounces/ses-route";
 import { createTestSends } from "@/messaging/test-sends";
 import { createSnsClient } from "@/bounces/ses";
 import type { SnsFetch } from "@/bounces/ses";
@@ -99,7 +100,7 @@ export async function txFixture(
     effects?: UnsubscribeEffects;
     page?: () => PageOptions;
     /** The subscriber mail of the privacy routes (B123); unset, a privacy action here throws. */
-    mail?: () => Pick<SubscriberMail, "exportData">;
+    mail?: () => Pick<SubscriberMail, "exportData" | "acceptSignup">;
     /** Wire the production webhook owners, with this transport. */
     webhooks?: WebhookTransport;
     /** The provider route's rate limit, with `webhooks`. */
@@ -310,6 +311,16 @@ export async function txFixture(
       actions: () => asBody<Record<string, BounceAction>>(settingsStore!.read()["bounce.actions"]),
       testSend: (messageId) => testSends.find(messageId),
     });
+    const bounceSettings = () => {
+      const current = settingsStore!.read();
+      return {
+        enabled: current["bounce.enabled"],
+        webhooksEnabled: current["bounce.webhooks_enabled"],
+        ses: current["bounce.ses_enabled"],
+        sesTopics: current["bounce.ses_topic_arns"],
+      };
+    };
+    const bounceLimit = options.bounceLimit ?? ((_context, next) => next());
     registerBounceRoutes(router, {
       db,
       clock,
@@ -318,18 +329,20 @@ export async function txFixture(
       subscribers,
       roles,
       auth,
-      logger: app.logger,
-      settings: () => {
-        const current = settingsStore!.read();
-        return {
-          enabled: current["bounce.enabled"],
-          webhooksEnabled: current["bounce.webhooks_enabled"],
-          ses: current["bounce.ses_enabled"],
-          sesTopics: current["bounce.ses_topic_arns"],
-        };
-      },
-      limit: options.bounceLimit ?? ((_context, next) => next()),
+      settings: bounceSettings,
+      limit: bounceLimit,
+    });
+    // The instance's SES route (B142), with this fixture's database as its only project.
+    const sesProject = createSesProject({ db, store: bounces, logger: app.logger });
+    registerSesRoute(router, {
+      clock,
+      settings: bounceSettings,
+      page: () => pageOptions(),
+      limit: bounceLimit,
       sns: createSnsClient({ clock, fetch: options.snsFetch ?? refuseNetwork }),
+      projects: () => [sesProject],
+      byHost: () => undefined,
+      logger: app.logger,
     });
   }
   const media = createMediaStore(db, clock);
@@ -388,6 +401,7 @@ export async function txFixture(
       allowPreferences: false,
       allowExport: false,
       allowWipe: false,
+      preferenceFields: [],
     };
   // The subscriber mail, made with the public routes below when `webhooks` is set.
   let subscriberMail: SubscriberMail | undefined;

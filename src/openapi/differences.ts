@@ -665,7 +665,7 @@ export const differences: Array<Difference> = [
   {
     area: "Bounces (M3.4)",
     summary:
-      "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast. `POST /webhooks/service/ses` believes only the SNS topics listed in `bounce.ses_topic_arns` and records at most 50 recipients, where upstream believes any signed message. Its certificate and confirmation URLs must name a real AWS region (`sns.eu-west-1.amazonaws.com`); upstream's pattern also matches the S3 bucket host `sns.s3.amazonaws.com`. Provider webhooks have a budget of 6,000 POSTs per client per minute, apart from the public forms, so a bounce burst is not refused at 300.",
+      "`order_by=campaign_name` sorts, and `type` outside the enum matches nothing, where upstream answers 500 from a missing column and a failed cast. `POST /webhooks/service/ses` believes only the SNS topics listed in `bounce.ses_topic_arns` and records at most 50 recipients, where upstream believes any signed message. Its certificate and confirmation URLs must name a real AWS region (`sns.eu-west-1.amazonaws.com`); upstream's pattern also matches the S3 bucket host `sns.s3.amazonaws.com`. Provider webhooks have a budget of 6,000 POSTs per client per minute, apart from the public forms, so a bounce burst is not refused at 300. With projects (B142, D156) the SES route is the instance's, with its bounce keys: served on the instance host and on hosts no project claims, `400 Unknown service.` on a project host, and with several projects a notice that names no single project is answered 200 and stored nowhere.",
     applies: ["/api/bounces", "/bounces", "POST /webhooks/service"],
   },
   {
@@ -871,6 +871,12 @@ export const differences: Array<Difference> = [
     area: "Public manage link and all-lists option (B130, D128)",
     summary:
       "The unsubscribe page offers 'Manage preferences' and the manage view a preference form only when the subscriber has a public list to manage; with none, the manage view keeps the privacy actions only. privacy.allow_preferences stays the explicit switch. The public option 'Unsubscribe from all mailing lists' unsubscribes from every list and records a marketing suppression (the one a self-wipe leaves, D125), so no marketing mail and no marketing enrollment follows, while transactional mail and transactional sequence steps keep flowing. It is not a blocklist: the status stays enabled, the webhook is subscriber.unsubscribed with data.suppressed true (a single-list unsubscribe omits the field), and the admin blocklist still stops every mail. Upstream's box blocklists the subscriber, and upstream always shows the manage link and an empty form.",
+    applies: [],
+  },
+  {
+    area: "Preference center (B147, D160)",
+    summary:
+      "The manage view is a preference center. privacy.preference_fields (a project setting, empty by default) lists the subscriber attributes it shows, each with a key, a label, a type (text, number, boolean, date or select), whether subscribers may edit it, and its rules (required, min and max as a text length or a number range, a select's allowed values). A marketing or campaign manage save that carries profile=true (a JSON body: an attribs object) writes only the editable fields, checked on the server; any other attribute key is ignored and never written, and an invalid value is a 400 that writes nothing. A transactional manage view shows no profile field, as it shows no name (D137). Paired and transactional manage views offer every active public list the subscriber is not on, with its description, to opt in to: a checked one is joined as a public signup joins it (unconfirmed; a double opt-in list pends its opt-in mail, sent by the opt-in loop under app.send_optin_confirmation and the per-address window). A blocklisted or marketing-suppressed subscriber is offered none and joins none. Upstream's manage view edits the name and unchecks current lists only, and ignores a list UUID the subscriber has no membership of.",
     applies: [],
   },
   {

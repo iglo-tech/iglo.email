@@ -269,6 +269,25 @@ export function createSnsClient(deps: {
 }
 export type SnsClient = ReturnType<typeof createSnsClient>;
 
+/** What our own Message-ID names: its domain and the send or campaign delivery's UUIDs (B142). */
+export interface MessageIdentity {
+  /** Lowercase; empty when the value is not a Message-ID. */
+  domain: string;
+  sendUuid: string;
+  campaignUuid: string;
+  subscriberUuid: string;
+}
+export function messageIdentity(messageId: string): MessageIdentity {
+  const domain = /@([^@<>\s]+)>?$/.exec(messageId.trim())?.[1]?.toLowerCase() ?? "";
+  const delivery = campaignMessage.exec(messageId.trim());
+  return {
+    domain,
+    sendUuid: sendMessage.exec(messageId.trim())?.[1]?.toLowerCase() ?? "",
+    campaignUuid: delivery?.[1]?.toLowerCase() ?? "",
+    subscriberUuid: delivery?.[2]?.toLowerCase() ?? "",
+  };
+}
+
 const recipients = (value: unknown) =>
   Array.isArray(value) ? value.map((item) => record(item)) : [];
 

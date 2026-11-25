@@ -236,9 +236,10 @@ export async function sequencesFixture(
       allowPreferences: false,
       allowExport: false,
       allowWipe: false,
+      preferenceFields: [],
     }),
     // The privacy answers are the public fixture's concern; here every path pairs nobody.
-    privacy: { export: () => null, wipe: () => null },
+    privacy: { export: () => null, wipe: () => null, signup: () => {} },
   });
   registerEventRoutes(router, events, auth, roles);
   const testSends = createTestSends(db, clock);

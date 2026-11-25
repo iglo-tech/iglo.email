@@ -179,10 +179,16 @@ try {
         const partial = readdirSync(destination).find((name) => name.startsWith("."));
         if (partial) {
           const elapsed = performance.now() - begun;
-          if (!snapshotEnd && existsSync(join(destination, partial, "uploads"))) {
+          if (
+            !snapshotEnd &&
+            existsSync(join(destination, partial, "projects", "main", "uploads"))
+          ) {
             snapshotEnd = elapsed;
           }
-          if (!copyEnd && existsSync(join(destination, partial, "iglo-email-backup.json"))) {
+          if (
+            !copyEnd &&
+            existsSync(join(destination, partial, "projects", "main", "iglo-email-backup.json"))
+          ) {
             copyEnd = elapsed;
           }
         }
@@ -211,7 +217,7 @@ try {
       }
 
       const databaseBytes = statSync(join(dataDir, "projects", "main", "iglo-email.db")).size;
-      const snapshotBytes = statSync(join(output, "iglo-email.db")).size;
+      const snapshotBytes = statSync(join(output, "projects", "main", "iglo-email.db")).size;
       const record = {
         run,
         at: new Date().toISOString(),

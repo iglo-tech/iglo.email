@@ -32,9 +32,12 @@ import {
   requestHostname,
 } from "@/projects/registry";
 import type { NewProject, ProjectRecord, Registry } from "@/projects/registry";
-import type { Router } from "@/server/router";
+import { SES_PATH, registerSesRoute } from "@/bounces/ses-route";
+import type { PageSite } from "@/public/layout";
+import { Router } from "@/server/router";
 import { ok } from "@/server/response";
 import { defaults } from "@/settings/defaults";
+import { holdForInstance } from "@/settings/hold";
 import { sessionDuration } from "@/settings/duration";
 import { createInstanceSettings, instanceLoginSettings } from "@/settings/instance";
 import type { InstanceSettingsStore } from "@/settings/instance";
@@ -94,6 +97,20 @@ export function projectRootUrl(rootUrl: string, hostname: string): string {
   // A root URL without a trailing slash keeps none, as the bootstrap gave it.
   return origin + (rest === "/" && !rootUrl.endsWith("/") ? "" : rest);
 }
+
+/** The instance's own public page brand, for the SES route's 404 and 429 without a primary. */
+const instancePageSite = (rootUrl: string): PageSite => ({
+  rootUrl: rootUrl.replace(/\/+$/, ""),
+  logoUrl: "",
+  faviconUrl: "",
+  subscriptionPage: false,
+  archive: false,
+  siteUrl: "",
+  accent: "",
+  font: "system-sans",
+  header: "auto",
+  siteName: "iglo.email",
+});
 
 const notFound = () =>
   new Response("404 page not found\n", {
@@ -189,9 +206,9 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     });
   let sync: ReturnType<typeof adminSync> | undefined;
 
-  const wire = (record: ProjectRecord) => {
+  const wire = async (record: ProjectRecord) => {
     const admin = must(sync, "admin sync");
-    return createProject(
+    const project = await createProject(
       {
         clock,
         budgets: must(budgets, "budgets"),
@@ -207,6 +224,9 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       },
       options(record),
     );
+    // A restored instance.db holds every project's sending until it is released (D158).
+    holdForInstance(project.db, db);
+    return project;
   };
 
   /** Only the primary project may hold the instance host (14-projects section 2). */
@@ -290,6 +310,10 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   const instanceSettings = must(settings, "instance settings");
   const sesAccount = must(ses, "SES account");
   const instanceLogger = createSourceLogger("instance");
+  const instanceClientAddress = createClientAddress(
+    () => instanceLoginSettings(instanceSettings.read()).trustedProxies,
+    instanceLogger,
+  );
   const instanceAuth = await createInstanceAuth({
     account: must(account, "admin account"),
     clock,
@@ -313,10 +337,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     projectRootUrl: rootUrlOf,
     settings: instanceSettings,
     // The login limit's address honours security.trusted_proxies, as a project's login does.
-    clientAddress: createClientAddress(
-      () => instanceLoginSettings(instanceSettings.read()).trustedProxies,
-      instanceLogger,
-    ),
+    clientAddress: instanceClientAddress,
     ses: must(ses, "SES account"),
     smtpTest: () => {
       const project = primary?.project;
@@ -335,6 +356,45 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     db,
     logger: instanceLogger,
     i18n: createTranslation(),
+  });
+  // SES notices (B142, D156): the instance's route, with the instance's bounce keys; each notice
+  // goes to the one project it names (14-projects section 8).
+  const sesRouter = new Router();
+  const sesProjects = () =>
+    entries
+      .toSorted((a, b) => (a.record.slug < b.record.slug ? -1 : 1))
+      .map((entry) => entry.project.ses);
+  const sesPage = () => primary?.project.ses.page() ?? instancePageSite(config.rootUrl);
+  registerSesRoute(sesRouter, {
+    clock,
+    settings: () => {
+      const current = instanceSettings.read();
+      const topics: unknown = current["bounce.ses_topic_arns"];
+      return {
+        enabled: current["bounce.enabled"] === true,
+        webhooksEnabled: current["bounce.webhooks_enabled"] === true,
+        ses: current["bounce.ses_enabled"] === true,
+        sesTopics: Array.isArray(topics)
+          ? topics.filter((topic): topic is string => typeof topic === "string")
+          : [],
+      };
+    },
+    page: sesPage,
+    // The bounce table's own peers: no project's slug is empty. The floor, or the largest
+    // project's setting, so one install's budget is unchanged.
+    limit: must(budgets, "budgets").limit("bounce", {
+      slug: "",
+      limit: () =>
+        Math.max(
+          must(budgets, "budgets").bounceWebhookPerMinute,
+          ...entries.map((entry) => entry.project.ses.bounceLimit()),
+        ),
+      page: sesPage,
+      clientAddress: instanceClientAddress,
+    }),
+    projects: sesProjects,
+    byHost: (hostname) => hosts.get(hostname)?.project.ses,
+    logger: instanceLogger,
   });
 
   return {
@@ -358,6 +418,14 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       // (section 2); on a project's own host these paths are that project's.
       if ((!claimed || hostname === instanceHost) && instancePath(pathname)) {
         return instanceRouter.handle(instanceApp, request, peerAddress);
+      }
+      // SES notices are the instance's on those hosts, with or without a primary (B142).
+      if (
+        (!claimed || hostname === instanceHost) &&
+        pathname === SES_PATH &&
+        request.method === "POST"
+      ) {
+        return sesRouter.handle(instanceApp, request, peerAddress);
       }
       const entry = claimed ?? primary;
       if (entry) {
