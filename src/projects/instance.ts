@@ -193,7 +193,6 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   let settings: InstanceSettingsStore | undefined;
   /** The one dispatcher every project sends through (B141): its pools, rate and start schedule. */
   let dispatcher: Dispatcher | undefined;
-  let unsubscribeRate: (() => void) | undefined;
   /** The SES account snapshot and the capacity forecast over every project (B145a). */
   let ses: SesAccount | undefined;
   let capacity: Capacity | undefined;
@@ -303,7 +302,6 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     entries.length = 0;
     // Last in the shutdown order (14-projects section 7): every project has stopped asking for
     // slots and drained; the pools close. After stop() this is the same, already settled close.
-    unsubscribeRate?.();
     await dispatcher?.close();
     registry?.close();
     account?.close();
@@ -316,7 +314,17 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     settings = createInstanceSettings(db, clock);
     account = createAdminAccountStore(db, clock);
     const instanceKeys = settings;
-    // The effective rate is messaging.max_send_rate until B145 adds SES's MaxSendRate (D155).
+    // The effective rate is the lower of messaging.max_send_rate and SES's MaxSendRate, and the
+    // quota guard holds marketing and campaign slots (B145b, D161). A new snapshot or a settings
+    // change that moves either wakes the dispatcher.
+    const sesService = createSesAccount({
+      clock,
+      settings: settings.reader,
+      attention,
+      endpoint: config.sesEndpoint,
+      onChange: () => dispatcher?.wake(),
+    });
+    ses = sesService;
     dispatcher = createDispatcher({
       clock,
       // Validated on save (src/settings/validate.ts): an array of servers and a whole number.
@@ -324,22 +332,8 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         const servers: unknown = instanceKeys.read().smtp;
         return Array.isArray(servers) ? servers.filter((s): s is SMTPServer => !!s) : [];
       },
-      rate: () => {
-        const rate: unknown = instanceKeys.read()["messaging.max_send_rate"];
-        return typeof rate === "number" ? rate : 0;
-      },
-    });
-    const paced = dispatcher;
-    unsubscribeRate = settings.reader.subscribe((next, current) => {
-      if (next["messaging.max_send_rate"] !== current["messaging.max_send_rate"]) {
-        paced.wake();
-      }
-    });
-    ses = createSesAccount({
-      clock,
-      settings: settings.reader,
-      attention,
-      endpoint: config.sesEndpoint,
+      rate: sesService.rate,
+      held: sesService.held,
     });
     capacity = createCapacity({
       clock,

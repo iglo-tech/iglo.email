@@ -92,6 +92,30 @@ export function refreshDelay(snapshot: SesSnapshot | null, rate: number): number
   return remaining <= line ? FAST_REFRESH_MS : REFRESH_MS;
 }
 
+/**
+ * The guard's hold line (section 7, "Last-resort guard"): `max(2% of Max24HourSend, effective rate ×
+ * 60 s)`. The second term is what the app can send between two fast reads, so SES never refuses
+ * mail past the quota before the next read sees it.
+ */
+export function holdLine(snapshot: Pick<SesSnapshot, "max24HourSend">, rate: number): number {
+  return Math.max(0.02 * snapshot.max24HourSend, rate * (FAST_REFRESH_MS / 1000));
+}
+
+/**
+ * Whether the guard holds marketing and campaign starts on this snapshot: what is left of the
+ * 24-hour quota is at most the hold line. Never without a snapshot or for an account without a
+ * daily limit. Pure, so a test can compute it by hand.
+ */
+export function quotaHeld(
+  snapshot: Pick<SesSnapshot, "max24HourSend" | "sentLast24Hours"> | null,
+  rate: number,
+): boolean {
+  if (!snapshot || snapshot.max24HourSend < 0) {
+    return false;
+  }
+  return snapshot.max24HourSend - snapshot.sentLast24Hours <= holdLine(snapshot, rate);
+}
+
 const number = (value: unknown, name: string) => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`SES GetAccount answered without ${name}`);
@@ -232,6 +256,18 @@ export async function getAccount(
   };
 }
 
+/** The guard's attention line when holding starts (`holding`) or stops. */
+function guardLine(holding: boolean, snapshot: SesSnapshot | null, rate: number): string {
+  if (!snapshot) {
+    return "SES quota guard: resuming marketing and campaign sends: the SES API keys changed";
+  }
+  const left = snapshot.max24HourSend - snapshot.sentLast24Hours;
+  const line = Math.ceil(holdLine(snapshot, rate));
+  return holding
+    ? `SES quota guard: holding marketing and campaign sends: ${left} of the 24-hour quota of ${snapshot.max24HourSend} left, at or below the hold line of ${line} (snapshot read at ${snapshot.readAt})`
+    : `SES quota guard: resuming marketing and campaign sends: ${left} of the 24-hour quota of ${snapshot.max24HourSend} left, above the hold line of ${line} (snapshot read at ${snapshot.readAt})`;
+}
+
 const sameCredentials = (a: SesCredentials | null, b: SesCredentials | null) =>
   a?.region === b?.region &&
   a?.accessKeyId === b?.accessKeyId &&
@@ -247,6 +283,11 @@ export function createSesAccount(deps: {
   /** SES's base URL for a region; `sesEndpoint` unless a test gives its own. */
   readonly endpoint?: ((region: string) => string) | undefined;
   readonly attention: (message: string) => void;
+  /**
+   * The effective rate or the guard's hold changed (B145b): a new snapshot, a key change or a
+   * change of `messaging.max_send_rate`. The instance wakes the dispatcher with it.
+   */
+  readonly onChange?: (() => void) | undefined;
 }) {
   const { clock } = deps;
   const endpoint = deps.endpoint ?? sesEndpoint;
@@ -265,6 +306,29 @@ export function createSesAccount(deps: {
 
   const credentials = () => sesCredentials(deps.settings.read());
   const rate = () => effectiveRate(sendRateSetting(deps.settings.read()), snapshot);
+  /** The guard (B145b, D161): true while the latest snapshot is at or below the hold line. */
+  let holding = false;
+  /** The effective rate as of the last change handed to `onChange`. */
+  let lastRate = rate();
+
+  /**
+   * Re-reads the hold and the rate after the snapshot or the settings changed: one attention line
+   * when holding starts and one when it stops, and `onChange` when either moved. A failed read
+   * changes neither, so it is never a cause.
+   */
+  function evaluate(): void {
+    const nextRate = rate();
+    const next = credentials() !== null && quotaHeld(snapshot, nextRate);
+    const moved = next !== holding || nextRate !== lastRate;
+    if (next !== holding) {
+      holding = next;
+      deps.attention(guardLine(next, snapshot, nextRate));
+    }
+    lastRate = nextRate;
+    if (moved) {
+      deps.onChange?.();
+    }
+  }
 
   /** One read with the current credentials; concurrent callers share it. */
   function read(): Promise<void> {
@@ -285,10 +349,11 @@ export function createSesAccount(deps: {
     })
       .then(
         (next) => {
-          if (started === generation) {
+          if (started === generation && !stopped) {
             snapshot = next;
             error = null;
             lastAttention = null;
+            evaluate();
           }
         },
         (error_: unknown) => {
@@ -327,6 +392,8 @@ export function createSesAccount(deps: {
       lastAttempt = null;
       sleeping?.abort();
     }
+    // The rate setting, or the keys, may move the effective rate and the hold line.
+    evaluate();
   });
 
   async function loop(): Promise<void> {
@@ -381,6 +448,8 @@ export function createSesAccount(deps: {
     },
     /** The effective rate now: the setting and the latest snapshot. */
     rate,
+    /** The guard: marketing and campaign starts wait while this is true (B145b). */
+    held: () => holding,
     /** `messaging.max_send_rate` as set. */
     setting: () => sendRateSetting(deps.settings.read()),
   };

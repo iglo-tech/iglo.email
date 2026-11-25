@@ -18,6 +18,7 @@ import { readBody } from "@/users/input";
 import type { InstanceAuth, InstanceSession } from "@/users/instance-auth";
 import { validPassword } from "@/users/password";
 import { settingsPage } from "@/admin/views/settings";
+import type { SesRateLine } from "@/admin/views/settings";
 import type { Translation } from "@/i18n/i18n";
 import { settingsHandlers } from "@/settings/routes";
 import type { InstanceSettingsStore } from "@/settings/instance";
@@ -53,15 +54,32 @@ export interface InstanceRouteDeps {
   readonly projects: InstanceProjects;
   /** The login limit's client address, with security.trusted_proxies; the peer without it. */
   readonly clientAddress?: (context: RequestContext) => string;
-  /** The SES account (B145a): the instance Settings page's "Check SES account" button. */
-  readonly ses: Pick<SesAccount, "check" | "setting">;
+  /**
+   * The SES account (B145a): the instance Settings page's "Check SES account" button, and SES's
+   * rate beside the send-rate setting (B145b).
+   */
+  readonly ses: Pick<SesAccount, "check" | "setting" | "current">;
   /** The primary project's SMTP test, or undefined without a primary project. */
   readonly smtpTest: () => ((body: unknown, revalidate: () => void) => Promise<void>) | undefined;
 }
 
+/** The SES rate line's inputs from the account as it is now (B145b). */
+function sesRateLine(ses: Pick<SesAccount, "current">): SesRateLine {
+  const state = ses.current();
+  return { configured: state.configured, maxSendRate: state.snapshot?.maxSendRate ?? null };
+}
+
 /** The instance Settings page (B139, D154): the instance keys, in the instance layout. */
-export function instanceSettingsPage(i18n: Translation, rootUrl: string): string {
-  const view = settingsPage(i18n, "instance", { canManage: true, canUpload: false });
+export function instanceSettingsPage(
+  i18n: Translation,
+  rootUrl: string,
+  ses?: SesRateLine,
+): string {
+  const view = settingsPage(i18n, "instance", {
+    canManage: true,
+    canUpload: false,
+    ses,
+  });
   return renderAdminShell({
     title: view.title,
     siteName: "iglo.email",
@@ -583,7 +601,9 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
 
   const settingsView = page(
     (context) =>
-      new Response(instanceSettingsPage(context.app.i18n, deps.rootUrl), { headers: htmlHeaders }),
+      new Response(instanceSettingsPage(context.app.i18n, deps.rootUrl, sesRateLine(deps.ses)), {
+        headers: htmlHeaders,
+      }),
   );
   const settings = settingsHandlers({
     side: "instance",

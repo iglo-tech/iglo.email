@@ -227,7 +227,57 @@ function General({ t, canUpload }: { t: Translation; canUpload: boolean }) {
   );
 }
 
-function Performance({ t, side }: { t: Translation; side: SettingsSide }) {
+/**
+ * The instance's SES account as the Settings page shows it beside the send rate (B145b): whether
+ * the API keys are saved, and SES's `MaxSendRate` from the latest snapshot (null before a read).
+ */
+export interface SesRateLine {
+  readonly configured: boolean;
+  readonly maxSendRate: number | null;
+}
+
+/**
+ * The line beside `messaging.max_send_rate` (14-projects section 7, "Rate"): SES's rate, and a
+ * warning while the setting is higher, which then caps nothing. The warning follows the field as
+ * it is edited; SES's rate is the snapshot's when the page was rendered.
+ */
+function SesRate({ ses }: { ses: SesRateLine }) {
+  if (!ses.configured) {
+    return (
+      <p class="text-light" data-testid="ses-rate">
+        No SES API credentials are saved: the setting alone applies, with no capacity forecast and
+        no quota guard.
+      </p>
+    );
+  }
+  if (ses.maxSendRate === null) {
+    return (
+      <p class="text-light" data-testid="ses-rate">
+        The rate SES allows is not read yet: the setting alone applies until it is.
+      </p>
+    );
+  }
+  const rate = String(ses.maxSendRate);
+  const higher = `!(form['messaging.max_send_rate'] > 0 && form['messaging.max_send_rate'] <= ${rate})`;
+  return (
+    <div data-testid="ses-rate">
+      <p class="text-light">SES allows {rate}/s. Sending runs at the lower of the two.</p>
+      <p data-testid="ses-rate-warning" x-show={higher} role="alert">
+        The setting is higher than the rate SES allows: sending runs at {rate}/s.
+      </p>
+    </div>
+  );
+}
+
+function Performance({
+  t,
+  side,
+  ses,
+}: {
+  t: Translation;
+  side: SettingsSide;
+  ses?: SesRateLine | undefined;
+}) {
   const instance = side === "instance";
   const cacheOff = "!form['app.cache_slow_queries']";
   return (
@@ -247,7 +297,9 @@ function Performance({ t, side }: { t: Translation; side: SettingsSide }) {
             max="10000"
             placeholder="14"
           />
-        ) : (
+        ) : null}
+        {instance && ses ? <SesRate ses={ses} /> : null}
+        {instance ? null : (
           <NumberField
             model="form['app.max_send_errors']"
             name="app.max_send_errors"
@@ -1206,7 +1258,13 @@ export interface SettingsPage {
 export function settingsPage(
   t: Translation,
   side: SettingsSide,
-  options: { canManage: boolean; canUpload: boolean; instanceSettingsUrl?: string },
+  options: {
+    canManage: boolean;
+    canUpload: boolean;
+    instanceSettingsUrl?: string;
+    /** The instance side's SES rate line (B145b). */
+    ses?: SesRateLine | undefined;
+  },
 ): SettingsPage {
   const { canManage } = options;
   const project = side === "project";
@@ -1223,7 +1281,11 @@ export function settingsPage(
         ["appearance", t.T("globals.terms.appearance"), <Appearance t={t} side={side} />],
       ]
     : [
-        ["performance", t.T("globals.terms.performance"), <Performance t={t} side={side} />],
+        [
+          "performance",
+          t.T("globals.terms.performance"),
+          <Performance t={t} side={side} ses={options.ses} />,
+        ],
         ["security", t.T("globals.terms.security"), <Security t={t} side={side} />],
         ["media", t.T("settings.media.title"), <Media t={t} side={side} />],
         ["smtp", t.T("settings.smtp.name"), <Smtp t={t} canManage={canManage} />],
