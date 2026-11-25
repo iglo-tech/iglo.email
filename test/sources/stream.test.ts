@@ -83,6 +83,40 @@ const stamp = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString(
 
 const sorted = (ids: Iterable<string>) => [...ids].sort();
 
+const REFUSED = "Source stream refused by the source: check the source settings: ";
+
+/** A catch-up (or retry) read of the events collection. */
+const eventReads = (s: StreamFixture) =>
+  s.requests.filter((line) => line.startsWith("GET /api/collections/events/records?")).length;
+
+/** A fresh events collection (no key field), so a test may change its schema alone. */
+async function eventsCollection() {
+  const name = unique("ev");
+  const rule = '@request.auth.collectionName = "services"';
+  await pb.api("POST", "/api/collections", {
+    name,
+    type: "base",
+    listRule: rule,
+    viewRule: rule,
+    fields: [
+      { name: "user", type: "relation", collectionId: "_pb_users_auth_", maxSelect: 1 },
+      { name: "name", type: "text" },
+      { name: "data", type: "json" },
+      { name: "occurredAt", type: "date" },
+      { name: "created", type: "autodate", onCreate: true, onUpdate: false },
+    ],
+  });
+  const settings = config(pb.url, {
+    events: { ...config().events, collection: name, key: "" },
+    users: { collection: "", leavingFilter: "" },
+  });
+  return { name, settings };
+}
+
+/** Minutes of the fixture's clock since `start`. */
+const minutesSince = (s: StreamFixture, start: number) =>
+  (s.clock.now().getTime() - start) / 60_000;
+
 test("live delivery: subscribed names arrive once, others never; a user leaving arrives", async () => {
   const signup = unique("signup");
   const s = stream({ config: config(), names: () => [signup] });
@@ -271,6 +305,134 @@ test("a permanent refusal (a wrong password) writes one attention line at once",
   expect(s.attention[0]).toStartWith(
     "Source stream refused by the source: check the source settings: ",
   );
+});
+
+test("a catch-up refused after a subscription writes one line until the stream gets live again", async () => {
+  // PocketBase takes a realtime filter on a field that does not exist; the catch-up list is a 400.
+  const events = await eventsCollection();
+  await pb.renameField(events.name, "name", "label");
+  const s = stream({ config: events.settings, names: () => [unique("field")] });
+  const start = s.clock.now().getTime();
+  await s.until(() => minutesSince(s, start) >= 25, "25 minutes of refusals", 30_000, 60_000);
+  expect(s.requests.filter((line) => line.startsWith("POST /api/realtime")).length).toBeGreaterThan(
+    4,
+  );
+  expect(s.attention).toHaveLength(1);
+  expect(s.attention[0]).toStartWith(REFUSED);
+  // Fixed: the stream gets live, and its warnings start over.
+  await pb.renameField(events.name, "label", "name");
+  await s.until(() => s.stream.state().state === "live", "live once fixed", 30_000, 60_000);
+  // A later failure (the field goes again; the 30-minute close reconnects) writes one line again.
+  await pb.renameField(events.name, "name", "label");
+  s.clock.advance(30 * 60_000);
+  await s.until(() => s.attention.length === 2, "the second refusal", 30_000, 60_000);
+  const again = s.clock.now().getTime();
+  await s.until(() => minutesSince(s, again) >= 25, "25 more minutes", 30_000, 60_000);
+  expect(s.attention).toHaveLength(2);
+  expect(s.attention[1]).toStartWith(REFUSED);
+});
+
+test("a record lacking a configured field refuses the stream: nothing consumed, one line", async () => {
+  const events = await eventsCollection();
+  await pb.renameField(events.name, "data", "payload");
+  const name = unique("mapping");
+  const s = stream({ config: events.settings, names: () => [name] });
+  await s.live();
+  const user = await pb.user();
+  const ids: Array<string> = [];
+  for (let i = 0; i < 5; i++) {
+    const record = await pb.create(events.name, {
+      user: user.id,
+      name,
+      occurredAt: stamp(0),
+      payload: { i },
+    });
+    ids.push(record.id);
+  }
+  await s.until(() => s.attention.length === 1, "the refusal");
+  const start = s.clock.now().getTime();
+  await s.until(() => minutesSince(s, start) >= 20, "20 minutes of refusals", 30_000, 60_000);
+  expect(s.attention).toHaveLength(1);
+  expect(s.attention[0]).toStartWith(REFUSED);
+  expect(s.attention[0]).toContain('no field "data"');
+  expect(s.attempts.size).toBe(0);
+  expect(s.stream.retries()).toEqual([]);
+  expect(s.stream.seenCount()).toBe(0);
+  // The mapping fits again: every record arrives, once.
+  await pb.renameField(events.name, "payload", "data");
+  await s.until(() => s.eventIds().length === 5, "every record", 30_000, 60_000);
+  await s.until(() => s.stream.state().state === "live", "live", 30_000, 60_000);
+  expect(sorted(s.eventIds())).toEqual(sorted(ids));
+  expect(s.attention).toHaveLength(1);
+});
+
+test("terminal records write one line per cause until a record is handled again", async () => {
+  const name = unique("cap");
+  const s = stream({ config: eventsOnly(), names: () => [name] });
+  await s.live();
+  const user = await pb.user();
+  const failing = [recordId(), recordId(), recordId()];
+  for (const id of failing) {
+    s.fail.set(id, ["permanent"]);
+    await pb.event(user.id, name, {}, { id });
+  }
+  const ok = await pb.event(user.id, name);
+  await s.until(() => s.eventIds().includes(ok.id), "the record after the failures");
+  expect(s.attention).toHaveLength(1);
+  expect(s.attention[0]).toContain(failing[0]);
+  // A record was handled since: the same cause writes a line again.
+  const later = recordId();
+  s.fail.set(later, ["permanent"]);
+  await pb.event(user.id, name, {}, { id: later });
+  await s.until(() => s.stream.retries().length === 4, "the fourth terminal record");
+  expect(s.attention).toHaveLength(2);
+  expect(s.attention[1]).toContain(later);
+  expect(s.stream.retries().every((row) => row.terminal === 1n)).toBe(true);
+});
+
+test("a live buffer past its limit is dropped and caught up: none lost, none twice", async () => {
+  const name = unique("buffer");
+  // A realtime message for one record is a few hundred characters: a few fit.
+  const s = stream({ config: eventsOnly(), names: () => [name], tuning: { bufferLimit: 2000 } });
+  await s.live();
+  const user = await pb.user();
+  // The handler is slow on the first record, so what arrives meanwhile waits in the buffer.
+  const slow = recordId();
+  const held = Promise.withResolvers<void>();
+  s.hold.set(slow, held.promise);
+  await pb.event(user.id, name, {}, { id: slow });
+  await s.until(() => s.attempts.has(slow), "the slow record");
+  const reads = eventReads(s);
+  const sessions = s.stream.state().sessions;
+  const meanwhile: Array<string> = [];
+  for (let i = 0; i < 20; i++) {
+    meanwhile.push((await pb.event(user.id, name, { i })).id);
+  }
+  // Real time for the messages to reach the buffer (no clock is involved).
+  await Bun.sleep(300);
+  held.resolve();
+  await s.until(() => s.eventIds().length === 21, "every record");
+  await s.live();
+  expect(sorted(s.eventIds())).toEqual(sorted([slow, ...meanwhile]));
+  expect(new Set(s.eventIds()).size).toBe(21);
+  // Recovered by a catch-up on the same connection.
+  expect(eventReads(s)).toBeGreaterThan(reads);
+  expect(s.stream.state().sessions).toBe(sessions);
+  expect(s.attention).toEqual([]);
+});
+
+test("an oversized live message is dropped and its record caught up", async () => {
+  const name = unique("oversized");
+  const s = stream({ config: eventsOnly(), names: () => [name], tuning: { maxLine: 2000 } });
+  await s.live();
+  const user = await pb.user();
+  const reads = eventReads(s);
+  const big = await pb.event(user.id, name, { blob: "x".repeat(5000) });
+  await s.until(() => s.eventIds().length === 1, "the large record");
+  await s.live();
+  expect(s.eventIds()).toEqual([big.id]);
+  expect(eventReads(s)).toBeGreaterThan(reads);
+  expect(s.attention).toEqual([]);
 });
 
 test("topics split past 2,500 characters; a name change re-subscribes", async () => {

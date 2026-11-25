@@ -4,9 +4,11 @@
 // `(stamp, id)` keyset pages, skipping what the dedupe table holds; then drain the buffer and go on
 // live. Every record goes to the `RecordHandler`, one at a time; a marker moves only after its
 // records are committed. A reset or close at any point is routine: reconnect and catch up again.
-// Attention is written only after `ATTENTION_AFTER_MS` of failing to get live, or once for a
-// permanent refusal. A record the handler fails on goes to the retry queue, which a loop on the
-// injected clock works through without ever holding the stream up.
+// Attention is written only after `ATTENTION_AFTER_MS` of failing to get live, or once per cause
+// of a permanent refusal (again only after a session got live). A record lacking a configured
+// field is such a refusal: nothing is consumed. A record the handler fails on goes to the retry
+// queue, which a loop on the injected clock works through without ever holding the stream up;
+// terminal records write one line per cause until a record is handled again.
 import { createHash } from "node:crypto";
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
@@ -22,6 +24,7 @@ import { openRealtime, safeJson } from "@/sources/realtime";
 import type { RealtimeOptions, SseMessage } from "@/sources/realtime";
 import { must } from "@/invariant";
 import { isSourceError, PAGE_LIMIT, SourceError } from "@/sources/source";
+import { isSettingsMismatch } from "@/sources/stream-record";
 import type {
   RecordCommit,
   RecordHandler,
@@ -80,6 +83,7 @@ export interface SourceStreamOptions {
     bufferLimit: number;
     idleMs: number;
     maxAgeMs: number;
+    maxLine: number;
   }>;
 }
 
@@ -192,6 +196,22 @@ export function createSourceStream(options: SourceStreamOptions) {
       /* Logging never changes the stream. */
     }
   };
+  /**
+   * Record-level lines (a terminal record, a retry the settings refuse): one per cause until a
+   * record is handled again, so one wrong mapping or failing handler never floods the log.
+   */
+  const recordWarned = new Set<string>();
+  const recordAttention = (
+    safe: SafeMessage,
+    item: { kind: string; id: string },
+    error: unknown,
+  ) => {
+    const cause = `${safe}\0${describe(error).replaceAll(item.id, "")}`;
+    if (!recordWarned.has(cause)) {
+      recordWarned.add(cause);
+      attention(safe, `${item.kind} ${item.id}: ${describe(error)}`);
+    }
+  };
   const unexpected = (error: unknown) => {
     try {
       options.logger.error(error);
@@ -241,7 +261,7 @@ export function createSourceStream(options: SourceStreamOptions) {
       return true;
     });
     if (queued && permanent) {
-      attention(TERMINAL, `${item.kind} ${item.id}: ${describe(error)}`);
+      recordAttention(TERMINAL, item, error);
     }
     if (!isSourceError(error)) {
       unexpected(error);
@@ -270,6 +290,7 @@ export function createSourceStream(options: SourceStreamOptions) {
       queue(item, error);
       return;
     }
+    recordWarned.clear();
     if (!store.seen(item.kind, item.id, item.stamp)) {
       writeTransaction(db, () => {
         if (!store.seen(item.kind, item.id, item.stamp)) {
@@ -363,6 +384,9 @@ export function createSourceStream(options: SourceStreamOptions) {
     }
     if (tuning.maxAgeMs) {
       realtime.maxAgeMs = tuning.maxAgeMs;
+    }
+    if (tuning.maxLine) {
+      realtime.maxLine = tuning.maxLine;
     }
     const connection = await openRealtime(realtime);
     sessions++;
@@ -463,9 +487,12 @@ export function createSourceStream(options: SourceStreamOptions) {
   }
 
   async function run() {
+    // Failing to get live: since when, and the lines written. Both start over only when a session
+    // gets live (caught up), not when it connects: a source that accepts the subscription and then
+    // refuses every catch-up (a misnamed field) is still one refusal, written once.
     let failingSince: number | undefined;
     let warned = false;
-    let refusedWarned = false;
+    const refusals = new Set<string>();
     let delay = 0;
     while (!stopping.signal.aborted) {
       const session_ = new AbortController();
@@ -481,15 +508,15 @@ export function createSourceStream(options: SourceStreamOptions) {
           continue;
         }
         await session(names, signal, {
-          // Connecting and subscribing worked: the failed-connect clock and warnings start over.
           connected() {
             connected = true;
-            failingSince = undefined;
-            warned = false;
-            refusedWarned = false;
           },
+          // Caught up: the failing clock and the warnings start over.
           live() {
             delay = 0;
+            failingSince = undefined;
+            warned = false;
+            refusals.clear();
           },
         });
         delay = RECONNECT_MIN_MS;
@@ -511,10 +538,12 @@ export function createSourceStream(options: SourceStreamOptions) {
         } else {
           const now = clock.now().getTime();
           failingSince ??= now;
-          if (isSourceError(error) && error.kind === "permanent") {
-            if (!refusedWarned) {
+          if (permanent) {
+            // Also a record lacking a configured field (`SettingsMismatch`): nothing is consumed
+            // and no marker moved, so the try after the settings are fixed delivers it.
+            if (!refusals.has(describe(error))) {
+              refusals.add(describe(error));
               attention(REFUSED, describe(error));
-              refusedWarned = true;
             }
             delay = REFUSED_RETRY_MS;
           } else {
@@ -569,6 +598,7 @@ export function createSourceStream(options: SourceStreamOptions) {
         await handler.userLeft(item.record, commit, stopping.signal);
       }
       finish();
+      recordWarned.clear();
       return;
     } catch (error_) {
       error = error_;
@@ -577,7 +607,9 @@ export function createSourceStream(options: SourceStreamOptions) {
       return;
     }
     const now = clock.now();
-    const permanent = isSourceError(error) && error.kind === "permanent";
+    // A record lacking a configured field waits for the settings to be fixed, like the stream.
+    const mismatch = isSettingsMismatch(error);
+    const permanent = !mismatch && isSourceError(error) && error.kind === "permanent";
     const terminal =
       permanent || now.getTime() - Date.parse(claim.first_failed_at) >= RETRY_WINDOW_MS;
     const wait = Math.min(
@@ -592,8 +624,11 @@ export function createSourceStream(options: SourceStreamOptions) {
         terminal,
       ),
     );
+    const record = { kind, id: claim.record_id };
     if (changed && terminal) {
-      attention(TERMINAL, `${kind} ${claim.record_id}: ${describe(error)}`);
+      recordAttention(TERMINAL, record, error);
+    } else if (changed && mismatch) {
+      recordAttention(REFUSED, record, error);
     }
     if (!isSourceError(error)) {
       unexpected(error);

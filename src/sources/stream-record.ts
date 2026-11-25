@@ -2,7 +2,24 @@
 // it needs of the source. The stream (src/sources/stream.ts) receives records, skips the ones it
 // has handled, and gives each one to a `RecordHandler`; B150d implements the handler.
 import type { SourceObject } from "@/sources/json";
+import { isSourceError, SourceError } from "@/sources/source";
 import type { CallOptions, SourceEvent } from "@/sources/source";
+
+/**
+ * A record that lacks a field the source settings name (a misnamed or removed field): the
+ * settings are wrong, not the record. It is a refusal of the whole stream: the stream stops at the
+ * record without consuming it, writes one attention line, and tries again later, so fixing the
+ * settings (or the source's schema) delivers every record. A retry keeps its row and waits.
+ */
+export class SettingsMismatch extends SourceError {
+  readonly settingsMismatch = true;
+  constructor(message: string) {
+    super("permanent", message);
+  }
+}
+
+export const isSettingsMismatch = (error: unknown): error is SettingsMismatch =>
+  isSourceError(error) && "settingsMismatch" in error && error.settingsMismatch === true;
 
 /** The two kinds of record the stream receives: events `create`s and users matching the leaving filter. */
 export type StreamKind = "event" | "user";
@@ -19,8 +36,9 @@ export interface SourceUser {
 
 /**
  * A record with its kind, ID and stamp (`created` for events, `updated` for users). A record the
- * mapping cannot read (a relation that is not one, a missing `occurredAt`) has `record: null` and
- * the reason: it goes to the retry queue as terminal, and the stream goes on.
+ * mapping cannot read although every configured field is there (a relation that is not one, an
+ * `occurredAt` that is no date) has `record: null` and the reason: it goes to the retry queue as
+ * terminal, and the stream goes on. A configured field missing is a `SettingsMismatch` instead.
  */
 export type StreamItem = { id: string; stamp: Date } & (
   | { kind: "event"; record: SourceEvent }

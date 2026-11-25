@@ -8,6 +8,7 @@ import { isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceObject } from "@/sources/json";
 import { isSourceError, SourceError } from "@/sources/source";
 import type { CallOptions, SourceEvent } from "@/sources/source";
+import { SettingsMismatch } from "@/sources/stream-record";
 import type { CatchUpQuery, StreamItem, StreamKind, StreamSource } from "@/sources/stream-record";
 
 /** PocketBase refuses a subscription string longer than this (measured, 0.40.5). */
@@ -18,7 +19,14 @@ const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
 
 /** What the adapter lends the stream's reads. */
 export interface StreamReadParts {
-  events: { collection: string; name: string; occurredAt: string };
+  events: {
+    collection: string;
+    user: string;
+    name: string;
+    data: string;
+    occurredAt: string;
+    key: string;
+  };
   users: { collection: string; leavingFilter: string };
   eventOf(record: SourceObject): SourceEvent;
   /** One page of a collection (an empty or short page confirmed), or `null` past the body limit. */
@@ -61,6 +69,8 @@ export function streamReads(parts: StreamReadParts): StreamSource {
   const ev = parts.events;
   const users = parts.users.collection ? fieldName(parts.users.collection) : "";
   const leaving = parts.users.leavingFilter;
+  /** The fields the settings name on an events record; one missing is a settings mismatch. */
+  const configured = [ev.user, ev.name, ev.data, ev.occurredAt, ...(ev.key ? [ev.key] : [])];
   const nameIs = (name: string) => `${ev.name} = ${textLiteral(name)}`;
   const present = `${ev.occurredAt} != ''`;
   const build = (list: ReadonlyArray<string>) =>
@@ -69,6 +79,13 @@ export function streamReads(parts: StreamReadParts): StreamSource {
   function eventItem(record: SourceObject): StreamItem {
     const id = idOf(record);
     const stamp = stampOf(record, "created");
+    for (const field of configured) {
+      if (member(record, field) === undefined) {
+        throw new SettingsMismatch(
+          `The source's ${ev.collection} records have no field ${JSON.stringify(field)}`,
+        );
+      }
+    }
     try {
       return { kind: "event", id, stamp, record: parts.eventOf(record) };
     } catch (error) {

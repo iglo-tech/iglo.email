@@ -28,13 +28,18 @@ export interface Handled {
   name: string;
 }
 
-/** A recording handler: `fail` maps a record ID to the failures it throws, oldest first. */
+/**
+ * A recording handler: `fail` maps a record ID to the failures it throws, oldest first; `hold`
+ * maps a record ID to a promise the handler waits for first (a slow handler).
+ */
 export function recordingHandler(db: Database) {
   const handled: Array<Handled> = [];
   const attempts = new Map<string, number>();
   const fail = new Map<string, Array<"transient" | "permanent">>();
-  const run = (id: string, write: () => Handled, commit: RecordCommit) => {
+  const hold = new Map<string, Promise<void>>();
+  const run = async (id: string, write: () => Handled, commit: RecordCommit) => {
     attempts.set(id, (attempts.get(id) ?? 0) + 1);
+    await hold.get(id);
     const failure = fail.get(id)?.shift();
     if (failure) {
       throw new SourceError(failure, `test handler failed ${failure}ly`);
@@ -48,14 +53,14 @@ export function recordingHandler(db: Database) {
     handled.push(entry);
   };
   const handler: RecordHandler = {
-    async event(record: SourceEvent, commit) {
-      run(record.id, () => ({ kind: "event", id: record.id, name: record.name }), commit);
+    event(record: SourceEvent, commit) {
+      return run(record.id, () => ({ kind: "event", id: record.id, name: record.name }), commit);
     },
-    async userLeft(record: SourceUser, commit) {
-      run(record.id, () => ({ kind: "user", id: record.id, name: "" }), commit);
+    userLeft(record: SourceUser, commit) {
+      return run(record.id, () => ({ kind: "user", id: record.id, name: "" }), commit);
     },
   };
-  return { handler, handled, attempts, fail };
+  return { handler, handled, attempts, fail, hold };
 }
 
 export interface StreamFixtureOptions {
