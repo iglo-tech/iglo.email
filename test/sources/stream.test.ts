@@ -7,7 +7,8 @@ import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from 
 import { rmSync } from "node:fs";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
-import { RETRY_WINDOW_MS } from "@/sources/stream";
+import { must } from "@/invariant";
+import { RETRY_MAX_MS, RETRY_MIN_MS, RETRY_WINDOW_MS } from "@/sources/stream";
 import { streamEventNames } from "@/sources/stream-names";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
 import type { PocketBase } from "@/test/sources/pocketbase";
@@ -84,6 +85,16 @@ const stamp = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString(
 const sorted = (ids: Iterable<string>) => [...ids].sort();
 
 const REFUSED = "Source stream refused by the source: check the source settings: ";
+
+/**
+ * The queue's first row is due one backoff (a minute doubling per attempt, capped at an hour)
+ * after the attempt that just finished, which ran at the clock's time now (B153).
+ */
+function expectBackoff(s: StreamFixture) {
+  const row = must(s.stream.retries()[0], "a queued row");
+  const wait = Math.min(RETRY_MIN_MS * 2 ** (Number(row.attempts) - 1), RETRY_MAX_MS);
+  expect(row.next_attempt_at).toBe(new Date(s.clock.now().getTime() + wait).toISOString());
+}
 
 /** A catch-up (or retry) read of the events collection. */
 const eventReads = (s: StreamFixture) =>
@@ -496,15 +507,12 @@ test("the retry queue: a transient failure retries later without holding the str
     { kind: "event", record_id: failing.id, terminal: 0n },
   ]);
   // The first retry is due a minute later and fails again; the second (two minutes on) works.
-  s.clock.advance(60_000);
-  s.stream.wakeRetries();
-  await s.until(() => s.attempts.get(failing.id) === 2, "the first retry");
-  await Bun.sleep(50);
+  await s.retryAfter(60_000);
+  expect(s.attempts.get(failing.id)).toBe(2);
   expect(s.stream.retries()).toHaveLength(1);
-  s.clock.advance(120_000);
-  s.stream.wakeRetries();
-  await s.until(() => s.eventIds().includes(failing.id), "the second retry");
-  await s.until(() => s.stream.retries().length === 0, "the queue to empty");
+  expectBackoff(s);
+  await s.retryAfter(120_000);
+  expect(s.stream.retries()).toEqual([]);
   expect(s.attention).toEqual([]);
   expect(s.eventIds()).toEqual([next.id, failing.id]);
 });
@@ -531,18 +539,12 @@ test("the retry queue: a permanent failure, and 72 hours of transient ones, are 
   // Transient failures back off (capped at an hour) until 72 hours have passed.
   const start = s.clock.now().getTime();
   while (s.clock.now().getTime() - start <= RETRY_WINDOW_MS + 3_600_000) {
-    s.clock.advance(3_600_000);
-    s.stream.wakeRetries();
-    const tries = s.attempts.get(transient.id) ?? 0;
-    await s.until(
-      () => (s.attempts.get(transient.id) ?? 0) > tries || s.attention.length === 2,
-      "a retry",
-    );
+    await s.retryAfter(3_600_000);
     if (s.attention.length === 2) {
       break;
     }
   }
-  await s.until(() => s.attention.length === 2, "the terminal line");
+  expect(s.attention).toHaveLength(2);
   expect(s.attention[1]).toContain(transient.id);
   const rows = s.stream.retries();
   expect(rows.map((row) => [row.record_id, row.terminal])).toEqual([
@@ -565,12 +567,10 @@ test("the retry queue: a settings mismatch waits past 72 hours and does not use 
   );
   await pb.create(events.name, { id, user: user.id, name, occurredAt: stamp(0), data: {} });
   await s.until(() => s.stream.retries().length === 1, "the queued record");
-  const attemptsOf = () => s.stream.retries()[0]?.attempts ?? 0n;
+  // Each retry runs with the clock still, and the next is due one backoff after it.
   const retryAfter = async (ms: number) => {
-    const tries = attemptsOf();
-    s.clock.advance(ms);
-    s.stream.wakeRetries();
-    await s.until(() => attemptsOf() > tries, "a retry");
+    await s.retryAfter(ms);
+    expectBackoff(s);
   };
   // Transient handler failures for 71 hours of the 72-hour window.
   const first = s.clock.now().getTime();
@@ -594,12 +594,11 @@ test("the retry queue: a settings mismatch waits past 72 hours and does not use 
   // failure still retries, and the next retry delivers the record once.
   await pb.renameField(events.name, "payload", "data");
   s.fail.set(id, ["transient"]);
-  for (const handled of [1, 2].map((n) => (handlerCalls ?? 0) + n)) {
-    s.clock.advance(3_600_000);
-    s.stream.wakeRetries();
-    await s.until(() => s.attempts.get(id) === handled, `handler call ${handled}`);
-  }
-  await s.until(() => s.stream.retries().length === 0, "the queue to empty");
+  await retryAfter(3_600_000);
+  expect(s.attempts.get(id)).toBe((handlerCalls ?? 0) + 1);
+  await s.retryAfter(3_600_000);
+  expect(s.attempts.get(id)).toBe((handlerCalls ?? 0) + 2);
+  expect(s.stream.retries()).toEqual([]);
   expect(s.eventIds()).toEqual([id]);
   expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
 });
@@ -617,13 +616,10 @@ test("the retry queue: a re-read the source refuses waits past 72 hours, then de
   const handlerCalls = s.attempts.get(id);
   // The re-read filters on `occurredAt`: renamed, PocketBase refuses the read with a 400.
   await pb.renameField(events.name, "occurredAt", "when");
-  const attemptsOf = () => s.stream.retries()[0]?.attempts ?? 0n;
   const start = s.clock.now().getTime();
   while (s.clock.now().getTime() - start <= RETRY_WINDOW_MS + 3_600_000) {
-    const tries = attemptsOf();
-    s.clock.advance(2 * 3_600_000);
-    s.stream.wakeRetries();
-    await s.until(() => attemptsOf() > tries, "a retry");
+    await s.retryAfter(2 * 3_600_000);
+    expectBackoff(s);
   }
   expect(s.attempts.get(id)).toBe(handlerCalls);
   expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n }]);
@@ -631,9 +627,8 @@ test("the retry queue: a re-read the source refuses waits past 72 hours, then de
   expect(s.attention.filter((line) => line.startsWith(`${REFUSED}event ${id}:`))).toHaveLength(1);
   // The field is back: the next retry delivers the record, once.
   await pb.renameField(events.name, "when", "occurredAt");
-  s.clock.advance(3_600_000);
-  s.stream.wakeRetries();
-  await s.until(() => s.stream.retries().length === 0, "the queue to empty");
+  await s.retryAfter(3_600_000);
+  expect(s.stream.retries()).toEqual([]);
   expect(s.attempts.get(id)).toBe((handlerCalls ?? 0) + 1);
   expect(s.eventIds()).toEqual([id]);
   expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);

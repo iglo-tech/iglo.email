@@ -2,6 +2,9 @@
 // with every migration, against a PocketBase harness instance, with a recording `RecordHandler`
 // that can fail on chosen records. The stream runs on a `TestClock`; `until` advances it only
 // while the stream waits to reconnect, so no request's own time limit is reached by a test.
+// B153: a retry attempt runs with the clock still. `retryAfter` moves the clock, then waits for
+// the attempt's re-read to answer, never for the claim alone: moved while an attempt was in flight,
+// the clock fired its request time limit and put its next due time past the test's next step.
 import type { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -93,6 +96,17 @@ export function startStream(options: StreamFixtureOptions) {
     },
   });
   const recorder = recordingHandler(db);
+  // B153: the retry queue's re-reads that have answered (or failed). An attempt does nothing after
+  // its re-read that waits on I/O (the recording handler does none), so once this count rises the
+  // attempt's row is written: a test waits for it before moving the clock on.
+  let rereads = 0;
+  const source = {
+    ...adapter.stream,
+    reread: (...args: Parameters<typeof adapter.stream.reread>) =>
+      adapter.stream.reread(...args).finally(() => {
+        rereads++;
+      }),
+  };
   const stream = createSourceStream({
     db,
     clock,
@@ -102,7 +116,7 @@ export function startStream(options: StreamFixtureOptions) {
     },
     config: options.config,
     guard: openGuard,
-    source: adapter.stream,
+    source,
     handler: recorder.handler,
     names: options.names,
     ...(options.tuning ? { tuning: options.tuning } : {}),
@@ -128,6 +142,33 @@ export function startStream(options: StreamFixtureOptions) {
   const live = (what = "the stream to be live") =>
     until(() => stream.state().state === "live", what);
 
+  /**
+   * Waits (real time, at most `timeoutMs`) until `check` holds, with the clock still: for work in
+   * flight (a retry attempt), whose request time limits and next due time the clock must not move
+   * under (B153).
+   */
+  async function settle(check: () => boolean, what: string, timeoutMs = 20_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (!check()) {
+      if (Date.now() > deadline) {
+        throw new Error(`timed out waiting for ${what} (stream ${JSON.stringify(stream.state())})`);
+      }
+      await Bun.sleep(10);
+    }
+  }
+
+  /**
+   * Moves the clock on by `ms`, wakes the retry queue and waits, with the clock still, until that
+   * attempt has finished: its re-read answered and its row is written. Never while one is in
+   * flight, so each attempt runs at one clock time (B153).
+   */
+  async function retryAfter(ms: number) {
+    const done = rereads;
+    clock.advance(ms);
+    stream.wakeRetries();
+    await settle(() => rereads > done, "a retry to finish");
+  }
+
   /** Handled event IDs (for "none lost, none twice"). */
   const eventIds = () =>
     recorder.handled.filter((entry) => entry.kind === "event").map((entry) => entry.id);
@@ -144,6 +185,9 @@ export function startStream(options: StreamFixtureOptions) {
     eventIds,
     until,
     live,
+    settle,
+    retryAfter,
+    rereads: () => rereads,
     async stop() {
       await stream.stop();
       db.close();
