@@ -95,7 +95,10 @@ export function createSendTimeLookup(options: SendTimeOptions) {
           leaveUser({ subscribers, enrollments }, plan.userId);
           return { kind: "left" };
         }
-        const row = applyRecipient({ subscribers, enrollments }, plan);
+        const row = applyRecipient(
+          { subscribers, enrollments, emailAllowed: options.emailAllowed },
+          plan,
+        );
         if (row.id !== planned.subscriberId) {
           throw new SubscriberChanged();
         }
