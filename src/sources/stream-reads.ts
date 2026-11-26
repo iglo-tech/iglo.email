@@ -178,6 +178,8 @@ export function streamReads(parts: StreamReadParts): StreamSource {
         : error;
     for (let size = perPage; ; size = Math.max(1, Math.floor(size / 4))) {
       let items: ReadonlyArray<SourceObject> | null;
+      // Why this page could not be read: over the response limit (`null`), or a JSON failure.
+      let cause = TOO_LARGE;
       try {
         items = await parts.page(collection, { filter, sort, perPage: size }, call);
       } catch (error) {
@@ -185,6 +187,7 @@ export function streamReads(parts: StreamReadParts): StreamSource {
           throw refused(error);
         }
         items = null;
+        cause = UNREADABLE;
       }
       if (items) {
         return { items: items.map((record) => itemOf(kind, record)), more: items.length === size };
@@ -208,6 +211,10 @@ export function streamReads(parts: StreamReadParts): StreamSource {
         }
         // The ID-only read may have met another record, committed earlier in `(stamp, id)` order
         // between the two reads: that record is terminal only if it, read alone, is unreadable too.
+        // B159a (D182): the line names the first read's cause, and the confirming read's too when
+        // it failed for another (the record changed between the two reads).
+        const because = (again: string) =>
+          again === cause ? cause : `${cause} (read again by its ID: ${again})`;
         let confirmed: ReadonlyArray<SourceObject> | null;
         try {
           confirmed = await parts.page(
@@ -219,10 +226,10 @@ export function streamReads(parts: StreamReadParts): StreamSource {
           if (!unreadable(error)) {
             throw refused(error);
           }
-          return { items: [terminal(kind, key, UNREADABLE)], more: true };
+          return { items: [terminal(kind, key, because(UNREADABLE))], more: true };
         }
         if (!confirmed) {
-          return { items: [terminal(kind, key, TOO_LARGE)], more: true };
+          return { items: [terminal(kind, key, because(TOO_LARGE))], more: true };
         }
         const record = confirmed[0];
         if (!record) {

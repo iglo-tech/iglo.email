@@ -910,6 +910,41 @@ test("B155b: a record over the response limit is terminal with one line; the cat
   expect(linesOf(s, REFUSED)).toEqual([]);
 });
 
+test("B159a: a record unreadable alone and then too large read by its ID names both causes, the first read's first", async () => {
+  const name = unique("twocauses");
+  const id = recordId();
+  let edited = false;
+  // The live message is over its line limit, so a catch-up reads the record; alone it nests past
+  // the JSON limit. Before the confirming read by its ID it is edited past the response limit
+  // (an events record keeps its `created` stamp), so the two reads fail for different causes.
+  const s = stream({
+    config: eventsOnly(),
+    names: () => [name],
+    tuning: { maxLine: 2000, pageSize: 5 },
+    maxResponseBytes: 4000,
+    async beforeRequest(url) {
+      if (!edited && (url.searchParams.get("filter") ?? "").includes(`id = '${id}'`)) {
+        edited = true;
+        await pb.update("events", id, { data: { blob: "x".repeat(5000) } });
+      }
+    },
+  });
+  await s.live();
+  const user = await pb.user();
+  await pb.event(user.id, name, { pad: "p".repeat(2500), deep: nested(70) }, { id });
+  const after = await pb.event(user.id, name);
+  await s.until(() => s.eventIds().includes(after.id), "the record after the unreadable one");
+  await s.live();
+  expect(edited).toBe(true);
+  expect(s.eventIds()).toEqual([after.id]);
+  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 1n }]);
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([
+    expect.stringMatching(
+      new RegExp(`${id}.*cannot be read: its JSON nests.*read again by its ID: .*response limit`),
+    ),
+  ]);
+});
+
 test("B155b: a new source drops the old source's retry queue; the same source keeps it", async () => {
   const name = unique("moved");
   const first = stream({ config: eventsOnly(), names: () => [name] });
