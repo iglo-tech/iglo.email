@@ -249,9 +249,11 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
    * reads are the cut its attention line already named, not unexpected errors.
    */
   let serverCut = false;
+  /** An aborted read of a request that cut ended: on the instance host and every project's. */
+  const cutRead = (error: unknown) => serverCut && isAbort(error);
   // The instance's own lines: stderr and the buffer the instance Logs page shows (D157).
   const instanceLogs = createInstanceLogBuffer(clock);
-  const { logger: instanceLogger, attention } = createInstanceLogger(instanceLogs);
+  const { logger: instanceLogger, attention } = createInstanceLogger(instanceLogs, cutRead);
 
   /**
    * Create, edit and delete run one at a time (D157): a create that loses a same-slug race sees the
@@ -317,7 +319,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         },
         projects: () => entries.map(({ record: r }) => ({ slug: r.slug, name: r.name })),
         capacity: must(capacity, "capacity"),
-        expectedError: (error) => serverCut && isAbort(error),
+        expectedError: cutRead,
       },
       options(record),
     );

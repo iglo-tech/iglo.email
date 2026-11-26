@@ -158,34 +158,41 @@ test("a delete that stops part way keeps the project listed with its error and o
 /**
  * A final-snapshot step the server cannot finish until the operator repairs a permission (the
  * reviewer's probe: a folder made by another user). `block` runs on the project's directory before
- * the first delete, `repair` before the second.
+ * the first delete, `repair` before the second. `databaseKept`: the first attempt certainly removed
+ * nothing, so the project's database is still in its directory. Not so for a half-emptied folder:
+ * the order `rm` takes the entries in is the filesystem's (ext4 removes the database first, tmpfs
+ * the folder; B155a r2, D176).
  */
 const snapshotSteps: Array<{
   step: string;
   block: (directory: string) => void;
   repair: (directory: string) => void;
+  databaseKept: boolean;
 }> = [
   {
     // A read-only project directory: the snapshot and tarball are written, nothing is removed.
     step: "removing a read-only directory",
     block: (directory) => chmodSync(directory, 0o555),
     repair: (directory) => chmodSync(directory, 0o755),
+    databaseKept: true,
   },
   {
-    // An upload the server cannot read: the tarball cannot be written.
+    // An upload the server cannot read: the tarball cannot be written, so `rm` never runs.
     step: "writing the tarball",
     block: (directory) => chmodSync(join(directory, "uploads", "kept.txt"), 0o000),
     repair: (directory) => chmodSync(join(directory, "uploads", "kept.txt"), 0o644),
+    databaseKept: true,
   },
   {
     // A folder the server cannot empty: the snapshot and tarball exist, the directory is half gone.
     step: "emptying an upload folder",
     block: (directory) => chmodSync(join(directory, "uploads", "locked"), 0o555),
     repair: (directory) => chmodSync(join(directory, "uploads", "locked"), 0o755),
+    databaseKept: false,
   },
 ];
 
-for (const { step, block, repair } of snapshotSteps) {
+for (const { step, block, repair, databaseKept } of snapshotSteps) {
   test(`a delete stopped at ${step} is finished by the next delete from that step, one snapshot and one tarball`, async () => {
     const f = await openLifecycle(createRealClock());
     const host = "archive.example.test";
@@ -231,12 +238,18 @@ for (const { step, block, repair } of snapshotSteps) {
         before.find((name) => name.endsWith(".db")),
         "the claimed snapshot",
       );
-      const leftover = new Database(join(directory, "iglo-email.db"));
-      try {
-        leftover.run("DELETE FROM subscribers");
-        leftover.run("PRAGMA wal_checkpoint(TRUNCATE)");
-      } finally {
-        leftover.close();
+      if (databaseKept) {
+        // `create: false`: a database the first attempt removed fails here, not as an empty one.
+        const leftover = new Database(join(directory, "iglo-email.db"), {
+          readwrite: true,
+          create: false,
+        });
+        try {
+          leftover.run("DELETE FROM subscribers");
+          leftover.run("PRAGMA wal_checkpoint(TRUNCATE)");
+        } finally {
+          leftover.close();
+        }
       }
       expect(snapshotEmails(f.dataDir, `backups/deleted/${snapshot}`)).toEqual([
         "kept@archive.example.test",

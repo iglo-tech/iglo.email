@@ -45,9 +45,13 @@ export function instanceAttention(message: string): void {
 
 /**
  * The instance's logger (B143a, D157): stderr as before, and the instance buffer the instance Logs
- * page shows, with each attention line's whole text (only the instance admin reads it).
+ * page shows, with each attention line's whole text (only the instance admin reads it). An error
+ * `expected` accepts is left out, as in createSourceLogger (B155a r2, D176).
  */
-export function createInstanceLogger(buffer: InstanceLogBuffer) {
+export function createInstanceLogger(
+  buffer: InstanceLogBuffer,
+  expected?: (error: unknown) => boolean,
+) {
   const prefix = logPrefix("instance");
   const attention = (message: string) => {
     instanceAttention(message);
@@ -55,6 +59,9 @@ export function createInstanceLogger(buffer: InstanceLogBuffer) {
   };
   const logger: ErrorLogger = {
     error(error) {
+      if (expected?.(error)) {
+        return;
+      }
       console.error(`${prefix}Unexpected request error:`, error);
       buffer.add(error);
     },

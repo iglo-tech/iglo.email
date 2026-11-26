@@ -21,6 +21,7 @@ import {
   sessionHeaders,
   startInstance,
 } from "@/test/projects/fixture";
+import type { Credentials } from "@/test/projects/fixture";
 import { stopChild } from "@/test/serve-port";
 import { TestClock } from "@/test/server/fixture";
 import { untilState } from "@/test/wait";
@@ -64,51 +65,69 @@ test("the HTTP stop waits at most 5 s of the instance clock for a request in fli
   expect(f.failures).toEqual([]);
 });
 
-test("SIGTERM with a trickled upload in flight exits cleanly within the 5 s bound", async () => {
-  const prepared = await prepareExecutable();
-  const dataDir = await mkdtemp(join(tmpdir(), "iglo-email-b149a-shutdown-"));
-  const admin = await adminCredentials();
-  const instance = await startInstance(prepared.executable, dataDir, admin);
-  let trickling = true;
-  try {
-    const session = await logIn(instance.port, PRIMARY, admin);
-    // A JSON body that arrives one byte every 200 ms (1000 bytes, under the body limit): Bun's idle timeout never ends it.
-    const encoder = new TextEncoder();
-    const body = new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        await Bun.sleep(200);
-        if (trickling) {
-          controller.enqueue(encoder.encode("a"));
-        } else {
-          controller.close();
-        }
-      },
-    });
-    const trickled = request(instance.port, PRIMARY, "/api/subscribers", {
-      method: "POST",
-      headers: { ...sessionHeaders(session), "content-length": "1000" },
-      body,
-    });
-    trickled.catch(() => {});
-    await Bun.sleep(500);
-    const startedAt = performance.now();
-    // Without the bound this never exits on its own; the SIGKILL after 15 s would end it.
-    const code = await stopChild(instance.child, "SIGTERM", 15_000);
-    const elapsed = performance.now() - startedAt;
-    expect(code).toBe(0);
-    expect(elapsed).toBeGreaterThanOrEqual(4500);
-    expect(elapsed).toBeLessThan(10_000);
-    const stderr = await new Response(instance.child.stderr).text();
-    expect(stderr).toContain("[instance] Stopping: 1 request still running after 5 s was cut");
-    // B155a item 6 (D176): the cut was intended, so nothing else is logged about it: no
-    // "Unexpected request error" per aborted read.
-    expect(stderr.trim().split("\n")).toEqual([
-      "[instance] Stopping: 1 request still running after 5 s was cut",
-    ]);
-  } finally {
-    trickling = false;
-    await stopChild(instance.child, "SIGKILL", 1000);
-    await rm(dataDir, { recursive: true, force: true });
-    await prepared.cleanup();
-  }
-});
+/**
+ * A body trickled to `path` on the primary's host, then SIGTERM. `headers` gives the request's
+ * own headers, with the instance's port and the test admin.
+ */
+const trickledShutdown = (
+  route: string,
+  path: string,
+  headers: (port: number, admin: Credentials) => Promise<Record<string, string>>,
+) =>
+  test(`SIGTERM with a trickled upload to ${route} in flight exits cleanly within the 5 s bound`, async () => {
+    const prepared = await prepareExecutable();
+    const dataDir = await mkdtemp(join(tmpdir(), "iglo-email-b149a-shutdown-"));
+    const admin = await adminCredentials();
+    const instance = await startInstance(prepared.executable, dataDir, admin);
+    let trickling = true;
+    try {
+      const own = await headers(instance.port, admin);
+      // A body that arrives one byte every 200 ms (1000 bytes, under the body limit): Bun's idle timeout never ends it.
+      const encoder = new TextEncoder();
+      const body = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          await Bun.sleep(200);
+          if (trickling) {
+            controller.enqueue(encoder.encode("a"));
+          } else {
+            controller.close();
+          }
+        },
+      });
+      const trickled = request(instance.port, PRIMARY, path, {
+        method: "POST",
+        headers: { ...own, "content-length": "1000" },
+        body,
+      });
+      trickled.catch(() => {});
+      await Bun.sleep(500);
+      const startedAt = performance.now();
+      // Without the bound this never exits on its own; the SIGKILL after 15 s would end it.
+      const code = await stopChild(instance.child, "SIGTERM", 15_000);
+      const elapsed = performance.now() - startedAt;
+      expect(code).toBe(0);
+      expect(elapsed).toBeGreaterThanOrEqual(4500);
+      expect(elapsed).toBeLessThan(10_000);
+      const stderr = await new Response(instance.child.stderr).text();
+      expect(stderr).toContain("[instance] Stopping: 1 request still running after 5 s was cut");
+      // B155a item 6 (D176): the cut was intended, so nothing else is logged about it: no
+      // "Unexpected request error" per aborted read.
+      expect(stderr.trim().split("\n")).toEqual([
+        "[instance] Stopping: 1 request still running after 5 s was cut",
+      ]);
+    } finally {
+      trickling = false;
+      await stopChild(instance.child, "SIGKILL", 1000);
+      await rm(dataDir, { recursive: true, force: true });
+      await prepared.cleanup();
+    }
+  });
+
+trickledShutdown("a project route", "/api/subscribers", async (port, admin) =>
+  sessionHeaders(await logIn(port, PRIMARY, admin)),
+);
+// B155a r2 (D176): an instance route goes through the instance's own logger. Unauthenticated: the
+// login form is read before anything is checked.
+trickledShutdown("the instance login", "/admin/instance/login", async () => ({
+  "content-type": "application/x-www-form-urlencoded",
+}));
