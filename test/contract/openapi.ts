@@ -1385,6 +1385,12 @@ export async function runOpenApiContract(target: {
       },
     });
     check(sourceTest.body.data.ok === false, "source-test-refused");
+    // B155f (D181): the retry queue of a project with no source: no stream, no rows.
+    const retries = await op("GET /api/settings/source/retries");
+    check(
+      retries.body.data.stream === null && retries.body.data.results.length === 0,
+      "source-retries-no-source",
+    );
     // A configured project: a secret that exists once set comes back masked. B139 (D154): the
     // project's secret is the hCaptcha one; SMTP, DKIM, S3, the bounce providers and their secrets are
     // instance keys, served on the instance host outside this document.

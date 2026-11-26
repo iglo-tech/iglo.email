@@ -1,7 +1,8 @@
 // Native (15-external-sources section 2, D170): the source settings' own routes and rules.
 // `POST /api/settings/source/test` checks a source (the saved one, or the form's unsaved `source.*`
-// keys over it) and reports each step; `sourceListsCheck` refuses a save whose `grant_lists` name a
-// list this project does not have.
+// keys over it) and reports each step; `GET /api/settings/source/retries` lists the stream's retry
+// queue (B155f, D181); `sourceListsCheck` refuses a save whose `grant_lists` name a list this
+// project does not have.
 import type { Clock } from "@/clock";
 import type { ListReferences } from "@/lists/references";
 import type { Router } from "@/server/router";
@@ -22,6 +23,8 @@ import {
   sourceConfig,
   sourceDefaults,
 } from "@/sources/settings";
+import type { SourceStream } from "@/sources/stream";
+import type { RetryRow } from "@/sources/stream-store";
 import type { Authentication } from "@/users/auth";
 import { readBodyBytes } from "@/users/input";
 
@@ -70,6 +73,34 @@ function parseBody(bytes: Buffer): SourceObject {
   return body;
 }
 
+/** The most retry queue rows one read lists, oldest first (bounded memory). */
+export const RETRIES_LIMIT = 1000;
+
+/** How a retry queue row shows: retrying, waiting for the settings to be fixed, or failed for good. */
+function retryStatus(row: RetryRow): "queued" | "waiting" | "terminal" {
+  if (row.terminal === 1n) {
+    return "terminal";
+  }
+  // B155b's `waiting` column (a settings mismatch); read structurally until every build has it.
+  return "waiting" in row && row.waiting === 1n ? "waiting" : "queued";
+}
+
+/** A retry queue row as the API lists it (B155f, D181). */
+function retryOut(row: RetryRow) {
+  const status = retryStatus(row);
+  return {
+    id: Number(row.id),
+    kind: row.kind,
+    record_id: row.record_id,
+    stamp: row.stamp,
+    status,
+    attempts: Number(row.attempts),
+    first_failed_at: row.first_failed_at,
+    next_attempt_at: status === "terminal" ? null : row.next_attempt_at,
+    last_error: row.last_error,
+  };
+}
+
 export function registerSourceRoutes(
   router: Router,
   deps: {
@@ -77,9 +108,27 @@ export function registerSourceRoutes(
     auth: Authentication;
     clock: Clock;
     transport?: SourceTransport;
+    /** The project's running source stream, or null without a source (the retry queue's reader). */
+    stream?: () => Pick<SourceStream, "state" | "retries"> | null;
   },
 ): void {
   const { settings, auth, clock } = deps;
+  // B155f (D181): the stream's retry queue, read-only. Its error text is the source's or the
+  // handler's own (unlike the logs view's safe lines), so it needs what Test connection needs.
+  router.route(
+    "GET",
+    "/api/settings/source/retries",
+    () => {
+      const stream = deps.stream?.() ?? null;
+      const rows = stream ? stream.retries(RETRIES_LIMIT + 1) : [];
+      return ok({
+        stream: stream ? stream.state().state : null,
+        more: rows.length > RETRIES_LIMIT,
+        results: rows.slice(0, RETRIES_LIMIT).map(retryOut),
+      });
+    },
+    auth.middleware("settings:manage"),
+  );
   router.route(
     "POST",
     "/api/settings/source/test",

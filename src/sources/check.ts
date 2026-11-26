@@ -80,7 +80,7 @@ async function fields(
     ok: true,
     message: answer.rows
       ? `${collection}: read.`
-      : `${collection}: read, but the service account sees no records (check the list rule).`,
+      : `${collection}: read, but there are no records yet, or the list rule hides them from the service account.`,
     missing: [],
   };
 }

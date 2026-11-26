@@ -416,12 +416,70 @@ test("template previews stay in the sandboxed frame", async ({ page }) => {
   expect(await page.evaluate(() => window.pwned)).toBeUndefined();
 });
 
+// B155f item 2 (D181): a gone or unreadable source record has no data, so the timeline shows no
+// data block for it. The timeline's answer is the shape the API gives such a record
+// (src/sequences/timeline.ts): a test stack has no source to delete a record from.
+test("a trigger record the source no longer has shows no data block", async ({ page }) => {
+  await signIn(page);
+  const seq = await sequence(page, {
+    steps: [{ wait: "P1D", kind: "transactional", template_id: (await template(page)).id }],
+  });
+  const made = await api(page, "/api/subscriber-events", "POST", {
+    subscriber: { email: `${unique("gone")}@example.com` },
+    name: seq.trigger.event,
+    data: { plan: "pro" },
+  });
+  expect(made.status).toBe(200);
+  const enrollment = made.body.data.enrollments.started[0].id;
+  for (const unavailable of ["missing", "source_error"]) {
+    await page.route(`**/api/enrollments/${enrollment}/timeline`, async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.data.entries = body.data.entries.map((entry) =>
+        entry.type === "trigger"
+          ? { ...entry, name: null, data: null, external_id: "rec123456789abc", unavailable }
+          : entry,
+      );
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto(`/admin/sequences/enrollments/${enrollment}`);
+    await expect(page.locator('[data-testid="timeline-entry"][data-type="trigger"]')).toContainText(
+      "rec123456789abc",
+    );
+    await expect(page.getByTestId("timeline-data")).toHaveCount(0);
+    await expect(page.getByTestId("timeline")).not.toContainText("null");
+    await page.unroute(`**/api/enrollments/${enrollment}/timeline`);
+  }
+  // The same enrollment's real trigger keeps its data.
+  await page.goto(`/admin/sequences/enrollments/${enrollment}`);
+  await expect(page.getByTestId("timeline-data")).toContainText("pro");
+});
+
+// B155f item 3 (D181): an external sequence refuses a condition in the filter, so its hint says so.
+test("the trigger filter's hint follows the sequence's source", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/admin/sequences/new");
+  const events = page.getByTestId("trigger-where-help");
+  const external = page.getByTestId("trigger-where-help-external");
+  await expect(events).toBeVisible();
+  await expect(events).toContainText("or a condition");
+  await expect(external).toBeHidden();
+  await page.getByTestId("sequence-source").selectOption("external");
+  await expect(external).toBeVisible();
+  await expect(external).toContainText("History condition");
+  await expect(external).not.toContainText("or a condition");
+  await expect(events).toBeHidden();
+});
+
 test("a changed wait is applied to waiting enrollments on request", async ({ page }) => {
   await signIn(page);
   const tx = await template(page);
   const seq = await sequence(page, {
     reentry: "always",
-    steps: [{ wait: "P1D", kind: "transactional", template_id: tx.id }],
+    steps: [
+      { wait: "P1D", kind: "transactional", template_id: tx.id },
+      { wait: "P3D", kind: "transactional", template_id: tx.id },
+    ],
   });
   const person = await subscriber(page);
   const made = await api(page, "/api/enrollments", "POST", {
@@ -430,14 +488,20 @@ test("a changed wait is applied to waiting enrollments on request", async ({ pag
   });
   expect(made.status).toBe(200);
   await page.goto(`/admin/sequences/${seq.id}`);
-  const button = page.getByTestId("btn-step-reschedule");
+  // B155f item 6 (D181): each step's button names its step, visibly and by accessible name.
+  const button = page.getByRole("button", { name: "Apply step 1's wait to waiting enrollments" });
+  await expect(button).toHaveText("Apply step 1's wait to waiting enrollments");
+  await expect(
+    page.getByRole("button", { name: "Apply step 2's wait to waiting enrollments" }),
+  ).toHaveText("Apply step 2's wait to waiting enrollments");
+  await expect(page.getByTestId("btn-step-reschedule")).toHaveCount(2);
   await expect(button).toBeEnabled();
-  await page.getByTestId("step-wait").fill("P2D");
+  await page.getByTestId("step-wait").first().fill("P2D");
   await expect(button).toBeDisabled();
   await page.getByTestId("btn-save").click();
   await confirmAndReload(page);
   // The reloaded page shows the saved wait before any read or click: the button was enabled before the reload too.
-  await expect(page.getByTestId("step-wait")).toHaveValue("P2D");
+  await expect(page.getByTestId("step-wait").first()).toHaveValue("P2D");
   const kept = (await api(page, `/api/enrollments/${made.body.data.id}`)).body.data;
   expect(kept.due_at).toBe(made.body.data.due_at);
   await expect(button).toBeEnabled();
