@@ -75,6 +75,8 @@ export interface StreamFixtureOptions {
   /** An existing data directory (a restart); a new one otherwise. */
   dir?: string;
   clock?: TestClock;
+  /** The adapter's response limit (a record past it, without writing megabytes). */
+  maxResponseBytes?: number;
 }
 
 /** A stream on its own database; `close` stops it and removes the directory it made. */
@@ -90,6 +92,7 @@ export function startStream(options: StreamFixtureOptions) {
     config: options.config,
     clock,
     guard: openGuard,
+    ...(options.maxResponseBytes ? { maxResponseBytes: options.maxResponseBytes } : {}),
     transport: {
       fetch: (input: URL, init: RequestInit) => {
         requests.push(`${init.method ?? "GET"} ${input.pathname}${input.search}`);
@@ -181,6 +184,15 @@ export function startStream(options: StreamFixtureOptions) {
    * flight, so each attempt runs at one clock time (B153).
    */
   async function retryAfter(ms: number) {
+    // B155b: a row must be due after the move, or the wait below can only time out with a generic
+    // message. Checked before the move: once the clock moves, the queue's own timer may claim the
+    // row (its next attempt time becomes the lease's end).
+    const at = new Date(clock.now().getTime() + ms).toISOString();
+    const waiting = stream.retries().filter((row) => row.terminal === 0n);
+    if (!waiting.some((row) => row.next_attempt_at <= at)) {
+      const due = waiting.map((row) => `${row.record_id} at ${row.next_attempt_at}`).join(", ");
+      throw new Error(`no retry is due at ${at} (queued: ${due || "none"})`);
+    }
     await advance(ms);
     const done = rereads;
     stream.wakeRetries();

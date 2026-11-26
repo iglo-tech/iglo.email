@@ -5,6 +5,7 @@
 // connection reset, comes from `stream-proxy.ts`, which forwards bytes unchanged.
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { rmSync } from "node:fs";
+import { openDatabase } from "@/db/connection";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
 import { must } from "@/invariant";
@@ -317,12 +318,19 @@ test("a permanent refusal (a wrong password) writes one attention line at once",
     names: () => [unique("wrong")],
   });
   await s.until(() => s.attention.length === 1, "the refusal");
-  // Retries keep failing (each 5 minutes) without another line.
+  // Retries keep failing (each 5 minutes) without another line. Each try signs in once; the clock
+  // moves again only once that try was refused and the stream waits (B155b: no real-time sleep).
+  const signIns = () => s.requests.filter((line) => line.includes("/auth-with-password")).length;
   for (let i = 0; i < 3; i++) {
-    await s.until(() => s.stream.state().state === "waiting", "a wait");
+    await s.settle(() => s.stream.state().state === "waiting", "a wait");
+    const before = signIns();
     await s.advance(5 * 60_000);
-    await Bun.sleep(50);
+    await s.settle(
+      () => signIns() > before && s.stream.state().state === "waiting",
+      "the next refused try",
+    );
   }
+  expect(signIns()).toBe(4);
   expect(s.attention).toHaveLength(1);
   expect(linesOf(s, REFUSED)).toHaveLength(1);
 });
@@ -602,7 +610,7 @@ test("the retry queue: a settings mismatch waits past 72 hours and does not use 
     await retryAfter(2 * 3_600_000);
   }
   expect(s.attempts.get(id)).toBe(handlerCalls);
-  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n }]);
+  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n, waiting: 1n }]);
   expect(s.stream.retries()[0]?.last_error).toContain('no field "data"');
   expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
   expect(s.attention.some((line) => line.startsWith(REFUSED))).toBe(true);
@@ -612,6 +620,8 @@ test("the retry queue: a settings mismatch waits past 72 hours and does not use 
   s.fail.set(id, ["transient"]);
   await retryAfter(3_600_000);
   expect(s.attempts.get(id)).toBe((handlerCalls ?? 0) + 1);
+  // A transient failure again: no longer waiting for the settings.
+  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n, waiting: 0n }]);
   await s.retryAfter(3_600_000);
   expect(s.attempts.get(id)).toBe((handlerCalls ?? 0) + 2);
   expect(s.stream.retries()).toEqual([]);
@@ -638,7 +648,7 @@ test("the retry queue: a re-read the source refuses waits past 72 hours, then de
     expectBackoff(s);
   }
   expect(s.attempts.get(id)).toBe(handlerCalls);
-  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n }]);
+  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n, waiting: 1n }]);
   expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
   expect(s.attention.filter((line) => line.startsWith(`${REFUSED}event ${id}:`))).toHaveLength(1);
   // The field is back: the next retry delivers the record, once.
@@ -648,6 +658,301 @@ test("the retry queue: a re-read the source refuses waits past 72 hours, then de
   expect(s.attempts.get(id)).toBe((handlerCalls ?? 0) + 1);
   expect(s.eventIds()).toEqual([id]);
   expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
+});
+
+/** JSON nested `levels` objects deep (the adapter refuses past 64). */
+function nested(levels: number): Record<string, unknown> {
+  let value: Record<string, unknown> = { leaf: true };
+  for (let i = 1; i < levels; i++) {
+    value = { a: value };
+  }
+  return value;
+}
+
+/**
+ * A fresh events collection whose IDs may be up to 120 characters: past the 100 the stream keys
+ * (PocketBase refuses the characters the stream's pattern leaves out, so length is the one way).
+ */
+async function longIdEventsCollection() {
+  const events = await eventsCollection();
+  const collection: { fields: Array<Record<string, unknown>> } = await pb.api(
+    "GET",
+    `/api/collections/${events.name}`,
+  );
+  const fields = collection.fields.map((field) =>
+    field.name === "id" ? { ...field, min: 1, max: 120 } : field,
+  );
+  await pb.api("PATCH", `/api/collections/${events.name}`, { fields });
+  return events;
+}
+
+test("B155b: a record nested past the limit is terminal with one line, live and in a catch-up", async () => {
+  const name = unique("deep");
+  const cut = proxy();
+  const s = stream({ config: eventsOnly(cut.url), names: () => [name], tuning: { pageSize: 5 } });
+  await s.live();
+  const user = await pb.user();
+  const live = await pb.event(user.id, name, nested(70));
+  const after = await pb.event(user.id, name);
+  await s.until(() => s.eventIds().includes(after.id), "the record after the deep one");
+  // Terminal before the stream goes on (a later catch-up's lookback must not be what finds it).
+  expect(s.stream.retries()).toMatchObject([{ record_id: live.id, terminal: 1n }]);
+  // Disconnected: a deep record among others, read by the catch-up's pages.
+  cut.cut();
+  const meanwhile: Array<string> = [];
+  for (let i = 0; i < 4; i++) {
+    meanwhile.push((await pb.event(user.id, name)).id);
+  }
+  const caught = await pb.event(user.id, name, nested(70));
+  for (let i = 0; i < 4; i++) {
+    meanwhile.push((await pb.event(user.id, name)).id);
+  }
+  await s.until(() => s.eventIds().length === 9, "every readable record");
+  await s.live();
+  expect(sorted(s.eventIds())).toEqual(sorted([after.id, ...meanwhile]));
+  expect(s.attempts.has(live.id) || s.attempts.has(caught.id)).toBe(false);
+  expect(s.stream.retries().map((row) => [row.record_id, row.terminal])).toEqual([
+    [live.id, 1n],
+    [caught.id, 1n],
+  ]);
+  expect(s.stream.retries()[0]?.last_error).toContain("cannot be read");
+  // One line each: a record was handled between the two.
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([
+    expect.stringContaining(live.id),
+    expect.stringContaining(caught.id),
+  ]);
+  expect(linesOf(s, REFUSED)).toEqual([]);
+});
+
+test("B155b: a queued record edited past the nesting limit is terminal at its retry, not refused", async () => {
+  const name = unique("deepretry");
+  const s = stream({ config: eventsOnly(), names: () => [name] });
+  await s.live();
+  const user = await pb.user();
+  const id = recordId();
+  s.fail.set(id, ["transient"]);
+  await pb.event(user.id, name, {}, { id });
+  await s.until(() => s.stream.retries().length === 1, "the queued record");
+  // An events record's stamp is its `created`, which an edit keeps: the retry reads it again.
+  await pb.update("events", id, { data: nested(70) });
+  await s.retryAfter(60_000);
+  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 1n }]);
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([expect.stringContaining(id)]);
+  expect(linesOf(s, REFUSED)).toEqual([]);
+  expect(s.attempts.get(id)).toBe(1);
+});
+
+test("B155b: a record whose ID the stream cannot key is terminal with one line, live and in a catch-up", async () => {
+  const events = await longIdEventsCollection();
+  const liveBad = `live${"a".repeat(100)}`;
+  const caughtBad = `caught${"b".repeat(100)}`;
+  const cut = proxy();
+  const name = unique("badid");
+  const s = stream({
+    config: { ...events.settings, url: cut.url },
+    names: () => [name],
+    tuning: { pageSize: 5 },
+  });
+  await s.live();
+  const user = await pb.user();
+  const create = async (id?: string) =>
+    (
+      await pb.create(events.name, {
+        ...(id ? { id } : {}),
+        user: user.id,
+        name,
+        occurredAt: stamp(0),
+        data: {},
+      })
+    ).id;
+  await create(liveBad);
+  const after = await create();
+  await s.until(() => s.eventIds().includes(after), "the record after the unkeyable one");
+  cut.cut();
+  const meanwhile = [await create(), await create()];
+  await create(caughtBad);
+  meanwhile.push(await create(), await create());
+  await s.until(() => s.eventIds().length === 5, "every keyable record");
+  await s.live();
+  expect(sorted(s.eventIds())).toEqual(sorted([after, ...meanwhile]));
+  expect(s.stream.retries().map((row) => [row.record_id, row.terminal])).toEqual([
+    [liveBad, 1n],
+    [caughtBad, 1n],
+  ]);
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([
+    expect.stringContaining(liveBad),
+    expect.stringContaining(caughtBad),
+  ]);
+  expect(linesOf(s, REFUSED)).toEqual([]);
+});
+
+test("B155b: a record over the response limit is terminal with one line; the catch-up goes on", async () => {
+  const name = unique("toolarge");
+  // The live message is over its line limit, so a catch-up reads the record; its page is over the
+  // response limit even alone.
+  const s = stream({
+    config: eventsOnly(),
+    names: () => [name],
+    tuning: { maxLine: 2000, pageSize: 5 },
+    maxResponseBytes: 4000,
+  });
+  await s.live();
+  const user = await pb.user();
+  const big = await pb.event(user.id, name, { blob: "x".repeat(5000) });
+  const after = await pb.event(user.id, name);
+  await s.until(() => s.eventIds().includes(after.id), "the record after the large one");
+  await s.live();
+  expect(s.eventIds()).toEqual([after.id]);
+  expect(s.stream.retries()).toMatchObject([{ record_id: big.id, terminal: 1n }]);
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([
+    expect.stringMatching(new RegExp(`${big.id}.*response limit`)),
+  ]);
+  expect(linesOf(s, REFUSED)).toEqual([]);
+});
+
+test("B155b: a new source drops the old source's retry queue; the same source keeps it", async () => {
+  const name = unique("moved");
+  const first = stream({ config: eventsOnly(), names: () => [name] });
+  await first.live();
+  const user = await pb.user();
+  const id = recordId();
+  first.fail.set(id, ["transient"]);
+  await pb.event(user.id, name, {}, { id });
+  await first.until(() => first.stream.retries().length === 1, "the queued record");
+  await first.stop();
+  cleanups.pop();
+  cleanups.push(() => rmSync(first.dir, { recursive: true, force: true }));
+  const restart = () => ({ names: () => [name], dir: first.dir, clock: first.clock });
+  // The same source after a restart: the row waits, and its retry delivers the record.
+  const same = stream({ config: eventsOnly(), ...restart() });
+  expect(same.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n }]);
+  await same.live();
+  await same.stop();
+  cleanups.pop();
+  // The same records behind another URL (a copied database): a new source ignores history, so
+  // the old source's row is never read against it.
+  const cut = proxy();
+  const moved = stream({ config: eventsOnly(cut.url), ...restart() });
+  expect(moved.stream.retries()).toEqual([]);
+  await moved.live();
+  await moved.advance(RETRY_MAX_MS);
+  moved.stream.wakeRetries();
+  const other = await pb.event(user.id, name);
+  await moved.until(() => moved.eventIds().includes(other.id), "a live record of the new source");
+  expect(moved.attempts.has(id)).toBe(false);
+});
+
+test("B155b: a 2.1.0 retry row is kept for the same source and dropped for another", async () => {
+  const name = unique("upgrade");
+  const user = await pb.user();
+  const first = stream({ config: eventsOnly(), names: () => [name] });
+  await first.live();
+  const queued = await pb.event(user.id, name, {}, { id: recordId() });
+  await first.until(() => first.eventIds().includes(queued.id), "a record");
+  await first.stop();
+  cleanups.pop();
+  cleanups.push(() => rmSync(first.dir, { recursive: true, force: true }));
+  // A row as 2.1.0 wrote it (no source column), due now.
+  const legacy = (id: string) => {
+    const db = openDatabase(first.dir);
+    try {
+      db.query(
+        `INSERT INTO source_stream_retries
+           (kind, record_id, stamp, attempts, first_failed_at, next_attempt_at, last_error, terminal)
+           VALUES ('event', ?, ?, 1, ?, ?, 'test', 0)`,
+      ).run(
+        id,
+        String(queued.created),
+        first.clock.now().toISOString(),
+        first.clock.now().toISOString(),
+      );
+    } finally {
+      db.close();
+    }
+  };
+  const restart = () => ({ names: () => [name], dir: first.dir, clock: first.clock });
+  legacy(queued.id);
+  const same = stream({ config: eventsOnly(), ...restart() });
+  expect(same.stream.retries()).toMatchObject([{ record_id: queued.id, terminal: 0n }]);
+  await same.stop();
+  cleanups.pop();
+  legacy(recordId());
+  const cut = proxy();
+  const moved = stream({ config: eventsOnly(cut.url), ...restart() });
+  expect(moved.stream.retries()).toEqual([]);
+});
+
+test("B155b: a refused retry of one kind writes one line though records of the other kind succeed", async () => {
+  // A users collection of its own, so renaming its leaving field touches no other test.
+  const people = unique("people");
+  const rule = '@request.auth.collectionName = "services"';
+  await pb.api("POST", "/api/collections", {
+    name: people,
+    type: "base",
+    listRule: rule,
+    viewRule: rule,
+    fields: [
+      { name: "deletedAt", type: "date" },
+      { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
+    ],
+  });
+  const name = unique("kinds");
+  const s = stream({
+    config: config(pb.url, { users: { collection: people, leavingFilter: "deletedAt != ''" } }),
+    names: () => [name],
+  });
+  await s.live();
+  const user = await pb.user();
+  const leaving = recordId();
+  const event = recordId();
+  s.fail.set(leaving, ["transient"]);
+  s.fail.set(event, ["transient"]);
+  await pb.create(people, { id: leaving, deletedAt: stamp(0) });
+  await pb.event(user.id, name, {}, { id: event });
+  await s.until(() => s.stream.retries().length === 2, "both records queued");
+  // The users side is misconfigured from now on: its re-read is refused.
+  await pb.renameField(people, "deletedAt", "gone");
+  const refused = () => linesOf(s, `${REFUSED}user ${leaving}:`);
+  // Both rows are due: the user's re-read is refused (one line), then the event is handled.
+  await s.advance(RETRY_MIN_MS);
+  const done = s.rereads();
+  s.stream.wakeRetries();
+  await s.settle(() => s.rereads() >= done + 2, "both retries");
+  await s.until(() => s.eventIds().includes(event), "the event's retry");
+  expect(refused()).toHaveLength(1);
+  // The user's next refusal is the same cause: no new line, although an event was handled.
+  await s.retryAfter(2 * RETRY_MIN_MS);
+  expect(s.stream.retries()).toMatchObject([{ record_id: leaving, terminal: 0n }]);
+  expect(refused()).toHaveLength(1);
+});
+
+test("B155b: the retry queue: a re-read cut on the way stays transient", async () => {
+  const name = unique("retrycut");
+  const cut = proxy();
+  const s = stream({ config: eventsOnly(cut.url), names: () => [name] });
+  await s.live();
+  const user = await pb.user();
+  const id = recordId();
+  s.fail.set(id, ["transient"]);
+  await pb.event(user.id, name, {}, { id });
+  await s.until(() => s.stream.retries().length === 1, "the queued record");
+  const firstFailed = must(s.stream.retries()[0], "the row").first_failed_at;
+  // The retry's re-read names the record's ID; the stream's own reads do not.
+  cut.cutWhen((line) => line.includes(id));
+  await s.retryAfter(RETRY_MIN_MS);
+  expect(s.stream.retries()).toMatchObject([
+    { record_id: id, terminal: 0n, waiting: 0n, first_failed_at: firstFailed },
+  ]);
+  expect(s.stream.retries()[0]?.last_error).toContain("unreachable");
+  expectBackoff(s);
+  expect(linesOf(s, REFUSED)).toEqual([]);
+  expect(s.attempts.get(id)).toBe(1);
+  // Reachable again: the next retry delivers it once.
+  cut.cutWhen(undefined);
+  await s.retryAfter(2 * RETRY_MIN_MS);
+  expect(s.stream.retries()).toEqual([]);
+  expect(s.eventIds()).toEqual([id]);
+  expect(s.attention).toEqual([]);
 });
 
 test("the subscribed names: active triggers, active or paused exits, and grant rules", () => {

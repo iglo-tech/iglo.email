@@ -180,6 +180,17 @@ export function createSourceStream(options: SourceStreamOptions) {
   const usersId = digest([config.url, config.users.collection, config.users.leavingFilter]);
   const eventKey = (name: string) => `event:${eventsId}:${name}`;
   const userKey = `user:${usersId}`;
+  /** Each retry row names its source by the same digest as the markers (D177). */
+  const sources = { event: eventsId, user: usersId };
+  // A new source ignores history: before either loop starts, the queue keeps only this source's
+  // rows. Rows from before the queue named its source go to the source whose markers are kept.
+  writeTransaction(db, () => {
+    const topics = [...store.markers().keys()];
+    store.keepSources(sources, {
+      event: topics.some((topic) => topic.startsWith(`event:${eventsId}:`)),
+      user: topics.includes(userKey),
+    });
+  });
 
   let state: StreamState = "stopped";
   let sessions = 0;
@@ -188,6 +199,7 @@ export function createSourceStream(options: SourceStreamOptions) {
   let current: AbortController | undefined;
   let waking: AbortController | undefined;
   let running: Promise<void> | undefined;
+  let stopped: Promise<void> | undefined;
 
   const attention = (safe: SafeMessage, detail: string) => {
     try {
@@ -197,18 +209,19 @@ export function createSourceStream(options: SourceStreamOptions) {
     }
   };
   /**
-   * Record-level lines (a terminal record, a retry the settings refuse): one per cause until a
-   * record is handled again, so one wrong mapping or failing handler never floods the log.
+   * Record-level lines (a terminal record, a retry the settings refuse): one per kind and cause
+   * until a record or retry of the same kind is handled again, so one wrong mapping or failing
+   * handler never floods the log, and the other kind working does not reopen it (D177).
    */
-  const recordWarned = new Set<string>();
+  const recordWarned: Record<StreamKind, Set<string>> = { event: new Set(), user: new Set() };
   const recordAttention = (
     safe: SafeMessage,
-    item: { kind: string; id: string },
+    item: { kind: StreamKind; id: string },
     error: unknown,
   ) => {
     const cause = `${safe}\0${describe(error).replaceAll(item.id, "")}`;
-    if (!recordWarned.has(cause)) {
-      recordWarned.add(cause);
+    if (!recordWarned[item.kind].has(cause)) {
+      recordWarned[item.kind].add(cause);
       attention(safe, `${item.kind} ${item.id}: ${describe(error)}`);
     }
   };
@@ -222,34 +235,39 @@ export function createSourceStream(options: SourceStreamOptions) {
 
   const namesNow = () => [...new Set(options.names())].sort();
 
-  /** Moves the markers of `keys` to `stamp` and prunes the dedupe entries the lookback can no longer reach. */
-  function advance(kind: StreamKind, keys: ReadonlyArray<string>, stamp: Date) {
-    writeTransaction(db, () => {
-      store.advance(keys, stamp);
-      const prefix = kind === "event" ? "event:" : "user:";
-      let oldest: string | undefined;
-      for (const [topic, marker] of store.markers()) {
-        if (topic.startsWith(prefix) && (oldest === undefined || marker < oldest)) {
-          oldest = marker;
-        }
+  /**
+   * Moves the markers of `keys` to `stamp` and prunes the dedupe entries the lookback can no longer
+   * reach (in a transaction).
+   */
+  function moveMarkers(kind: StreamKind, keys: ReadonlyArray<string>, stamp: Date) {
+    store.advance(keys, stamp);
+    const prefix = kind === "event" ? "event:" : "user:";
+    let oldest: string | undefined;
+    for (const [topic, marker] of store.markers()) {
+      if (topic.startsWith(prefix) && (oldest === undefined || marker < oldest)) {
+        oldest = marker;
       }
-      if (oldest !== undefined) {
-        const at = new Date(oldest.replace(" ", "T"));
-        store.prune(kind, new Date(at.getTime() - 2 * lookbackMs));
-      }
-    });
+    }
+    if (oldest !== undefined) {
+      const at = new Date(oldest.replace(" ", "T"));
+      store.prune(kind, new Date(at.getTime() - 2 * lookbackMs));
+    }
   }
+  const advance = (kind: StreamKind, keys: ReadonlyArray<string>, stamp: Date) =>
+    writeTransaction(db, () => moveMarkers(kind, keys, stamp));
 
   /** Queues a record the handler failed on, unless the handler committed it after all. */
-  function queue(item: StreamItem, error: unknown) {
+  function queue(item: StreamItem, error: unknown, after: () => void) {
     const permanent = isSourceError(error) && error.kind === "permanent";
     const now = clock.now();
     const queued = writeTransaction(db, () => {
+      after();
       if (store.seen(item.kind, item.id, item.stamp)) {
         return false;
       }
       store.enqueue(
         item.kind,
+        sources[item.kind],
         item.id,
         item.stamp,
         now,
@@ -268,16 +286,28 @@ export function createSourceStream(options: SourceStreamOptions) {
     }
   }
 
-  /** Hands one record to the handler, unless it was handled already. */
-  async function handle(item: StreamItem) {
+  /**
+   * Hands one record to the handler, unless it was handled already. `after` runs in the same
+   * transaction as the record's dedupe entry (the live path's marker move, D177: one commit per
+   * live record), or in one of its own when the record was handled before.
+   */
+  async function handle(item: StreamItem, after: () => void = () => {}) {
     if (store.seen(item.kind, item.id, item.stamp)) {
+      writeTransaction(db, after);
       return;
     }
     if ("error" in item) {
-      queue(item, new SourceError("permanent", item.error));
+      queue(item, new SourceError("permanent", item.error), after);
       return;
     }
-    const commit: RecordCommit = { write: () => store.markSeen(item.kind, item.id, item.stamp) };
+    let committed = false;
+    const commit: RecordCommit = {
+      write: () => {
+        store.markSeen(item.kind, item.id, item.stamp);
+        after();
+        committed = true;
+      },
+    };
     try {
       if (item.kind === "event") {
         await handler.event(item.record, commit, stopping.signal);
@@ -293,15 +323,17 @@ export function createSourceStream(options: SourceStreamOptions) {
       if (isSettingsMismatch(error)) {
         throw error;
       }
-      queue(item, error);
+      queue(item, error, after);
       return;
     }
-    recordWarned.clear();
-    if (!store.seen(item.kind, item.id, item.stamp)) {
+    recordWarned[item.kind].clear();
+    if (!committed) {
+      // The handler had nothing to write (or a retry handled the record meanwhile).
       writeTransaction(db, () => {
         if (!store.seen(item.kind, item.id, item.stamp)) {
           store.markSeen(item.kind, item.id, item.stamp);
         }
+        after();
       });
     }
   }
@@ -460,6 +492,13 @@ export function createSourceStream(options: SourceStreamOptions) {
             continue;
           }
           const payload = safeJson(next.data);
+          if (payload === undefined) {
+            // B155b (D177): a message of a subscribed topic the stream cannot read (its record
+            // nests past the JSON limit). Caught up instead, so the catch-up's reads make it a
+            // terminal record keyed by its ID, never a record lost without a line.
+            overflow = true;
+            break;
+          }
           const action = member(payload, "action");
           const item = source.item(
             kind,
@@ -469,8 +508,8 @@ export function createSourceStream(options: SourceStreamOptions) {
           if (!item) {
             continue;
           }
-          await handle(item);
-          advance(kind, kind === "event" ? eventKeys : [userKey], item.stamp);
+          const keys = kind === "event" ? eventKeys : [userKey];
+          await handle(item, () => moveMarkers(kind, keys, item.stamp));
         }
         state = "catching-up";
       }
@@ -604,7 +643,7 @@ export function createSourceStream(options: SourceStreamOptions) {
         await handler.userLeft(item.record, commit, stopping.signal);
       }
       finish();
-      recordWarned.clear();
+      recordWarned[kind].clear();
       return;
     } catch (error_) {
       error = error_;
@@ -677,11 +716,17 @@ export function createSourceStream(options: SourceStreamOptions) {
     },
     /** Wakes the retry queue (a test after moving the clock). */
     wakeRetries: () => retries.wake(),
-    /** Stops both loops; a record being handled finishes or is read again at the next start. */
-    async stop() {
-      stopping.abort();
-      await Promise.allSettled([running, retries.stop()]);
-      store.close();
+    /**
+     * Stops both loops; a record being handled finishes or is read again at the next start. A
+     * second call waits for the first.
+     */
+    stop() {
+      stopped ??= (async () => {
+        stopping.abort();
+        await Promise.allSettled([running, retries.stop()]);
+        store.close();
+      })();
+      return stopped;
     },
     /** Where the stream is, and how many connections it has made. */
     state: () => ({ state, sessions }),
