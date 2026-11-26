@@ -2,14 +2,15 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { rm } from "node:fs/promises";
+import { resolve } from "node:path";
 import { referenceMailpit, assertOwnedMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { readJson } from "@/test/read-body";
+import { runDirectory } from "@/test/sends/run-directory";
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
-const directory = await mkdtemp(join(tmpdir(), "iglo-recovery-time-"));
+const run = await runDirectory("iglo-recovery-time-");
+const { directory, projectDirectory } = run;
 let active: ChildProcessWithoutNullStreams | undefined;
 async function launch(dataDir: string) {
   const child = spawn(resolve("dist/sends-producer"), [], {
@@ -57,7 +58,7 @@ async function kill(child: ChildProcessWithoutNullStreams) {
 }
 try {
   for (let repetition = 1; repetition <= 3; repetition++) {
-    const dataDir = join(directory, String(repetition));
+    const dataDir = projectDirectory(String(repetition));
     let worker = await launch(dataDir);
     const entry = await worker.call(
       "/fixture/enqueue",
@@ -90,3 +91,4 @@ try {
   }
   await rm(directory, { recursive: true, force: true });
 }
+run.assertNothingLeft();

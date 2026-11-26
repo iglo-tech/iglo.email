@@ -35,6 +35,7 @@
     "test/messaging/send-rate.test.ts": 14746,
     "test/bounces/ses.test.ts": 14173,
     "test/bounces/bounces.test.ts": 13522,
+    "test/admin/source-retries.test.ts": 13042,
     "test/unsubscribe/unsubscribe.test.ts": 12435,
     "test/messaging/plain-executable.test.ts": 12298,
     "test/subscribers/query.test.ts": 11944,

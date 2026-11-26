@@ -432,9 +432,11 @@ writes `[instance] projects/<name> has no registry row: it is not served`, and t
 lists it. Move it away, or bring it back as a deleted project is brought back. Its presence tells
 the server the instance has had several projects, as a deleted project's snapshot does. A delete
 that stopped part way may leave the project's database there: one that stopped while removing the
-directory may already have removed it, in the filesystem's own order. When it is there, it is a
-copy of its snapshot in `backups/deleted`, never the snapshot itself, so opening it does not
-change the snapshot. Only a
+directory may already have removed it, in the filesystem's own order. When it is there and the
+delete took its snapshot in `backups/deleted`, the snapshot is a separate copy, so opening the
+database does not change the snapshot. A delete that stopped before taking the snapshot (it removed
+the registry rows, then failed, and the server restarted) leaves no snapshot: that database is the
+project's only copy. Only a
 directory whose name could be a project's slug (lowercase letters, digits and `-`) counts: a
 `lost+found` (when `projects/` is its own filesystem) is ignored. A `<slug>-<time>.db.partial` in
 `backups/deleted` is a copy a delete stopped by a crash left; it is never a snapshot, and the next
@@ -666,7 +668,8 @@ iglo.email resolves it as it writes the user's subscriber, when an event arrives
   Its row becomes the user's, or, when the user already has one, its blocklist and unsubscribes
   move onto the user's row and it is deleted. Either way no subscriber has the old ID any more:
   later pushed events for it get 404 (no `email`, so no row to update) or 409 (the address is held
-  by the user's row).
+  by the user's row). One that carries an `email` no subscriber holds creates a new subscriber
+  with that ID, which the source absorbs again the next time its address meets a user's.
 - Anything else fails that event for good, with an attention line: two live users with one
   address, a holder moving to an address a third subscriber holds (a rotation through three or more
   users), or a new address in a domain the privacy domain policy blocks. The policy is checked again

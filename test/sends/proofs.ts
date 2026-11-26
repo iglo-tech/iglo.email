@@ -4,19 +4,20 @@ import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer, createConnection } from "node:net";
 import type { Socket } from "node:net";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { rm } from "node:fs/promises";
+import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
 import { faultRelay } from "@/test/messaging/fault-relay";
 import { readJson } from "@/test/read-body";
+import { runDirectory } from "@/test/sends/run-directory";
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const marker = `m08${sink.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
 const mailpit = new Mailpit(sink, marker),
-  directory = await mkdtemp(join(tmpdir(), "iglo-proofs-"));
+  run = await runDirectory("iglo-proofs-"),
+  { directory, projectDirectory } = run;
 let child: ChildProcessWithoutNullStreams | undefined;
 async function relay(mode: string) {
   const sockets = new Set<Socket>();
@@ -196,7 +197,7 @@ try {
   ] as const) {
     const peer = await relay(mode);
     try {
-      const fixture = await start(peer.port, mode.startsWith("auth"), join(directory, mode));
+      const fixture = await start(peer.port, mode.startsWith("auth"), projectDirectory(mode));
       const entry = await fixture.call(
         "/fixture/enqueue",
         "POST",
@@ -236,7 +237,7 @@ try {
   }
   const peer = await relay("rcpt-temporary");
   try {
-    const dir = join(directory, "restart-retry");
+    const dir = projectDirectory("restart-retry");
     let fixture = await start(peer.port, false, dir);
     const entry = await fixture.call(
       "/fixture/enqueue",
@@ -294,7 +295,7 @@ try {
   }
   const marketingPeer = await relay("rcpt-temporary");
   try {
-    const fixture = await start(marketingPeer.port, false, join(directory, "marketing-refusal"));
+    const fixture = await start(marketingPeer.port, false, projectDirectory("marketing-refusal"));
     const entry = await fixture.call(
       "/fixture/enqueue",
       "POST",
@@ -322,7 +323,7 @@ try {
     for (const fault of ["during-data", "lost-final"] as const) {
       const peer = await faultRelay(sink, fault);
       try {
-        const fixture = await start(peer.port, false, join(directory, `${kind}-${fault}`));
+        const fixture = await start(peer.port, false, projectDirectory(`${kind}-${fault}`));
         const subject = `${marker} ${kind}-${fault}`;
         const entry = await fixture.call(
           "/fixture/enqueue",
@@ -349,7 +350,7 @@ try {
     }
   }
   try {
-    const fixture = await start(sink.port, false, join(directory, "live-authority"));
+    const fixture = await start(sink.port, false, projectDirectory("live-authority"));
     const deniedSubject = `${marker} denied-resend`;
     const original = await fixture.call(
       "/fixture/enqueue",
@@ -397,3 +398,4 @@ try {
   await mailpit.removeOwned();
   await rm(directory, { recursive: true, force: true });
 }
+run.assertNothingLeft();

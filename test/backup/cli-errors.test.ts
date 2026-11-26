@@ -3,7 +3,7 @@
 // it; `--verify /dev/stdin` on a pipe says there is no backup instead of a raw `stat` error.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { readdirSync, readlinkSync } from "node:fs";
+import { readdirSync, readlinkSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import {
   adminCredentials,
@@ -44,6 +44,9 @@ function spawnBackup(args: Array<string>, stdin: "pipe" | "ignore" = "ignore") {
 
 /** Waits until process `pid` has `path` open. */
 async function opened(pid: number, path: string, limitMs: number): Promise<void> {
+  // `/proc/<pid>/fd` links name the resolved file, so a symlink anywhere in `path` (`TMPDIR`
+  // included) is resolved before comparing.
+  const target = realpathSync(path);
   const start = Date.now();
   for (;;) {
     let links: Array<string> = [];
@@ -58,7 +61,7 @@ async function opened(pid: number, path: string, limitMs: number): Promise<void>
     } catch {
       // The process has exited; the check below fails the wait.
     }
-    if (links.includes(path)) {
+    if (links.includes(target)) {
       return;
     }
     if (Date.now() - start > limitMs) {
