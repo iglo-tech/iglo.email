@@ -742,3 +742,145 @@ test("a recovered source clears error_since and sends; a 400 ends source_error a
   });
   expect(f.sink.messages).toHaveLength(1);
 });
+
+test("a pushed trigger_event_id on an external sequence is refused before the source is read (B155e, D180)", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const seq = await f.sequence(external([tx(template)]));
+  const subscriber = await f.subscriber("pushed-id@example.test", { external_id: ada.id });
+  // The source is down: a read would answer 503. The refusal needs no read.
+  await own.stop();
+  const refused = await enroll(f, seq.id, subscriber, { trigger_event_id: 1 });
+  expect(refused.status).toBe(400);
+  expect(refused.body).toMatchObject({ message: "Invalid fields: trigger_event_id" });
+  expect((await enroll(f, seq.id, subscriber, { trigger_event_id: 1, test: true })).status).toBe(
+    400,
+  );
+  // Without it, the read happens and the outage answers 503, as before.
+  expect((await enroll(f, seq.id, subscriber)).status).toBe(503);
+});
+
+test("a cap defer or skip and a template_unavailable skip read nothing and keep the outage window (B155e, D180)", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  f.marketing.minInterval = "P7D";
+  const news = await f.list("News");
+  const template = await f.template();
+  const gone = await f.template("<p>gone</p>");
+  const send = { wait: "PT0S", kind: "marketing", template_id: template };
+  // The second step's condition reads the source; down, it opens the window, retries and is
+  // skipped late (P2D), keeping the window. The third step is then decided without a read.
+  const fails = { ...send, wait: "PT1H", condition: { event: "order_paid" } };
+  const cases = [
+    { name: "defer", third: { ...send, cap_policy: "defer" }, reasons: [], at: 2 },
+    { name: "skip", third: { ...send, cap_policy: "skip" }, reasons: ["frequency_cap"], at: 3 },
+    {
+      name: "template",
+      third: { ...send, template_id: gone },
+      reasons: ["template_unavailable"],
+      at: 3,
+    },
+  ];
+  const started: Array<{
+    name: string;
+    id: number;
+    seq: Awaited<ReturnType<typeof f.sequence>>;
+    reasons: Array<string>;
+    at: number;
+  }> = [];
+  for (const { name, third, reasons, at } of cases) {
+    const user = await own.user();
+    await own.event(user.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+    const seq = await f.sequence({
+      list_id: news,
+      ...external([send, fails, third, tx(template, { wait: "P1D" })]),
+    });
+    const subscriber = await f.subscriber(`window-${name}@example.test`, {
+      external_id: user.id,
+      lists: [news],
+      preconfirm_subscriptions: true,
+    });
+    const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+    started.push({ name, id, seq, reasons, at });
+  }
+  expect((await f.json(`/api/templates/${gone}`, "DELETE")).status).toBe(200);
+  // The first step reads the trigger record and sends: the cap's 7 days start now.
+  await f.pass();
+  await f.until(() => f.sink.messages.length === 3, "the first steps' mail");
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  for (const { id } of started) {
+    await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+  }
+  // Skipped late at +49 h, the third step decided at the next pass.
+  while (f.clock.now().getTime() < failedAt + 51 * hour) {
+    await f.pass(hour);
+  }
+  for (const { name, id, seq, reasons, at } of started) {
+    const enrollment = await f.enrollment(id);
+    expect({ name, error_since: enrollment.error_since }).toEqual({
+      name,
+      error_since: new Date(failedAt).toISOString(),
+    });
+    expect(enrollment.status).toBe("active");
+    const skips = (await f.sendLog())
+      .filter((s) => s.enrollment_id === id && s.step_id !== seq.steps[1]!.id)
+      .flatMap((s) => (s.skip_reason ? [s.skip_reason] : []));
+    expect({ name, skips }).toEqual({ name, skips: reasons });
+    // The deferred step waits for the cap; the skipped ones moved to the last step.
+    expect(enrollment.step_id).toBe(seq.steps[at]!.id);
+  }
+  expect(f.sink.messages).toHaveLength(3);
+});
+
+test("steps spaced past 2 hours through a long outage end completed, every step skipped late, nothing sent (B155e, D172, D180)", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  const news = await f.list("News");
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const step = (wait: string) => ({
+    wait,
+    kind: "marketing",
+    template_id: template,
+    condition: { event: "order_paid" },
+  });
+  const seq = await f.sequence({
+    list_id: news,
+    ...external([step("PT1H"), step("P1D"), step("P1D")]),
+  });
+  const subscriber = await f.subscriber("spaced@example.test", {
+    external_id: ada.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  await own.stop();
+  const windows = new Set<string>();
+  // Each step retries hourly and is skipped late (P2D) within its own window, so no window reaches
+  // 72 hours, and the next step, a day after the last failed read, opens a fresh one.
+  const end = f.clock.now().getTime() + 300 * hour;
+  while ((await f.enrollment(id)).status === "active" && f.clock.now().getTime() < end) {
+    await f.pass(hour);
+    const since = (await f.enrollment(id)).error_since;
+    if (since) {
+      windows.add(since);
+    }
+  }
+  const ended = await f.enrollment(id);
+  expect(ended).toMatchObject({ status: "completed", error_since: null });
+  expect(windows.size).toBe(3);
+  expect(
+    (await f.sendLog()).filter((s) => s.enrollment_id === id).map((s) => s.skip_reason),
+  ).toEqual(["late", "late", "late"]);
+  expect(f.sink.messages).toHaveLength(0);
+  expect(attention(f)).not.toContain(`enrollment ${id}`);
+});

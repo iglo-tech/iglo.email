@@ -33,7 +33,7 @@ import type { SourceProvider } from "@/sources/project";
 import { isSubscriberChanged } from "@/sources/recipient-sync";
 import type { SendTimeLookup } from "@/sources/send-time";
 import { isSourceError } from "@/sources/source";
-import type { SourceEvent } from "@/sources/source";
+import type { ExternalSource, SourceEvent } from "@/sources/source";
 import { isSettingsMismatch } from "@/sources/stream-record";
 
 export const SCHEDULER_INTERVAL_MS = 15_000;
@@ -106,6 +106,33 @@ const openWindow = (row: SchedulerContext, now: number): number | null =>
   now - Date.parse(row.error_last) <= SOURCE_OUTAGE_GAP_MS
     ? Date.parse(row.error_since)
     : null;
+
+/**
+ * D180: `source`, calling `answered` whenever one of its reads succeeds, so a decision knows
+ * whether the source answered it. Only a step decided by a successful read clears the enrollment's
+ * outage window (D172); a skip or defer that read nothing keeps it.
+ */
+function answering(source: ExternalSource, answered: () => void): ExternalSource {
+  const mark = async <T>(read: Promise<T>): Promise<T> => {
+    const value = await read;
+    answered();
+    return value;
+  };
+  return {
+    recipient: (externalId, call) => mark(source.recipient(externalId, call)),
+    record: (id, call) => mark(source.record(id, call)),
+    latest: (query, call) => mark(source.latest(query, call)),
+    count: (query, upTo, call) => mark(source.count(query, upTo, call)),
+    exists: (query, call) => mark(source.exists(query, call)),
+    async *scan(query, fields, limit, call) {
+      for await (const page of source.scan(query, fields, limit, call)) {
+        answered();
+        yield page;
+      }
+      answered();
+    },
+  };
+}
 
 /** Create and start, for callers that decide at once. The server calls `createScheduler` (B52). */
 export function startScheduler(options: SchedulerOptions) {
@@ -213,7 +240,8 @@ export function createScheduler(options: SchedulerOptions) {
       enrollments.advance(claim, clock.now(), keepErrorSince);
     });
   }
-  const advance = (claim: Decision) => commit(claim, () => enrollments.advance(claim, clock.now()));
+  const advance = (claim: Decision, keepErrorSince = false) =>
+    commit(claim, () => enrollments.advance(claim, clock.now(), keepErrorSince));
   // A condition exit keeps the condition's text, so the enrollment names what ended it (B127 r2).
   const end = (
     claim: Decision,
@@ -223,12 +251,12 @@ export function createScheduler(options: SchedulerOptions) {
   ) => commit(claim, () => enrollments.endClaimed(claim, status, reason, clock.now(), condition));
   const retry = (claim: Decision, ms: number) =>
     commit(claim, () => enrollments.release(claim, new Date(clock.now().getTime() + ms)));
-  const capped = (claim: Decision, email: string) =>
+  const capped = (claim: Decision, email: string, keepErrorSince: boolean) =>
     claim.step.cap_policy === "skip"
-      ? skipped(claim, email, "frequency_cap")
+      ? skipped(claim, email, "frequency_cap", keepErrorSince)
       : commit(claim, (row) => {
           const floor = new Date(clock.now().getTime() + DEFER_MIN_MS);
-          enrollments.defer(claim, sends.capFreeAt(row.subscriber_id, floor));
+          enrollments.defer(claim, sends.capFreeAt(row.subscriber_id, floor), keepErrorSince);
         });
 
   /** Condition and aggregate failures wait the time already spent late, within these bounds. */
@@ -371,10 +399,14 @@ export function createScheduler(options: SchedulerOptions) {
     }
     const claim: Decision = { id: row.id, lease: item.lease, step: row };
     const now = clock.now();
+    // D180: whether a source read succeeded in this decision. A step passed, skipped or deferred
+    // without one keeps the enrollment's outage window (D172); pushed sequences have none.
+    let answered = false;
+    const keep = () => !answered;
     // A send already recorded for this step (a crash before the advance, or a step revisited
     // after a reorder) is never written or sent again: only advance.
     if (sends.sequenceSend(row.id, row.step_id)) {
-      return advance(claim);
+      return advance(claim, keep());
     }
     if (row.sequence_status === "archived") {
       return end(claim, "exited", "sequence_archived");
@@ -441,7 +473,9 @@ export function createScheduler(options: SchedulerOptions) {
         });
       }
       reads = {
-        source,
+        source: answering(source, () => {
+          answered = true;
+        }),
         local: options.conditions,
         ...(options.signal ? { signal: options.signal } : {}),
       };
@@ -467,7 +501,7 @@ export function createScheduler(options: SchedulerOptions) {
       }
       if (!result.value) {
         return row.on_false === "skip"
-          ? advance(claim)
+          ? advance(claim, keep())
           : end(claim, "exited", "condition", row.condition);
       }
     }
@@ -476,7 +510,7 @@ export function createScheduler(options: SchedulerOptions) {
     if (!template || template.type !== "tx") {
       // Logged once, when recorded: a template deleted during the condition is a stale
       // decision, released and decided again.
-      if (skipped(claim, subscriber.email, "template_unavailable")) {
+      if (skipped(claim, subscriber.email, "template_unavailable", keep())) {
         attention(
           "Sequence step has no transactional template: skipped",
           `Sequence step ${row.step_id} has no transactional template; enrollment ${row.id} skipped it`,
@@ -491,13 +525,15 @@ export function createScheduler(options: SchedulerOptions) {
       if (!current) {
         return;
       }
+      // The recipients view answered.
+      answered = true;
       subscriber = current;
     }
     if (marketing) {
       // Rechecked after the condition, which may have waited on the query runner.
       const reason = sends.marketingReason(row.subscriber_id, row.list_id);
       if (reason === "frequency_cap") {
-        return capped(claim, subscriber.email);
+        return capped(claim, subscriber.email, keep());
       }
       if (reason) {
         return end(claim, "exited", "unsubscribed");
@@ -538,7 +574,7 @@ export function createScheduler(options: SchedulerOptions) {
         return sourceFailed(claim, row, result.error);
       }
       if (!result.ok && "limit" in result) {
-        if (skipped(claim, subscriber.email, "aggregate_limit")) {
+        if (skipped(claim, subscriber.email, "aggregate_limit", keep())) {
           attention(
             "Sequence step has an aggregate past its limit: skipped",
             `Sequence step ${row.step_id} has an aggregate that is over ${AGGREGATE_LIMIT} events or outside the exact integer range for enrollment ${row.id}; skipped`,
@@ -644,7 +680,7 @@ export function createScheduler(options: SchedulerOptions) {
       if (error instanceof RenderCapacityError) {
         return retry(claim, BUSY_MS);
       }
-      if (skipped(claim, subscriber.email, "render_failed")) {
+      if (skipped(claim, subscriber.email, "render_failed", keep())) {
         attention(
           "Sequence step could not be rendered: skipped",
           `Sequence step ${row.step_id} could not be rendered for enrollment ${row.id}; skipped`,
@@ -654,9 +690,10 @@ export function createScheduler(options: SchedulerOptions) {
     }
 
     let queued = false;
+    const kept = keep();
     commit(claim, () => {
       if (sends.sequenceSend(row.id, row.step_id)) {
-        enrollments.advance(claim, clock.now());
+        enrollments.advance(claim, clock.now(), kept);
         return;
       }
       const reason = sends.sequenceAdmission(prepared);
@@ -677,16 +714,16 @@ export function createScheduler(options: SchedulerOptions) {
             stepId: row.step_id,
             listId: row.list_id,
           });
-          enrollments.advance(claim, clock.now());
+          enrollments.advance(claim, clock.now(), kept);
         } else {
           const floor = new Date(clock.now().getTime() + DEFER_MIN_MS);
-          enrollments.defer(claim, sends.capFreeAt(row.subscriber_id, floor));
+          enrollments.defer(claim, sends.capFreeAt(row.subscriber_id, floor), kept);
         }
       } else if (reason) {
         enrollments.endClaimed(claim, "exited", "unsubscribed", clock.now());
       } else {
         sends.recordSequence({ prepared });
-        enrollments.advance(claim, clock.now());
+        enrollments.advance(claim, clock.now(), kept);
         queued = true;
       }
     });

@@ -131,13 +131,18 @@ UPDATE enrollments SET step_id = ?1, due_at = ?2, claimed_until = NULL, retry_at
     updated_at = ?4
   WHERE id = ?5 AND status = 'active' AND claimed_until = ?6;
 -- name: claimed-complete
-UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
+-- D180: a completed enrollment has no outage window left, whatever its last step read.
+UPDATE enrollments SET status = 'completed', step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL,
+    error_since = NULL, error_last = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-end
 UPDATE enrollments SET status = ?, exit_reason = ?, exit_condition = ?, step_id = NULL, due_at = NULL, claimed_until = NULL, retry_at = NULL, finished_at = ?, updated_at = ?
   WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-defer
-UPDATE enrollments SET due_at = ?, claimed_until = NULL, retry_at = NULL, error_since = NULL, error_last = NULL WHERE id = ? AND status = 'active' AND claimed_until = ?;
+-- D180: a defer decided without a source read keeps the outage window, as claimed-advance does.
+UPDATE enrollments SET due_at = ?1, claimed_until = NULL, retry_at = NULL,
+    error_since = CASE WHEN ?4 THEN error_since END, error_last = CASE WHEN ?4 THEN error_last END
+  WHERE id = ?2 AND status = 'active' AND claimed_until = ?3;
 -- name: claimed-release
 UPDATE enrollments SET claimed_until = NULL, retry_at = ? WHERE id = ? AND status = 'active' AND claimed_until = ?;
 -- name: claimed-source-retry
