@@ -4,8 +4,16 @@
 // the binary cannot produce, through the cut proxy) makes a queued one. The queue needs
 // settings:manage, and each project lists only its own stream's rows. The private-address block
 // stays on; PocketBase is reached through `sources.private_hosts` (D169 amended).
+//
+// B159c (D184): two projects with a source each, on two PocketBase instances, list only their own
+// rows; past 1000 rows the answer holds the oldest 1000 and `more`; and a queued row whose retry
+// meets a settings mismatch (a renamed events field) is `waiting`. That last case runs the instance
+// in this process on a `TestClock`, since the compiled executable's clock is real and the first
+// retry is a minute away.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { instanceCall, instanceLogin } from "@/test/projects/admin-fixture";
+import { openLifecycle, PRIMARY } from "@/test/projects/lifecycle-fixture";
+import { TestClock } from "@/test/server/fixture";
 import {
   adminCredentials,
   api,
@@ -32,11 +40,15 @@ const RETRIES = "/api/settings/source/retries";
 let prepared: Awaited<ReturnType<typeof prepareExecutable>>;
 let server: Awaited<ReturnType<typeof startInstance>>;
 let pb: PocketBase;
+/** The other project's source (B159c item 2): another PocketBase, so no record ID is shared. */
+let otherPb: PocketBase;
 let proxy: CutProxy;
 let admin: Credentials;
 let port = 0;
 let key = "";
 let otherKey = "";
+/** The other project's first row (B159c item 2), older than every row of item 1's case. */
+let otherFirst = 0;
 
 interface Row {
   id: number;
@@ -62,44 +74,60 @@ const call = async (method: string, path: string, body?: unknown, host = HOST, a
     body: asBody<{ data: any; message: string }>(response.text ? JSON.parse(response.text) : {}),
   };
 };
-const queue = async (host = HOST, auth = host === HOST ? key : otherKey) => {
-  const answer = await call("GET", RETRIES, undefined, host, auth);
-  expect(answer.status).toBe(200);
-  return asBody<Queue>(answer.body.data);
+const queueAt = async (at: number, host: string, auth: string) => {
+  const response = await api(at, host, auth, "GET", RETRIES);
+  expect(response.status).toBe(200);
+  return asBody<Queue>(JSON.parse(response.text).data);
 };
+const queue = (host = HOST, auth = host === HOST ? key : otherKey) => queueAt(port, host, auth);
 
-/** Polls (real time, the server's clock is real) until `check` holds. */
+/** Polls (real time; only the in-process case's clock is a test clock) until `check` holds. */
 async function eventually(check: () => Promise<boolean>, what: string, ms = 30_000) {
   const deadline = Date.now() + ms;
   while (!(await check())) {
     if (Date.now() > deadline) {
-      throw new Error(`timed out waiting for ${what}: ${JSON.stringify(await queue())}`);
+      throw new Error(`timed out waiting for ${what}`);
     }
     await Bun.sleep(100);
   }
 }
 
-/** Makes `name` events for `user` until a row for one of them is in the queue. */
-async function rowFor(user: string, name: string): Promise<Row> {
+/** Makes `name` events for `user` in `source` until a row for one of them is in `read`'s queue. */
+async function rowFor(
+  user: string,
+  name: string,
+  source = pb,
+  read: () => Promise<Queue> = () => queue(),
+): Promise<Row> {
   const made = new Set<string>();
   let found: Row | undefined;
   await eventually(async () => {
-    found = (await queue()).results.find((row) => made.has(row.record_id));
+    found = (await read()).results.find((row) => made.has(row.record_id));
     if (found) {
       return true;
     }
-    made.add((await pb.event(user, name)).id);
+    made.add((await source.event(user, name)).id);
     await Bun.sleep(400);
-    found = (await queue()).results.find((row) => made.has(row.record_id));
+    found = (await read()).results.find((row) => made.has(row.record_id));
     return found !== undefined;
   }, `a queue row for ${name}`);
   return found!;
 }
 
+/** The source settings of a project on `source` (the fixture schema), granting `list` on signup. */
+const sourceSettings = (url: string, source: PocketBase, list: number, blocked: string) => ({
+  "privacy.domain_blocklist": [blocked],
+  "source.url": url,
+  "source.identity": source.service.identity,
+  "source.password": source.service.password,
+  "source.grant_lists": [{ event: "signup", where: {}, lists: [list] }],
+});
+
 beforeAll(async () => {
   admin = await adminCredentials();
   prepared = await prepareExecutable();
   pb = await startPocketBase();
+  otherPb = await startPocketBase();
   proxy = startCutProxy(pb.port);
   const dataDir = `${prepared.directory}/data`;
   registerProjects(dataDir, [
@@ -125,6 +153,7 @@ afterAll(async () => {
   await server?.stop();
   proxy?.stop();
   await pb?.close();
+  await otherPb?.close();
   await prepared?.cleanup();
 });
 
@@ -175,6 +204,75 @@ test("a terminal row and a queued row, each with its status and times; another p
   expect(await queue(OTHER)).toEqual({ stream: null, more: false, results: [] });
 });
 
+test("two projects with a source each list only their own stream's rows", async () => {
+  // B159c item 2 (D184): the other project reads its own PocketBase; the main project's rows above
+  // stay where they are.
+  const list = await call(
+    "POST",
+    "/api/lists",
+    { name: "Other news", type: "public", optin: "single" },
+    OTHER,
+    otherKey,
+  );
+  expect(list.status).toBe(200);
+  const current = await call("GET", "/api/settings", undefined, OTHER, otherKey);
+  const saved = await call(
+    "PUT",
+    "/api/settings",
+    {
+      ...current.body.data,
+      ...sourceSettings(
+        otherPb.url.replace("127.0.0.1", "localhost"),
+        otherPb,
+        list.body.data.id,
+        "other-blocked.example.test",
+      ),
+    },
+    OTHER,
+    otherKey,
+  );
+  expect(saved.status).toBe(200);
+  await eventually(async () => (await queue(OTHER)).stream !== null, "the other project's stream");
+  const blocked = await otherPb.user({ email: `blocked-${Date.now()}@other-blocked.example.test` });
+  const own = await rowFor(blocked.id, "signup", otherPb, () => queue(OTHER));
+  expect(own).toMatchObject({ kind: "event", status: "terminal" });
+  otherFirst = own.id;
+
+  const mainIds = (await queue()).results.map((row) => row.record_id);
+  const otherIds = (await queue(OTHER)).results.map((row) => row.record_id);
+  expect(mainIds.length).toBeGreaterThan(0);
+  expect(otherIds).toContain(own.record_id);
+  expect(mainIds).not.toContain(own.record_id);
+  expect(otherIds.filter((id) => mainIds.includes(id))).toEqual([]);
+});
+
+test("past 1000 rows the queue lists the oldest 1000 and says there are more", async () => {
+  // B159c item 1 (D184): 1001 more events of the other project's blocklisted user, each a terminal
+  // row at once, on top of the one above.
+  const blocked = await otherPb.user({ email: `many-${Date.now()}@other-blocked.example.test` });
+  const total = 1001;
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: 16 }, async () => {
+      while (next < total) {
+        next++;
+        await otherPb.event(blocked.id, "signup");
+      }
+    }),
+  );
+  await eventually(async () => (await queue(OTHER)).more, "more than 1000 rows", 60_000);
+  const answer = await queue(OTHER);
+  expect(answer.more).toBe(true);
+  expect(answer.results).toHaveLength(1000);
+  // Oldest first: ascending IDs, the earlier case's row among them.
+  const ids = answer.results.map((row) => row.id);
+  expect(ids).toEqual(ids.toSorted((a, b) => a - b));
+  expect(ids).toContain(otherFirst);
+  expect(answer.results[0]!.last_error).toContain("blocklisted domain");
+  // The main project's queue is untouched by them.
+  expect((await queue()).more).toBe(false);
+});
+
 test("the queue and its page need settings:manage", async () => {
   const session = await logIn(port, HOST, admin);
   const role = await call("POST", "/api/roles/users", {
@@ -218,4 +316,79 @@ test("the queue and its page need settings:manage", async () => {
   expect(html).toContain('href="/admin/settings/source-retries"');
   // No session: refused before anything is read.
   expect((await request(port, HOST, RETRIES)).status).toBe(403);
+});
+
+test("a queued row whose retry meets a settings mismatch is waiting, its window started again", async () => {
+  // B159c item 3 (D184): the instance in this process on a test clock, with its own PocketBase (the
+  // rename below would break the other cases' source) behind its own cut proxy.
+  const clock = new TestClock();
+  const source = await startPocketBase();
+  const cut = startCutProxy(source.port);
+  const f = await openLifecycle(clock);
+  try {
+    const shared = await readJson<any>(await f.call("GET", "/api/instance/settings"));
+    const allowed = await f.call("PUT", "/api/instance/settings", {
+      ...shared.data,
+      "sources.private_hosts": ["localhost"],
+    });
+    expect(allowed.status).toBe(200);
+    const auth = await createApiUser(
+      f.port,
+      PRIMARY,
+      await logIn(f.port, PRIMARY, f.admin),
+      "api-waiting",
+    );
+    const local = async (method: string, path: string, body?: unknown) => {
+      const response = await api(f.port, PRIMARY, auth, method, path, body);
+      return { status: response.status, data: asBody<any>(JSON.parse(response.text).data) };
+    };
+    const read = () => queueAt(f.port, PRIMARY, auth);
+    const list = await local("POST", "/api/lists", {
+      name: "News",
+      type: "public",
+      optin: "single",
+    });
+    expect(list.status).toBe(200);
+    const current = await local("GET", "/api/settings");
+    const saved = await local("PUT", "/api/settings", {
+      ...current.data,
+      ...sourceSettings(
+        `http://localhost:${new URL(cut.url).port}`,
+        source,
+        list.data.id,
+        "blocked.example.test",
+      ),
+    });
+    expect(saved.status).toBe(200);
+    await eventually(async () => (await read()).stream === "live", "the stream");
+
+    // A reset of the handler's recipients read queues the record, its retry a minute away.
+    cut.cutWhen((line) => line.includes("/collections/recipients/"));
+    let queued: Row;
+    try {
+      const ana = await source.user({ name: "Ana" });
+      queued = await rowFor(ana.id, "signup", source, read);
+    } finally {
+      cut.cutWhen(undefined);
+    }
+    expect(queued).toMatchObject({ kind: "event", status: "queued", attempts: 1 });
+
+    // The events' `data` field renamed: the retry's re-read lacks a configured field.
+    await source.renameField("events", "data", "payload");
+    clock.advance(Date.parse(queued.next_attempt_at!) - clock.now().getTime() + 15_000);
+    let waiting: Row | undefined;
+    await eventually(async () => {
+      waiting = (await read()).results.find((row) => row.id === queued.id);
+      return waiting?.status === "waiting";
+    }, "the waiting row");
+    expect(waiting).toMatchObject({ status: "waiting", attempts: 2 });
+    expect(waiting!.last_error).toContain('no field "data"');
+    expect(Date.parse(waiting!.first_failed_at)).toBe(clock.now().getTime());
+    expect(Date.parse(waiting!.next_attempt_at!)).toBeGreaterThan(clock.now().getTime());
+  } finally {
+    await f.close();
+    cut.stop();
+    await source.close();
+  }
+  expect(f.failures).toEqual([]);
 });
