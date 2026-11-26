@@ -692,8 +692,12 @@ test("B155b: a record nested past the limit is terminal with one line, live and 
   const s = stream({ config: eventsOnly(cut.url), names: () => [name], tuning: { pageSize: 5 } });
   await s.live();
   const user = await pb.user();
-  const live = await pb.event(user.id, name, nested(70));
-  const after = await pb.event(user.id, name);
+  // B158: the two records can share a millisecond `created`, and the catch-up the deep message
+  // starts reads in `(created, id)` order: with random IDs, `after` could come first in that order
+  // and be delivered before the deep record is reached. The IDs make the deep record first either
+  // way, so `after` delivered means the stream has gone past it.
+  const live = await pb.event(user.id, name, nested(70), { id: `0${recordId().slice(1)}` });
+  const after = await pb.event(user.id, name, {}, { id: `z${recordId().slice(1)}` });
   await s.until(() => s.eventIds().includes(after.id), "the record after the deep one");
   // Terminal before the stream goes on (a later catch-up's lookback must not be what finds it).
   expect(s.stream.retries()).toMatchObject([{ record_id: live.id, terminal: 1n }]);
