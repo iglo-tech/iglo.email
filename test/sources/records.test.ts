@@ -4,9 +4,11 @@
 // retry queue. The scheduler fixture's clock is the stream's: a test moves it only while the
 // stream waits, or to run the scheduler.
 //
-// Two transport hooks: `failRecipients` answers the recipients view with a 503, a transient error
-// the binary cannot produce on demand, and `hold` delays one recipients read (the binary's answer,
-// unchanged) so a test can change SQLite between the handler's reads and its write transaction.
+// Three transport hooks: `failRecipients` answers the recipients view with a 503, a transient error
+// the binary cannot produce on demand; `refuseHistory` answers an events-collection query naming one
+// event with the 400 PocketBase gives a filter it refuses (a permanent `trigger.condition` failure
+// for that name only); and `hold` delays one recipients read (the binary's answer, unchanged) so a
+// test can change SQLite between the handler's reads and its write transaction.
 // Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -20,7 +22,7 @@ import { TOPIC_CHECK_MS } from "@/sources/stream";
 import { adapter } from "@/test/conditions/source-fixture";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
-import { minute, schedulerFixture } from "@/test/scheduler/fixture";
+import { day, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
 import type { PocketBase, PocketBaseRecord } from "@/test/sources/pocketbase";
@@ -58,6 +60,8 @@ interface Harness {
   /** Source requests sent while a SQLite transaction was open (must stay empty). */
   inTransaction: Array<string>;
   failRecipients: { on: boolean };
+  /** An events query whose filter names this event is answered 400; null: none. */
+  refuseHistory: { name: string | null };
   config: { current: PocketBaseConfig };
   rules: { current: Array<GrantRule> };
   /** Holds the next recipients-view read of `user` until `released` settles (once). */
@@ -86,6 +90,7 @@ async function start(
   const attention: Array<string> = [];
   const inTransaction: Array<string> = [];
   const failRecipients = { on: false };
+  const refuseHistory: Harness["refuseHistory"] = { name: null };
   const config = { current: { ...sourceConfig(pb.url, pb.service), ...options.config } };
   const rules = { current: options.rules ?? [] };
   const hold: Harness["hold"] = { current: null };
@@ -110,6 +115,23 @@ async function start(
         ) {
           return Promise.resolve(new Response("unavailable", { status: 503 }));
         }
+        const refused = refuseHistory.name;
+        if (
+          refused !== null &&
+          input.pathname === "/api/collections/events/records" &&
+          (input.searchParams.get("filter") ?? "").includes(refused)
+        ) {
+          return Promise.resolve(
+            Response.json(
+              {
+                status: 400,
+                message: "Something went wrong while processing your request.",
+                data: {},
+              },
+              { status: 400 },
+            ),
+          );
+        }
         const held = hold.current;
         if (held && input.pathname === `/api/collections/recipients/records/${held.user}`) {
           hold.current = null;
@@ -133,6 +155,7 @@ async function start(
     attention,
     inTransaction,
     failRecipients,
+    refuseHistory,
     config,
     rules,
     hold,
@@ -167,6 +190,17 @@ const live = (h: Harness) =>
   until(h, () => h.records.stream()?.state().state === "live", "the stream to be live");
 const handled = (h: Harness, record: { id: string }) =>
   until(h, () => h.outcomes.some((o) => o.record === record.id), `record ${record.id}`);
+/** Waits until the record is handled or queued; fails with the queued row when it was queued. */
+async function settled(h: Harness, record: { id: string }) {
+  const queued = () =>
+    (h.records.stream()?.retries() ?? []).find((row) => row.record_id === record.id);
+  await until(
+    h,
+    () => h.outcomes.some((o) => o.record === record.id) || queued() !== undefined,
+    `record ${record.id} handled or queued`,
+  );
+  expect({ queued: queued() ?? null, attention: h.attention }).toMatchObject({ queued: null });
+}
 const outcome = (h: Harness, record: { id: string }) => {
   const found = h.outcomes.find((o) => o.record === record.id);
   if (!found) {
@@ -876,4 +910,261 @@ test("a recipients view the settings misname refuses the stream without consumin
   await live(h);
   await handled(h, paid);
   expect((await linked(h, ana))?.email).toBe(emailOf(ana));
+});
+
+// ---------------------------------------------------------------------------------------------
+// B155d (D179).
+
+test("a record older than 7 days exits and grants but starts nothing; one inside the window starts", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("order_paid"), where: {}, lists: [news] }];
+  const template = await h.f.template();
+  const starting = await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("order_paid") },
+    steps: [tx(template)],
+  });
+  const exiting = await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("visit") },
+    exit_on: [h.ev("order_paid")],
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  const ana = await pb.user();
+  const visit = await record(h, ana, "visit");
+  await handled(h, visit);
+  const at = (ms: number) => ({
+    occurredAt: new Date(h.f.clock.now().getTime() - ms).toISOString(),
+  });
+  const old = await pb.event(ana.id, h.ev("order_paid"), {}, at(8 * day));
+  await settled(h, old);
+  expect(outcome(h, old)).toMatchObject({
+    kind: "written",
+    grants: [{ list_id: news, result: "added" }],
+    started: 0,
+    ended: 1,
+  });
+  const subscriber = (await linked(h, ana))?.id ?? 0;
+  expect(
+    (await enrollmentsOf(h, subscriber)).map((e) => [
+      asBody<number>(e.sequence_id),
+      asBody<string>(e.status),
+    ]),
+  ).toEqual([[exiting.id, "exited"]]);
+  const recent = await pb.event(ana.id, h.ev("order_paid"), {}, at(6 * day));
+  await settled(h, recent);
+  expect(outcome(h, recent)).toMatchObject({ kind: "written", started: 1 });
+  expect(
+    (await enrollmentsOf(h, subscriber)).find((e) => e.sequence_id === starting.id),
+  ).toMatchObject({ status: "active", trigger_external_id: recent.id });
+});
+
+test("a trigger.condition the source refuses skips only that sequence with one attention line; the grants and other sequences apply", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("order_paid"), where: {}, lists: [news] }];
+  const template = await h.f.template();
+  const refused = await h.f.sequence({
+    source: "external",
+    trigger: {
+      event: h.ev("order_paid"),
+      condition: { event: h.ev("history"), count: { gte: 1 } },
+    },
+    steps: [tx(template)],
+  });
+  const plain = await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("order_paid") },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  h.refuseHistory.name = h.ev("history");
+  const users = [await pb.user(), await pb.user()];
+  for (const user of users) {
+    const paid = await record(h, user, "order_paid");
+    await settled(h, paid);
+    expect(outcome(h, paid)).toMatchObject({
+      kind: "written",
+      grants: [{ list_id: news, result: "added" }],
+      started: 1,
+    });
+    const subscriber = (await linked(h, user))?.id ?? 0;
+    expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+      plain.id,
+    ]);
+  }
+  const lines = h.attention.filter((line) => line.includes("Sequence trigger condition failed"));
+  expect(lines.length).toBe(1);
+  expect(lines[0]).toContain(`sequence ${refused.id}`);
+  expect(h.records.stream()?.retries()).toEqual([]);
+});
+
+test("address conflict: a holder whose external_id the source cannot have (set by pushed events) is gone: re-pointed, keeping its unsubscribes", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  const other = await h.f.list("Other");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news, other] }];
+  await resubscribed(h);
+  const incoming = await pb.user();
+  const address = emailOf(incoming);
+  const legacy = `crm:${crypto.randomUUID().slice(0, 8)}`;
+  const holder = await createSubscriber(h, {
+    email: address,
+    external_id: legacy,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  await unsubscribe(h, holder, news);
+  const signup = await record(h, incoming, "signup");
+  await settled(h, signup);
+
+  const row = await byId(h, holder);
+  expect(row).toMatchObject({ email: address, external_id: incoming.id, status: "enabled" });
+  expect(statusOn(row, news)).toBe("unsubscribed");
+  expect(statusOn(row, other)).toBe("confirmed");
+  expect(outcome(h, signup).grants).toEqual([
+    { list_id: news, result: "unsubscribed" },
+    { list_id: other, result: "added" },
+  ]);
+});
+
+test("address conflict: two users who swap addresses are swapped in one transaction, each row keeping its consent; a third holder stays a terminal conflict", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news] }];
+  await resubscribed(h);
+  const a = await pb.user();
+  const b = await pb.user();
+  const x = emailOf(a);
+  const y = emailOf(b);
+  const rowA = await createSubscriber(h, {
+    email: x,
+    external_id: a.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  await unsubscribe(h, rowA, news);
+  const rowB = await createSubscriber(h, { email: y, external_id: b.id });
+  // PocketBase keeps auth addresses unique, so the swap goes through a temporary one there too.
+  await pb.update("users", a.id, { email: `tmp-${crypto.randomUUID().slice(0, 8)}@example.com` });
+  await pb.update("users", b.id, { email: x });
+  await pb.update("users", a.id, { email: y });
+  const signup = await record(h, b, "signup");
+  await settled(h, signup);
+
+  const afterA = await byId(h, rowA);
+  const afterB = await byId(h, rowB);
+  expect(afterA).toMatchObject({ email: y, external_id: a.id });
+  expect(statusOn(afterA, news)).toBe("unsubscribed");
+  expect(afterB).toMatchObject({ email: x, external_id: b.id });
+  expect(outcome(h, signup).grants).toEqual([{ list_id: news, result: "added" }]);
+  // A's own record finds both rows in step with the view.
+  const again = await record(h, a, "signup");
+  await settled(h, again);
+  expect(outcome(h, again).grants).toEqual([{ list_id: news, result: "unsubscribed" }]);
+  expect((await byId(h, rowA))?.email).toBe(y);
+
+  // A rotation through three users is not a swap: the bound stays a terminal conflict.
+  const c = await pb.user();
+  const d = await pb.user();
+  const e = await pb.user();
+  const [cx, dx, ex] = [emailOf(c), emailOf(d), emailOf(e)];
+  await createSubscriber(h, { email: cx, external_id: c.id });
+  await createSubscriber(h, { email: dx, external_id: d.id });
+  await createSubscriber(h, { email: ex, external_id: e.id });
+  // c takes d's address, d takes e's, e takes c's.
+  await pb.update("users", c.id, { email: `tmp-${crypto.randomUUID().slice(0, 8)}@example.com` });
+  await pb.update("users", e.id, { email: cx });
+  await pb.update("users", d.id, { email: ex });
+  await pb.update("users", c.id, { email: dx });
+  const rotated = await record(h, c, "signup");
+  await until(
+    h,
+    () => (h.records.stream()?.retries() ?? []).some((row) => row.record_id === rotated.id),
+    "the terminal row",
+  );
+  expect(h.attention.join("\n")).toContain("moved to an address subscriber");
+});
+
+test("a suppression left on leaving is lifted by an operator's DELETE or the person's double opt-in confirmation; the returning user is then granted again", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  const double = await h.f.list("Double", "double");
+  h.rules.current = [{ event: h.ev("order_paid"), where: {}, lists: [news] }];
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    list_id: news,
+    trigger: { event: h.ev("order_paid") },
+    steps: [{ wait: "P1D", kind: "marketing", template_id: template }],
+  });
+  await resubscribed(h);
+  const viaDelete = await pb.user();
+  const viaOptin = await pb.user();
+  const moved = await pb.user();
+  const users = [viaDelete, viaOptin, moved];
+  for (const user of users) {
+    const id = await createSubscriber(h, {
+      email: emailOf(user),
+      external_id: user.id,
+      lists: [news],
+      preconfirm_subscriptions: true,
+    });
+    await unsubscribe(h, id, news);
+    await pb.update("users", user.id, { deletedAt: new Date().toISOString() });
+    await until(
+      h,
+      () => h.outcomes.some((o) => o.record === user.id && o.kind === "left"),
+      "leaving",
+    );
+  }
+  // Each comes back, `moved` under a new address: refused while the suppression stands.
+  const newAddress = `back-${crypto.randomUUID().slice(0, 8)}@example.com`;
+  for (const user of users) {
+    await pb.update(
+      "users",
+      user.id,
+      user === moved ? { deletedAt: "", email: newAddress } : { deletedAt: "" },
+    );
+    const order = await record(h, user, "order_paid");
+    await settled(h, order);
+    expect(outcome(h, order)).toMatchObject({
+      grants: [{ list_id: news, result: "suppressed" }],
+      started: 0,
+    });
+  }
+
+  const lift = async (email: string) => {
+    const r = await h.f.json("/api/suppressions", "DELETE", { email });
+    expect(r.status).toBe(200);
+    return asBody<number>(r.body.data.removed);
+  };
+  expect(await lift(emailOf(viaDelete))).toBe(1);
+  // The suppression names the old address and the user ID: the new address alone lifts nothing.
+  expect(await lift(newAddress)).toBe(0);
+  expect(await lift(emailOf(moved))).toBe(1);
+  // The person confirms a double opt-in list (the public confirmation page's store call).
+  const optinRow = (await linked(h, viaOptin))?.id ?? 0;
+  const added = await h.f.json("/api/subscribers/lists", "PUT", {
+    ids: [optinRow],
+    action: "add",
+    target_list_ids: [double],
+    status: "unconfirmed",
+  });
+  expect(added.status).toBe(200);
+  writeTransaction(h.f.db, () =>
+    h.f.stores.subscribers.confirmOptin(BigInt(optinRow), [BigInt(double)], {}),
+  );
+
+  for (const user of users) {
+    const order = await record(h, user, "order_paid");
+    await settled(h, order);
+    expect(outcome(h, order)).toMatchObject({
+      grants: [{ list_id: news, result: "added" }],
+      started: 1,
+    });
+    expect(statusOn(await linked(h, user), news)).toBe("confirmed");
+  }
 });

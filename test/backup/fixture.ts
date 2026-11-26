@@ -40,12 +40,13 @@ export function removeDirectory(directory: string): void {
   rmSync(directory, { recursive: true, force: true });
 }
 
-/** One `backup` run: exit code and both streams. */
-export async function runBackup(executable: string, args: Array<string>) {
+/** One `backup` run: exit code and both streams. A run past `timeout` ms is killed (SIGKILL). */
+export async function runBackup(executable: string, args: Array<string>, timeout?: number) {
   const child = Bun.spawn([executable, "backup", ...args], {
     env: { PATH: "" },
     stdout: "pipe",
     stderr: "pipe",
+    ...(timeout === undefined ? {} : { timeout, killSignal: "SIGKILL" as const }),
   });
   const [exitCode, stdout, stderr] = await Promise.all([
     child.exited,

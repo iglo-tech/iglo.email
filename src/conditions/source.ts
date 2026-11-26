@@ -4,8 +4,10 @@
 // source's events collection and `recipient` reads the recipients view, while `attr` and `list` stay
 // local (the SQLite evaluator). Every read is a network call: nothing here runs inside a transaction.
 //
-// - A window is `occurredAt` strictly after `since` (and, for a trigger condition, at or before the
-//   trigger record), as the local window is.
+// - A window is `occurredAt` strictly after `since`, as the local window is, and at or before the
+//   trigger record for a trigger condition, else at or before `now` plus `MAX_OCCURRED_AHEAD_MS`
+//   (D180): a pushed event further ahead is refused when it arrives, so a source record further
+//   ahead counts only once it is no further ahead than that.
 // - The source's filter is only a narrowing: PocketBase compares JSON loosely (`data.b = true` also
 //   matches `1`), so every `where` is checked again here with the condition language's type rules
 //   (src/conditions/strict.ts) on the rows read. A `where` part the filter cannot state exactly as a
@@ -30,6 +32,7 @@ import type {
 import { validate } from "@/conditions/validate";
 import { AGGREGATE_LIMIT } from "@/events/aggregate";
 import type { Aggregate, AggregateResult } from "@/events/aggregate";
+import { MAX_OCCURRED_AHEAD_MS } from "@/events/input";
 import { isSourceError, SCAN_LIMIT, SourceError } from "@/sources/source";
 import type {
   CallOptions,
@@ -122,6 +125,14 @@ function after(context: SourceContext, since: string | undefined): Date | undefi
   return bound ? new Date(bound) : undefined;
 }
 
+/**
+ * The upper bound of every window (D180): the trigger record for a trigger condition, else `now`
+ * plus the ahead tolerance a pushed event's `occurred_at` gets when it arrives.
+ */
+function through(context: SourceContext): Date {
+  return context.through ?? new Date(context.now.getTime() + MAX_OCCURRED_AHEAD_MS);
+}
+
 /** A value PocketBase's filter can compare exactly as a superset of the strict rule. */
 function filterable(path: string, value: Scalar): boolean {
   const segments = path.split(".");
@@ -179,15 +190,19 @@ async function countMatches(
   }
   let matched = 0,
     read = 0;
+  let last: string | undefined;
   for await (const page of source.scan(query, ["data"], SCAN_LIMIT, call)) {
     for (const row of page) {
       read++;
+      last = row.id;
       if (whereHolds(row.data, where) && ++matched >= need) {
         return matched;
       }
     }
   }
-  if (read >= SCAN_LIMIT) {
+  // A window of exactly `SCAN_LIMIT` records was read whole when its last record is the newest
+  // match in the same `(occurredAt, id)` order; any other answer means a further page (D180).
+  if (read >= SCAN_LIMIT && (await source.latest(query, call))?.id !== last) {
     throw new SourceError(
       "permanent",
       `An event condition read ${SCAN_LIMIT} source records without deciding`,
@@ -261,7 +276,7 @@ export async function evaluateOnSource(
       const query = windowQuery(
         user(context),
         c.event,
-        { after: after(context, c.since), through: context.through },
+        { after: after(context, c.since), through: through(context) },
         c.where,
       );
       return within(await countMatches(reads.source, query, c.where, need, call), count);
@@ -416,7 +431,7 @@ async function aggregateOne(
 ): Promise<number | "limit"> {
   const query = windowQuery(user(context), aggregate.event, {
     after: after(context, aggregate.since),
-    through: undefined,
+    through: through(context),
   });
   const path = aggregate.field?.slice("data.".length);
   let read = 0,

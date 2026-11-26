@@ -5,12 +5,14 @@
 // - `planRecipient` does every read (the user's row in the view, and for an address another
 //   subscriber holds, the holder's row) and plans the resolution. Never inside a transaction.
 // - `applyRecipient` writes the plan inside the caller's write transaction, after checking that
-//   the subscribers the reads planned on are unchanged (else `SubscriberChanged`, transient).
+//   the subscribers the reads planned on are unchanged (else `SubscriberChanged`, transient) and
+//   checking the privacy domain policy again on the rows as they are now (B155d, D179).
 // - `leaveUser` removes a leaving user's subscriber inside the caller's write transaction.
 import type { Enrollments } from "@/sequences/enrollments";
 import { trimSpace } from "@/lists/store";
 import { isSourceError, SourceError } from "@/sources/source";
 import type { ExternalSource, SourceRecipient } from "@/sources/source";
+import { isNotSourceId } from "@/sources/pocketbase";
 import { SettingsMismatch } from "@/sources/stream-record";
 import { sanitizeEmail } from "@/subscribers/email";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -82,8 +84,9 @@ function nameOf(recipient: SourceRecipient): string {
 
 /**
  * How the incoming address meets another subscriber that holds it (spec section 4), as read before
- * the transaction: `moved` (the holder's user now has `email` in the view: move the holder there),
- * `gone` (the holder has no `external_id`, or the view no longer has its user).
+ * the transaction: `moved` (the holder's user now has `email` in the view: move the holder there,
+ * also when `email` is the incoming user's own current address, a swap), `gone` (the holder has no
+ * `external_id`, one the source cannot have, or the view no longer has its user).
  */
 type Conflict =
   | { kind: "none" }
@@ -127,7 +130,17 @@ async function conflictOf(
   if (holder.external_id === null) {
     return { kind: "gone", holder };
   }
-  const row = await readRecipient(options.source, holder.external_id, signal);
+  let row: SourceRecipient | null;
+  try {
+    row = await readRecipient(options.source, holder.external_id, signal);
+  } catch (error) {
+    // B155d (D179): an `external_id` the source cannot have (set by pushed events before the
+    // project moved to a source) names no source user: the holder is gone, as one with none.
+    if (isNotSourceId(error)) {
+      return { kind: "gone", holder };
+    }
+    throw error;
+  }
   if (!row) {
     return { kind: "gone", holder };
   }
@@ -139,7 +152,9 @@ async function conflictOf(
     );
   }
   const taken = subscribers.byEmail(moved);
-  if (taken && taken.id !== holder.id) {
+  // B155d (D179): the holder moving to the incoming user's own current address is a swap of two
+  // users' addresses: `applyRecipient` moves both in one transaction. A third holder stays terminal.
+  if (taken && taken.id !== holder.id && taken.id !== current?.id) {
     throw new SourceError(
       "permanent",
       `The address holder's user ${holder.external_id} moved to an address subscriber ${taken.id} holds`,
@@ -191,10 +206,10 @@ export async function planRecipient(
  * subscriber. Throws `SubscriberChanged` when a subscriber the reads planned on changed since.
  */
 export function applyRecipient(
-  options: Pick<RecipientSyncOptions, "subscribers" | "enrollments">,
+  options: Pick<RecipientSyncOptions, "subscribers" | "enrollments" | "emailAllowed">,
   plan: Extract<RecipientPlan, { kind: "present" }>,
 ): SubscriberRow {
-  const { subscribers, enrollments } = options;
+  const { subscribers, enrollments, emailAllowed } = options;
   const { userId, email, name, current, conflict } = plan;
   // The reads planned on this state; anything changed since is read again by a retry.
   const now = subscribers.external(userId);
@@ -209,13 +224,36 @@ export function applyRecipient(
   ) {
     throw new SubscriberChanged();
   }
+  // B155d (D179): the privacy domain policy is checked again here, on the row as it is now and the
+  // policy as it is now, so a domain blocklisted (or a stored address changed) after the reads
+  // checked it does not let the source's address in. The reads' check stays as the early answer.
+  if (conflict.kind !== "gone" && now?.email !== email && !emailAllowed(email)) {
+    throw new SourceError(
+      "permanent",
+      `The source user ${userId}'s address is in a blocklisted domain`,
+    );
+  }
+  if (conflict.kind === "moved" && !emailAllowed(conflict.email)) {
+    throw new SourceError(
+      "permanent",
+      `The address holder's user ${conflict.holder.external_id} moved to a blocklisted domain`,
+    );
+  }
   // Every write below goes by ID and touches only the fields the source owns (address, name,
   // user ID), and every status decision reads the rows as they are now: a blocklist, bounce or
   // unsubscribe that landed while the source was read stays.
   if (conflict.kind === "moved") {
     const taken = subscribers.byEmail(conflict.email);
     if (taken && taken.id !== conflict.holder.id) {
-      throw new SubscriberChanged();
+      if (!now || taken.id !== now.id) {
+        throw new SubscriberChanged();
+      }
+      // A swap (D179): the user's own row frees its old address for the holder through a
+      // placeholder no mail can reach; the row takes the view's address below, in this transaction.
+      subscribers.sourceWrite(now.id, {
+        externalId: userId,
+        email: `swap-${crypto.randomUUID()}@swap.invalid`,
+      });
     }
     subscribers.sourceWrite(conflict.holder.id, {
       externalId: conflict.holder.external_id ?? "",
