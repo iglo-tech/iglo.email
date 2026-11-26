@@ -40,7 +40,12 @@ place, so none runs a half-written binary.
 - `pb.renameField(collection, from, to)` changes the schema (a permanent error for the adapter).
 - `pb.stop()` and `pb.start()` stop and restart the process on the same port and data;
   `pb.pause()` and `pb.resume()` send SIGSTOP and SIGCONT (a server that accepts and never
-  answers); `pb.close()` stops it and removes its directory.
+  answers); await `pb.pause()`: it settles only once every thread of the process is stopped,
+  since `kill` returns while some threads can still answer. `pb.close()` stops it and removes its
+  directory.
+- A stream fixture (`stream-fixture.ts`) moves its test clock only while no source request is in
+  flight and the stream is not connecting (`until`, `advance`, `retryAfter`): each request's time
+  limit is on that clock. Read attention lines by what they say, not by position.
 - `sourceConfig(pb.url, pb.service)` is the adapter's configuration for the fixture schema.
 
 Start one instance per test file (`beforeAll`) and give each test its own users, so tests do not

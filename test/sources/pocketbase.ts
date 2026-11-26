@@ -11,7 +11,7 @@
 // itself writes as a superuser through `create`, `update` and `remove`. See README.md.
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
@@ -59,8 +59,12 @@ export interface PocketBase {
   stop(): Promise<void>;
   /** Starts the process again on the same port and data. */
   start(): Promise<void>;
-  /** Pauses (SIGSTOP) or resumes (SIGCONT) the process: a server that accepts and never answers. */
-  pause(): void;
+  /**
+   * Pauses (SIGSTOP) or resumes (SIGCONT) the process: a server that accepts and never answers.
+   * `pause` settles once every thread of the process is stopped (B154): `kill` returns before
+   * that, and until each thread has run to its stop the server still answers.
+   */
+  pause(): Promise<void>;
   resume(): void;
   /** Stops the process and removes its directory. */
   close(): Promise<void>;
@@ -99,6 +103,35 @@ async function run(binary: string, args: Array<string>) {
 }
 
 /** Starts the binary on `port`; resolves once it answers /api/health. */
+/**
+ * Settles once every thread of process `pid` is in the stopped state. A SIGSTOP stops a
+ * multi-threaded process one thread at a time, each when it next runs, so `kill` returns while
+ * some threads (PocketBase's Go scheduler and network poller among them) can still answer a
+ * request. Linux only, like the release targets.
+ */
+async function stopped(pid: number): Promise<void> {
+  const tasks = `/proc/${pid}/task`;
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const states = readdirSync(tasks).map((tid) => {
+      try {
+        // The state follows the parenthesised command name, which may itself contain spaces.
+        const stat = readFileSync(join(tasks, tid, "stat"), "utf-8");
+        return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3);
+      } catch {
+        return "gone";
+      }
+    });
+    if (states.every((state) => state === "T" || state === "gone")) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`PocketBase threads not stopped: ${states.join("")}`);
+    }
+    await Bun.sleep(1);
+  }
+}
+
 async function serve(binary: string, root: string, port: number): Promise<ChildProcess> {
   const child = spawn(
     binary,
@@ -293,8 +326,13 @@ export async function startPocketBase(): Promise<PocketBase> {
         await signIn();
       }
     },
-    pause() {
-      process?.kill("SIGSTOP");
+    async pause() {
+      const running = process;
+      if (!running?.pid) {
+        throw new Error("PocketBase is not running");
+      }
+      running.kill("SIGSTOP");
+      await stopped(running.pid);
     },
     resume() {
       process?.kill("SIGCONT");

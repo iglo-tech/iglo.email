@@ -468,14 +468,23 @@ test("a paused server times out as transient; a caller's abort rejects with its 
   const { source } = adapter();
   const user = await pb.user();
   await source.recipient(user.id);
-  pb.pause();
+  // Settles once every PocketBase thread is stopped, so no answer can come (B154).
+  await pb.pause();
   try {
     const slow = await failure(source.recipient(user.id, { timeoutMs: 300 }));
     expect(slow.kind).toBe("transient");
+    expect(slow.message).toBe("The source did not answer in time");
     const controller = new AbortController();
     const pending = source.recipient(user.id, { signal: controller.signal });
-    controller.abort(new Error("caller stopped"));
-    expect(pending).rejects.toThrow("caller stopped");
+    const stoppedByCaller = new Error("caller stopped");
+    controller.abort(stoppedByCaller);
+    // The reason itself, not a SourceError that only quotes it.
+    expect(
+      await pending.then(
+        () => "answered",
+        (error: unknown) => error,
+      ),
+    ).toBe(stoppedByCaller);
   } finally {
     pb.resume();
   }
