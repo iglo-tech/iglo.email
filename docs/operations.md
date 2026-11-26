@@ -1142,9 +1142,10 @@ An unknown slug exits nonzero and writes nothing. Every database is snapshotted 
 the one partial directory described under **Failure**, and the backup is published only when all of
 them pass: a failure on any database leaves no backup at the final name. A project created or
 deleted while the backup runs fails it with "The registered projects changed while the backup
-ran; run it again", whichever step met the change first; run it again. The error of that step
-follows on a second line, `Cause: …`: if it is not about the project that changed (a full disk, a
-failed integrity check), the rerun will meet it too. `--verify` prints each
+ran; run it again", whichever step met the change first; run it again. When a step failed while the projects
+changed, its error follows on a second line, `Cause: …`: if it is not about the project that
+changed (a full disk, a failed integrity check), the rerun will meet it too. When no step failed and
+only the final comparison of the registry found the change, the message stays one line. `--verify` prints each
 database under its place and ends with one `Integrity:` line for the whole backup. It reads nothing
 outside the backup: it refuses a manifest that names anything but a project slug, a manifest over
 1 MiB (before reading it whole), an upload path leading out of the backup, and a symlink anywhere
