@@ -2618,3 +2618,7 @@ Brief B117a, from an adopter's checks and reviews of B126, B127, B131, B134f and
   - *Plain `> log 2>&1` redirects.* The agent then sees no output while a step runs and must read the file back; `tee` shows it and keeps it.
   - *A new `_release-common.md` beside B100.* Two template files for one job; every release brief already points at B100.
 - **Outside the owned files:** one clause in `_B97-common.md` "Rules" (the file rule points at the log exception).
+
+## D186. A terminal line leads with its own record's cause (B160, lead, 2026-11-26)
+
+- **Decision:** amends D182 item 4. When the size-1 read and the confirming `id =` read fail for different causes, the "Source record failed for good" line and the terminal row now lead with the confirming read's cause, the only read known to be of the record the line names, followed by "(an earlier read at its position in the page: …)" with the size-1 read's cause. Same causes: one, as before. D182's order named the first read's cause first, which is wrong when the ID-only read met another record committed earlier in `(stamp, id)` order: that record's line claimed the first record's cause (#261 r1). The new wording is true in both cases, a record changed between the reads or another record met. Tests: `test/sources/stream.test.ts` ("D186: an unreadable record the ID-only read meets instead of another …" and the B159a case, its regex reordered); the D182 order fails both.

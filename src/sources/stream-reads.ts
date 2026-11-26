@@ -211,12 +211,14 @@ export function streamReads(parts: StreamReadParts): StreamSource {
         }
         // The ID-only read may have met another record, committed earlier in `(stamp, id)` order
         // between the two reads: that record is terminal only if it, read alone, is unreadable too.
-        // B159a (D182): the line names the cause of the size-1 read at this position in the page,
-        // and the confirming read's too when it failed for another. Either the record changed
-        // between the two reads, or the ID-only read met another record and the first cause is the
-        // one the size-1 read met, not necessarily this record's.
+        // D186 (amends D182): the line leads with the confirming read's cause, the only read known
+        // to be of this record. The size-1 read's cause follows as context when it differs: either
+        // the record changed between the two reads, or that read met another record at this
+        // position in the page.
         const because = (again: string) =>
-          again === cause ? cause : `${cause} (read again by its ID: ${again})`;
+          again === cause
+            ? again
+            : `${again} (an earlier read at its position in the page: ${cause})`;
         let confirmed: ReadonlyArray<SourceObject> | null;
         try {
           confirmed = await parts.page(
