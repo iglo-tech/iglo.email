@@ -210,15 +210,23 @@ function checkSmtpCrash(
   return outcome.join(", ");
 }
 
-for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
+// `smtp-later` (B159b, D183): at `smtp` step 1 is always `sending` at the kill, so the branch for a
+// step not yet claimed was never taken there. Here step 0 is a marketing step held in SMTP flight
+// and step 1 is due two minutes later on the injected clock: absent at the kill, it falls due on the
+// restarted clock (six minutes on) and must be sent once after the interrupted step 0, which must
+// not be pushed again.
+const variants: Record<string, string> = { "smtp-later": "marketing:PT0S,marketing:PT2M" };
+for (const point of ["claim", "insert", "advance", "commit", "smtp", "smtp-later"]) {
   const dir = await mkdtemp(join(tmpdir(), "iglo-scheduler-crash-"));
-  const sink = await startSink(point === "smtp");
+  const smtp = point.startsWith("smtp");
+  const sink = await startSink(smtp);
   try {
     const first = launch(dir, sink.port, {
       SCHEDULER_CRASH_SEED: "1",
-      ...(point === "smtp" ? {} : { SCHEDULER_CRASH_AT: point }),
+      ...(smtp ? {} : { SCHEDULER_CRASH_AT: point }),
+      ...(variants[point] ? { SCHEDULER_CRASH_STEPS: variants[point] } : {}),
     });
-    if (point === "smtp") {
+    if (smtp) {
       await within(sink.held, 20_000, "held SMTP data");
       first.child.kill("SIGKILL");
     }
@@ -247,7 +255,13 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
     );
     await stop(second.child, second.exited);
 
-    if (point === "smtp") {
+    if (point === "smtp-later") {
+      assert.equal(
+        checkSmtpCrash(point, before, after, atKill, sink.subjects),
+        "0:sending, 1:absent",
+        `${point}: step 1 was not yet due at the kill`,
+      );
+    } else if (point === "smtp") {
       checkSmtpCrash(point, before, after, atKill, sink.subjects);
     } else {
       const mails = [0, 1].map((step) => stepMails(sink.subjects, step));

@@ -431,8 +431,10 @@ refused (`401`), as on every instance route.
 writes `[instance] projects/<name> has no registry row: it is not served`, and the Projects page
 lists it. Move it away, or bring it back as a deleted project is brought back. Its presence tells
 the server the instance has had several projects, as a deleted project's snapshot does. A delete
-that stopped part way leaves the project's database there as a copy of its snapshot in
-`backups/deleted`, never the snapshot itself, so opening it does not change the snapshot. Only a
+that stopped part way may leave the project's database there: one that stopped while removing the
+directory may already have removed it, in the filesystem's own order. When it is there, it is a
+copy of its snapshot in `backups/deleted`, never the snapshot itself, so opening it does not
+change the snapshot. Only a
 directory whose name could be a project's slug (lowercase letters, digits and `-`) counts: a
 `lost+found` (when `projects/` is its own filesystem) is ignored. A `<slug>-<time>.db.partial` in
 `backups/deleted` is a copy a delete stopped by a crash left; it is never a snapshot, and the next
@@ -1137,14 +1139,19 @@ An unknown slug exits nonzero and writes nothing. Every database is snapshotted 
 the one partial directory described under **Failure**, and the backup is published only when all of
 them pass: a failure on any database leaves no backup at the final name. A project created or
 deleted while the backup runs fails it with "The registered projects changed while the backup
-ran; run it again", whichever step met the change first; run it again. `--verify` prints each
+ran; run it again", whichever step met the change first; run it again. The error of that step
+follows on a second line, `Cause: …`: if it is not about the project that changed (a full disk, a
+failed integrity check), the rerun will meet it too. `--verify` prints each
 database under its place and ends with one `Integrity:` line for the whole backup. It reads nothing
 outside the backup: it refuses a manifest that names anything but a project slug, a manifest over
 1 MiB (before reading it whole), an upload path leading out of the backup, and a symlink anywhere
 in the backup, which `backup` never writes. It also refuses a FIFO, socket or device anywhere in
 the backup, given as the snapshot, or beside a bare snapshot as its `-journal`, `-wal` or `-shm`
-file, rather than wait on it. The path you give it may itself be a
-symlink to a backup. The output may not be
+file, rather than wait on it. The path you give it may itself be a symlink to a backup; a path
+that names nothing on disk, such as `/dev/stdin` on a pipe, is "No backup at …". These checks
+come before SQLite opens the files, which it opens by name: `--verify` is for a backup that nothing
+changes while it runs (a backup `backup` published, or one copied or unpacked beforehand), not for
+files another process could swap meanwhile. The output may not be
 `<data-dir>/projects/` or inside it, where the projects are read from, or at
 `<data-dir>/instance.db`: those are refused before anything is written, `--force` or not.
 

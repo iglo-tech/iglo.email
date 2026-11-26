@@ -80,6 +80,8 @@ const LOCK_EX = 2;
 const LOCK_NB = 4;
 // EWOULDBLOCK (= EAGAIN) on Linux, x86-64 and arm64 alike: the lock is held by another.
 const EWOULDBLOCK = 11;
+// EINTR: a signal arrived during the call; the next attempt is as good as this one (D183).
+const EINTR = 4;
 let built: Promise<void> | undefined;
 
 function files(path: string, into: Array<string>): Array<string> {
@@ -193,14 +195,15 @@ function flockCall(descriptor: number, operation: number): number {
 
 // Takes the checkout's build lock and returns its descriptor; closing it releases the lock. A
 // non-blocking attempt every 50 ms keeps this process's event loop running while it waits. Only
-// "held by another" (EWOULDBLOCK) is waited on; any other error fails at once (D178).
+// "held by another" (EWOULDBLOCK) is waited on, and an interrupted call (EINTR) is retried; any
+// other error fails at once (D178, D183).
 async function acquire(): Promise<number> {
   mkdirSync(work, { recursive: true });
   const descriptor = openSync(lockFile, "a");
   try {
     const start = Date.now();
     for (let errno = flockCall(descriptor, LOCK_EX | LOCK_NB); errno !== 0;) {
-      if (errno !== EWOULDBLOCK) {
+      if (errno !== EWOULDBLOCK && errno !== EINTR) {
         throw new Error(`Cannot lock ${lockFile}: flock failed with errno ${errno}`);
       }
       if (Date.now() - start > holdLimitMs) {
