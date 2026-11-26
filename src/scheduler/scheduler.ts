@@ -400,7 +400,8 @@ export function createScheduler(options: SchedulerOptions) {
     const claim: Decision = { id: row.id, lease: item.lease, step: row };
     const now = clock.now();
     // D180: whether a source read succeeded in this decision. A step passed, skipped or deferred
-    // without one keeps the enrollment's outage window (D172); pushed sequences have none.
+    // without one keeps the enrollment's outage window (D172). A pushed sequence's window comes
+    // from the send-time recipients read (D174) and follows the same rule.
     let answered = false;
     const keep = () => !answered;
     // A send already recorded for this step (a crash before the advance, or a step revisited
