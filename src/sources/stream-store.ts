@@ -23,10 +23,18 @@ export interface RetryRow extends RetryClaim {
   next_attempt_at: string;
   last_error: string;
   terminal: bigint;
+  /** 1 while the last attempt met a settings mismatch: "waiting for settings" (D177). */
+  waiting: bigint;
 }
 
 /** The longest error text kept on a retry row. */
 const MAX_ERROR = 500;
+/**
+ * The longest record ID kept (B155b): a terminal record's ID may be any string the source sent;
+ * every read and write of the dedupe and queue rows cuts it the same way.
+ */
+const MAX_ID = 255;
+const key = (id: string) => id.slice(0, MAX_ID);
 
 export function createStreamStore(db: Database) {
   const q = prepareNamedQueries(db, [{ name: "sources/stream", sql }]);
@@ -49,11 +57,11 @@ export function createStreamStore(db: Database) {
       q.get("markers-advance").run(JSON.stringify(topics), sourceDate(stamp));
     },
     seen(kind: StreamKind, id: string, stamp: Date): boolean {
-      return q.get("seen").get(kind, id, sourceDate(stamp)) !== null;
+      return q.get("seen").get(kind, key(id), sourceDate(stamp)) !== null;
     },
     /** Records a record as handled; throws when it was already (in a transaction). */
     markSeen(kind: StreamKind, id: string, stamp: Date) {
-      q.get("seen-insert").run(kind, id, sourceDate(stamp));
+      q.get("seen-insert").run(kind, key(id), sourceDate(stamp));
     },
     /** Drops the dedupe entries of `kind` stamped before `before` (in a transaction). */
     prune(kind: StreamKind, before: Date) {
@@ -62,9 +70,13 @@ export function createStreamStore(db: Database) {
     seenCount(): number {
       return Number((q.get("seen-count").get() as { n: bigint }).n);
     },
-    /** Queues a record (in a transaction); `terminal` rows are kept for the attention view. */
+    /**
+     * Queues a record read from `source` (the digest its markers use, in a transaction);
+     * `terminal` rows are kept for the attention view.
+     */
     enqueue(
       kind: StreamKind,
+      source: string,
       id: string,
       stamp: Date,
       now: Date,
@@ -74,13 +86,29 @@ export function createStreamStore(db: Database) {
     ) {
       q.get("retry-insert").run(
         kind,
-        id,
+        key(id),
         sourceDate(stamp),
         now.toISOString(),
         next.toISOString(),
         error.slice(0, MAX_ERROR),
         terminal ? 1 : 0,
+        source,
       );
+    },
+    /**
+     * Keeps only the rows of these sources (in a transaction). With `adopt`, rows from before the
+     * queue named its source (migration 38) become that kind's first.
+     */
+    keepSources(
+      sources: Record<StreamKind, string>,
+      adopt: Partial<Record<StreamKind, boolean>> = {},
+    ) {
+      for (const kind of ["event", "user"] as const) {
+        if (adopt[kind]) {
+          q.get("retries-adopt").run(kind, sources[kind]);
+        }
+      }
+      q.get("retries-other-sources").run(sources.event, sources.user);
     },
     /** Claims due rows until `leaseUntil` (in a transaction). */
     claim(now: Date, leaseUntil: Date, limit: number): Array<RetryClaim> {

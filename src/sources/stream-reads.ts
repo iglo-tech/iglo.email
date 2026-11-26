@@ -29,10 +29,13 @@ export interface StreamReadParts {
   };
   users: { collection: string; leavingFilter: string };
   eventOf(record: SourceObject): SourceEvent;
-  /** One page of a collection (an empty or short page confirmed), or `null` past the body limit. */
+  /**
+   * One page of a collection (an empty or short page confirmed), or `null` past the body limit;
+   * `fields` limits each record to those fields.
+   */
   page(
     collection: string,
-    params: { filter: string; sort: string; perPage: number },
+    params: { filter: string; sort: string; perPage: number; fields?: Array<string> },
     call: CallOptions,
   ): Promise<ReadonlyArray<SourceObject> | null>;
   /** `POST /api/realtime` with the body, as the service account, confirmed. */
@@ -42,11 +45,21 @@ export interface StreamReadParts {
 const topic = (collection: string, filter: string) =>
   `${collection}/*?options=${encodeURIComponent(JSON.stringify({ query: { filter } }))}`;
 
-/** The ID of a record, or a permanent failure for a page the stream cannot key. */
+/** B155b (D177): why a record is terminal although the source answered. */
+const UNKEYED = "The source record's id is not 1 to 100 letters, digits, _ or -";
+const TOO_LARGE = "The source record is larger than the response limit";
+const UNREADABLE =
+  "The source record cannot be read: its JSON nests deeper than 64 levels or is not JSON";
+
+/**
+ * The ID of a record, or a permanent failure for a page with no ID at all (not a PocketBase
+ * record: the settings name the wrong collection). An ID the stream does not key is the record's
+ * own fault: its item is terminal.
+ */
 function idOf(record: SourceObject): string {
   const id = member(record, "id");
-  if (typeof id !== "string" || !idPattern.test(id)) {
-    throw new SourceError("permanent", "A source record has no usable id");
+  if (typeof id !== "string" || !id) {
+    throw new SourceError("permanent", "A source record has no id");
   }
   return id;
 }
@@ -59,11 +72,50 @@ function stampOf(record: SourceObject, field: "created" | "updated"): Date {
   return stamp;
 }
 
+const stampField = (kind: StreamKind) => (kind === "event" ? "created" : "updated");
+
+/** A record the stream cannot act on, keyed by its ID and stamp: terminal, and the stream goes on. */
+function terminal(kind: StreamKind, record: SourceObject, error: string): StreamItem {
+  return { kind, id: idOf(record), stamp: stampOf(record, stampField(kind)), record: null, error };
+}
+
 function userItem(record: SourceObject): StreamItem {
   const id = idOf(record);
+  if (!idPattern.test(id)) {
+    return terminal("user", record, UNKEYED);
+  }
   const updated = stampOf(record, "updated");
   return { kind: "user", id, stamp: updated, record: { id, updated, fields: record } };
 }
+
+/** The ID characters the stream store keeps of a record (`MAX_ID` in src/sources/stream-store.ts). */
+const STORED_ID = 255;
+
+/**
+ * B155b (D177): the keyset condition past a record's ID. PocketBase caps no ID length (0.40.5 takes
+ * a 5,000-character ID), and the filter refuses a value over 4,096 bytes, so an ID longer than the
+ * store keeps (terminal: past the 100 characters the stream keys) never enters the filter: the
+ * bound is its stored prefix followed by the highest code point. IDs sharing that prefix at the same
+ * stamp are passed over with it, as the store's dedupe entry already counts them as one record.
+ */
+function pastId(id: string): string {
+  if (id.length <= STORED_ID) {
+    return `id > ${textLiteral(id)}`;
+  }
+  const cut = /[\uD800-\uDBFF]/.test(id[STORED_ID - 1] ?? "") ? STORED_ID - 1 : STORED_ID;
+  return `id > ${textLiteral(`${id.slice(0, cut)}\u{10FFFF}`)}`;
+}
+
+/** A record gone between two reads: the next catch-up or retry reads what is there then. */
+const gone = () => new SourceError("transient", "A source record changed while it was read");
+
+/** A page the source answered with a body the adapter refused to read (not JSON, too deep). */
+const unreadable = (error: unknown) =>
+  isSourceError(error) &&
+  error.kind === "permanent" &&
+  error.status !== undefined &&
+  error.status >= 200 &&
+  error.status < 300;
 
 export function streamReads(parts: StreamReadParts): StreamSource {
   const ev = parts.events;
@@ -78,6 +130,9 @@ export function streamReads(parts: StreamReadParts): StreamSource {
 
   function eventItem(record: SourceObject): StreamItem {
     const id = idOf(record);
+    if (!idPattern.test(id)) {
+      return terminal("event", record, UNKEYED);
+    }
     const stamp = stampOf(record, "created");
     for (const field of configured) {
       if (member(record, field) === undefined) {
@@ -99,10 +154,14 @@ export function streamReads(parts: StreamReadParts): StreamSource {
     kind === "event" ? eventItem(record) : userItem(record);
 
   /**
-   * Reads one page, and again in smaller pages while it is too large to read. With `refusal`, a
-   * permanent error of the read itself (a `400` for a renamed filter field, a `404` collection, a
-   * `403` lost access, a refused sign-in) is a `SettingsMismatch`: the source refuses the read, the
-   * record is not at fault. A single record over the response limit stays a plain permanent error.
+   * Reads one page, and again in smaller pages while it is too large or too deep to read. With
+   * `refusal`, a permanent error of the read itself (a `400` for a renamed filter field, a `404`
+   * collection, a `403` lost access, a refused sign-in) is a `SettingsMismatch`: the source refuses
+   * the read, the record is not at fault. A single record still unreadable alone (over the response
+   * limit, nested deeper than the JSON limit) is read again for its ID and stamp only, then once
+   * more in full by that ID: still unreadable, it becomes a terminal item (B155b, D177), so one
+   * record never stalls a catch-up or a retry; readable (the ID-only read met another record), it
+   * is an ordinary item and the next page meets the unreadable one again.
    */
   async function read(
     kind: StreamKind,
@@ -112,22 +171,64 @@ export function streamReads(parts: StreamReadParts): StreamSource {
     refusal = false,
   ) {
     const collection = kind === "event" ? ev.collection : users;
-    const sort = kind === "event" ? "created,id" : "updated,id";
+    const sort = `${stampField(kind)},id`;
+    const refused = (error: unknown) =>
+      refusal && isSourceError(error) && error.kind === "permanent"
+        ? new SettingsMismatch(error.message)
+        : error;
     for (let size = perPage; ; size = Math.max(1, Math.floor(size / 4))) {
       let items: ReadonlyArray<SourceObject> | null;
       try {
         items = await parts.page(collection, { filter, sort, perPage: size }, call);
       } catch (error) {
-        if (refusal && isSourceError(error) && error.kind === "permanent") {
-          throw new SettingsMismatch(error.message);
+        if (!unreadable(error)) {
+          throw refused(error);
         }
-        throw error;
+        items = null;
       }
       if (items) {
         return { items: items.map((record) => itemOf(kind, record)), more: items.length === size };
       }
       if (size === 1) {
-        throw new SourceError("permanent", "A source record is larger than the response limit");
+        let keys: ReadonlyArray<SourceObject> | null;
+        try {
+          const fields = ["id", stampField(kind)];
+          keys = await parts.page(collection, { filter, sort, perPage: 1, fields }, call);
+        } catch (error) {
+          throw refused(error);
+        }
+        const key = keys?.[0];
+        if (!key) {
+          throw gone();
+        }
+        const id = idOf(key);
+        if (!idPattern.test(id)) {
+          // Terminal whether it reads or not, and an ID past the filter limit cannot be read alone.
+          return { items: [terminal(kind, key, UNKEYED)], more: true };
+        }
+        // The ID-only read may have met another record, committed earlier in `(stamp, id)` order
+        // between the two reads: that record is terminal only if it, read alone, is unreadable too.
+        let confirmed: ReadonlyArray<SourceObject> | null;
+        try {
+          confirmed = await parts.page(
+            collection,
+            { filter: `(${filter}) && id = ${textLiteral(id)}`, sort, perPage: 1 },
+            call,
+          );
+        } catch (error) {
+          if (!unreadable(error)) {
+            throw refused(error);
+          }
+          return { items: [terminal(kind, key, UNREADABLE)], more: true };
+        }
+        if (!confirmed) {
+          return { items: [terminal(kind, key, TOO_LARGE)], more: true };
+        }
+        const record = confirmed[0];
+        if (!record) {
+          throw gone();
+        }
+        return { items: [itemOf(kind, record)], more: true };
       }
     }
   }
@@ -191,8 +292,7 @@ export function streamReads(parts: StreamReadParts): StreamSource {
       ];
       if (query.after) {
         const at = dateLiteral(query.after.stamp);
-        const id = textLiteral(query.after.id);
-        clauses.push(`(${field} > ${at} || (${field} = ${at} && id > ${id}))`);
+        clauses.push(`(${field} > ${at} || (${field} = ${at} && ${pastId(query.after.id)}))`);
       }
       return read(query.kind, clauses.join(" && "), query.perPage, call);
     },
