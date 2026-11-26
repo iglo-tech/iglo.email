@@ -9,14 +9,21 @@ export function logPrefix(source: string): string {
   return `[${source}] `;
 }
 
-/** `buffer` is the project's own: GET /api/logs on its host shows only its lines. */
+/**
+ * `buffer` is the project's own: GET /api/logs on its host shows only its lines. An error
+ * `expected` accepts is left out: one the instance has already reported (B155a, D176).
+ */
 export function createSourceLogger(
   source: string,
   buffer?: Pick<LogBuffer, "add" | "attention">,
+  expected?: (error: unknown) => boolean,
 ): ErrorLogger {
   const prefix = logPrefix(source);
   return {
     error(error) {
+      if (expected?.(error)) {
+        return;
+      }
       console.error(`${prefix}Unexpected request error:`, error);
       buffer?.add(error);
     },
@@ -38,9 +45,13 @@ export function instanceAttention(message: string): void {
 
 /**
  * The instance's logger (B143a, D157): stderr as before, and the instance buffer the instance Logs
- * page shows, with each attention line's whole text (only the instance admin reads it).
+ * page shows, with each attention line's whole text (only the instance admin reads it). An error
+ * `expected` accepts is left out, as in createSourceLogger (B155a r2, D176).
  */
-export function createInstanceLogger(buffer: InstanceLogBuffer) {
+export function createInstanceLogger(
+  buffer: InstanceLogBuffer,
+  expected?: (error: unknown) => boolean,
+) {
   const prefix = logPrefix("instance");
   const attention = (message: string) => {
     instanceAttention(message);
@@ -48,6 +59,9 @@ export function createInstanceLogger(buffer: InstanceLogBuffer) {
   };
   const logger: ErrorLogger = {
     error(error) {
+      if (expected?.(error)) {
+        return;
+      }
       console.error(`${prefix}Unexpected request error:`, error);
       buffer.add(error);
     },

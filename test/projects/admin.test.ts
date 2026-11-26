@@ -2,9 +2,10 @@
 // every project. The compiled executable serves a primary project on the instance host (127.0.0.1)
 // and projects `a` and `b` on their own hostnames. The tests share one process and run in order: each
 // password change carries into the next test, as one operator's day would.
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
+import { must } from "@/invariant";
 import { openDatabase } from "@/db/connection";
 import { createListReferences } from "@/lists/references";
 import { createRoles } from "@/roles/roles";
@@ -44,11 +45,22 @@ let port = 0;
 let admin: Credentials;
 /** The environment's admin, which starts the process; never changes. */
 let environment: Credentials;
-/**
- * One instance session for the tests that only read with it. The instance login allows 20 attempts
- * a minute from one address, as a project's does, and every test here comes from 127.0.0.1.
- */
+/** One instance session for the tests that only read with it. */
 let shared: InstanceSession;
+/**
+ * The client address of the running test's instance logins (B155a). The instance login allows 20
+ * attempts a minute from one address, as a project's does; with loopback trusted as a proxy each
+ * test sends its own `X-Forwarded-For`, so no test's logins count against another's.
+ */
+let peer = "";
+let peers = 0;
+beforeEach(() => {
+  peers++;
+  peer = `203.0.113.${peers}`;
+});
+/** The instance login on the instance host, from the running test's own address. */
+const signIn = (credentials: Credentials, options: { next?: string; secret?: string } = {}) =>
+  instanceLogin(port, PRIMARY, credentials, { ...options, peer });
 
 interface UserBody {
   id: number;
@@ -110,6 +122,20 @@ beforeAll(async () => {
     { slug: "b", name: "B", hostname: B },
   ]);
   await start();
+  // Loopback is the trusted proxy, so each test's X-Forwarded-For is its login address (B155a).
+  const setup = must(
+    (await instanceLogin(port, PRIMARY, environment, { peer: "203.0.113.250" })).session,
+    "the setup's instance session",
+  );
+  const trusted = await instanceCall(
+    port,
+    PRIMARY,
+    setup,
+    "PUT",
+    "/api/instance/settings/security.trusted_proxies",
+    ["127.0.0.1"],
+  );
+  expect(trusted.status).toBe(200);
 });
 
 afterAll(async () => {
@@ -123,12 +149,12 @@ test("the instance login checks instance.db: a wrong password or name is refused
     { user: admin.user, password: "not-the-password" },
     { user: "someone-else", password: admin.password },
   ]) {
-    const refused = await instanceLogin(port, PRIMARY, credentials);
+    const refused = await signIn(credentials);
     expect(refused.response.status).toBe(200);
     expect(refused.body).toContain("Invalid login or password");
     expect(refused.session).toBeUndefined();
   }
-  const signedIn = await instanceLogin(port, PRIMARY, admin);
+  const signedIn = await signIn(admin);
   expect(signedIn.response.status).toBe(302);
   expect(signedIn.response.headers.get("location")).toBe("/admin/instance/projects");
   const page = await request(port, PRIMARY, "/admin/instance/account", {
@@ -144,14 +170,14 @@ test("the instance login checks instance.db: a wrong password or name is refused
     "/admin/instance/login?next=%2Fadmin%2Finstance%2Faccount",
   );
   // A safe `next` is where the login goes.
-  const next = await instanceLogin(port, PRIMARY, admin, { next: "/admin/instance/open/a" });
+  const next = await signIn(admin, { next: "/admin/instance/open/a" });
   expect(next.response.headers.get("location")).toBe("/admin/instance/open/a");
-  const foreign = await instanceLogin(port, PRIMARY, admin, { next: "//evil.example/" });
+  const foreign = await signIn(admin, { next: "//evil.example/" });
   expect(foreign.response.headers.get("location")).toBe("/admin/instance/projects");
 });
 
 test("instance_session has the project session's attributes, and both live on the instance host", async () => {
-  const instance = (await instanceLogin(port, PRIMARY, admin)).response;
+  const instance = (await signIn(admin)).response;
   const project = await (async () => {
     const page = await request(port, PRIMARY, "/admin/login");
     const nonceCookie = page.headers.getSetCookie()[0]?.split(";")[0] ?? "";
@@ -210,7 +236,7 @@ test("instance_session has the project session's attributes, and both live on th
 test("instance routes never accept API credentials, and belong to the project on its own host", async () => {
   const session = await logIn(port, PRIMARY, admin);
   const key = await createApiUser(port, PRIMARY, session, "primary-key");
-  shared = (await instanceLogin(port, PRIMARY, admin)).session!;
+  shared = (await signIn(admin)).session!;
   const instance = shared;
   for (const [method, path] of [
     ["GET", "/api/instance/account"],
@@ -475,8 +501,8 @@ test("only the copy itself changes its password or email: another Super Admin or
     expect(await projectLogin(host, admin)).toBe("/admin");
     expect(await projectLogin(host, attacker)).toBe("");
   }
-  expect((await instanceLogin(port, PRIMARY, admin)).session).toBeDefined();
-  expect((await instanceLogin(port, PRIMARY, attacker)).session).toBeUndefined();
+  expect((await signIn(admin)).session).toBeDefined();
+  expect((await signIn(attacker)).session).toBeUndefined();
 });
 
 test("a name-only edit of the copy by another user works when the admin stored a mixed-case email (B149d)", async () => {
@@ -552,9 +578,10 @@ test("the admin's own PUT /api/users/<own id> changes its password everywhere (B
   expect(edited.status).toBe(200);
   const old = admin;
   admin = next;
-  // The instance login allows 20 attempts a minute from one address and this file makes 20, so the
-  // old password's refusal is checked on one other project only.
-  expect((await instanceLogin(port, PRIMARY, admin)).session).toBeDefined();
+  // Each test signs in from its own client address (B155a), so the old password's refusal is
+  // checked on the instance too.
+  expect((await signIn(admin)).session).toBeDefined();
+  expect((await signIn(old)).session).toBeUndefined();
   expect(await projectLogin(B, admin)).toBe("/admin");
   expect(await projectLogin(B, old)).toBe("");
   const onANow = await logIn(port, A, admin);
@@ -614,8 +641,8 @@ test("the admin's username is reserved in every project: 409, nothing written", 
 });
 
 test("a password change on the instance Account page reaches every project", async () => {
-  const instance = (await instanceLogin(port, PRIMARY, admin)).session!;
-  const other = (await instanceLogin(port, PRIMARY, admin)).session!;
+  const instance = (await signIn(admin)).session!;
+  const other = (await signIn(admin)).session!;
   const onA = await logIn(port, A, admin);
   const wrong = await instanceCall(
     port,
@@ -659,7 +686,7 @@ test("a password change on the instance Account page reaches every project", asy
 test("a password change from a project's profile reaches the instance and the other projects", async () => {
   const onB = await logIn(port, B, admin);
   const onA = await logIn(port, A, admin);
-  const instance = (await instanceLogin(port, PRIMARY, admin)).session!;
+  const instance = (await signIn(admin)).session!;
   const profile = await request(port, B, "/api/profile", {
     method: "PUT",
     headers: sessionHeaders(onB),
@@ -671,7 +698,7 @@ test("a password change from a project's profile reaches the instance and the ot
   });
   expect(profile.status).toBe(200);
   admin = { user: admin.user, password: "profile-password-2" };
-  expect((await instanceLogin(port, PRIMARY, admin)).session).toBeDefined();
+  expect((await signIn(admin)).session).toBeDefined();
   for (const host of [PRIMARY, A, B]) {
     expect(await projectLogin(host, admin)).toBe("/admin");
   }
@@ -689,7 +716,7 @@ test("a password change from a project's profile reaches the instance and the ot
 
 test("a password reset by email in one project reaches the instance and the other projects", async () => {
   // B139 (D154): SMTP is an instance key, set once with the instance session for every project.
-  const operator = (await instanceLogin(port, PRIMARY, admin)).session!;
+  const operator = (await signIn(admin)).session!;
   const settings = await readJson<{ data: Record<string, unknown> }>(
     await instanceCall(port, PRIMARY, operator, "GET", "/api/instance/settings"),
   );
@@ -754,7 +781,7 @@ test("a password reset by email in one project reaches the instance and the othe
   });
   expect(reset.status).toBe(302);
   admin = { user: admin.user, password: "reset-password-3" };
-  const signedIn = await instanceLogin(port, PRIMARY, admin);
+  const signedIn = await signIn(admin);
   expect(signedIn.session).toBeDefined();
   shared = signedIn.session!;
   for (const host of [PRIMARY, B]) {
@@ -795,10 +822,10 @@ test("TOTP enabled on the instance reaches every project; disabled in a project,
   for (const host of [PRIMARY, A, B]) {
     expect(await projectLogin(host, admin)).toStartWith("/admin/login/twofa?");
   }
-  const challenged = await instanceLogin(port, PRIMARY, admin);
+  const challenged = await signIn(admin);
   expect(challenged.response.headers.get("location")).toStartWith("/admin/instance/login/twofa?");
   expect(challenged.session).toBeUndefined();
-  const withCode = await instanceLogin(port, PRIMARY, admin, { secret });
+  const withCode = await signIn(admin, { secret });
   expect(withCode.session).toBeDefined();
 
   // Disabled from b's profile with the handoff's session.
@@ -814,9 +841,7 @@ test("TOTP enabled on the instance reaches every project; disabled in a project,
   for (const host of [PRIMARY, A, B]) {
     expect(await projectLogin(host, admin)).toBe("/admin");
   }
-  expect((await instanceLogin(port, PRIMARY, admin)).response.headers.get("location")).toBe(
-    "/admin/instance/projects",
-  );
+  expect((await signIn(admin)).response.headers.get("location")).toBe("/admin/instance/projects");
 });
 
 test("the CLI resets the admin in the instance and every project; a restart repairs a stale copy", async () => {
@@ -864,7 +889,7 @@ test("the CLI resets the admin in the instance and every project; a restart repa
     expect(await projectLogin(host, admin)).toBe("/admin");
   }
   expect(await projectLogin(B, { user: admin.user, password: "stale-password-5" })).toBe("");
-  expect((await instanceLogin(port, PRIMARY, admin)).session).toBeDefined();
+  expect((await signIn(admin)).session).toBeDefined();
 });
 
 test("the instance login has the project login's attempt limit", async () => {

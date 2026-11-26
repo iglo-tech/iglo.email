@@ -149,6 +149,7 @@ export async function runnerFixture(
     });
     runners.push(runner);
     f.runnerWake.current = () => runner.wake();
+    f.runnerStatusChanged.current = (id) => runner.statusChanged(id);
     return runner;
   };
   /** Campaigns this fixture created, so a stuck wait can report their state. */

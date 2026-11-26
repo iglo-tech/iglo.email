@@ -204,6 +204,7 @@ export async function campaignsFixture(
   });
   // src/main.ts creates the runner after the campaign routes, so the routes read it lazily.
   const runnerWake: { current?: () => void } = {};
+  const runnerStatusChanged: { current?: (id: bigint) => void } = {};
   const router = createRouter();
   registerSettingsRoutes(router, stored, auth, undefined, uploadPathCheck(directory, media));
   registerFixtureInstanceSettingsRoutes(router, stored.instance, auth);
@@ -227,6 +228,7 @@ export async function campaignsFixture(
     attachments,
     embedImages,
     wakeRunner: () => runnerWake.current?.(),
+    campaignStatusChanged: (id) => runnerStatusChanged.current?.(id),
   });
   registerCampaignPublicRoutes(router, {
     db,
@@ -342,6 +344,8 @@ export async function campaignsFixture(
     unsubscribed,
     /** The wake the routes call; a campaign runner sets it when it starts. */
     runnerWake,
+    /** The status-change call the routes make; a campaign runner sets it when it starts. */
+    runnerStatusChanged,
     sessionHeaders,
     request,
     json,

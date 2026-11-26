@@ -8,6 +8,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
+import { must } from "@/invariant";
 import {
   createProject,
   deleteProject,
@@ -65,6 +66,32 @@ test("two deletes of one slug in the same millisecond keep two snapshots, neithe
         .filter((name) => name.endsWith(".db") || name.endsWith(".tar"))
         .toSorted(),
     ).toEqual(archives.map((path) => path.slice("backups/deleted/".length)).toSorted());
+  } finally {
+    await f.close();
+  }
+  expect(f.failures).toEqual([]);
+});
+
+test("a delete removes the partial copies an earlier crashed attempt of it left, and no other slug's", async () => {
+  // B155a r1 (D176): a crash between the copy and its claim leaves a full-size `.db.partial`.
+  const f = await openLifecycle(createRealClock());
+  const host = "crashed.example.test";
+  const deleted = join(f.dataDir, "backups", "deleted");
+  const stale = "crashed-2026-11-01T10-00-00.000Z.db.partial";
+  const others = [
+    "crashed-old-2026-11-01T10-00-00.000Z.db.partial",
+    "crashed-2026-11-01T10-00-00.000Z.db",
+  ];
+  try {
+    await createProject(f, { slug: "crashed", name: "Crashed", hostname: host });
+    mkdirSync(deleted, { recursive: true });
+    for (const name of [stale, ...others]) {
+      writeFileSync(join(deleted, name), "an earlier copy");
+    }
+    const answer = await deleteProject(f, "crashed");
+    expect(answer.status).toBe(200);
+    const snapshot = deletedDatabase(answer.text).slice("backups/deleted/".length);
+    expect(readdirSync(deleted).toSorted()).toEqual([...others, snapshot].toSorted());
   } finally {
     await f.close();
   }
@@ -131,34 +158,41 @@ test("a delete that stops part way keeps the project listed with its error and o
 /**
  * A final-snapshot step the server cannot finish until the operator repairs a permission (the
  * reviewer's probe: a folder made by another user). `block` runs on the project's directory before
- * the first delete, `repair` before the second.
+ * the first delete, `repair` before the second. `databaseKept`: the first attempt certainly removed
+ * nothing, so the project's database is still in its directory. Not so for a half-emptied folder:
+ * the order `rm` takes the entries in is the filesystem's (ext4 removes the database first, tmpfs
+ * the folder; B155a r2, D176).
  */
 const snapshotSteps: Array<{
   step: string;
   block: (directory: string) => void;
   repair: (directory: string) => void;
+  databaseKept: boolean;
 }> = [
   {
     // A read-only project directory: the snapshot and tarball are written, nothing is removed.
     step: "removing a read-only directory",
     block: (directory) => chmodSync(directory, 0o555),
     repair: (directory) => chmodSync(directory, 0o755),
+    databaseKept: true,
   },
   {
-    // An upload the server cannot read: the tarball cannot be written.
+    // An upload the server cannot read: the tarball cannot be written, so `rm` never runs.
     step: "writing the tarball",
     block: (directory) => chmodSync(join(directory, "uploads", "kept.txt"), 0o000),
     repair: (directory) => chmodSync(join(directory, "uploads", "kept.txt"), 0o644),
+    databaseKept: true,
   },
   {
     // A folder the server cannot empty: the snapshot and tarball exist, the directory is half gone.
     step: "emptying an upload folder",
     block: (directory) => chmodSync(join(directory, "uploads", "locked"), 0o555),
     repair: (directory) => chmodSync(join(directory, "uploads", "locked"), 0o755),
+    databaseKept: false,
   },
 ];
 
-for (const { step, block, repair } of snapshotSteps) {
+for (const { step, block, repair, databaseKept } of snapshotSteps) {
   test(`a delete stopped at ${step} is finished by the next delete from that step, one snapshot and one tarball`, async () => {
     const f = await openLifecycle(createRealClock());
     const host = "archive.example.test";
@@ -198,6 +232,28 @@ for (const { step, block, repair } of snapshotSteps) {
       ).data.find((project) => project.slug === "archive");
       expect(listed?.delete_error).toContain("its archive");
       const before = archived();
+      // B155a item 3 (D176): the operator opens the leftover database in place and changes it;
+      // the claimed snapshot, the deleted project's only copy, keeps what it held.
+      const snapshot = must(
+        before.find((name) => name.endsWith(".db")),
+        "the claimed snapshot",
+      );
+      if (databaseKept) {
+        // `create: false`: a database the first attempt removed fails here, not as an empty one.
+        const leftover = new Database(join(directory, "iglo-email.db"), {
+          readwrite: true,
+          create: false,
+        });
+        try {
+          leftover.run("DELETE FROM subscribers");
+          leftover.run("PRAGMA wal_checkpoint(TRUNCATE)");
+        } finally {
+          leftover.close();
+        }
+      }
+      expect(snapshotEmails(f.dataDir, `backups/deleted/${snapshot}`)).toEqual([
+        "kept@archive.example.test",
+      ]);
 
       const finished = await deleteProject(f, "archive");
       expect(finished.status).toBe(200);

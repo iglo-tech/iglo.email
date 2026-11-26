@@ -17,7 +17,7 @@ import { sendingHeld } from "@/settings/hold";
 import type { ListReferences } from "@/lists/references";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { EmbedImages, InlineImage } from "@/media/embed";
-import type { Message, MessageHeaders, Outcome } from "@/messaging/email";
+import type { Message, Outcome } from "@/messaging/email";
 import type { Grant, Sender } from "@/messaging/dispatcher";
 import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
@@ -29,7 +29,7 @@ import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campai
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
 import type { TemplateRenderer } from "@/templates/renderer";
 import type { Tracking } from "@/unsubscribe/tracking";
-import { compileCampaign, dummyUUID } from "@/campaigns/render";
+import { campaignHeaders, compileCampaign, dummyUUID } from "@/campaigns/render";
 import type { CampaignStore } from "@/campaigns/store";
 import type { DeliveryStatus, RunnableCampaign, RunnerStore } from "@/campaigns/runner/store";
 
@@ -570,20 +570,14 @@ export function createCampaignRunner(deps: RunnerDeps) {
         const altBody =
           out.altBody ??
           (c.content_type === "plain" ? null : (await plainText(out.body, budget)) || null);
-        const headers: MessageHeaders = {
-          "X-Listmonk-Campaign": c.uuid,
-          "X-Listmonk-Subscriber": sub.uuid,
-        };
-        if (settings.unsubscribeHeader) {
-          headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
-          headers["List-Unsubscribe"] = `<${unsubscribeUrl}>`;
-        }
-        for (const set of out.headers) {
-          for (const [name, value] of Object.entries(set)) {
-            const prior = headers[name];
-            headers[name] = prior === undefined ? value : [...[prior].flat(), value];
-          }
-        }
+        const headers = campaignHeaders(
+          {
+            campaignUuid: c.uuid,
+            subscriberUuid: sub.uuid,
+            unsubscribeUrl: settings.unsubscribeHeader ? unsubscribeUrl : null,
+          },
+          out.headers,
+        );
         let domain = "localhost";
         try {
           domain = new URL(settings.rootUrl).hostname || domain;
@@ -1077,6 +1071,18 @@ export function createCampaignRunner(deps: RunnerDeps) {
   return {
     done: loop.done,
     wake: () => loop.wake(),
+    /**
+     * A campaign's status was changed through the API (B155a, D176). Its wait for an earlier source
+     * outage ends, as the scan ends it for a campaign that left the due list: a pause and resume
+     * between two scans would otherwise keep it due and wait out the old backoff. A later outage
+     * starts at 5 s with a new attention line. Nothing is sent twice: a waiting campaign has no batch
+     * claimed.
+     */
+    statusChanged(id: bigint): void {
+      if (sourceWaits.delete(id)) {
+        retryAt.delete(id);
+      }
+    },
     /** Recovers the batches a previous process left, then claims. Called once, after the bind. */
     start() {
       recoverOrphans();

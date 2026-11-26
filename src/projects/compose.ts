@@ -172,6 +172,11 @@ export interface ProjectServices {
   readonly capacity?: {
     forecast(source: CapacitySource, candidate: Candidate | null): Promise<CapacityAnswer>;
   };
+  /**
+   * Whether a request error is an expected one the log leaves out (B155a, D176): the instance's
+   * bounded HTTP stop cuts the requests still running and has already said so in one line.
+   */
+  readonly expectedError?: (error: unknown) => boolean;
 }
 
 /** What one project is wired from: its identity, its directory, its root URL and its seed. */
@@ -439,7 +444,7 @@ export async function createProject(
     users = createUserStore(db, clock, roles);
     const buffer = createLogBuffer(clock);
     logs = buffer;
-    const logger = createSourceLogger(options.slug, buffer);
+    const logger = createSourceLogger(options.slug, buffer, services.expectedError);
     const clientAddress = createClientAddress(
       () => must(settings, "settings").read()["security.trusted_proxies"],
       logger,
@@ -782,6 +787,7 @@ export async function createProject(
       notify: notifier,
       // The runner is created after these routes (below), so the route reads it when called.
       wakeRunner: () => runner?.wake(),
+      campaignStatusChanged: (id) => runner?.statusChanged(id),
       // The forecast is the instance's; this project gives its own counts (B145a).
       capacity: services.capacity && {
         forecast: (candidate) => must(services.capacity, "capacity").forecast(source, candidate),

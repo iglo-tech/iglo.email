@@ -71,7 +71,7 @@ async function freePort() {
  * process with SIGTERM (SIGKILL after 15 s) and returns its exit code, and `start` after `stop`
  * serves the same origin again. `close` stops it and removes `directory`, whatever state it is in.
  */
-export async function startInstance(executable, dataDir, directory) {
+export async function startInstance(executable, dataDir, directory, environment = {}) {
   let child;
   let errors = "";
   let origin = "";
@@ -89,6 +89,8 @@ export async function startInstance(executable, dataDir, directory) {
           PATH: "",
           IGLO_EMAIL_ADMIN_USER: process.env.E2E_ADMIN_USER ?? "",
           IGLO_EMAIL_ADMIN_PASSWORD: process.env.E2E_ADMIN_PASSWORD ?? "",
+          // B155a: a stand-in's proxy and CA (settings.e2e.js's SES GetAccount).
+          ...environment,
         },
         stdio: ["ignore", "ignore", "pipe"],
       },
