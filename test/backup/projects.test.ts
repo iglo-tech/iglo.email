@@ -4,8 +4,17 @@
 // Every request names its project by an explicit Host header.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { cpSync, existsSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import { MANIFEST_LIMIT } from "@/backup/snapshot";
 import { runBackup } from "@/test/backup/fixture";
 import {
   adminCredentials,
@@ -152,6 +161,105 @@ test("--verify refuses a manifest that names something other than a project slug
   expect(verified.exitCode).toBe(1);
   expect(verified.stderr).toContain(`names "${outside}", which is not a project slug`);
   expect(verified.stdout).toBe("");
+});
+
+test("--verify refuses a manifest over its size limit before parsing it", async () => {
+  // Valid JSON padded past 1 MiB: it would parse, and only the bound refuses it (D178).
+  const padded = (manifest: object) => `${JSON.stringify(manifest)}${" ".repeat(MANIFEST_LIMIT)}\n`;
+  const crafted = join(base, "large-whole");
+  cpSync(whole(), crafted, { recursive: true });
+  writeFileSync(join(crafted, "iglo-email-backup.json"), padded({ projects: ["a", "b", "main"] }));
+  const refused = await runBackup(prepared.executable, ["--verify", crafted]);
+  expect(refused.exitCode).toBe(1);
+  expect(refused.stderr).toContain(
+    `iglo-email-backup.json is larger than the ${MANIFEST_LIMIT} bytes a backup's manifest may have`,
+  );
+  expect(refused.stdout).toBe("");
+
+  const project = join(base, "large-project");
+  cpSync(onlyA(), project, { recursive: true });
+  writeFileSync(join(project, "iglo-email-backup.json"), padded({ uploads: "uploads" }));
+  const projectRefused = await runBackup(prepared.executable, ["--verify", project]);
+  expect(projectRefused.exitCode).toBe(1);
+  expect(projectRefused.stderr).toContain("is larger than the");
+  expect(projectRefused.stdout).toBe("");
+});
+
+test("--verify refuses a symlink anywhere in a backup", async () => {
+  // Each crafted backup would otherwise pass: the symlinks lead to real databases and manifests.
+  const cases: Array<[string, (crafted: string) => void, string]> = [
+    [
+      "a project directory",
+      (crafted) => {
+        rmSync(join(crafted, "projects", "b"), { recursive: true });
+        symlinkSync(onlyA(), join(crafted, "projects", "b"));
+      },
+      "projects/b is a symlink",
+    ],
+    [
+      "a project's database",
+      (crafted) => {
+        rmSync(join(crafted, "projects", "b", "iglo-email.db"));
+        symlinkSync(
+          join(onlyA(), "iglo-email.db"),
+          join(crafted, "projects", "b", "iglo-email.db"),
+        );
+      },
+      "projects/b/iglo-email.db is a symlink",
+    ],
+    [
+      "the manifest",
+      (crafted) => {
+        renameSync(
+          join(crafted, "iglo-email-backup.json"),
+          join(crafted, "projects", "manifest.json"),
+        );
+        symlinkSync(
+          join(crafted, "projects", "manifest.json"),
+          join(crafted, "iglo-email-backup.json"),
+        );
+      },
+      "iglo-email-backup.json is a symlink",
+    ],
+  ];
+  for (const [what, craft, message] of cases) {
+    const crafted = join(base, `symlink-${what.replaceAll(/\W/g, "-")}`);
+    cpSync(whole(), crafted, { recursive: true });
+    craft(crafted);
+    const verified = await runBackup(prepared.executable, ["--verify", crafted]);
+    expect(verified.exitCode, what).toBe(1);
+    expect(verified.stderr, what).toContain(message);
+    expect(verified.stdout, what).toBe("");
+  }
+
+  // A project's backup with its database a symlink to another project's.
+  const project = join(base, "symlink-project");
+  cpSync(onlyA(), project, { recursive: true });
+  rmSync(join(project, "iglo-email.db"));
+  symlinkSync(join(whole(), "projects", "b", "iglo-email.db"), join(project, "iglo-email.db"));
+  const verified = await runBackup(prepared.executable, ["--verify", project]);
+  expect(verified.exitCode).toBe(1);
+  expect(verified.stderr).toContain("iglo-email.db is a symlink");
+
+  // A relative upload path leading out of the backup is refused before it is listed.
+  const escaping = join(base, "escaping-uploads");
+  cpSync(onlyA(), escaping, { recursive: true });
+  const db = new Database(join(escaping, "iglo-email.db"));
+  db.run("UPDATE settings SET value = ? WHERE key = 'upload.filesystem.upload_path'", [
+    JSON.stringify("../whole/projects/b/uploads"),
+  ]);
+  expect(db.query("SELECT changes() AS n").get()).toEqual({ n: 1 });
+  db.close();
+  const escaped = await runBackup(prepared.executable, ["--verify", escaping]);
+  expect(escaped.exitCode).toBe(1);
+  expect(escaped.stderr).toContain("names an upload directory outside it");
+
+  // The path given may itself be a symlink to a backup: the operator chose it.
+  const link = join(base, "link-to-whole");
+  symlinkSync(whole(), link);
+  const followed = await runBackup(prepared.executable, ["--verify", link]);
+  expect(followed.exitCode, followed.stderr).toBe(0);
+  expect(followed.stdout).toContain("Integrity: ok");
 });
 
 test("an unknown project slug fails and writes nothing", async () => {
