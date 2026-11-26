@@ -85,13 +85,24 @@ const stamp = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString(
 const sorted = (ids: Iterable<string>) => [...ids].sort();
 
 const REFUSED = "Source stream refused by the source: check the source settings: ";
+const CANNOT_CONNECT = "Source stream cannot connect: retrying: ";
+const FAILED_FOR_GOOD = "Source record failed for good: ";
+
+/**
+ * The attention lines about one thing (B154): a test reads the lines of what it checks by what
+ * they say, never by position, which another line (the stream's own) could take.
+ */
+const linesOf = (s: StreamFixture, prefix: string) =>
+  s.attention.filter((line) => line.startsWith(prefix));
 
 /**
  * The queue's first row is due one backoff (a minute doubling per attempt, capped at an hour)
- * after the attempt that just finished, which ran at the clock's time now (B153).
+ * after the attempt that just finished, which ran at the clock's time now (B153). With `id`, that
+ * record's row instead.
  */
-function expectBackoff(s: StreamFixture) {
-  const row = must(s.stream.retries()[0], "a queued row");
+function expectBackoff(s: StreamFixture, id?: string) {
+  const rows = s.stream.retries();
+  const row = must(id ? rows.find((r) => r.record_id === id) : rows[0], "a queued row");
   const wait = Math.min(RETRY_MIN_MS * 2 ** (Number(row.attempts) - 1), RETRY_MAX_MS);
   expect(row.next_attempt_at).toBe(new Date(s.clock.now().getTime() + wait).toISOString());
 }
@@ -265,7 +276,7 @@ test("the 30-minute forced close and the idle close are routine: reconnect and c
   const a = await pb.event(user.id, name);
   await s.until(() => s.eventIds().length === 1, "the first event");
   // Injected clock: 30 minutes later the client closes the connection itself.
-  s.clock.advance(30 * 60_000);
+  await s.advance(30 * 60_000);
   await s.until(() => s.stream.state().sessions === 2, "the forced close");
   await s.live();
   const b = await pb.event(user.id, name);
@@ -273,7 +284,7 @@ test("the 30-minute forced close and the idle close are routine: reconnect and c
   // A connection with no byte for the idle limit (PocketBase's is 5 minutes) is closed too.
   const idle = stream({ config: eventsOnly(), names: () => [name] });
   await idle.live();
-  idle.clock.advance(5 * 60_000 + 30_000);
+  await idle.advance(5 * 60_000 + 30_000);
   await idle.until(() => idle.stream.state().sessions === 2, "the idle close");
   await idle.live();
   expect(s.eventIds()).toEqual([a.id, b.id]);
@@ -290,7 +301,7 @@ test("15 minutes of refused connects write one attention line; connecting again 
   expect(s.attention).toEqual([]);
   await s.until(() => minutes() >= 30, "30 minutes of failed connects", 30_000, 10_000);
   expect(s.attention).toHaveLength(1);
-  expect(s.attention[0]).toStartWith("Source stream cannot connect: retrying: ");
+  expect(linesOf(s, CANNOT_CONNECT)).toHaveLength(1);
   cut.cutWhen(undefined);
   await s.live();
   const user = await pb.user();
@@ -309,13 +320,11 @@ test("a permanent refusal (a wrong password) writes one attention line at once",
   // Retries keep failing (each 5 minutes) without another line.
   for (let i = 0; i < 3; i++) {
     await s.until(() => s.stream.state().state === "waiting", "a wait");
-    s.clock.advance(5 * 60_000);
+    await s.advance(5 * 60_000);
     await Bun.sleep(50);
   }
   expect(s.attention).toHaveLength(1);
-  expect(s.attention[0]).toStartWith(
-    "Source stream refused by the source: check the source settings: ",
-  );
+  expect(linesOf(s, REFUSED)).toHaveLength(1);
 });
 
 test("a catch-up refused after a subscription writes one line until the stream gets live again", async () => {
@@ -329,18 +338,18 @@ test("a catch-up refused after a subscription writes one line until the stream g
     4,
   );
   expect(s.attention).toHaveLength(1);
-  expect(s.attention[0]).toStartWith(REFUSED);
+  expect(linesOf(s, REFUSED)).toHaveLength(1);
   // Fixed: the stream gets live, and its warnings start over.
   await pb.renameField(events.name, "label", "name");
   await s.until(() => s.stream.state().state === "live", "live once fixed", 30_000, 60_000);
   // A later failure (the field goes again; the 30-minute close reconnects) writes one line again.
   await pb.renameField(events.name, "name", "label");
-  s.clock.advance(30 * 60_000);
+  await s.advance(30 * 60_000);
   await s.until(() => s.attention.length === 2, "the second refusal", 30_000, 60_000);
   const again = s.clock.now().getTime();
   await s.until(() => minutesSince(s, again) >= 25, "25 more minutes", 30_000, 60_000);
   expect(s.attention).toHaveLength(2);
-  expect(s.attention[1]).toStartWith(REFUSED);
+  expect(linesOf(s, REFUSED)).toHaveLength(2);
 });
 
 test("a record lacking a configured field refuses the stream: nothing consumed, one line", async () => {
@@ -364,8 +373,7 @@ test("a record lacking a configured field refuses the stream: nothing consumed, 
   const start = s.clock.now().getTime();
   await s.until(() => minutesSince(s, start) >= 20, "20 minutes of refusals", 30_000, 60_000);
   expect(s.attention).toHaveLength(1);
-  expect(s.attention[0]).toStartWith(REFUSED);
-  expect(s.attention[0]).toContain('no field "data"');
+  expect(linesOf(s, REFUSED)).toEqual([expect.stringContaining('no field "data"')]);
   expect(s.attempts.size).toBe(0);
   expect(s.stream.retries()).toEqual([]);
   expect(s.stream.seenCount()).toBe(0);
@@ -390,14 +398,17 @@ test("terminal records write one line per cause until a record is handled again"
   const ok = await pb.event(user.id, name);
   await s.until(() => s.eventIds().includes(ok.id), "the record after the failures");
   expect(s.attention).toHaveLength(1);
-  expect(s.attention[0]).toContain(failing[0]);
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([expect.stringContaining(failing[0]!)]);
   // A record was handled since: the same cause writes a line again.
   const later = recordId();
   s.fail.set(later, ["permanent"]);
   await pb.event(user.id, name, {}, { id: later });
   await s.until(() => s.stream.retries().length === 4, "the fourth terminal record");
   expect(s.attention).toHaveLength(2);
-  expect(s.attention[1]).toContain(later);
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([
+    expect.stringContaining(failing[0]!),
+    expect.stringContaining(later),
+  ]);
   expect(s.stream.retries().every((row) => row.terminal === 1n)).toBe(true);
 });
 
@@ -472,7 +483,7 @@ test("topics split past 2,500 characters; a name change re-subscribes", async ()
   const late = unique("late");
   subscribed = [...names, late];
   const sessions = s.stream.state().sessions;
-  s.clock.advance(15_000);
+  await s.advance(15_000);
   await s.until(() => s.stream.state().sessions > sessions, "the re-subscription");
   await s.live();
   const record = await pb.event(user.id, late);
@@ -533,19 +544,24 @@ test("the retry queue: a permanent failure, and 72 hours of transient ones, are 
   await pb.event(user.id, name, {}, { id: transient.id });
   const after = await pb.event(user.id, name);
   await s.until(() => s.eventIds().includes(after.id), "the event after both");
-  expect(s.attention).toHaveLength(1);
-  expect(s.attention[0]).toStartWith("Source record failed for good: ");
-  expect(s.attention[0]).toContain(permanent.id);
-  // Transient failures back off (capped at an hour) until 72 hours have passed.
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([expect.stringContaining(permanent.id)]);
+  // Transient failures back off (capped at an hour) until 72 hours have passed. Each retry runs
+  // with the clock still, and the stream's own reconnects (the live connection goes idle at each
+  // hour moved) answer before the clock moves again, so they write no line (B154).
   const start = s.clock.now().getTime();
   while (s.clock.now().getTime() - start <= RETRY_WINDOW_MS + 3_600_000) {
     await s.retryAfter(3_600_000);
-    if (s.attention.length === 2) {
+    if (s.stream.retries().every((row) => row.terminal === 1n)) {
       break;
     }
+    expectBackoff(s, transient.id);
   }
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([
+    expect.stringContaining(permanent.id),
+    expect.stringContaining(transient.id),
+  ]);
+  expect(linesOf(s, CANNOT_CONNECT)).toEqual([]);
   expect(s.attention).toHaveLength(2);
-  expect(s.attention[1]).toContain(transient.id);
   const rows = s.stream.retries();
   expect(rows.map((row) => [row.record_id, row.terminal])).toEqual([
     [permanent.id, 1n],

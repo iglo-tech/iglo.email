@@ -5,6 +5,8 @@
 // B153: a retry attempt runs with the clock still. `retryAfter` moves the clock, then waits for
 // the attempt's re-read to answer, never for the claim alone: moved while an attempt was in flight,
 // the clock fired its request time limit and put its next due time past the test's next step.
+// B154: every move of the clock (`until`, `advance`, `retryAfter`) waits until no source request
+// is in flight and the stream is not connecting, so no request's time limit is reached by a move.
 import type { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -100,13 +102,28 @@ export function startStream(options: StreamFixtureOptions) {
   // its re-read that waits on I/O (the recording handler does none), so once this count rises the
   // attempt's row is written: a test waits for it before moving the clock on.
   let rereads = 0;
-  const source = {
+  // B154: the source requests in flight. Each has a time limit on this clock, so the clock moves
+  // only while this is zero and the stream is not connecting (the connect deadline is on the clock
+  // too): moved under a request, it fired that limit, a failed subscribe wrote the stream's own
+  // "cannot connect" line, and that line took the place a test expected a record's line in.
+  let inFlight = 0;
+  const track = <T>(work: Promise<T>): Promise<T> => {
+    inFlight++;
+    return work.finally(() => {
+      inFlight--;
+    });
+  };
+  const source: typeof adapter.stream = {
     ...adapter.stream,
-    reread: (...args: Parameters<typeof adapter.stream.reread>) =>
-      adapter.stream.reread(...args).finally(() => {
+    subscribe: (...args) => track(adapter.stream.subscribe(...args)),
+    catchUp: (...args) => track(adapter.stream.catchUp(...args)),
+    reread: (...args) =>
+      track(adapter.stream.reread(...args)).finally(() => {
         rereads++;
       }),
   };
+  /** No source request is in flight and the stream is not connecting: the clock may move. */
+  const quiet = () => inFlight === 0 && stream.state().state !== "connecting";
   const stream = createSourceStream({
     db,
     clock,
@@ -125,7 +142,8 @@ export function startStream(options: StreamFixtureOptions) {
 
   /**
    * Waits (real time, at most `timeoutMs`) until `check` holds. While the stream waits to
-   * reconnect, the clock moves on by the wait, so a reconnect needs no real second.
+   * reconnect, with no source request in flight, the clock moves on by the wait, so a reconnect
+   * needs no real second.
    */
   async function until(check: () => boolean, what: string, timeoutMs = 20_000, stepMs = 1000) {
     const deadline = Date.now() + timeoutMs;
@@ -133,7 +151,7 @@ export function startStream(options: StreamFixtureOptions) {
       if (Date.now() > deadline) {
         throw new Error(`timed out waiting for ${what} (stream ${JSON.stringify(stream.state())})`);
       }
-      if (stream.state().state === "waiting") {
+      if (stream.state().state === "waiting" && quiet()) {
         clock.advance(stepMs);
       }
       await Bun.sleep(10);
@@ -163,10 +181,27 @@ export function startStream(options: StreamFixtureOptions) {
    * flight, so each attempt runs at one clock time (B153).
    */
   async function retryAfter(ms: number) {
+    await advance(ms);
     const done = rereads;
-    clock.advance(ms);
     stream.wakeRetries();
-    await settle(() => rereads > done, "a retry to finish");
+    await settle(() => rereads > done && quiet(), "a retry to finish");
+  }
+
+  /**
+   * Moves the clock on by `ms` once no source request is in flight and the stream is not
+   * connecting (B154), so no request's time limit is reached by the move. The final check and
+   * the move run in one synchronous step, as in `until`: a continuation that starts a request
+   * after `settle` returns sends it back to waiting.
+   */
+  async function advance(ms: number) {
+    const deadline = Date.now() + 20_000;
+    for (;;) {
+      await settle(quiet, "the source requests in flight", Math.max(0, deadline - Date.now()));
+      if (quiet()) {
+        clock.advance(ms);
+        return;
+      }
+    }
   }
 
   /** Handled event IDs (for "none lost, none twice"). */
@@ -187,6 +222,7 @@ export function startStream(options: StreamFixtureOptions) {
     live,
     settle,
     retryAfter,
+    advance,
     rereads: () => rereads,
     async stop() {
       await stream.stop();
