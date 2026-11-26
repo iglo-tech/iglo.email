@@ -668,7 +668,8 @@ export function createCampaignRunner(deps: RunnerDeps) {
    * - a recipients view the source refuses (`SettingsMismatch`) hands it back and pauses the
    *   campaign, which needs the settings fixed and a resume;
    * - a permanent failure of one recipient (no valid address, two users with one address, a
-   *   blocked domain) skips that recipient only.
+   *   blocked domain), from its reads or from its write's re-check of the domain policy, skips
+   *   that recipient only.
    */
   async function fresh(batch: Batch): Promise<Map<number, SourceSkip> | null> {
     const skip = new Map<number, SourceSkip>();
@@ -712,7 +713,23 @@ export function createCampaignRunner(deps: RunnerDeps) {
       try {
         for (const [i, planned] of plans) {
           if (!planned.unchanged) {
-            const result = lookup.apply(planned);
+            let result: ReturnType<typeof lookup.apply>;
+            try {
+              result = lookup.apply(planned);
+            } catch (error) {
+              // B159a (D182): the write's own re-check refused this recipient (a domain
+              // blocklisted since the reads, D179). Its transaction rolled back; the source is up,
+              // so this recipient is skipped as the read path skips it, and the batch goes on.
+              if (
+                isSourceError(error) &&
+                error.kind === "permanent" &&
+                !isSettingsMismatch(error)
+              ) {
+                skip.set(i, { reason: SKIP_REASON.unavailable, message: error.message });
+                continue;
+              }
+              throw error;
+            }
             if (result.kind === "left") {
               skip.set(i, { reason: SKIP_REASON.unavailable, message: "" });
               continue;

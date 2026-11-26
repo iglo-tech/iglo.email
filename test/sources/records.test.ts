@@ -4,11 +4,13 @@
 // retry queue. The scheduler fixture's clock is the stream's: a test moves it only while the
 // stream waits, or to run the scheduler.
 //
-// Three transport hooks: `failRecipients` answers the recipients view with a 503, a transient error
+// Four transport hooks: `failRecipients` answers the recipients view with a 503, a transient error
 // the binary cannot produce on demand; `refuseHistory` answers an events-collection query naming one
 // event with the 400 PocketBase gives a filter it refuses (a permanent `trigger.condition` failure
-// for that name only); and `hold` delays one recipients read (the binary's answer, unchanged) so a
-// test can change SQLite between the handler's reads and its write transaction.
+// for that name only); `hold` delays one recipients read (the binary's answer, unchanged) so a
+// test can change SQLite between the handler's reads and its write transaction; and `malformed`
+// answers one user's recipients read with the binary's row whose address is a number (a permanent
+// read failure that is not an ID the source cannot have).
 // Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -21,7 +23,7 @@ import type { GrantRule } from "@/sources/settings";
 import { TOPIC_CHECK_MS } from "@/sources/stream";
 import { adapter } from "@/test/conditions/source-fixture";
 import type { JsonObject } from "@/test/json-object";
-import { asBody } from "@/test/read-body";
+import { asBody, readJson } from "@/test/read-body";
 import { day, minute, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
@@ -66,6 +68,8 @@ interface Harness {
   rules: { current: Array<GrantRule> };
   /** Holds the next recipients-view read of `user` until `released` settles (once). */
   hold: { current: { user: string; reached: () => void; released: Promise<void> } | null };
+  /** This user's recipients-view reads answer its row with a number for the address; null: none. */
+  malformed: { user: string | null };
   /**
    * This test's own record name for `name`. The tests share one PocketBase, and a new stream's first
    * catch-up starts at the source's `Date` (whole seconds), so a record another test made in the
@@ -94,6 +98,7 @@ async function start(
   const config = { current: { ...sourceConfig(pb.url, pb.service), ...options.config } };
   const rules = { current: options.rules ?? [] };
   const hold: Harness["hold"] = { current: null };
+  const malformed: Harness["malformed"] = { user: null };
   const records = createSourceRecords({
     db: f.db,
     clock: f.clock,
@@ -138,6 +143,14 @@ async function start(
           held.reached();
           return held.released.then(() => fetch(input, init));
         }
+        if (
+          malformed.user !== null &&
+          input.pathname === `/api/collections/recipients/records/${malformed.user}`
+        ) {
+          return fetch(input, init).then(async (answer) =>
+            Response.json({ ...(await readJson<JsonObject>(answer)), email: 42 }, answer),
+          );
+        }
         return fetch(input, init);
       },
     },
@@ -159,6 +172,7 @@ async function start(
     config,
     rules,
     hold,
+    malformed,
     ev: (name) => `${name}_${tag}`,
   };
   open.push(h);
@@ -1028,6 +1042,41 @@ test("address conflict: a holder whose external_id the source cannot have (set b
     { list_id: news, result: "unsubscribed" },
     { list_id: other, result: "added" },
   ]);
+});
+
+test("address conflict: a holder whose read fails permanently for another reason (a malformed address field) is a terminal conflict: the holder is neither re-pointed nor deleted", async () => {
+  // B159a (D182): only an ID the source cannot have (`NotSourceId`) makes a holder gone; any other
+  // permanent failure of its read leaves the holder as it is.
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news] }];
+  await resubscribed(h);
+  const incoming = await pb.user();
+  const address = emailOf(incoming);
+  const holderUser = await pb.user();
+  const holder = await createSubscriber(h, {
+    email: address,
+    external_id: holderUser.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  h.malformed.user = holderUser.id;
+  const signup = await record(h, incoming, "signup");
+  await until(
+    h,
+    () => (h.records.stream()?.retries() ?? []).some((row) => row.record_id === signup.id),
+    "the terminal row",
+  );
+  const row = h.records
+    .stream()
+    ?.retries()
+    .find((entry) => entry.record_id === signup.id);
+  expect(Boolean(row?.terminal)).toBe(true);
+  expect(h.attention.join("\n")).toContain("field is not text");
+  expect(await linked(h, incoming)).toBeNull();
+  const kept = await byId(h, holder);
+  expect(kept).toMatchObject({ email: address, external_id: holderUser.id, status: "enabled" });
+  expect(statusOn(kept, news)).toBe("confirmed");
 });
 
 test("address conflict: two users who swap addresses are swapped in one transaction, each row keeping its consent; a third holder stays a terminal conflict", async () => {

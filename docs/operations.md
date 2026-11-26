@@ -633,8 +633,9 @@ streams makes the stream reconnect more often; it must use a host name, not an I
 events and recipients mappings, the users collection and filter, and the grant rules. A grant rule
 says "an event named E, with these `data.*` equalities, adds the user to these lists": it is how
 consent reaches iglo.email. A rule can name only lists that exist, and a fresh install has none, so
-create the lists first: the save fails with a message naming a list that does not exist. A grant never overrides an unsubscribe, a suppression, a blocklist or a
-set opt-out, and does not add to double opt-in lists. Save, then press "Test connection". It signs
+create the lists first: the save fails with a message naming a list that does not exist. A grant
+never overrides an unsubscribe, a suppression, a blocklist or a set opt-out, and does not add to
+double opt-in lists. Save, then press "Test connection". It signs
 in, reads one row of each collection, names any field that is missing and fails a step a guest can
 read. When PocketBase runs on a private address (a Docker service name, `localhost`) and the
 webhook private-address block is on, add its host name to `sources.private_hosts` on the instance
@@ -658,10 +659,12 @@ iglo.email resolves it as it writes the user's subscriber, when an event arrives
   address. When the two users swapped addresses, both rows are swapped in one step. Each row keeps
   its own status, lists and unsubscribes.
 - The holder is gone: it has no `external_id`, its user is no longer in the view, or its
-  `external_id` is one PocketBase cannot have (an ID your application set through pushed events
-  before the project used a source, for example `crm:42`). Its enrollments end. Its row becomes the
-  user's, or, when the user already has one, its blocklist and unsubscribes move onto the user's
-  row and it is deleted.
+  `external_id` is one PocketBase cannot have (an ID your application set through pushed events,
+  for example `crm:42`, before the project used a source or while it has one). Its enrollments end.
+  Its row becomes the user's, or, when the user already has one, its blocklist and unsubscribes
+  move onto the user's row and it is deleted. Either way no subscriber has the old ID any more:
+  later pushed events for it get 404 (no `email`, so no row to update) or 409 (the address is held
+  by the user's row).
 - Anything else fails that event for good, with an attention line: two live users with one
   address, a holder moving to an address a third subscriber holds (a rotation through three or more
   users), or a new address in a domain the privacy domain policy blocks. The policy is checked again
@@ -688,8 +691,10 @@ blocklist and unsubscribes are carried over and it is deleted). When the source 
   campaign with an attention line. Fix the settings and resume it. A sequence step treats the same
   refusal as an outage: it waits and retries within the 72-hour window, then the enrollment ends
   `source_error`. Fix the settings within that window and the step sends.
-- a user the view has with no valid address ends a sequence enrollment `source_error` at once, and a
-  campaign skips that person (`subscriber_unavailable`) with an attention line.
+- a user the view has with no valid address, or with a new address in a domain the privacy domain
+  policy blocks (also one blocklisted while a campaign batch is read), ends a sequence enrollment
+  `source_error` at once, and a campaign skips that person (`subscriber_unavailable`) with an
+  attention line and sends the rest of the batch without waiting.
 
 **Monitoring.** Attention lines (the Logs page and stderr) report a stream that cannot connect for
 15 minutes or that the source refuses, records that failed for good, enrollments ended

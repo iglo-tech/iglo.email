@@ -583,8 +583,9 @@ for (const kind of ["own address", "moved holder's address"] as const) {
  * B155d item 1 (D179): the batch reads every recipient before it writes any, so a policy change
  * between one recipient's read and the batch's writes must be seen by the write transaction. The
  * mover's new address is in the domain (`own address`), or the mover takes an allowed address
- * whose holder's user moved into the domain (`moved holder's address`). One case per campaign:
- * the first refused write hands the whole batch back.
+ * whose holder's user moved into the domain (`moved holder's address`). B159a (D182): the refused
+ * write skips that recipient only, as the read path does; the source is up, so there is no outage
+ * line, no wait and no second read of the batch.
  */
 async function policyRace(kind: "own address" | "moved holder's address") {
   const domain = `held-${crypto.randomUUID().slice(0, 8)}.example.com`;
@@ -637,11 +638,20 @@ async function policyRace(kind: "own address" | "moved holder's address") {
   // The mover's reads have passed the policy; the other recipient's read is still out.
   await f.drive(() => reached && checked.has(target));
   blocked.add(domain);
+  const releasedAt = f.clock.now().getTime();
   released.resolve();
   await f.until(c.id, "finished");
 
   expect(pushCounts(f)).toEqual({ [emailOf(other)]: 1 });
   expect(await skippedOf(f, c.id)).toEqual([[moverId, "subscriber_unavailable"]]);
+  // Each recipients-view read once (the mover, the holder when there is one, the other): the
+  // batch was not handed back and read again, and the other recipient was pushed before any
+  // source wait (5 s) could have passed.
+  expect(o.reads.count).toBe(holder ? 3 : 2);
+  expect((f.pushes[0]?.at ?? Infinity) - releasedAt).toBeLessThan(5000);
+  expect(messages(f, "could not be read")).toBe(0);
+  expect(messages(f, `subscriber ${moverId} skipped`)).toBe(1);
+  expect(messages(f, "blocklisted domain")).toBe(1);
   const stored = async (id: number) =>
     asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.email);
   expect(await stored(moverId)).toBe(moverAddress);
