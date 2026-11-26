@@ -742,3 +742,297 @@ test("a recovered source clears error_since and sends; a 400 ends source_error a
   });
   expect(f.sink.messages).toHaveLength(1);
 });
+
+test("a pushed trigger_event_id on an external sequence is refused before the source is read (B155e, D180)", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const seq = await f.sequence(external([tx(template)]));
+  const subscriber = await f.subscriber("pushed-id@example.test", { external_id: ada.id });
+  // The source is down: a read would answer 503. The refusal needs no read.
+  await own.stop();
+  const refused = await enroll(f, seq.id, subscriber, { trigger_event_id: 1 });
+  expect(refused.status).toBe(400);
+  expect(refused.body).toMatchObject({ message: "Invalid fields: trigger_event_id" });
+  expect((await enroll(f, seq.id, subscriber, { trigger_event_id: 1, test: true })).status).toBe(
+    400,
+  );
+  // Without it, the read happens and the outage answers 503, as before.
+  expect((await enroll(f, seq.id, subscriber)).status).toBe(503);
+});
+
+test("a pushed trigger_event_id on an external sequence is 400 whatever the subscriber or source (B155e, D180)", async () => {
+  // Before D180 these were 404 (subscriber missing), 409 (no external ID, no source, blocklisted,
+  // sequence paused); the refusal now depends only on the sequence.
+  let current: ExternalSource | null = adapter(pb);
+  const f = await schedulerFixture({ source: () => current });
+  fixtures.push(f);
+  const template = await f.template();
+  const seq = await f.sequence(external([tx(template)]));
+  const ada = await pb.user();
+  const bea = await pb.user();
+  await pb.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const linked = await f.subscriber("linked@example.test", { external_id: ada.id });
+  const unlinked = await f.subscriber("unlinked@example.test");
+  const blocked = await f.subscriber("blocked@example.test", { external_id: bea.id });
+  expect((await f.json(`/api/subscribers/${blocked}/blocklist`, "PUT")).status).toBe(200);
+  const refusedFor = async (subscriber: number) => {
+    const r = await enroll(f, seq.id, subscriber, { trigger_event_id: 1 });
+    expect({ subscriber, status: r.status, body: r.body }).toMatchObject({
+      subscriber,
+      status: 400,
+      body: { message: "Invalid fields: trigger_event_id" },
+    });
+  };
+  // Was 404 (missing), 409 (no external ID), 409 (blocklisted), 400 (linked).
+  for (const subscriber of [999_999, unlinked, blocked, linked]) {
+    await refusedFor(subscriber);
+  }
+  // Was 409: the project has no source.
+  current = null;
+  await refusedFor(linked);
+  current = adapter(pb);
+  // Was 409: the sequence is not active.
+  expect(
+    (await f.json(`/api/sequences/${seq.id}/status`, "PUT", { status: "paused" })).status,
+  ).toBe(200);
+  await refusedFor(linked);
+});
+
+test("a cap defer or skip and a template_unavailable skip read nothing and keep the outage window (B155e, D180)", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  f.marketing.minInterval = "P7D";
+  const news = await f.list("News");
+  const template = await f.template();
+  const gone = await f.template("<p>gone</p>");
+  const send = { wait: "PT0S", kind: "marketing", template_id: template };
+  // The second step's condition reads the source; down, it opens the window, retries and is
+  // skipped late (P2D), keeping the window. The third step is then decided without a read.
+  const fails = { ...send, wait: "PT1H", condition: { event: "order_paid" } };
+  const cases = [
+    { name: "defer", third: { ...send, cap_policy: "defer" }, reasons: [], at: 2 },
+    { name: "skip", third: { ...send, cap_policy: "skip" }, reasons: ["frequency_cap"], at: 3 },
+    {
+      name: "template",
+      third: { ...send, template_id: gone },
+      reasons: ["template_unavailable"],
+      at: 3,
+    },
+  ];
+  const started: Array<{
+    name: string;
+    id: number;
+    seq: Awaited<ReturnType<typeof f.sequence>>;
+    reasons: Array<string>;
+    at: number;
+  }> = [];
+  for (const { name, third, reasons, at } of cases) {
+    const user = await own.user();
+    await own.event(user.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+    const seq = await f.sequence({
+      list_id: news,
+      ...external([send, fails, third, tx(template, { wait: "P1D" })]),
+    });
+    const subscriber = await f.subscriber(`window-${name}@example.test`, {
+      external_id: user.id,
+      lists: [news],
+      preconfirm_subscriptions: true,
+    });
+    const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+    started.push({ name, id, seq, reasons, at });
+  }
+  expect((await f.json(`/api/templates/${gone}`, "DELETE")).status).toBe(200);
+  // The first step reads the trigger record and sends: the cap's 7 days start now.
+  await f.pass();
+  await f.until(() => f.sink.messages.length === 3, "the first steps' mail");
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  for (const { id } of started) {
+    await f.until(async () => (await f.enrollment(id)).error_since !== null, "first failure");
+  }
+  // Skipped late at +49 h, the third step decided at the next pass.
+  while (f.clock.now().getTime() < failedAt + 51 * hour) {
+    await f.pass(hour);
+  }
+  for (const { name, id, seq, reasons, at } of started) {
+    const enrollment = await f.enrollment(id);
+    expect({ name, error_since: enrollment.error_since }).toEqual({
+      name,
+      error_since: new Date(failedAt).toISOString(),
+    });
+    expect(enrollment.status).toBe("active");
+    const skips = (await f.sendLog())
+      .filter((s) => s.enrollment_id === id && s.step_id !== seq.steps[1]!.id)
+      .flatMap((s) => (s.skip_reason ? [s.skip_reason] : []));
+    expect({ name, skips }).toEqual({ name, skips: reasons });
+    // The deferred step waits for the cap; the skipped ones moved to the last step.
+    expect(enrollment.step_id).toBe(seq.steps[at]!.id);
+  }
+  expect(f.sink.messages).toHaveLength(3);
+});
+
+/**
+ * Runs an enrollment whose step 1 (0-based; step 0 has sent) fails on the stopped source from
+ * `failedAt` until it is skipped late, then through step 2 (a false local condition,
+ * `on_false: skip`) to step 3, which fails on the source again. The skip reads nothing and keeps
+ * the window, so step 3's failures continue it and the enrollment ends `source_error` 72 hours
+ * after `failedAt`, not 72 hours after step 3 (D172, D180). An external enrollment also shows the
+ * kept `error_since`; a pushed one does not expose it.
+ */
+async function throughLocalSkip(
+  f: SchedulerFixture,
+  id: number,
+  seq: Awaited<ReturnType<SchedulerFixture["sequence"]>>,
+  failedAt: number,
+  external: boolean,
+) {
+  const at = async (i: number) => (await f.enrollment(id)).step_id === seq.steps[i]!.id;
+  const late = async () =>
+    (await f.sendLog()).some((s) => s.enrollment_id === id && s.skip_reason === "late");
+  while (!(await late())) {
+    expect(f.clock.now().getTime()).toBeLessThan(failedAt + 60 * hour);
+    await f.pass(hour);
+  }
+  // Within 2 hours of the last failed read: no clock advance until step 3 is reached.
+  for (let i = 0; i < 5 && !(await at(3)); i++) {
+    await f.pass(0);
+  }
+  expect(await at(3)).toBe(true);
+  if (external) {
+    expect((await f.enrollment(id)).error_since).toBe(new Date(failedAt).toISOString());
+  }
+  while ((await f.enrollment(id)).status === "active") {
+    expect(f.clock.now().getTime()).toBeLessThan(failedAt + 80 * hour);
+    await f.pass(hour);
+  }
+  expect(await f.enrollment(id)).toMatchObject({ status: "exited", exit_reason: "source_error" });
+  // Ended at the first window's 72 hours, well inside a window step 3 would have opened.
+  expect(f.clock.now().getTime()).toBeLessThan(failedAt + 74 * hour);
+  expect(
+    (await f.sendLog())
+      .filter((s) => s.enrollment_id === id)
+      .flatMap((s) => (s.skip_reason ? [s.skip_reason] : [])),
+  ).toEqual(["late"]);
+}
+
+test("an on_false skip by a local condition reads nothing and keeps the outage window (B155e, D180)", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  const news = await f.list("News");
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const send = { wait: "PT0S", kind: "marketing", template_id: template };
+  const reads = { ...send, condition: { event: "order_paid" } };
+  const seq = await f.sequence({
+    list_id: news,
+    ...external([
+      send,
+      { ...reads, wait: "PT1H" },
+      { ...send, condition: { attr: "plan", op: "eq", value: "pro" }, on_false: "skip" },
+      reads,
+    ]),
+  });
+  const subscriber = await f.subscriber("local-skip@example.test", {
+    external_id: ada.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  // The first step reads the trigger record and sends; the second fails from here.
+  await f.pass();
+  await f.until(() => f.sink.messages.length === 1, "the first step's mail");
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await throughLocalSkip(f, id, seq, failedAt, true);
+  expect(f.sink.messages).toHaveLength(1);
+});
+
+test("a pushed-event sequence's send-time outage window is kept by an on_false skip too (B155e, D174, D180)", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await schedulerFixture({ source: () => adapter(own), sendTime: true });
+  fixtures.push(f);
+  const news = await f.list("News");
+  const ada = await own.user();
+  const template = await f.template();
+  const send = { wait: "PT0S", kind: "marketing", template_id: template };
+  const seq = await f.sequence({
+    list_id: news,
+    trigger: { event: "order_paid" },
+    steps: [
+      send,
+      { ...send, wait: "PT1H" },
+      { ...send, condition: { attr: "plan", op: "eq", value: "pro" }, on_false: "skip" },
+      send,
+    ],
+  });
+  const subscriber = await f.subscriber(asBody<string>(ada.email), {
+    external_id: ada.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  await f.pass();
+  await f.until(() => f.sink.messages.length === 1, "the first step's mail");
+  // The recipients view cannot be read from here: the send-time read opens the window.
+  await own.stop();
+  const failedAt = f.clock.now().getTime() + hour;
+  await f.pass(hour);
+  await throughLocalSkip(f, id, seq, failedAt, false);
+  expect(f.sink.messages).toHaveLength(1);
+});
+
+test("steps spaced past 2 hours through a long outage end completed, every step skipped late, nothing sent (B155e, D172, D180)", async () => {
+  const own = await startPocketBase();
+  instances.push(own);
+  const f = await open(adapter(own));
+  const news = await f.list("News");
+  const ada = await own.user();
+  await own.event(ada.id, "order_paid", {}, { occurredAt: iso(f, -day) });
+  const template = await f.template();
+  const step = (wait: string) => ({
+    wait,
+    kind: "marketing",
+    template_id: template,
+    condition: { event: "order_paid" },
+  });
+  const seq = await f.sequence({
+    list_id: news,
+    ...external([step("PT1H"), step("P1D"), step("P1D")]),
+  });
+  const subscriber = await f.subscriber("spaced@example.test", {
+    external_id: ada.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  const id = asBody<number>((await enroll(f, seq.id, subscriber)).body.data.id);
+  await own.stop();
+  const windows = new Set<string>();
+  // Each step retries hourly and is skipped late (P2D) within its own window, so no window reaches
+  // 72 hours, and the next step, a day after the last failed read, opens a fresh one.
+  const end = f.clock.now().getTime() + 300 * hour;
+  while ((await f.enrollment(id)).status === "active" && f.clock.now().getTime() < end) {
+    await f.pass(hour);
+    const since = (await f.enrollment(id)).error_since;
+    if (since) {
+      windows.add(since);
+    }
+  }
+  const ended = await f.enrollment(id);
+  expect(ended).toMatchObject({ status: "completed", error_since: null });
+  expect(windows.size).toBe(3);
+  expect(
+    (await f.sendLog()).filter((s) => s.enrollment_id === id).map((s) => s.skip_reason),
+  ).toEqual(["late", "late", "late"]);
+  expect(f.sink.messages).toHaveLength(0);
+  expect(attention(f)).not.toContain(`enrollment ${id}`);
+});

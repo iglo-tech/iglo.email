@@ -35,3 +35,34 @@ backlog that size became routine; it is not made here (D171).
 
 This is a bounded local experiment and sets no CI threshold. Run it with
 `bun test/sources/stream-measure.ts <iglo-data-parent-dir> [count]`.
+
+## B155b: the live path and the session signals (D177)
+
+The paragraph above holds for the catch-up. On the live path, before B155b, each record took two
+commits: the handler's transaction, then the marker move in a transaction of its own. Since D177
+the marker move and the prune run inside the record's own transaction, so a live record takes one
+commit too. The measurement now also times 2,000 records created while the stream is live, after
+the catch-up (`liveRecords`, `liveSeconds`, `liveRecordsPerSecond`).
+
+**Setup.** 2026-11-26, the same host, Bun 1.4.5, source run, real clock, 5,000 records. The
+iglo.email database was under `$HOME` (xfs on NVMe, `/dev/nvme0n1p2`) and PocketBase in the
+harness's tmpfs directory. Load average 3.2 at the start and 2.9 at the end (other workers shared
+the host). Each tree ran once: "before" is an export of `origin/main` at 2c4b7e8 with the same
+measurement script, "after" is this branch.
+
+| Tree | Catch-up records/s | Live: 2,000 records | Live records/s |
+|---|---:|---:|---:|
+| before (`origin/main`) | 177 | 13.1 s | 152 |
+| after (B155b) | 182 | 11.7 s | 171 |
+
+An earlier 10,000-record pair measured catch-up only (before the live part was added): 180 and 179
+records/s. The catch-up is unchanged and the live path is about 12% faster. It is not twice as
+fast because a live record also waits for its realtime message and the handler's own commit; the
+saved commit is the marker move.
+
+**`AbortSignal.any` (item 4).** The stream makes a composite of a per-session (or per-pause)
+controller and its long-lived `stopping` signal for each session. A standalone script built
+360,000 such composites, each with an `abort` listener, aborting each controller and yielding every
+1,000. After `Bun.gc(true)` the heap stayed 0.02 MiB over its baseline at 10,000, 60,000, 160,000
+and 360,000. Bun releases them, so the stream keeps `AbortSignal.any`. A 30-minute reconnect makes
+48 sessions a day.

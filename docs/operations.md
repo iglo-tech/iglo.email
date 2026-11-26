@@ -609,7 +609,10 @@ only the service account can read them, for example
 `@request.auth.collectionName = "services"`. Guests must read nothing: PocketBase answers a revoked
 token as a guest, and a guest-readable collection would let a condition count too few records.
 "Test connection" checks it (see the private-address paragraph under
-[Deploying behind a reverse proxy or PaaS](#deploying-behind-a-reverse-proxy-or-paas)).
+[Deploying behind a reverse proxy or PaaS](#deploying-behind-a-reverse-proxy-or-paas)). It sees
+rows, not rules: the service account cannot read a collection's rules, so a guest-readable
+collection with no rows yet passes, and a rule changed after the check is never checked again.
+Check the rules in PocketBase's dashboard whenever you set or change them.
 
 **5. Leaving users (optional).** To remove a subscriber as soon as the user leaves, name the users
 collection and a filter that matches a leaving user, for example `deletedAt != ''`. iglo.email
@@ -617,7 +620,10 @@ subscribes to it and removes the subscriber when a user starts matching. PocketB
 nothing for a hard delete, so iglo.email also checks at send time: a user the recipients view no
 longer has is removed before anything is sent. Either way a person who had unsubscribed or been
 blocklisted leaves a suppression, so a returning user is not mailed marketing again without opting
-in.
+in. That suppression names the address and the user ID the person had when they left. The person's
+own double opt-in confirmation lifts it. `DELETE /api/suppressions` lifts it by address only, so
+for a user who came back under a new address, send the address they had when they left: the new
+one removes nothing (`{"removed": 0}`).
 
 **6. Settings.** On the project's Settings page, "Source" tab (or the `source.*` keys of
 `PUT /api/settings`): the URL (a direct internal URL is best, because a proxy that cuts quiet
@@ -626,7 +632,8 @@ streams makes the stream reconnect more often; it must use a host name, not an I
 `http://127.0.0.1:8090`), the auth collection, identity and password, the
 events and recipients mappings, the users collection and filter, and the grant rules. A grant rule
 says "an event named E, with these `data.*` equalities, adds the user to these lists": it is how
-consent reaches iglo.email. A grant never overrides an unsubscribe, a suppression, a blocklist or a
+consent reaches iglo.email. A rule can name only lists that exist, and a fresh install has none, so
+create the lists first: the save fails with a message naming a list that does not exist. A grant never overrides an unsubscribe, a suppression, a blocklist or a
 set opt-out, and does not add to double opt-in lists. Save, then press "Test connection". It signs
 in, reads one row of each collection, names any field that is missing and fails a step a guest can
 read. When PocketBase runs on a private address (a Docker service name, `localhost`) and the
@@ -643,6 +650,27 @@ is a draft: activate it, or its trigger starts nothing. A marketing step also fo
 marketing frequency cap (`marketing.min_interval`, default 7 days): when marketing steps are only a
 short wait apart, a later one is deferred until the cap allows it (or skipped, under the step's
 `skip` cap policy), so it does not go out when its wait ends.
+
+**Address conflicts.** When the address the view gives a user is held by another subscriber,
+iglo.email resolves it as it writes the user's subscriber, when an event arrives or at send time:
+
+- The holder is linked to a user the view has at another address: the holder moves to that
+  address. When the two users swapped addresses, both rows are swapped in one step. Each row keeps
+  its own status, lists and unsubscribes.
+- The holder is gone: it has no `external_id`, its user is no longer in the view, or its
+  `external_id` is one PocketBase cannot have (an ID your application set through pushed events
+  before the project used a source, for example `crm:42`). Its enrollments end. Its row becomes the
+  user's, or, when the user already has one, its blocklist and unsubscribes move onto the user's
+  row and it is deleted.
+- Anything else fails that event for good, with an attention line: two live users with one
+  address, a holder moving to an address a third subscriber holds (a rotation through three or more
+  users), or a new address in a domain the privacy domain policy blocks. The policy is checked again
+  as the address is written, so a domain blocklisted meanwhile still stops it. To get the user's
+  later events through, edit one subscriber's address by hand.
+
+A subscriber whose own `external_id` is an ID PocketBase cannot have is not a source user: a
+campaign skips it (`subscriber_unavailable`) and a sequence step ends `source_error`, each with an
+attention line. Set its `external_id` to the user's PocketBase ID, or clear it.
 
 **Send time.** For every sequence step and campaign to a subscriber with an `external_id`, the
 address and name are read from the recipients view just before the mail is rendered, so a renamed or
@@ -1103,9 +1131,15 @@ newsletter-monday/         mode 0700
 An unknown slug exits nonzero and writes nothing. Every database is snapshotted and checked inside
 the one partial directory described under **Failure**, and the backup is published only when all of
 them pass: a failure on any database leaves no backup at the final name. A project created or
-deleted while the backup runs fails it; run it again. `--verify` prints each database under its
-place and ends with one `Integrity:` line for the whole backup, and refuses a manifest that names
-anything but a project slug, so it reads nothing outside the backup. The output may not be
+deleted while the backup runs fails it with "The registered projects changed while the backup
+ran; run it again", whichever step met the change first; run it again. `--verify` prints each
+database under its place and ends with one `Integrity:` line for the whole backup. It reads nothing
+outside the backup: it refuses a manifest that names anything but a project slug, a manifest over
+1 MiB (before reading it whole), an upload path leading out of the backup, and a symlink anywhere
+in the backup, which `backup` never writes. It also refuses a FIFO, socket or device anywhere in
+the backup, given as the snapshot, or beside a bare snapshot as its `-journal`, `-wal` or `-shm`
+file, rather than wait on it. The path you give it may itself be a
+symlink to a backup. The output may not be
 `<data-dir>/projects/` or inside it, where the projects are read from, or at
 `<data-dir>/instance.db`: those are refused before anything is written, `--force` or not.
 
@@ -1789,6 +1823,10 @@ The wipe removes their subscriber row and leaves a suppression ([D125](design/09
   `suppressions:manage`, a permission of its own (see [API user for an app integration](#api-user-for-an-app-integration)):
   the built-in Super Admin holds it, and no other role does unless an administrator grants it. A
   request without it is refused with 403 and removes nothing. Use this only when the person asks for it.
+  The request matches the address only. A suppression that also names an external ID (a self-wipe
+  of a subscriber with one, or a source user leaving, see [External sources](#external-sources))
+  goes with its address, so a person now known under another address needs the address the
+  suppression was written with; their new one answers `{"removed": 0}`.
 - **What your system receives.** A wipe's `subscriber.deleted` webhook carries the external ID and
   the list IDs, with an empty address, so your system can honour the erasure. iglo.email drops
   both from its stored copy when that delivery ends. Keep them in your system only as long as your

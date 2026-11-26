@@ -271,8 +271,8 @@ export function createSubscriberStore(
   const mayOptIn = (row: Row | null): row is Row =>
     row !== null && row.status !== "blocklisted" && !suppressedBy(row);
   /** A self-wipe's suppression: keyed hashes and the list IDs, written before the rows go. */
-  const suppress = (row: Row) => {
-    const lists = memberships(row.id).map((m) => Number(m.list_id));
+  const suppress = (row: Row, held = memberships(row.id)) => {
+    const lists = held.map((m) => Number(m.list_id));
     q.get("suppression-insert").run(
       ...suppressionKeys(row),
       JSON.stringify(lists),
@@ -508,14 +508,19 @@ export function createSubscriberStore(
       if (!row) {
         return;
       }
+      // B155d (D179): one read of the memberships, and the suppressions are read only when the
+      // subscriber withdrew something.
+      const held = memberships(id);
       const withdrew =
         row.status === "blocklisted" ||
-        memberships(id).some((membership) => membership.status === "unsubscribed");
-      const named = q.get("suppression-names-both").get(...suppressionKeys(row)) as {
-        named: number;
-      };
-      if (withdrew && !named.named) {
-        suppress(row);
+        held.some((membership) => membership.status === "unsubscribed");
+      if (withdrew) {
+        const named = q.get("suppression-names-both").get(...suppressionKeys(row)) as {
+          named: number;
+        };
+        if (!named.named) {
+          suppress(row, held);
+        }
       }
       store.remove([id]);
     },

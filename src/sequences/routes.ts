@@ -742,10 +742,15 @@ export function registerSequenceRoutes(
     sequenceId: bigint,
     subscriberId: bigint,
     named: string | null,
+    eventNamed: boolean,
   ): Promise<SourceEvent | "events" | null> {
     const sequence = sequences.get(sequenceId);
     if (!sequence || sequence.source !== "external") {
       return "events";
+    }
+    // A pushed event never starts an external sequence: refused before the source is read (D180).
+    if (eventNamed) {
+      throw invalid(c, "trigger_event_id");
     }
     const subscriber = subscribers.get(subscriberId);
     if (
@@ -983,6 +988,7 @@ export function registerSequenceRoutes(
         sequenceId,
         subscriberId,
         typeof externalId === "string" ? externalId : null,
+        triggerEventId !== undefined,
       );
       if (record === "events" && typeof externalId === "string") {
         throw invalid(c, "trigger_external_id");

@@ -2,9 +2,10 @@
 // events records against the real PocketBase 0.40.5 binary. The stream subscribes once (so its
 // marker exists), stops, PocketBase gets the records through its batch API, and a new stream on
 // the same database catches them all up; each record is one handler write transaction with its
-// dedupe entry, as B150d's will be. Run: `bun test/sources/stream-measure.ts <data-dir> [count]`
-// with the iglo.email database directory on the filesystem to measure (PocketBase stays in the
-// harness's temporary directory).
+// dedupe entry, as B150d's will be. B155b: then 2,000 more records (at most `count`) are created
+// while that stream is live, for the live path's rate. Run:
+// `bun test/sources/stream-measure.ts <data-dir> [count]` with the iglo.email database directory
+// on the filesystem to measure (PocketBase stays in the harness's temporary directory).
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
@@ -76,15 +77,18 @@ try {
   });
   const user = await pb.user();
   const occurredAt = new Date().toISOString();
+  const createRecords = async (total: number, from = 0) => {
+    for (let done = 0; done < total; done += 1000) {
+      const requests = Array.from({ length: Math.min(1000, total - done) }, (_, i) => ({
+        method: "POST",
+        url: "/api/collections/events/records",
+        body: { user: user.id, name, data: { n: from + done + i, plan: "pro" }, occurredAt },
+      }));
+      await pb.api("POST", "/api/batch", { requests });
+    }
+  };
   const created = performance.now();
-  for (let done = 0; done < count; done += 1000) {
-    const requests = Array.from({ length: Math.min(1000, count - done) }, (_, i) => ({
-      method: "POST",
-      url: "/api/collections/events/records",
-      body: { user: user.id, name, data: { n: done + i, plan: "pro" }, occurredAt },
-    }));
-    await pb.api("POST", "/api/batch", { requests });
-  }
+  await createRecords(count);
   const createMs = performance.now() - created;
   Bun.gc(true);
   const before = process.memoryUsage();
@@ -104,6 +108,12 @@ try {
   const ms = performance.now() - started;
   clearInterval(sampler);
   const seen = second.seenCount();
+  // B155b: the live path, records arriving while the stream is live (D177: one commit each).
+  const liveCount = Math.min(count, 2000);
+  const liveStarted = performance.now();
+  await createRecords(liveCount, count);
+  await until(() => handled >= count + liveCount);
+  const liveMs = performance.now() - liveStarted;
   await second.stop();
   db.close();
   console.log(
@@ -118,6 +128,9 @@ try {
       heapBeforeMiB: mib(before.heapUsed),
       peakHeapMiB: mib(peakHeap),
       dedupeEntries: seen,
+      liveRecords: liveCount,
+      liveSeconds: Math.round(liveMs / 100) / 10,
+      liveRecordsPerSecond: Math.round(liveCount / (liveMs / 1000)),
     }),
   );
 } finally {

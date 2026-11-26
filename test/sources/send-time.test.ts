@@ -66,6 +66,8 @@ interface Observed {
   reads: { count: number };
   /** From this read on (1-based), the recipients view answers 503; null: never. */
   fail: { from: number | null };
+  /** Holds the next recipients-view read of `user` (the binary's answer, unchanged) until released. */
+  hold: { current: { user: string; reached: () => void; released: Promise<void> } | null };
 }
 const observed: Array<Observed> = [];
 const closers: Array<() => Promise<void>> = [];
@@ -85,6 +87,7 @@ function observedSource(config: Partial<PocketBaseConfig> = {}): Observed {
     inTransaction: [],
     reads: { count: 0 },
     fail: { from: null },
+    hold: { current: null },
   };
   const source = createPocketBaseSource({
     config: { ...sourceConfig(pb.url, pb.service), ...config },
@@ -99,6 +102,12 @@ function observedSource(config: Partial<PocketBaseConfig> = {}): Observed {
           o.reads.count++;
           if (o.fail.from !== null && o.reads.count >= o.fail.from) {
             return Promise.resolve(new Response("unavailable", { status: 503 }));
+          }
+          const held = o.hold.current;
+          if (held && input.pathname.endsWith(`/records/${held.user}`)) {
+            o.hold.current = null;
+            held.reached();
+            return held.released.then(() => fetch(input, init));
           }
         }
         return fetch(input, init);
@@ -365,6 +374,7 @@ test("a recipients view the source refuses makes a step wait inside the 72-hour 
 async function runner(
   realEmailer: boolean,
   config: Partial<PocketBaseConfig> = {},
+  emailAllowed: (email: string) => boolean = () => true,
 ): Promise<{ f: RunnerFixture; o: Observed }> {
   const o = observedSource(config);
   const f = await runnerFixture({
@@ -375,7 +385,7 @@ async function runner(
         source: o.provider,
         subscribers: fixture.owners.subscribers,
         enrollments: createEnrollments(fixture.db, fixture.clock),
-        emailAllowed: () => true,
+        emailAllowed,
       }),
   });
   o.db.current = f.db;
@@ -562,6 +572,83 @@ test("a campaign recipient the source has no valid address for is skipped subscr
   expect(messages(f, `subscriber ${nobodyId} skipped`)).toBe(1);
   expect(messages(f, "has no valid address")).toBe(1);
 });
+
+for (const kind of ["own address", "moved holder's address"] as const) {
+  test(`a domain blocklisted while a campaign batch is read refuses an address the reads allowed (${kind}): nothing is written or sent there`, async () => {
+    await policyRace(kind);
+  });
+}
+
+/**
+ * B155d item 1 (D179): the batch reads every recipient before it writes any, so a policy change
+ * between one recipient's read and the batch's writes must be seen by the write transaction. The
+ * mover's new address is in the domain (`own address`), or the mover takes an allowed address
+ * whose holder's user moved into the domain (`moved holder's address`). One case per campaign:
+ * the first refused write hands the whole batch back.
+ */
+async function policyRace(kind: "own address" | "moved holder's address") {
+  const domain = `held-${crypto.randomUUID().slice(0, 8)}.example.com`;
+  const blocked = new Set<string>();
+  const checked = new Set<string>();
+  const { f, o } = await runner(false, {}, (email) => {
+    checked.add(email);
+    return !blocked.has(email.slice(email.lastIndexOf("@") + 1));
+  });
+  const list = await f.list("news");
+  const mover = await pb.user({ name: "Mo" });
+  const other = await pb.user({ name: "Ot" });
+  const moverAddress = emailOf(mover);
+  const moverId = (await f.member(moverAddress, [list], "confirmed", { external_id: mover.id })).id;
+  await f.member(emailOf(other), [list], "confirmed", { external_id: other.id });
+  let target: string;
+  let holder: { id: number; email: string } | null = null;
+  if (kind === "own address") {
+    target = `mo@${domain}`;
+    await pb.update("users", mover.id, { email: target });
+  } else {
+    const holderUser = await pb.user({ name: "Hol" });
+    const wanted = emailOf(holderUser);
+    holder = {
+      id: (await f.member(wanted, [], "confirmed", { external_id: holderUser.id })).id,
+      email: wanted,
+    };
+    target = `hol@${domain}`;
+    await pb.update("users", holderUser.id, { email: target });
+    await pb.update("users", mover.id, { email: wanted });
+  }
+  let reached = false;
+  const released = Promise.withResolvers<void>();
+  o.hold.current = {
+    user: other.id,
+    reached: () => {
+      reached = true;
+    },
+    released: released.promise,
+  };
+  const c = await f.campaign({
+    name: "policy",
+    subject: "Hi",
+    lists: [list],
+    content_type: "html",
+    body: "<p>x</p>",
+  });
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  // The mover's reads have passed the policy; the other recipient's read is still out.
+  await f.drive(() => reached && checked.has(target));
+  blocked.add(domain);
+  released.resolve();
+  await f.until(c.id, "finished");
+
+  expect(pushCounts(f)).toEqual({ [emailOf(other)]: 1 });
+  expect(await skippedOf(f, c.id)).toEqual([[moverId, "subscriber_unavailable"]]);
+  const stored = async (id: number) =>
+    asBody<string>((await f.json(`/api/subscribers/${id}`)).body.data.email);
+  expect(await stored(moverId)).toBe(moverAddress);
+  if (holder) {
+    expect(await stored(holder.id)).toBe(holder.email);
+  }
+}
 
 test("a recipients view the source refuses pauses the campaign with one attention line and nothing pushed", async () => {
   const { f } = await runner(false, REFUSED);
