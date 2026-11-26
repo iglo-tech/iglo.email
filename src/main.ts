@@ -9,7 +9,7 @@ import { serveRouted } from "@/server/server";
 import { childArgument, runQueryChild } from "@/subscribers/query-runner";
 import { analyticsChildArgument, runAnalyticsChild } from "@/analytics/reader";
 import { backupHelp, runBackup } from "@/backup/cli";
-import { flushChildArgument, runFlushChild } from "@/backup/snapshot";
+import { RegistryChangedError, flushChildArgument, runFlushChild } from "@/backup/snapshot";
 import { resetPasswordHelp, resetTotpHelp, runResetPassword, runResetTotp } from "@/users/cli";
 import { recoverAdmin } from "@/projects/admin-recovery";
 import { openInstance } from "@/projects/instance";
@@ -149,6 +149,15 @@ if (import.meta.main) {
     await main();
   } catch (error: unknown) {
     console.error(error instanceof Error ? error.message : "Failed to start server");
+    // A whole backup that met a registry change keeps the error of the step that met it as its
+    // cause, shown on a line of its own (D183). Other errors already say what their cause means.
+    if (
+      error instanceof RegistryChangedError &&
+      error.cause instanceof Error &&
+      !(error.cause instanceof RegistryChangedError)
+    ) {
+      console.error(`Cause: ${error.cause.message}`);
+    }
     process.exitCode = 1;
   }
 }

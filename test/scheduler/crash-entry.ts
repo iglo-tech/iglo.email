@@ -57,12 +57,20 @@ const live = startRuntime({
   wrap,
   ...(seedOnly ? { outbox: false, scheduler: false } : {}),
 });
+// The sequence's steps as `kind:wait,…` (SCHEDULER_CRASH_STEPS); by default a transactional and a
+// marketing step, both due at once.
+const steps = (process.env.SCHEDULER_CRASH_STEPS ?? "transactional:PT0S,marketing:PT0S")
+  .split(",")
+  .map((step) => {
+    const [kind, wait] = step.split(":");
+    if ((kind !== "transactional" && kind !== "marketing") || !wait) {
+      throw new Error(`Invalid SCHEDULER_CRASH_STEPS step ${step}`);
+    }
+    return { kind, wait } as const;
+  });
 // Enrolling due now wakes the scheduler after this synchronous seed commits.
 if (process.env.SCHEDULER_CRASH_SEED === "1") {
-  seed(live.db, live.enrollments, 1, [
-    { wait: "PT0S", kind: "transactional" },
-    { wait: "PT0S", kind: "marketing" },
-  ]);
+  seed(live.db, live.enrollments, 1, steps);
 }
 if (seedOnly) {
   // B139 (D154): SMTP is an instance key, stored in instance.db two levels above the project.
