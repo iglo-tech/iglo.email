@@ -114,6 +114,12 @@ export function sidebar(
           link("settings.all", t.T("globals.terms.settings"), "/admin/settings"),
         can("settings:get") &&
           link("settings.logs", t.T("globals.terms.logs"), "/admin/settings/logs"),
+        can("settings:manage") &&
+          link(
+            "settings.source-retries",
+            t.T("sources.retries.title"),
+            "/admin/settings/source-retries",
+          ),
         can("settings:maintain") &&
           link(
             "settings.maintenance",

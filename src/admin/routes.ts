@@ -29,6 +29,7 @@ import { editSequenceView, newSequenceView } from "@/admin/views/sequence";
 import { sendsView } from "@/admin/views/sends";
 import { sequencesView } from "@/admin/views/sequences";
 import { settingsView } from "@/admin/views/settings";
+import { sourceRetriesView } from "@/admin/views/source-retries";
 import { newSubscriberView, subscriberView } from "@/admin/views/subscriber";
 import { subscribersView } from "@/admin/views/subscribers";
 import { editTemplateView, newTemplateView } from "@/admin/views/template";
@@ -129,6 +130,7 @@ export function registerAdminRoutes(router: Router, deps: AdminDeps): void {
   withID("/admin/users/:id", userView(roles, false), "users:get");
   page("/admin/settings", settingsView, "settings:get");
   page("/admin/settings/logs", logsView, "settings:get");
+  page("/admin/settings/source-retries", sourceRetriesView, "settings:manage");
   page("/admin/settings/maintenance", maintenanceView, "settings:maintain");
 
   const reset = createPasswordReset(deps);

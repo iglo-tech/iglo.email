@@ -1568,6 +1568,17 @@ const settings: Array<Operation> = [
     data: ref("SourceTestReport"),
   },
   {
+    route: "GET /api/settings/source/retries",
+    id: "getSourceRetries",
+    tag: "Settings",
+    summary: "The source stream's retry queue, oldest first, read-only.",
+    description:
+      "Lists the records the source stream could not handle yet (15-external-sources section 4, D181), at most 1000, oldest first; `more` says older rows were left out. `queued` rows are read again with a doubling wait (1 minute to 1 hour) and become `terminal` after 72 hours; `waiting` rows failed on a settings mismatch, never become terminal and are handled once the settings are fixed; `terminal` rows are kept for 30 days, with a null `next_attempt_at`. `last_error` is the source's or the handler's own text, so the queue needs `settings:manage`, as Test connection does. `stream` is the running stream's state, null without a source (then no rows are listed).",
+    native: true,
+    permissions: ["settings:manage"],
+    data: ref("SourceRetryQueue"),
+  },
+  {
     route: "GET /api/logs",
     id: "getLogs",
     tag: "Settings",
