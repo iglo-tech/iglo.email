@@ -102,12 +102,12 @@ async function run(binary: string, args: Array<string>) {
   }
 }
 
-/** Starts the binary on `port`; resolves once it answers /api/health. */
 /**
  * Settles once every thread of process `pid` is in the stopped state. A SIGSTOP stops a
  * multi-threaded process one thread at a time, each when it next runs, so `kill` returns while
  * some threads (PocketBase's Go scheduler and network poller among them) can still answer a
- * request. Linux only, like the release targets.
+ * request. A thread that exits meanwhile (zombie `Z`, dead `X`, or its task entry gone) cannot
+ * answer either, so it counts as stopped. Linux only, like the release targets.
  */
 async function stopped(pid: number): Promise<void> {
   const tasks = `/proc/${pid}/task`;
@@ -122,7 +122,7 @@ async function stopped(pid: number): Promise<void> {
         return "gone";
       }
     });
-    if (states.every((state) => state === "T" || state === "gone")) {
+    if (states.every((state) => ["T", "Z", "X", "gone"].includes(state))) {
       return;
     }
     if (Date.now() > deadline) {
@@ -132,6 +132,7 @@ async function stopped(pid: number): Promise<void> {
   }
 }
 
+/** Starts the binary on `port`; resolves once it answers /api/health. */
 async function serve(binary: string, root: string, port: number): Promise<ChildProcess> {
   const child = spawn(
     binary,

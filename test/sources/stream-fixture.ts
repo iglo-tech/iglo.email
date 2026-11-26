@@ -189,11 +189,19 @@ export function startStream(options: StreamFixtureOptions) {
 
   /**
    * Moves the clock on by `ms` once no source request is in flight and the stream is not
-   * connecting (B154), so no request's time limit is reached by the move.
+   * connecting (B154), so no request's time limit is reached by the move. The final check and
+   * the move run in one synchronous step, as in `until`: a continuation that starts a request
+   * after `settle` returns sends it back to waiting.
    */
   async function advance(ms: number) {
-    await settle(quiet, "the source requests in flight");
-    clock.advance(ms);
+    const deadline = Date.now() + 20_000;
+    for (;;) {
+      await settle(quiet, "the source requests in flight", Math.max(0, deadline - Date.now()));
+      if (quiet()) {
+        clock.advance(ms);
+        return;
+      }
+    }
   }
 
   /** Handled event IDs (for "none lost, none twice"). */
