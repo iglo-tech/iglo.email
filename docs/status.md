@@ -326,7 +326,7 @@ All B118 port races are closed (B118i #214, B118l #215).
 Projects definition of done, left over (B144b, D163): resolved — invariants 8 and 9 now have tests (`test/invariants/process-state.test.ts`, `runtime-dependencies.test.ts`) and the stale `serve --help` and `validate.ts` SES text is gone (checked by the B155 and B159 helpers, lead 2026-11-26).
 
 Captured runs (investigation on #211, 2026-11-25, `oven/bun:1.4.5` arm64 on 56801a71, load recorded):
-- **The unattributed `toBe`** (B112 worker run): did not recur in 3 full test steps (6,218 passing executions). It stays on watch. The v1.5.0 gate runs keep junit output, and any unattributed failure there blocks the tag.
+- **The unattributed `toBe`** (B112 worker run): **closed (lead, 2026-11-26).** It happened once in a pre-D147 (non-native) run, and the runbook counts native failures only. It never recurred: 3 full test steps (6,218 executions) at the time, then every junit-captured native gate from v1.5.0 to v2.2.1 (10 `bun run check` runs each, all 0 failures). A recurrence reopens it as a new watch item with its junit entry.
 - **The unattributed test-step error** (B117b, B117e r2): attributed to `cli.test.ts:717` (seven CLI starts in one 12 s budget); fixed in B118i (#214), one test per case.
 - **`contract:settings:reference`**: fixed in B118k (#213): a write that stored an empty SMTP duration, and requests sent during upstream's reload.
 - **B101's media held-send check**: closed. The check (`carried.reachable()` while the sixth send is held) and the `reachable()` counter it read were removed in B119. Restored in a scratch copy, it passed 12 of 12 runs (6 under six busy loops).
