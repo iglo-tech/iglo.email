@@ -170,6 +170,11 @@ function sequenceForm() {
       return i18n.ts('sequences.step', { position: i + 1 });
     },
 
+    // Each step's "apply this wait" button names its step (B155f, D181).
+    rescheduleLabel(i) {
+      return i18n.ts('sequences.reschedule', { position: i + 1 });
+    },
+
     templateOptions(step) {
       if (!step.template_id || this.templates.some((t) => t.id === step.template_id)) {
         return this.templates;

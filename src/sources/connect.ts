@@ -52,9 +52,15 @@ export interface Guard {
   privateHosts: () => ReadonlyArray<string>;
 }
 
-/** The refusal text for a host the private-address block refuses: a configuration problem. */
+/**
+ * The refusal text for a host the private-address block refuses: a configuration problem. An
+ * address literal can never be listed (`sources.private_hosts` takes host names only, D181), so it
+ * is told to use a host name instead.
+ */
 export const refusedMessage = (host: string) =>
-  `The source host ${host} is refused by webhooks.block_private_addresses (D122); an instance admin can list it in sources.private_hosts`;
+  isIP(host.replace(/^\[(.*)\]$/, "$1"))
+    ? `The source host ${host} is refused by webhooks.block_private_addresses (D122); sources.private_hosts takes host names only, so use a host name for this address and ask an instance admin to list it there`
+    : `The source host ${host} is refused by webhooks.block_private_addresses (D122); an instance admin can list it in sources.private_hosts`;
 
 const resolveAddresses = async (hostname: string) =>
   (await dnsLookup(hostname, { all: true, verbatim: true })).map(({ address }) => address);

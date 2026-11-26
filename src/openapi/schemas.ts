@@ -1267,4 +1267,24 @@ export const schemas = {
       }),
     ),
   }),
+  SourceRetryQueue: object({
+    stream: {
+      type: ["string", "null"],
+      enum: ["stopped", "idle", "connecting", "catching-up", "live", "waiting", null],
+    },
+    more: boolean,
+    results: array(
+      object({
+        id: integer,
+        kind: choice("event", "user"),
+        record_id: string,
+        stamp: { ...string, description: "The record's PocketBase date text." },
+        status: choice("queued", "waiting", "terminal"),
+        attempts: integer,
+        first_failed_at: time,
+        next_attempt_at: nullable(time),
+        last_error: string,
+      }),
+    ),
+  }),
 } satisfies Record<string, Schema>;

@@ -359,7 +359,7 @@ export const enrollmentView: AdminView = ({ context, can }) => {
                 >
                   <strong x-text="entryLabel(entry)"></strong>{" "}
                   <span class="text-light text-8" x-text="niceDate(entryAt(entry), true)"></span>
-                  <template x-if="entry.type === 'trigger'">
+                  <template x-if="entry.type === 'trigger' && !entry.unavailable && entry.data != null">
                     <pre data-testid="timeline-data" x-text="json(entry.data)"></pre>
                   </template>
                 </li>

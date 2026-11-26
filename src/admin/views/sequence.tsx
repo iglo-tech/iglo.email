@@ -108,10 +108,9 @@ function StepCard({
                 data-testid="btn-step-reschedule"
                 x-bind:disabled="s.wait !== s.stored.wait || loadingReschedule"
                 title={t.T("sequences.rescheduleHelp")}
+                x-text="rescheduleLabel(i)"
                 {...{ "x-on:click.prevent": "onReschedule(s)" }}
-              >
-                {t.T("sequences.reschedule")}
-              </button>
+              ></button>
             </template>
           ) : null}
         </div>
@@ -440,7 +439,21 @@ function sequenceView(isNew: boolean): AdminView {
                           {...(canManage ? {} : { disabled: true })}
                         ></code-editor>
                       </template>
-                      <small data-hint="">{t.T("sequences.triggerWhereHelp")}</small>
+                      <small
+                        data-hint=""
+                        data-testid="trigger-where-help"
+                        x-show="form.source !== 'external'"
+                      >
+                        {t.T("sequences.triggerWhereHelp")}
+                      </small>
+                      <small
+                        data-hint=""
+                        data-testid="trigger-where-help-external"
+                        x-show="form.source === 'external'"
+                        style="display: none"
+                      >
+                        {t.T("sequences.triggerWhereHelpExternal")}
+                      </small>
                     </div>
                     <div data-field="" x-show="form.source === 'external'" style="display: none">
                       <label>{t.T("sequences.triggerCondition")}</label>

@@ -29,6 +29,7 @@ const adminPages = [
   "/admin/settings",
   "/admin/settings/logs",
   "/admin/settings/maintenance",
+  "/admin/settings/source-retries",
   "/admin/subscribers",
   "/admin/subscribers/:id",
   "/admin/subscribers/:id/bounces",

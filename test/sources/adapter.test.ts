@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { createRealClock } from "@/clock";
 import type { Clock } from "@/clock";
+import { checkSource } from "@/sources/check";
 import type { Guard } from "@/sources/connect";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
@@ -509,4 +510,55 @@ test("a renamed field is permanent; a stopped server is transient", async () => 
   } finally {
     await local.close();
   }
+});
+
+// B155f item 4 (D181): sources.private_hosts takes host names only, so a refused address literal
+// is told to use a host name, while a refused name is told it can be listed.
+test("Test connection: a refused address literal says to use a host name, a refused name says to list it", async () => {
+  const blocked: Guard = { blockPrivate: () => true, privateHosts: () => [] };
+  const literal = await checkSource(
+    sourceConfig(`http://127.0.0.1:${pb.port}`, pb.service),
+    createRealClock(),
+    blocked,
+  );
+  expect(literal.ok).toBe(false);
+  expect(literal.steps[0]?.message).toContain("block_private_addresses");
+  expect(literal.steps[0]?.message).toContain("use a host name");
+  expect(literal.steps[0]?.message).not.toContain("can list it in sources.private_hosts");
+  const ipv6 = await checkSource(
+    sourceConfig(`http://[::1]:${pb.port}`, pb.service),
+    createRealClock(),
+    blocked,
+  );
+  expect(ipv6.steps[0]?.message).toContain("use a host name");
+  const named = await checkSource(
+    sourceConfig(`http://localhost:${pb.port}`, pb.service),
+    createRealClock(),
+    blocked,
+  );
+  expect(named.steps[0]?.message).toContain("can list it in sources.private_hosts");
+  expect(named.steps[0]?.message).not.toContain("use a host name");
+});
+
+// B155f item 5 (D181): a readable but empty collection is not reported as a hidden one.
+test("Test connection: an empty collection reads as 'no records yet, or the list rule hides them'", async () => {
+  const rule = '@request.auth.collectionName = "services"';
+  await pb.api("POST", "/api/collections", {
+    name: "nobody_yet",
+    type: "view",
+    listRule: rule,
+    viewRule: rule,
+    viewQuery: "SELECT u.id, u.email, u.name, u.marketingOptOut AS optOut FROM users u WHERE 1 = 0",
+  });
+  const config = sourceConfig(pb.url, pb.service);
+  const report = await checkSource(
+    { ...config, recipients: { ...config.recipients, collection: "nobody_yet" } },
+    createRealClock(),
+    open,
+  );
+  const recipients = report.steps.find((step) => step.step === "recipients");
+  expect(recipients?.ok).toBe(true);
+  expect(recipients?.message).toBe(
+    "nobody_yet: read, but there are no records yet, or the list rule hides them from the service account.",
+  );
 });

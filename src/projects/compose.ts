@@ -609,7 +609,12 @@ export async function createProject(
       uploadCheck(next, current);
       grantCheck(next, current);
     });
-    registerSourceRoutes(router, { settings, auth, clock });
+    registerSourceRoutes(router, {
+      settings,
+      auth,
+      clock,
+      stream: () => sourceRecords?.stream() ?? null,
+    });
     // D172: one adapter per configured source, shared by the sequence routes and the scheduler.
     const projectSettings = settings;
     const externalSource = createSourceProvider({
