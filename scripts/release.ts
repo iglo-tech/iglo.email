@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { must } from "@/invariant";
 import { listensOn, reportedPort } from "@/test/serve-port";
-import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { version } from "@/../package.json";
@@ -20,7 +20,7 @@ if (process.platform !== "linux" || architecture === undefined) {
   throw new Error(`Unsupported platform ${process.platform}/${process.arch}: Linux x64 and arm64`);
 }
 const executableName = `iglo.email-linux-${architecture}`;
-const licenses = join(root, "dist/assets/admin/licenses");
+const licensePrefix = "/admin/static/licenses/";
 const projectLicense = "listmonk-AGPL-3.0.txt";
 
 // A tag decides the expected version. A dry run has no tag and uses package.json.
@@ -239,14 +239,25 @@ linked against your library.
     `----- GNU Library General Public License, version 2 -----\n\n${await license("LGPL-2.0.txt")}`,
     `----- GNU Lesser General Public License, version 2.1 -----\n\n${await license("LGPL-2.1.txt")}`,
   ];
-  for (const name of (await readdir(licenses)).sort()) {
+  // The licenses the build embedded, as its asset manifest names them, not a listing of
+  // dist/assets: a test build keeps the files of earlier builds there (D168, D178), so after a
+  // dependency change a listing would name old versions beside the new ones. Imported here, not at
+  // the top, so `verify` runs without a built manifest.
+  const { assets } = await import("@/server/asset-manifest");
+  const embedded = Object.keys(assets)
+    .filter((key) => key.startsWith(licensePrefix))
+    .map((key) => key.slice(licensePrefix.length))
+    .sort();
+  for (const name of embedded) {
     if (name === projectLicense) {
       continue;
     }
-    const text = await Bun.file(join(licenses, name)).text();
+    const text = await Bun.file(must(assets[licensePrefix + name], name).path).text();
     sections.push(`----- ${name.replace(/\.txt$/, "")} -----\n\n${text}`);
   }
-  const fonts = await Bun.file(join(licenses, "../fonts/LICENSE.txt")).text();
+  const fonts = await Bun.file(
+    must(assets["/admin/static/fonts/LICENSE.txt"], "fonts license").path,
+  ).text();
   sections.push(`----- Geist fonts -----\n\n${fonts}`);
   return sections.join("\n");
 }

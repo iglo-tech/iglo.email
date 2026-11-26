@@ -76,9 +76,12 @@ test("a project deleted during a whole backup fails the backup cleanly, and a re
       deleted = (await deleteProject(f, "drop")).status;
     });
     expect(deleted).toBe(200);
-    // Failed (today at the deleted project's uploads, which are gone: src/backup's message names the
-    // upload path rather than the registry change it would report next; D164).
-    expect(first.done).toBe(false);
+    // Failed, reporting the registry change rather than the step that met it first, the deleted
+    // project's upload path (D164, D178).
+    expect(first).toEqual({
+      done: false,
+      error: "The registered projects changed while the backup ran; run it again",
+    });
     // Nothing published, nothing partial left beside it.
     expect(readdirSync(outside)).toEqual([]);
     expect(existsSync(join(f.dataDir, "projects", "drop"))).toBe(false);

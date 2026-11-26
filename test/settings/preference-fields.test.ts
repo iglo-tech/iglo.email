@@ -3,6 +3,7 @@
 // rules run, and the field rules refuse it too. Public boundary: PUT /api/settings and
 // PUT /api/settings/<key> with the admin's session.
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { normalizePreferenceFields } from "@/public/preference-fields";
 import { admin, api, get, login } from "@/test/admin/support";
 import type { Fixture } from "@/test/admin/support";
 import { readJson } from "@/test/read-body";
@@ -32,6 +33,28 @@ const field = (type: string, min: unknown, max: unknown) => ({
   min,
   max,
   options: [],
+});
+
+// The field rules on their own (B149d r1 B2, D178): the binder refuses these first, so only a direct
+// call shows that `normalizePreferenceFields` refuses them too, where the field is checked.
+test("the field rules refuse a fraction or a huge min or max without the binder", () => {
+  const refused = (min: unknown, max: unknown) => () =>
+    normalizePreferenceFields([field("number", min, max)]);
+  for (const [min, max] of [
+    [1.5, null],
+    [null, 1.5],
+    [2 ** 53, null],
+    [null, -(2 ** 60)],
+    [Number.POSITIVE_INFINITY, null],
+    ["13", null],
+  ]) {
+    expect(refused(min, max), `${String(min)}, ${String(max)}`).toThrow(
+      "Invalid privacy.preference_fields: age: min and max are whole numbers.",
+    );
+  }
+  expect(normalizePreferenceFields([field("number", -5, Number.MAX_SAFE_INTEGER)])).toEqual([
+    expect.objectContaining({ min: -5, max: Number.MAX_SAFE_INTEGER }),
+  ]);
 });
 
 test("min and max are whole numbers: a fraction or a huge value is a 400 and nothing is written", async () => {
