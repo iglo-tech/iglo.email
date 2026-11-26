@@ -161,7 +161,7 @@ test("a delete that stops part way keeps the project listed with its error and o
  * the first delete, `repair` before the second. `databaseKept`: the first attempt certainly removed
  * nothing, so the project's database is still in its directory. Not so for a half-emptied folder:
  * the order `rm` takes the entries in is the filesystem's (ext4 removes the database first, tmpfs
- * the folder; B155a r2, D176).
+ * the folder; B155a r2, D176), so there it is opened only when it is still there (B159c, D184).
  */
 const snapshotSteps: Array<{
   step: string;
@@ -238,9 +238,12 @@ for (const { step, block, repair, databaseKept } of snapshotSteps) {
         before.find((name) => name.endsWith(".db")),
         "the claimed snapshot",
       );
-      if (databaseKept) {
+      // A half-emptied folder may still hold it (tmpfs) or not (ext4): opened whenever it is there
+      // (B159c item 4, D184), so the copy is checked there too without depending on the order.
+      const leftoverPath = join(directory, "iglo-email.db");
+      if (databaseKept || existsSync(leftoverPath)) {
         // `create: false`: a database the first attempt removed fails here, not as an empty one.
-        const leftover = new Database(join(directory, "iglo-email.db"), {
+        const leftover = new Database(leftoverPath, {
           readwrite: true,
           create: false,
         });

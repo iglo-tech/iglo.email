@@ -431,8 +431,10 @@ refused (`401`), as on every instance route.
 writes `[instance] projects/<name> has no registry row: it is not served`, and the Projects page
 lists it. Move it away, or bring it back as a deleted project is brought back. Its presence tells
 the server the instance has had several projects, as a deleted project's snapshot does. A delete
-that stopped part way leaves the project's database there as a copy of its snapshot in
-`backups/deleted`, never the snapshot itself, so opening it does not change the snapshot. Only a
+that stopped part way may leave the project's database there: one that stopped while removing the
+directory may already have removed it, in the filesystem's own order. When it is there, it is a
+copy of its snapshot in `backups/deleted`, never the snapshot itself, so opening it does not
+change the snapshot. Only a
 directory whose name could be a project's slug (lowercase letters, digits and `-`) counts: a
 `lost+found` (when `projects/` is its own filesystem) is ignored. A `<slug>-<time>.db.partial` in
 `backups/deleted` is a copy a delete stopped by a crash left; it is never a snapshot, and the next
