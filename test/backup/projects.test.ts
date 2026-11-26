@@ -266,6 +266,59 @@ test("--verify refuses a symlink anywhere in a backup", async () => {
   expect(followed.stdout).toContain("Integrity: ok");
 });
 
+/** A FIFO at `path`: opening it to read would wait for a writer that never comes. */
+function makeFifo(path: string): void {
+  const made = Bun.spawnSync(["mkfifo", path]);
+  expect(made.exitCode, made.stderr.toString()).toBe(0);
+}
+
+test("--verify refuses a FIFO in a backup at once instead of waiting on it", async () => {
+  // D178. Without the checks SQLite's open of a FIFO database waits forever; a run past 10 s is
+  // killed and fails the test with a signal instead of exit code 1. The WAL and the upload are
+  // refused by the walk of the backup, before anything is opened.
+  const cases: Array<[string, (crafted: string) => string]> = [
+    [
+      "a project's database",
+      (crafted) => {
+        const path = join(crafted, "projects", "b", "iglo-email.db");
+        rmSync(path);
+        makeFifo(path);
+        return "projects/b/iglo-email.db is not a regular file";
+      },
+    ],
+    [
+      "a WAL beside a database",
+      (crafted) => {
+        makeFifo(join(crafted, "projects", "b", "iglo-email.db-wal"));
+        return "projects/b/iglo-email.db-wal is not a regular file";
+      },
+    ],
+    [
+      "an upload",
+      (crafted) => {
+        makeFifo(join(crafted, "projects", "b", "uploads", "fifo.png"));
+        return "projects/b/uploads/fifo.png is not a regular file";
+      },
+    ],
+  ];
+  for (const [what, craft] of cases) {
+    const crafted = join(base, `fifo-${what.replaceAll(/\W/g, "-")}`);
+    cpSync(whole(), crafted, { recursive: true });
+    const message = craft(crafted);
+    const verified = await runBackup(prepared.executable, ["--verify", crafted], 10_000);
+    expect(verified.exitCode, `${what}: ${verified.stderr}`).toBe(1);
+    expect(verified.stderr, what).toContain(message);
+    expect(verified.stdout, what).toBe("");
+  }
+
+  // A FIFO given as a bare snapshot.
+  const bare = join(base, "fifo-bare.db");
+  makeFifo(bare);
+  const verified = await runBackup(prepared.executable, ["--verify", bare], 10_000);
+  expect(verified.exitCode, verified.stderr).toBe(1);
+  expect(verified.stderr).toContain("fifo-bare.db is not a regular file");
+});
+
 test("an unknown project slug fails and writes nothing", async () => {
   const before = names(base);
   const output = join(base, "unknown");

@@ -204,12 +204,14 @@ function readManifest(directory: string): Manifest {
 }
 
 /**
- * Refuses a backup directory with a symlink anywhere in it (D178). `backup` never writes one, and
- * one in a hand-made backup would have `--verify` open or list something outside it: a project's
- * directory or database, a manifest, an upload directory. Slugs cannot leave the backup (D166);
- * this keeps the paths they name inside it too.
+ * Refuses a backup directory holding anything but files and directories (D178), checked by the
+ * directory entry's type, without opening it. `backup` never writes a symlink, and one in a
+ * hand-made backup would have `--verify` open or list something outside it: a project's directory
+ * or database, a manifest, an upload directory. Slugs cannot leave the backup (D166); this keeps
+ * the paths they name inside it too. A FIFO, socket or device would have SQLite's open of a
+ * database or its WAL wait forever.
  */
-function refuseSymlinks(root: string): void {
+function refuseOddEntries(root: string): void {
   const pending = [root];
   for (let directory = pending.pop(); directory !== undefined; directory = pending.pop()) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -219,6 +221,8 @@ function refuseSymlinks(root: string): void {
       }
       if (entry.isDirectory()) {
         pending.push(path);
+      } else if (!entry.isFile()) {
+        throw new Error(`${path} is not a regular file, which a backup never holds: not a backup`);
       }
     }
   }
@@ -259,10 +263,15 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
     throw new Error(`No backup at ${target}`);
   }
   const file = stats.isDirectory() ? join(target, DATABASE) : target;
-  const databaseBytes = statSync(file, { throwIfNoEntry: false })?.size;
-  if (databaseBytes === undefined) {
+  const database = lstatSync(file, { throwIfNoEntry: false });
+  if (database === undefined) {
     throw new Error(`No ${DATABASE} in ${target}`);
   }
+  // Checked again where SQLite opens it, so nothing but a regular file is opened (D178).
+  if (!database.isFile()) {
+    throw new Error(`${file} is not a regular file: not a backup`);
+  }
+  const databaseBytes = database.size;
   let db: Database;
   try {
     db = openSnapshot(file);
@@ -412,8 +421,12 @@ export function inspectBackup(
   if (basename(target).startsWith(PARTIAL)) {
     throw new Error(`${path} is an interrupted backup, not a backup`);
   }
-  if (statSync(target).isDirectory()) {
-    refuseSymlinks(target);
+  const found = statSync(target);
+  if (found.isDirectory()) {
+    refuseOddEntries(target);
+  } else if (!found.isFile()) {
+    // A bare snapshot is a file; SQLite's open of a FIFO would wait forever (D178).
+    throw new Error(`${path} is not a regular file: not a backup`);
   }
   if (isWholeBackup(target)) {
     return inspectWhole(target, clock, supportedVersion);

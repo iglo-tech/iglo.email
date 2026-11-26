@@ -23,7 +23,8 @@
 // the checkout does. `bun run test` runs this file before its workers start and sets
 // IGLO_TEST_PREBUILT, so no file of that run checks again; any other `bun test` run (a file, a
 // directory, a bare `--parallel` run) checks through `test/preload.ts` before each file.
-import { FFIType, dlopen } from "bun:ffi";
+import { FFIType, dlopen, read } from "bun:ffi";
+import { must } from "@/invariant";
 import {
   closeSync,
   cpSync,
@@ -77,6 +78,8 @@ const generated = new Set([manifest, reference]);
 const holdLimitMs = 15 * 60_000;
 const LOCK_EX = 2;
 const LOCK_NB = 4;
+// EWOULDBLOCK (= EAGAIN) on Linux, x86-64 and arm64 alike: the lock is held by another.
+const EWOULDBLOCK = 11;
 let built: Promise<void> | undefined;
 
 function files(path: string, into: Array<string>): Array<string> {
@@ -168,28 +171,43 @@ function fresh(inputs: string): boolean {
   }
 }
 
-// libc's flock(2), loaded when a build is needed: neither Node's nor Bun's file API has it.
-let flock: ((descriptor: number, operation: number) => number) | undefined;
+// libc's flock(2) and errno, loaded when a build is needed: neither Node's nor Bun's file API has
+// flock.
+let libc: ReturnType<typeof loadLibc> | undefined;
 
-function flockCall(descriptor: number, operation: number): number {
-  flock ??= dlopen("libc.so.6", {
+function loadLibc() {
+  return dlopen("libc.so.6", {
     flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
-  }).symbols.flock;
-  return flock(descriptor, operation);
+    __errno_location: { args: [], returns: FFIType.ptr },
+  }).symbols;
+}
+
+// flock(2)'s result: 0, or the errno of its failure, read at once after the call.
+function flockCall(descriptor: number, operation: number): number {
+  libc ??= loadLibc();
+  if (libc.flock(descriptor, operation) === 0) {
+    return 0;
+  }
+  return read.i32(must(libc.__errno_location(), "errno location"), 0);
 }
 
 // Takes the checkout's build lock and returns its descriptor; closing it releases the lock. A
-// non-blocking attempt every 50 ms keeps this process's event loop running while it waits.
+// non-blocking attempt every 50 ms keeps this process's event loop running while it waits. Only
+// "held by another" (EWOULDBLOCK) is waited on; any other error fails at once (D178).
 async function acquire(): Promise<number> {
   mkdirSync(work, { recursive: true });
   const descriptor = openSync(lockFile, "a");
   try {
     const start = Date.now();
-    while (flockCall(descriptor, LOCK_EX | LOCK_NB) !== 0) {
+    for (let errno = flockCall(descriptor, LOCK_EX | LOCK_NB); errno !== 0;) {
+      if (errno !== EWOULDBLOCK) {
+        throw new Error(`Cannot lock ${lockFile}: flock failed with errno ${errno}`);
+      }
       if (Date.now() - start > holdLimitMs) {
         throw new Error(`Production build lock ${lockFile} is still held by a live process`);
       }
       await Bun.sleep(50);
+      errno = flockCall(descriptor, LOCK_EX | LOCK_NB);
     }
     return descriptor;
   } catch (error) {
