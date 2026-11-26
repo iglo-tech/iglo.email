@@ -275,7 +275,8 @@ function makeFifo(path: string): void {
 test("--verify refuses a FIFO in a backup at once instead of waiting on it", async () => {
   // D178. Without the checks SQLite's open of a FIFO database waits forever; a run past 10 s is
   // killed and fails the test with a signal instead of exit code 1. The WAL and the upload are
-  // refused by the walk of the backup, before anything is opened.
+  // refused by the walk of the backup, before anything is opened; the files beside a bare snapshot
+  // are checked before SQLite opens it.
   const cases: Array<[string, (crafted: string) => string]> = [
     [
       "a project's database",
@@ -317,6 +318,19 @@ test("--verify refuses a FIFO in a backup at once instead of waiting on it", asy
   const verified = await runBackup(prepared.executable, ["--verify", bare], 10_000);
   expect(verified.exitCode, verified.stderr).toBe(1);
   expect(verified.stderr).toContain("fifo-bare.db is not a regular file");
+
+  // A FIFO beside a bare snapshot, where SQLite would open its journal, WAL or shared memory.
+  for (const suffix of ["-journal", "-wal", "-shm"]) {
+    const snapshot = join(base, `bare${suffix}.db`);
+    const db = new Database(snapshot);
+    db.run("CREATE TABLE t (x)");
+    db.close();
+    makeFifo(`${snapshot}${suffix}`);
+    const companion = await runBackup(prepared.executable, ["--verify", snapshot], 10_000);
+    expect(companion.exitCode, `${suffix}: ${companion.stderr}`).toBe(1);
+    expect(companion.stderr, suffix).toContain(`bare${suffix}.db${suffix} is not a regular file`);
+    expect(companion.stdout, suffix).toBe("");
+  }
 });
 
 test("an unknown project slug fails and writes nothing", async () => {

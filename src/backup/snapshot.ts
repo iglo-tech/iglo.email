@@ -267,9 +267,17 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
   if (database === undefined) {
     throw new Error(`No ${DATABASE} in ${target}`);
   }
-  // Checked again where SQLite opens it, so nothing but a regular file is opened (D178).
+  // Checked here, before SQLite opens it, so nothing but a regular file is opened (D178).
   if (!database.isFile()) {
     throw new Error(`${file} is not a regular file: not a backup`);
+  }
+  // SQLite also opens the journal, WAL and shared-memory files beside it; a FIFO there would make
+  // that open wait forever. The walk covers them inside a backup directory, not beside a bare file.
+  for (const companion of [`${file}-journal`, `${file}-wal`, `${file}-shm`]) {
+    const entry = lstatSync(companion, { throwIfNoEntry: false });
+    if (entry !== undefined && !entry.isFile()) {
+      throw new Error(`${companion} is not a regular file: not a backup`);
+    }
   }
   const databaseBytes = database.size;
   let db: Database;

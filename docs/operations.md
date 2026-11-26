@@ -1102,7 +1102,8 @@ database under its place and ends with one `Integrity:` line for the whole backu
 outside the backup: it refuses a manifest that names anything but a project slug, a manifest over
 1 MiB (before reading it whole), an upload path leading out of the backup, and a symlink anywhere
 in the backup, which `backup` never writes. It also refuses a FIFO, socket or device anywhere in
-the backup, or given as the snapshot, rather than wait on it. The path you give it may itself be a
+the backup, given as the snapshot, or beside a bare snapshot as its `-journal`, `-wal` or `-shm`
+file, rather than wait on it. The path you give it may itself be a
 symlink to a backup. The output may not be
 `<data-dir>/projects/` or inside it, where the projects are read from, or at
 `<data-dir>/instance.db`: those are refused before anything is written, `--force` or not.
