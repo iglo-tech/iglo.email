@@ -100,6 +100,11 @@ test("SIGTERM with a trickled upload in flight exits cleanly within the 5 s boun
     expect(elapsed).toBeLessThan(10_000);
     const stderr = await new Response(instance.child.stderr).text();
     expect(stderr).toContain("[instance] Stopping: 1 request still running after 5 s was cut");
+    // B155a item 6 (D176): the cut was intended, so nothing else is logged about it: no
+    // "Unexpected request error" per aborted read.
+    expect(stderr.trim().split("\n")).toEqual([
+      "[instance] Stopping: 1 request still running after 5 s was cut",
+    ]);
   } finally {
     trickling = false;
     await stopChild(instance.child, "SIGKILL", 1000);

@@ -1,12 +1,12 @@
 // A deleted project's final snapshot (14-projects sections 1 and 10; B143a, D157). Native: listmonk
 // has no projects. The project is already stopped and its database closed: the database file is
-// linked as `backups/deleted/<slug>-<timestamp>.db` (with `-2`, `-3`… when that name is taken; never
+// copied as `backups/deleted/<slug>-<timestamp>.db` (with `-2`, `-3`… when that name is taken; never
 // replaced), every other file of the directory (its uploads) goes into `<slug>-<timestamp>.tar`
 // beside it, and then the directory is removed.
 import { Database } from "bun:sqlite";
-import { existsSync, opendirSync } from "node:fs";
+import { constants, existsSync, opendirSync } from "node:fs";
 import type { Dir } from "node:fs";
-import { link, lstat, mkdir, open, readdir, rm } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readdir, rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Clock } from "@/clock";
 import { PROJECT_DATABASE, projectDirectory } from "@/projects/layout";
@@ -20,30 +20,33 @@ export function deletedDirectory(dataDir: string): string {
  * B149b r2/r3 (D165): whether a deleted project's final snapshot is kept, so the instance has served
  * more than one project (an instance that deleted one before it recorded that in its registry).
  * Only names are read, one at a time, stopping at the first `.db`. A missing directory is the usual
- * case; one that cannot be listed fails no start: `attention` names it and the answer is true, the
- * safe side (no recipient-address lookup).
+ * case (`none`); one that cannot be listed fails no start: `attention` names it and the answer is
+ * `unlisted`, which the caller treats as several projects for that start only (B155a, D176).
  */
-export function hasDeletedSnapshots(dataDir: string, attention: (line: string) => void): boolean {
+export function deletedSnapshots(
+  dataDir: string,
+  attention: (line: string) => void,
+): "found" | "none" | "unlisted" {
   let dir: Dir;
   try {
     dir = opendirSync(deletedDirectory(dataDir));
   } catch (error) {
     if (errorCode(error) === "ENOENT") {
-      return false;
+      return "none";
     }
     attention(unlisted(error));
-    return true;
+    return "unlisted";
   }
   try {
     for (let entry = dir.readSync(); entry !== null; entry = dir.readSync()) {
       if (entry.name.endsWith(".db")) {
-        return true;
+        return "found";
       }
     }
-    return false;
+    return "none";
   } catch (error) {
     attention(unlisted(error));
-    return true;
+    return "unlisted";
   } finally {
     dir.closeSync();
   }
@@ -53,7 +56,7 @@ const errorCode = (error: unknown) =>
   typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
 const unlisted = (error: unknown) =>
   `backups/deleted cannot be listed (${errorCode(error) || String(error)}): the instance is ` +
-  "treated as one that has served several projects";
+  "treated as one that has served several projects until it can be listed at a start";
 
 export interface DeletedProject {
   /** The database snapshot, relative to the data directory. */
@@ -77,7 +80,7 @@ const STAGE = "stage";
  * is claimed once, the tarball written once, and only then is the directory removed.
  */
 export interface ArchiveProgress {
-  /** The snapshot's absolute path once its name is claimed (the database is linked there). */
+  /** The snapshot's absolute path once its name is claimed (the database is copied there). */
   database?: string;
   /** Once the tarball is written: its absolute path, or null when there was no file to archive. */
   files?: string | null;
@@ -120,7 +123,9 @@ export async function archiveDeleted(
       `${slug}-${clock.now().toISOString().replaceAll(":", "-")}`,
     );
   }
-  // The snapshot is a second name of the database file: removing the directory drops the first.
+  // The snapshot is its own file (B155a, D176): a delete that stops after this step leaves the
+  // project's database in its directory, and opening that leftover in place (sqlite3, a
+  // checkpoint) must not change the only snapshot of the deleted project.
   const database = progress.database;
   if (progress.files === undefined) {
     // The name was claimed with no `.tar` beside it, so a tarball there is this delete's partial one.
@@ -142,32 +147,41 @@ export async function archiveDeleted(
 }
 
 /**
- * Links the database as `<base>.db`, or `<base>-2.db`, `-3`… when an earlier snapshot has that name
+ * Copies the database as `<base>.db`, or `<base>-2.db`, `-3`… when an earlier snapshot has that name
  * (two deletes of one slug in the same millisecond, or a clock set back; B149a, D164), and returns
- * the claimed path. A hard link fails on a taken name, where `rename` would replace it. A name whose `.tar` exists is skipped too, so the pair is always one
- * delete's.
+ * the claimed path. The copy is written as `<base>.db.partial` first (a clone where the filesystem
+ * can, B155a, D176), then claimed with a hard link, which fails on a taken name where `rename`
+ * would replace it. A name whose `.tar` exists is skipped too, so the pair is always one delete's.
+ * A failure removes the partial copy; a crash can leave one, which no start counts as a snapshot.
  */
 async function claimName(source: string, target: string, base: string): Promise<string> {
-  for (let n = 1; ; n++) {
-    const name = n === 1 ? base : `${base}-${n}`;
-    const database = join(target, `${name}.db`);
-    if (existsSync(join(target, `${name}.tar`))) {
-      continue;
-    }
-    try {
-      await link(source, database);
-    } catch (error) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "EEXIST"
-      ) {
+  const partial = join(target, `${base}.db.partial`);
+  try {
+    await copyFile(source, partial, constants.COPYFILE_FICLONE);
+    for (let n = 1; ; n++) {
+      const name = n === 1 ? base : `${base}-${n}`;
+      const database = join(target, `${name}.db`);
+      if (existsSync(join(target, `${name}.tar`))) {
         continue;
       }
-      throw error;
+      try {
+        await link(partial, database);
+      } catch (error) {
+        if (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "EEXIST"
+        ) {
+          continue;
+        }
+        throw error;
+      }
+      return database;
     }
-    return database;
+  } finally {
+    // The claimed name keeps the copy; one this cannot remove is left over, never counted.
+    await rm(partial, { force: true }).catch(() => {});
   }
 }
 

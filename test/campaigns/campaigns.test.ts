@@ -227,6 +227,49 @@ test("a test send renders Liquid per recipient, with unsubscribe headers that na
   ]).toEqual([0, 0, 0, 0, "draft", "Stored"]);
 });
 
+test("a test send's custom headers never replace the app's own, in any case", async () => {
+  // B155a item 1 (D176): a forged `x-listmonk-subscriber` would attribute a late bounce or
+  // complaint of the test message to another subscriber of the project.
+  const f = await open();
+  const news = await f.list("news");
+  const ada = await f.subscriber("ada@example.test", [news]);
+  const other = await f.subscriber("other@example.test", [news]);
+  const c = await f.campaign({ name: "Forged", subject: "Forged", lists: [news] });
+  const sent = await f.json(`/api/campaigns/${c.id}/test`, "POST", {
+    name: "Forged",
+    subject: "Forged",
+    lists: [news],
+    messenger: "email",
+    content_type: "plain",
+    body: "Body",
+    headers: [
+      { "x-listmonk-subscriber": other.uuid },
+      { "X-LISTMONK-CAMPAIGN": "forged-campaign" },
+      { "list-unsubscribe": "<https://evil.example.test/u>" },
+      { "list-unsubscribe-post": "nothing" },
+      { "X-Kept": "1" },
+    ],
+    subscribers: ["ada@example.test"],
+  });
+  expect(sent.status).toBe(200);
+  const [message] = await f.mail(1);
+  const lines = decode(message!.data)
+    .replaceAll(/\r\n[ \t]+/g, " ")
+    .split("\r\n\r\n")[0]!
+    .split("\r\n");
+  const named = (name: string) =>
+    lines.filter((line) => line.toLowerCase().startsWith(`${name.toLowerCase()}:`));
+  expect(named("X-Listmonk-Subscriber")).toEqual([`X-Listmonk-Subscriber: ${ada.uuid}`]);
+  expect(named("X-Listmonk-Campaign")).toEqual([`X-Listmonk-Campaign: ${c.uuid}`]);
+  expect(named("List-Unsubscribe")).toEqual([
+    `List-Unsubscribe: <http://fixture.test/subscription/00000000-0000-0000-0000-000000000001/${ada.uuid}>`,
+  ]);
+  expect(named("List-Unsubscribe-Post")).toEqual([
+    "List-Unsubscribe-Post: List-Unsubscribe=One-Click",
+  ]);
+  expect(named("X-Kept")).toEqual(["X-Kept: 1"]);
+});
+
 test("a test send carries the operator's brand: the accent on its button, the link colour on its links", async () => {
   const f = await open();
   // The brand is read at each send, as the settings page sets it (D127).

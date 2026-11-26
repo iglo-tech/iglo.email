@@ -62,6 +62,39 @@ test("sends once to every eligible member and finishes", async () => {
   expect(redirect.headers.get("location")).toBe("https://example.test/x");
 });
 
+test("a campaign's custom headers never replace the app's own, in any case", async () => {
+  // B155a item 1 (D176): the app's `X-Listmonk-*` and `List-Unsubscribe*` attribute late bounces
+  // and complaints; a custom header of the same name in another case is dropped.
+  f = await runnerFixture();
+  const single = await f.list("single", "single");
+  const sub = await f.member("a@x.test", [single], "confirmed");
+  const c = await f.campaign({
+    name: "c",
+    subject: "s",
+    lists: [single],
+    headers: [
+      { "x-listmonk-subscriber": "forged-subscriber" },
+      { "X-LISTMONK-CAMPAIGN": "forged-campaign" },
+      { "list-unsubscribe": "<https://evil.example.test/u>" },
+      { "List-unsubscribe-post": "nothing" },
+      { "X-Kept": "1" },
+      { "x-kept": "2" },
+    ],
+  });
+  await f.status(c.id, "running");
+  f.start();
+  await f.until(c.id, "finished");
+  const [push] = f.pushes;
+  expect(push?.message.headers).toEqual({
+    "X-Listmonk-Campaign": c.uuid,
+    "X-Listmonk-Subscriber": sub.uuid,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    "List-Unsubscribe": `<http://fixture.test/subscription/${c.uuid}/${sub.uuid}>`,
+    "X-Kept": "1",
+    "x-kept": "2",
+  });
+});
+
 test("an opt-in campaign targets unconfirmed members of double opt-in lists", async () => {
   f = await runnerFixture();
   const single = await f.list("single", "single");

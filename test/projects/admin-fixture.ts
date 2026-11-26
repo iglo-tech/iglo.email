@@ -23,20 +23,27 @@ export function setCookies(response: Response): Map<string, string> {
 
 /**
  * Posts the instance login form on `host`; with a TOTP secret, continues through the second step.
- * Returns the final response and the instance session it set, if any.
+ * Returns the final response and the instance session it set, if any. `peer` is sent as
+ * `X-Forwarded-For`: with loopback in `security.trusted_proxies` it is the login limit's client
+ * address, so a file's tests need not share one address's 20 attempts a minute (B155a).
  */
 export async function instanceLogin(
   port: number,
   host: string,
   credentials: Credentials,
-  options: { next?: string; secret?: string } = {},
+  options: { next?: string; secret?: string; peer?: string } = {},
 ): Promise<{ response: Response; session?: InstanceSession; body: string }> {
-  const page = await request(port, host, "/admin/instance/login");
+  const forwarded: Record<string, string> = options.peer ? { "x-forwarded-for": options.peer } : {};
+  const page = await request(port, host, "/admin/instance/login", { headers: forwarded });
   const nonce = /name="nonce" value="([^"]+)"/.exec(await page.text())?.[1] ?? "";
   const nonceCookie = `instance_nonce=${setCookies(page).get("instance_nonce") ?? ""}`;
   let response = await request(port, host, "/admin/instance/login", {
     method: "POST",
-    headers: { cookie: nonceCookie, "content-type": "application/x-www-form-urlencoded" },
+    headers: {
+      ...forwarded,
+      cookie: nonceCookie,
+      "content-type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({
       nonce,
       username: credentials.user,
@@ -46,7 +53,7 @@ export async function instanceLogin(
   });
   const location = response.headers.get("location") ?? "";
   if (response.status === 302 && location.startsWith("/admin/instance/login/twofa?")) {
-    const step = await request(port, host, location);
+    const step = await request(port, host, location, { headers: forwarded });
     const html = await step.text();
     const stepNonce = /name="nonce" value="([^"]+)"/.exec(html)?.[1] ?? "";
     const token = /name="token" value="([^"]+)"/.exec(html)?.[1] ?? "";
@@ -57,6 +64,7 @@ export async function instanceLogin(
     response = await request(port, host, "/admin/instance/login/twofa", {
       method: "POST",
       headers: {
+        ...forwarded,
         cookie: `instance_nonce=${setCookies(step).get("instance_nonce") ?? ""}`,
         "content-type": "application/x-www-form-urlencoded",
       },

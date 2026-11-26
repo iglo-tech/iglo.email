@@ -8,7 +8,7 @@ import type { EmbedImages, InlineImage } from "@/media/embed";
 import { UploadRootError } from "@/media/filesystem";
 import { messageIdentity } from "@/bounces/ses";
 import { newMessageId } from "@/messaging/email";
-import type { Message, MessageHeaders } from "@/messaging/email";
+import type { Message } from "@/messaging/email";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { Sender } from "@/messaging/dispatcher";
 import type { CapacityAnswer, Candidate } from "@/messaging/capacity";
@@ -45,6 +45,7 @@ import { optinBody } from "@/campaigns/optin";
 import {
   CampaignSourceError,
   archiveSubscriber,
+  campaignHeaders,
   compileCampaign,
   dummySubscriber,
   dummyUUID,
@@ -96,6 +97,11 @@ export interface CampaignDeps {
   notify?: AdminNotifier;
   /** Wakes the campaign runner (B75): a start, resume or due schedule need not wait for its scan. */
   wakeRunner?: () => void;
+  /**
+   * Tells the campaign runner a campaign's status was changed through the API (B155a, D176): a
+   * campaign paused and resumed between two scans drops the wait of an earlier source outage.
+   */
+  campaignStatusChanged?: (id: bigint) => void;
   /**
    * `GET /api/sending/capacity` (14-projects section 7, B145a): the instance's forecast and this
    * project's campaign counts for a candidate given by ID. Without it the route is not served.
@@ -719,6 +725,11 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
     }
     try {
       const updated = store.updateStatus(id, input.status ?? "");
+      try {
+        deps.campaignStatusChanged?.(id);
+      } catch (error) {
+        context.app.logger.error(error);
+      }
       if (input.status === "cancelled") {
         try {
           deps.notify?.campaignStatus({
@@ -984,20 +995,14 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
             "The test send is too large: send it to fewer recipients or reduce the rendered size.",
           );
         }
-        const headers: MessageHeaders = {
-          "X-Listmonk-Campaign": stored.uuid,
-          "X-Listmonk-Subscriber": sub.uuid,
-        };
-        if (settings.unsubscribeHeader) {
-          headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
-          headers["List-Unsubscribe"] = `<${unsubscribeUrl}>`;
-        }
-        for (const set of out.headers) {
-          for (const [name, header] of Object.entries(set)) {
-            const prior = headers[name];
-            headers[name] = prior === undefined ? header : [...[prior].flat(), header];
-          }
-        }
+        const headers = campaignHeaders(
+          {
+            campaignUuid: stored.uuid,
+            subscriberUuid: sub.uuid,
+            unsubscribeUrl: settings.unsubscribeHeader ? unsubscribeUrl : null,
+          },
+          out.headers,
+        );
         // B149b r1 (D165): a chosen Message-ID in the app's own send or delivery form could name
         // another project's record and route its late bounces there.
         const chosen = headerMessageId(headers);

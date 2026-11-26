@@ -5,8 +5,16 @@
 // B139 (D154): the instance keys (SMTP, pacing, proxies, the session duration, bounce processing, the
 // private-target block, the admin appearance and the inert keys) are on the instance Settings page,
 // which the same script drives against /api/instance/settings; the project's page keeps the rest.
+import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { TLSSocket } from "node:tls";
+import { fileURLToPath } from "node:url";
 import { expect } from "@playwright/test";
+import { startInstance } from "../instance.js";
 import {
   ADMIN,
   ORIGIN,
@@ -932,4 +940,194 @@ test("settings values are text, and viewing needs no more than settings:get", as
   await other.goto(INSTANCE);
   await expect(other.getByTestId("instance-login")).toBeVisible();
   await context.close();
+});
+
+const EXECUTABLE = fileURLToPath(new URL("../../../dist/iglo.email", import.meta.url));
+const SES_REGION = "eu-west-1";
+
+/**
+ * A test-only stand-in for SES v2 GetAccount (SES allows 5/s), for the compiled executable: the
+ * process reaches `email.<region>.amazonaws.com` only through HTTPS_PROXY; this loopback proxy
+ * accepts CONNECT for that host alone, terminates TLS with a certificate issued here (trusted
+ * through NODE_EXTRA_CA_CERTS), and answers every request with the account. Nothing leaves the
+ * machine. Node only, like the rest of a spec (test/bounces/sns-tunnel.ts is the Bun original).
+ */
+async function sesStandIn() {
+  const host = `email.${SES_REGION}.amazonaws.com`;
+  const dir = await mkdtemp(join(tmpdir(), "iglo-e2e-ses-"));
+  const keyPath = join(dir, "tls.key");
+  const certPath = join(dir, "tls.pem");
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      keyPath,
+      "-out",
+      certPath,
+      "-subj",
+      `/CN=${host}`,
+      "-addext",
+      `subjectAltName=DNS:${host}`,
+      "-days",
+      "2",
+    ],
+    { stdio: "ignore" },
+  );
+  const [key, cert] = await Promise.all([readFile(keyPath), readFile(certPath)]);
+  const account = JSON.stringify({
+    SendQuota: { Max24HourSend: 50_000, MaxSendRate: 5, SentLast24Hours: 0 },
+    ProductionAccessEnabled: true,
+    SendingEnabled: true,
+  });
+  const sockets = new Set();
+  const server = createServer((client) => {
+    sockets.add(client);
+    client.on("error", () => {});
+    client.on("close", () => sockets.delete(client));
+    client.once("data", (request) => {
+      if (!request.toString("latin1").startsWith(`CONNECT ${host}:443 HTTP/1.1\r\n`)) {
+        client.end("HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
+        return;
+      }
+      client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      const secure = new TLSSocket(client, { isServer: true, key, cert });
+      sockets.add(secure);
+      secure.on("error", () => {});
+      let head = "";
+      secure.on("data", (chunk) => {
+        const done = head.includes("\r\n\r\n");
+        head += chunk.toString("latin1");
+        if (done || !head.includes("\r\n\r\n")) {
+          return;
+        }
+        secure.end(
+          "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n" +
+            `content-length: ${Buffer.byteLength(account)}\r\nconnection: close\r\n\r\n${account}`,
+        );
+      });
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  return {
+    environment: {
+      HTTPS_PROXY: `http://127.0.0.1:${server.address().port}`,
+      NO_PROXY: "127.0.0.1,localhost",
+      NODE_EXTRA_CA_CERTS: certPath,
+    },
+    async close() {
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+      await new Promise((resolve) => {
+        server.close(resolve);
+      });
+      await rm(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+test("the send-rate line follows the field: emptied no warning, 0 the no-cap line, above SES's rate the warning", async ({
+  page,
+}) => {
+  // B155a item 7 (D164, D176): the line's Alpine bindings, which the server-rendered tests cannot
+  // reach. A fresh instance of its own reads SES's rate (5/s) from the stand-in.
+  const standIn = await sesStandIn();
+  const directory = await mkdtemp(join(tmpdir(), "iglo-e2e-ses-rate-"));
+  const own = await startInstance(
+    EXECUTABLE,
+    join(directory, "data"),
+    directory,
+    standIn.environment,
+  );
+  const context = await page.context().browser().newContext();
+  try {
+    const other = await context.newPage();
+    const alpineErrors = [];
+    other.on("console", (message) => {
+      if (message.text().includes("Alpine Expression Error")) {
+        alpineErrors.push(message.text());
+      }
+    });
+    await other.goto(`${own.origin}/admin/instance/login`);
+    await signInInstance(other, own.origin);
+    const call = (path, method, body) =>
+      other.evaluate(
+        async ([uri, verb, data]) => {
+          const csrf =
+            document.cookie
+              .split("; ")
+              .find((c) => c.startsWith("instance_csrf="))
+              ?.slice("instance_csrf=".length) ?? "";
+          const response = await fetch(uri, {
+            method: verb,
+            headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+            ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+          });
+          return { status: response.status, text: await response.text() };
+        },
+        [path, method, body],
+      );
+    // The three SES keys are saved together.
+    const current = await call("/api/instance/settings", "GET");
+    expect(current.status, current.text).toBe(200);
+    const saved = await call("/api/instance/settings", "PUT", {
+      ...JSON.parse(current.text).data,
+      "messaging.max_send_rate": 3,
+      "ses.api_region": SES_REGION,
+      "ses.api_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+      "ses.api_secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    });
+    expect(saved.status, saved.text).toBe(200);
+    const checked = await call("/api/instance/settings/ses/check", "POST", {});
+    expect(checked.status, checked.text).toBe(200);
+    await other.goto(`${own.origin}${INSTANCE}`);
+    await tab(other, "Performance").click();
+    const field = other.locator('[name="messaging.max_send_rate"]');
+    const line = other.getByTestId("ses-rate");
+    const warning = other.getByTestId("ses-rate-warning");
+    const unpaced = other.getByTestId("ses-rate-unpaced");
+    await expect(line).toContainText("SES allows 5/s.");
+    // Saved 3, under SES's rate: neither line (the server's render).
+    await expect(warning).toBeHidden();
+    await expect(unpaced).toBeHidden();
+    // Alpine applies an edit on its next tick, so each step starts from the line it must hide:
+    // a hidden line checked before that tick would pass whatever the expression says.
+    // Above SES's rate: the warning.
+    await field.fill("6");
+    await expect(warning).toBeVisible();
+    await expect(warning).toContainText("sending runs at 5/s");
+    await expect(unpaced).toBeHidden();
+    // Emptied from there: no number, so no warning and no 0 line.
+    await field.fill("");
+    await expect(warning).toBeHidden();
+    await expect(unpaced).toBeHidden();
+    // 0: no cap of its own, not a rate above SES's.
+    await field.fill("0");
+    await expect(unpaced).toBeVisible();
+    await expect(unpaced).toContainText("The setting is 0, no cap of its own");
+    await expect(warning).toBeHidden();
+    // Emptied from 0: the 0 line goes too ("" is not 0).
+    await field.fill("");
+    await expect(unpaced).toBeHidden();
+    await expect(warning).toBeHidden();
+    // At SES's rate, from above it: neither.
+    await field.fill("6");
+    await expect(warning).toBeVisible();
+    await field.fill("5");
+    await expect(warning).toBeHidden();
+    await expect(unpaced).toBeHidden();
+    expect(alpineErrors).toEqual([]);
+  } finally {
+    await context.close();
+    await own.close();
+    await standIn.close();
+  }
 });

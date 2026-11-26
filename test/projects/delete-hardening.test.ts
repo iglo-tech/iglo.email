@@ -8,6 +8,7 @@ import { expect, setDefaultTimeout, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
+import { must } from "@/invariant";
 import {
   createProject,
   deleteProject,
@@ -198,6 +199,22 @@ for (const { step, block, repair } of snapshotSteps) {
       ).data.find((project) => project.slug === "archive");
       expect(listed?.delete_error).toContain("its archive");
       const before = archived();
+      // B155a item 3 (D176): the operator opens the leftover database in place and changes it;
+      // the claimed snapshot, the deleted project's only copy, keeps what it held.
+      const snapshot = must(
+        before.find((name) => name.endsWith(".db")),
+        "the claimed snapshot",
+      );
+      const leftover = new Database(join(directory, "iglo-email.db"));
+      try {
+        leftover.run("DELETE FROM subscribers");
+        leftover.run("PRAGMA wal_checkpoint(TRUNCATE)");
+      } finally {
+        leftover.close();
+      }
+      expect(snapshotEmails(f.dataDir, `backups/deleted/${snapshot}`)).toEqual([
+        "kept@archive.example.test",
+      ]);
 
       const finished = await deleteProject(f, "archive");
       expect(finished.status).toBe(200);

@@ -3,7 +3,7 @@
 // its own subscriber for a late notice about mail the deleted project sent. An instance that has
 // only ever served one project keeps the lookup. Compiled executable, signed SNS through the tunnel.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
@@ -503,7 +503,11 @@ test("a project removed and a new primary registered offline drop the lookup too
 
 const UNLISTED = "[instance] backups/deleted cannot be listed";
 
-/** A start whose `backups/deleted` cannot be listed: it serves, and the lookup is off. */
+/**
+ * A start whose `backups/deleted` cannot be listed: it serves, and the lookup is off. Once the
+ * operator repairs it, the next start lists it and the lookup is back (B155a item 4, D176): the
+ * refused listing wrote nothing permanent.
+ */
 async function unlistable(
   name: string,
   prepare: (path: string) => void,
@@ -528,19 +532,46 @@ async function unlistable(
   } finally {
     undo(path);
   }
+  await start();
+  const repaired = await subscriber(PRIMARY, "repaired@example.com");
+  expect(await deliver(notice(repaired.email))).toBe(200);
+  expect(await statusOf(PRIMARY, repaired.id)).toBe("blocklisted");
+  const stderr = await stop();
+  expect(countLines(stderr, UNMATCHED)).toBe(0);
+  expect(countLines(stderr, UNLISTED)).toBe(0);
 }
 
-test("a regular file at backups/deleted fails no start and counts as several projects", async () => {
+test("a regular file at backups/deleted fails no start and counts as several projects until it is moved", async () => {
   await unlistable(
     "deleted-file",
     (path) => writeFileSync(path, "not a directory"),
-    () => {},
+    (path) => rmSync(path),
   );
+});
+
+test("a v2.0.0 leftover project directory with no registry row drops the lookup", async () => {
+  // B155a item 2 (D176): on v2.0.0 a delete whose archive failed before its rename left
+  // projects/<slug>/ with no row. Its late notices must not reach this project's address lookup.
+  if (server) {
+    await stop();
+  }
+  dataDir = upgradedDataDir("upgraded-leftover", [{ slug: "main", host: PRIMARY, primary: true }]);
+  mkdirSync(join(dataDir, "projects", "old"), { recursive: true });
+  writeFileSync(join(dataDir, "projects", "old", "iglo-email.db"), "");
+  await start();
+  await configure();
+  const kept = await subscriber(PRIMARY, shared);
+  expect(await deliver(notice(shared, `<${crypto.randomUUID()}@${B}>`))).toBe(200);
+  expect(await deliver(notice(shared))).toBe(200);
+  expect(await statusOf(PRIMARY, kept.id)).toBe("enabled");
+  const stderr = await stop();
+  expect(countLines(stderr, UNMATCHED)).toBe(2);
+  expect(countLines(stderr, "[instance] projects/old has no registry row")).toBe(1);
 });
 
 // Root reads a mode-000 directory anyway, so the case cannot be made there.
 test.skipIf(process.getuid?.() === 0)(
-  "an unreadable backups/deleted fails no start and counts as several projects",
+  "an unreadable backups/deleted fails no start and counts as several projects until it is readable",
   async () => {
     await unlistable(
       "deleted-unreadable",

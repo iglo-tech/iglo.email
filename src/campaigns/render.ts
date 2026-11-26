@@ -4,6 +4,7 @@
 import type { ContentType, WritableCampaign } from "@/campaigns/store";
 import { hasTemplate } from "@/campaigns/input";
 import { must } from "@/invariant";
+import type { MessageHeaders } from "@/messaging/email";
 import { mailBrand } from "@/public/brand";
 import type { BrandSite } from "@/public/brand";
 import { createMessageBudget } from "@/templates/renderer";
@@ -25,6 +26,43 @@ export const dummySubscriber: CampaignSubscriber = {
   attribs: { city: "Bengaluru" },
   external_id: "",
 };
+/**
+ * A campaign message's headers (manager.go's message headers): the app's own `X-Listmonk-*` and,
+ * when enabled, `List-Unsubscribe*`, then the campaign's custom headers. A custom header whose
+ * name is one of the app's own in any case is dropped (B155a, D176): header names are
+ * case-insensitive, and a forged `x-listmonk-subscriber` would attribute a late bounce or
+ * complaint to another subscriber of the project. Other custom headers merge by exact name as
+ * before.
+ */
+export function campaignHeaders(
+  own: {
+    campaignUuid: string;
+    subscriberUuid: string;
+    /** The `List-Unsubscribe` target, or null when the setting is off. */
+    unsubscribeUrl: string | null;
+  },
+  custom: ReadonlyArray<Record<string, string>>,
+): MessageHeaders {
+  const headers: MessageHeaders = {
+    "X-Listmonk-Campaign": own.campaignUuid,
+    "X-Listmonk-Subscriber": own.subscriberUuid,
+  };
+  if (own.unsubscribeUrl !== null) {
+    headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+    headers["List-Unsubscribe"] = `<${own.unsubscribeUrl}>`;
+  }
+  const reserved = new Set(Object.keys(headers).map((name) => name.toLowerCase()));
+  for (const set of custom) {
+    for (const [name, value] of Object.entries(set)) {
+      if (reserved.has(name.toLowerCase())) {
+        continue;
+      }
+      const prior = headers[name];
+      headers[name] = prior === undefined ? value : [...[prior].flat(), value];
+    }
+  }
+  return headers;
+}
 export interface CampaignSubscriber {
   uuid: string;
   email: string;

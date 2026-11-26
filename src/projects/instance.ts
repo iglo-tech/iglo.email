@@ -22,7 +22,7 @@ import { createDispatcher } from "@/messaging/dispatcher";
 import type { Dispatcher } from "@/messaging/dispatcher";
 import type { SMTPServer } from "@/messaging/email";
 import type { Project, ProjectOptions, ProjectServer } from "@/projects/compose";
-import { archiveDeleted, hasDeletedSnapshots } from "@/projects/deleted";
+import { archiveDeleted, deletedSnapshots } from "@/projects/deleted";
 import type { ArchiveProgress, DeletedProject } from "@/projects/deleted";
 import {
   INSTANCE_DATABASE,
@@ -79,6 +79,8 @@ export const PRIMARY_SLUG = "main";
 
 /** The Projects page's "sent" window. */
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** A request's read ended by its cut connection ("The connection was closed."). */
+const isAbort = (error: unknown) => error instanceof DOMException && error.name === "AbortError";
 
 /**
  * How long a delete waits for the project's requests in flight (B149a, D164): the sender's close
@@ -232,6 +234,17 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
   const stuck = new Map<string, StuckDelete>();
   /** Set by stop(): a create no longer starts (B149a, D164). */
   let stopping = false;
+  /**
+   * B155a (D176): `backups/deleted` could not be listed at this start, so it cannot prove the
+   * instance only ever served one project. The several-projects rules apply until the next start,
+   * which lists it again; nothing permanent is written.
+   */
+  let unsureOfSeveral = false;
+  /**
+   * Set when the bounded HTTP stop cuts the requests still running (B155a, D176): their aborted
+   * reads are the cut its attention line already named, not unexpected errors.
+   */
+  let serverCut = false;
   // The instance's own lines: stderr and the buffer the instance Logs page shows (D157).
   const instanceLogs = createInstanceLogBuffer(clock);
   const { logger: instanceLogger, attention } = createInstanceLogger(instanceLogs);
@@ -300,6 +313,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         },
         projects: () => entries.map(({ record: r }) => ({ slug: r.slug, name: r.name })),
         capacity: must(capacity, "capacity"),
+        expectedError: (error) => serverCut && isAbort(error),
       },
       options(record),
     );
@@ -394,14 +408,21 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
     }
     registry.followInstanceHost(instanceHost);
     // B149b r2 (D165): a deleted project's snapshot is proof the instance served several projects,
-    // for one that deleted it before the registry recorded that.
-    if (hasDeletedSnapshots(root, attention)) {
+    // for one that deleted it before the registry recorded that. A listing that fails proves
+    // nothing either way: the rules apply for this start only (B155a, D176).
+    const snapshots = deletedSnapshots(root, attention);
+    if (snapshots === "found") {
       registry.markSeveral();
     }
+    unsureOfSeveral = snapshots === "unlisted";
     const records = registry.list();
     for (const name of directories) {
       if (!records.some((record) => record.slug === name)) {
         attention(`${PROJECTS}/${name} has no registry row: it is not served`);
+        // B155a (D176): a project directory with no row is another project's (v2.0.0 left one
+        // when a delete's archive failed before its rename, and a create that crashed before its
+        // row leaves one): its late notices must not reach this project's address lookup.
+        registry.markSeveral();
       }
     }
     budgets = await createInstanceBudgets(clock);
@@ -734,7 +755,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       clientAddress: instanceClientAddress,
     }),
     projects: sesProjects,
-    servedSeveral: () => registered.servedSeveral(),
+    servedSeveral: () => unsureOfSeveral || registered.servedSeveral(),
     logger: instanceLogger,
   });
 
@@ -830,6 +851,7 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
           `Stopping: ${running} request${running === 1 ? "" : "s"} still running after ` +
             `${DRAIN_MS / 1000} s ${running === 1 ? "was" : "were"} cut`,
         );
+        serverCut = true;
         await bound.stop(true);
       }
     },
