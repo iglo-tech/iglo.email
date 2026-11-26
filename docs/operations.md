@@ -1096,9 +1096,13 @@ newsletter-monday/         mode 0700
 An unknown slug exits nonzero and writes nothing. Every database is snapshotted and checked inside
 the one partial directory described under **Failure**, and the backup is published only when all of
 them pass: a failure on any database leaves no backup at the final name. A project created or
-deleted while the backup runs fails it; run it again. `--verify` prints each database under its
-place and ends with one `Integrity:` line for the whole backup, and refuses a manifest that names
-anything but a project slug, so it reads nothing outside the backup. The output may not be
+deleted while the backup runs fails it with "The registered projects changed while the backup
+ran; run it again", whichever step met the change first; run it again. `--verify` prints each
+database under its place and ends with one `Integrity:` line for the whole backup. It reads nothing
+outside the backup: it refuses a manifest that names anything but a project slug, a manifest over
+1 MiB (before reading it whole), an upload path leading out of the backup, and a symlink anywhere
+in the backup, which `backup` never writes. The path you give it may itself be a symlink to a
+backup. The output may not be
 `<data-dir>/projects/` or inside it, where the projects are read from, or at
 `<data-dir>/instance.db`: those are refused before anything is written, `--force` or not.
 
