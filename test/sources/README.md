@@ -48,6 +48,9 @@ place, so none runs a half-written binary.
   limit is on that clock. Read attention lines by what they say, not by position. Its
   `beforeRequest` option runs before each source request is sent, so a test can write to the
   source between two of the stream's reads (a race the binary does not produce on demand).
+- Records created one after another can share a millisecond `created` (or `updated`), and a
+  catch-up reads in `(stamp, id)` order. A test that relies on which of two records a catch-up
+  reaches first gives them IDs in that order (B158), or explicit stamps in `manual_events`.
 - `sourceConfig(pb.url, pb.service)` is the adapter's configuration for the fixture schema.
 
 Start one instance per test file (`beforeAll`) and give each test its own users, so tests do not
