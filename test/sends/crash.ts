@@ -2,10 +2,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { rm } from "node:fs/promises";
+import { resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { assertOwnedMailpit, referenceMailpit } from "@/test/perf/runtime-compat/smtp-env";
 import { Mailpit } from "@/test/perf/runtime-compat/mailpit";
@@ -13,19 +11,14 @@ import { faultRelay } from "@/test/messaging/fault-relay";
 import { createServer, createConnection } from "node:net";
 import type { Socket } from "node:net";
 import { asBody, readJson } from "@/test/read-body";
+import { runDirectory } from "@/test/sends/run-directory";
 
 const sink = referenceMailpit(process.env);
 await assertOwnedMailpit(sink);
 const marker = `m08${sink.runId.replaceAll("-", "")}${randomBytes(4).toString("hex")}`;
 const mailpit = new Mailpit(sink, marker);
-const directory = await mkdtemp(join(tmpdir(), "iglo-sends-crash-"));
-// The producer's directory is a project's, and it opens the instance database two levels above it
-// (`<data>/projects/main`, as a server's data directory is laid out). Each scenario's data directory
-// is inside this run's own directory, so no run writes beside it in $TMPDIR or shares another run's
-// instance database and SMTP key (D183).
-const projectDirectory = (scenario: string) => join(directory, scenario, "projects", "main");
-const INSTANCE_FILES = ["instance.db", "instance.db-wal", "instance.db-shm"];
-const instanceFilesBefore = INSTANCE_FILES.filter((name) => existsSync(join(tmpdir(), name)));
+const run = await runDirectory("iglo-sends-crash-");
+const { directory, projectDirectory } = run;
 let active: ChildProcessWithoutNullStreams | undefined;
 async function launch(dir: string, smtpPort = sink.port) {
   const child = spawn(resolve("dist/sends-producer"), [], {
@@ -235,10 +228,4 @@ try {
   await mailpit.removeOwned();
   await rm(directory, { recursive: true, force: true });
 }
-// Nothing of this run is left in $TMPDIR: no instance database written beside the run's directory.
-assert.deepEqual(
-  INSTANCE_FILES.filter((name) => existsSync(join(tmpdir(), name))),
-  instanceFilesBefore,
-  `the run left an instance database in ${tmpdir()}`,
-);
-assert.equal(existsSync(directory), false);
+run.assertNothingLeft();

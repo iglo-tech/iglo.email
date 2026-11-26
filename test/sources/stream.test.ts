@@ -910,7 +910,7 @@ test("B155b: a record over the response limit is terminal with one line; the cat
   expect(linesOf(s, REFUSED)).toEqual([]);
 });
 
-test("B159a: a record unreadable alone and then too large read by its ID names both causes, the first read's first", async () => {
+test("B159a: a record unreadable alone and then too large read by its ID names both causes, its own read by ID first", async () => {
   const name = unique("twocauses");
   const id = recordId();
   let edited = false;
@@ -940,9 +940,76 @@ test("B159a: a record unreadable alone and then too large read by its ID names b
   expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 1n }]);
   expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([
     expect.stringMatching(
-      new RegExp(`${id}.*cannot be read: its JSON nests.*read again by its ID: .*response limit`),
+      new RegExp(
+        `${id}.*response limit \\(an earlier read at its position in the page: .*cannot be read: its JSON nests`,
+      ),
     ),
   ]);
+});
+
+test("D186: an unreadable record the ID-only read meets instead of another leads with its own cause", async () => {
+  const name = unique("othercause");
+  const cut = proxy();
+  const manual = config(cut.url, {
+    events: { ...config().events, collection: "manual_events", key: "" },
+    users: { collection: "", leavingFilter: "" },
+  });
+  // The size-1 read meets a record over the response limit; before the ID-only read, a record
+  // nested past the JSON limit commits stamped earlier, so the ID-only read meets that one.
+  let racer: string | undefined;
+  let commitRacer: (() => Promise<void>) | undefined;
+  const s = stream({
+    config: manual,
+    names: () => [name],
+    tuning: { pageSize: 5 },
+    maxResponseBytes: 4000,
+    async beforeRequest(url) {
+      if (commitRacer && url.searchParams.has("fields")) {
+        const commit = commitRacer;
+        commitRacer = undefined;
+        await commit();
+      }
+    },
+  });
+  await s.live();
+  const user = await pb.user();
+  const create = async (offsetMs: number, data: unknown = {}) =>
+    (
+      await pb.create("manual_events", {
+        user: user.id,
+        name,
+        data,
+        occurredAt: stamp(0),
+        created: stamp(offsetMs),
+      })
+    ).id;
+  const anchor = await create(0);
+  await s.until(() => s.eventIds().length === 1, "the anchor record");
+  cut.cut();
+  const big = await create(2000, { blob: "x".repeat(5000) });
+  const later = await create(3000);
+  commitRacer = async () => {
+    racer = await create(1000, nested(70));
+  };
+  await s.until(() => s.eventIds().includes(later), "the record after the unreadable ones");
+  await s.live();
+  expect(commitRacer).toBeUndefined();
+  const deep = must(racer, "the racing record");
+  expect(sorted(s.eventIds())).toEqual(sorted([anchor, later]));
+  expect(s.stream.retries().every((row) => row.terminal === 1n)).toBe(true);
+  expect(sorted(s.stream.retries().map((row) => row.record_id))).toEqual(sorted([deep, big]));
+  // The racer's line leads with its own cause; the big record's line names only its own.
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([
+    expect.stringMatching(
+      new RegExp(
+        `${deep}.*: The source record cannot be read: its JSON nests.*\\(an earlier read at its position in the page: .*response limit\\)`,
+      ),
+    ),
+    expect.stringMatching(
+      new RegExp(`${big}.*: The source record is larger than the response limit$`),
+    ),
+  ]);
+  expect(linesOf(s, REFUSED)).toEqual([]);
 });
 
 test("B155b: a new source drops the old source's retry queue; the same source keeps it", async () => {

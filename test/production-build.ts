@@ -207,7 +207,11 @@ async function acquire(): Promise<number> {
         throw new Error(`Cannot lock ${lockFile}: flock failed with errno ${errno}`);
       }
       if (Date.now() - start > holdLimitMs) {
-        throw new Error(`Production build lock ${lockFile} is still held by a live process`);
+        throw new Error(
+          errno === EINTR
+            ? `Cannot lock ${lockFile}: flock was still being interrupted (EINTR) after ${holdLimitMs} ms of retries`
+            : `Production build lock ${lockFile} is still held by a live process`,
+        );
       }
       await Bun.sleep(50);
       errno = flockCall(descriptor, LOCK_EX | LOCK_NB);

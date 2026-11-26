@@ -47,8 +47,6 @@ let admin: Credentials;
 let port = 0;
 let key = "";
 let otherKey = "";
-/** The other project's first row (B159c item 2), older than every row of item 1's case. */
-let otherFirst = 0;
 
 interface Row {
   id: number;
@@ -81,12 +79,23 @@ const queueAt = async (at: number, host: string, auth: string) => {
 };
 const queue = (host = HOST, auth = host === HOST ? key : otherKey) => queueAt(port, host, auth);
 
-/** Polls (real time; only the in-process case's clock is a test clock) until `check` holds. */
-async function eventually(check: () => Promise<boolean>, what: string, ms = 30_000) {
+/**
+ * Polls (real time; only the in-process case's clock is a test clock) until `check` holds. A
+ * timeout's message carries `dump`'s answer, by default the main project's queue.
+ */
+async function eventually(
+  check: () => Promise<boolean>,
+  what: string,
+  { ms = 30_000, dump = (): Promise<unknown> => queue() } = {},
+) {
   const deadline = Date.now() + ms;
   while (!(await check())) {
     if (Date.now() > deadline) {
-      throw new Error(`timed out waiting for ${what}`);
+      const state = await dump().then(
+        (value) => JSON.stringify(value),
+        (error: unknown) => `(no queue: ${String(error)})`,
+      );
+      throw new Error(`timed out waiting for ${what}: ${state}`);
     }
     await Bun.sleep(100);
   }
@@ -101,16 +110,20 @@ async function rowFor(
 ): Promise<Row> {
   const made = new Set<string>();
   let found: Row | undefined;
-  await eventually(async () => {
-    found = (await read()).results.find((row) => made.has(row.record_id));
-    if (found) {
-      return true;
-    }
-    made.add((await source.event(user, name)).id);
-    await Bun.sleep(400);
-    found = (await read()).results.find((row) => made.has(row.record_id));
-    return found !== undefined;
-  }, `a queue row for ${name}`);
+  await eventually(
+    async () => {
+      found = (await read()).results.find((row) => made.has(row.record_id));
+      if (found) {
+        return true;
+      }
+      made.add((await source.event(user, name)).id);
+      await Bun.sleep(400);
+      found = (await read()).results.find((row) => made.has(row.record_id));
+      return found !== undefined;
+    },
+    `a queue row for ${name}`,
+    { dump: read },
+  );
   return found!;
 }
 
@@ -204,9 +217,18 @@ test("a terminal row and a queued row, each with its status and times; another p
   expect(await queue(OTHER)).toEqual({ stream: null, more: false, results: [] });
 });
 
-test("two projects with a source each list only their own stream's rows", async () => {
-  // B159c item 2 (D184): the other project reads its own PocketBase; the main project's rows above
-  // stay where they are.
+let otherSource: Promise<Row> | undefined;
+
+/**
+ * Gives the other project a source on its own PocketBase and makes one terminal row there; returns
+ * that row. Done once, by whichever case needs it first, so each case also runs alone.
+ */
+function otherSourceRow(): Promise<Row> {
+  otherSource ??= configureOtherSource();
+  return otherSource;
+}
+
+async function configureOtherSource(): Promise<Row> {
   const list = await call(
     "POST",
     "/api/lists",
@@ -232,11 +254,18 @@ test("two projects with a source each list only their own stream's rows", async 
     otherKey,
   );
   expect(saved.status).toBe(200);
-  await eventually(async () => (await queue(OTHER)).stream !== null, "the other project's stream");
+  await eventually(async () => (await queue(OTHER)).stream !== null, "the other project's stream", {
+    dump: () => queue(OTHER),
+  });
   const blocked = await otherPb.user({ email: `blocked-${Date.now()}@other-blocked.example.test` });
-  const own = await rowFor(blocked.id, "signup", otherPb, () => queue(OTHER));
+  return rowFor(blocked.id, "signup", otherPb, () => queue(OTHER));
+}
+
+test("two projects with a source each list only their own stream's rows", async () => {
+  // B159c item 2 (D184): the other project reads its own PocketBase; the main project's rows above
+  // stay where they are.
+  const own = await otherSourceRow();
   expect(own).toMatchObject({ kind: "event", status: "terminal" });
-  otherFirst = own.id;
 
   const mainIds = (await queue()).results.map((row) => row.record_id);
   const otherIds = (await queue(OTHER)).results.map((row) => row.record_id);
@@ -248,7 +277,8 @@ test("two projects with a source each list only their own stream's rows", async 
 
 test("past 1000 rows the queue lists the oldest 1000 and says there are more", async () => {
   // B159c item 1 (D184): 1001 more events of the other project's blocklisted user, each a terminal
-  // row at once, on top of the one above.
+  // row at once, on top of the other source's first row.
+  const first = await otherSourceRow();
   const blocked = await otherPb.user({ email: `many-${Date.now()}@other-blocked.example.test` });
   const total = 1001;
   let next = 0;
@@ -260,14 +290,21 @@ test("past 1000 rows the queue lists the oldest 1000 and says there are more", a
       }
     }),
   );
-  await eventually(async () => (await queue(OTHER)).more, "more than 1000 rows", 60_000);
+  await eventually(async () => (await queue(OTHER)).more, "more than 1000 rows", {
+    ms: 60_000,
+    // A thousand rows is too long for a message: their count and the newest.
+    dump: async () => {
+      const { stream, more, results } = await queue(OTHER);
+      return { stream, more, rows: results.length, last: results.at(-1) };
+    },
+  });
   const answer = await queue(OTHER);
   expect(answer.more).toBe(true);
   expect(answer.results).toHaveLength(1000);
   // Oldest first: ascending IDs, the earlier case's row among them.
   const ids = answer.results.map((row) => row.id);
   expect(ids).toEqual(ids.toSorted((a, b) => a - b));
-  expect(ids).toContain(otherFirst);
+  expect(ids).toContain(first.id);
   expect(answer.results[0]!.last_error).toContain("blocklisted domain");
   // The main project's queue is untouched by them.
   expect((await queue()).more).toBe(false);
@@ -360,7 +397,7 @@ test("a queued row whose retry meets a settings mismatch is waiting, its window 
       ),
     });
     expect(saved.status).toBe(200);
-    await eventually(async () => (await read()).stream === "live", "the stream");
+    await eventually(async () => (await read()).stream === "live", "the stream", { dump: read });
 
     // A reset of the handler's recipients read queues the record, its retry a minute away.
     cut.cutWhen((line) => line.includes("/collections/recipients/"));
@@ -377,10 +414,14 @@ test("a queued row whose retry meets a settings mismatch is waiting, its window 
     await source.renameField("events", "data", "payload");
     clock.advance(Date.parse(queued.next_attempt_at!) - clock.now().getTime() + 15_000);
     let waiting: Row | undefined;
-    await eventually(async () => {
-      waiting = (await read()).results.find((row) => row.id === queued.id);
-      return waiting?.status === "waiting";
-    }, "the waiting row");
+    await eventually(
+      async () => {
+        waiting = (await read()).results.find((row) => row.id === queued.id);
+        return waiting?.status === "waiting";
+      },
+      "the waiting row",
+      { dump: read },
+    );
     expect(waiting).toMatchObject({ status: "waiting", attempts: 2 });
     expect(waiting!.last_error).toContain('no field "data"');
     expect(Date.parse(waiting!.first_failed_at)).toBe(clock.now().getTime());
