@@ -30,6 +30,7 @@ import {
   closeSync,
   constants,
   copyFileSync,
+  fstatSync,
   fsyncSync,
   linkSync,
   lstatSync,
@@ -37,7 +38,7 @@ import {
   mkdtempSync,
   openSync,
   readdirSync,
-  readFileSync,
+  readSync,
   realpathSync,
   renameSync,
   rmdirSync,
@@ -77,6 +78,12 @@ const REPLACED = ".iglo-email-backup-replaced-";
 /** The internal argument of the helper; see the header. */
 export const flushChildArgument = "__backup-flush";
 const FLUSH_INTERVAL_MS = 200;
+/**
+ * The largest manifest `--verify` reads (D178). One the backup writes is a few hundred bytes: an
+ * upload path, or the slugs of the projects, at most 41 bytes each.
+ */
+export const MANIFEST_LIMIT = 1024 * 1024;
+const REGISTRY_CHANGED = "The registered projects changed while the backup ran; run it again";
 
 export interface Inspection {
   schemaVersion: number;
@@ -124,6 +131,103 @@ function uploadedFiles(directory: string): Array<{ name: string; size: number }>
   });
 }
 
+/** A manifest's fields, unchecked: a project's backup names `uploads`, a whole one `projects`. */
+interface Manifest {
+  uploads?: unknown;
+  projects?: unknown;
+}
+
+/**
+ * A backup's manifest, parsed, read with a bound (D178): a hand-made one can be any size, and it is
+ * refused over MANIFEST_LIMIT before it is parsed. It must be a regular file, not a symlink, and is
+ * opened without blocking, so a FIFO in its place is refused rather than waited on.
+ */
+function readManifest(directory: string): Manifest {
+  const path = join(directory, MANIFEST);
+  let descriptor: number;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === "ENOENT") {
+      throw new Error(`No ${MANIFEST} in ${directory}: not a backup`, {
+        cause: error,
+      });
+    }
+    if (code === "ELOOP") {
+      throw new Error(`${path} is a symlink, which a backup never holds: not a backup`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+  try {
+    const stats = fstatSync(descriptor);
+    if (!stats.isFile()) {
+      throw new Error(`${path} is not a file: not a backup`);
+    }
+    const tooLarge = () =>
+      new Error(
+        `${path} is larger than the ${MANIFEST_LIMIT} bytes a backup's manifest may have: not a backup`,
+      );
+    if (stats.size > MANIFEST_LIMIT) {
+      throw tooLarge();
+    }
+    // One byte more than the limit, so a file that grew after the fstat is still refused.
+    const buffer = Buffer.alloc(MANIFEST_LIMIT + 1);
+    let length = 0;
+    for (;;) {
+      const read = readSync(descriptor, buffer, length, buffer.length - length, null);
+      if (read === 0) {
+        break;
+      }
+      length += read;
+      if (length > MANIFEST_LIMIT) {
+        throw tooLarge();
+      }
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(buffer.toString("utf-8", 0, length));
+    } catch (error) {
+      throw new Error(`${path} is not JSON: not a backup`, { cause: error });
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error(`${path} is not a manifest: not a backup`);
+    }
+    // Each field is checked where it is used: `uploads` by a project's check, `projects` by a whole one.
+    const { uploads, projects } = parsed as Manifest;
+    return { uploads, projects };
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+/**
+ * Refuses a backup directory holding anything but files and directories (D178), checked by the
+ * directory entry's type, without opening it. `backup` never writes a symlink, and one in a
+ * hand-made backup would have `--verify` open or list something outside it: a project's directory
+ * or database, a manifest, an upload directory. Slugs cannot leave the backup (D166); this keeps
+ * the paths they name inside it too. A FIFO, socket or device would have SQLite's open of a
+ * database or its WAL wait forever.
+ */
+function refuseOddEntries(root: string): void {
+  const pending = [root];
+  for (let directory = pending.pop(); directory !== undefined; directory = pending.pop()) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new Error(`${path} is a symlink, which a backup never holds: not a backup`);
+      }
+      if (entry.isDirectory()) {
+        pending.push(path);
+      } else if (!entry.isFile()) {
+        throw new Error(`${path} is not a regular file, which a backup never holds: not a backup`);
+      }
+    }
+  }
+}
+
 function sync(path: string): void {
   const descriptor = openSync(path, constants.O_RDONLY);
   try {
@@ -159,10 +263,23 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
     throw new Error(`No backup at ${target}`);
   }
   const file = stats.isDirectory() ? join(target, DATABASE) : target;
-  const databaseBytes = statSync(file, { throwIfNoEntry: false })?.size;
-  if (databaseBytes === undefined) {
+  const database = lstatSync(file, { throwIfNoEntry: false });
+  if (database === undefined) {
     throw new Error(`No ${DATABASE} in ${target}`);
   }
+  // Checked here, before SQLite opens it, so nothing but a regular file is opened (D178).
+  if (!database.isFile()) {
+    throw new Error(`${file} is not a regular file: not a backup`);
+  }
+  // SQLite also opens the journal, WAL and shared-memory files beside it; a FIFO there would make
+  // that open wait forever. The walk covers them inside a backup directory, not beside a bare file.
+  for (const companion of [`${file}-journal`, `${file}-wal`, `${file}-shm`]) {
+    const entry = lstatSync(companion, { throwIfNoEntry: false });
+    if (entry !== undefined && !entry.isFile()) {
+      throw new Error(`${companion} is not a regular file: not a backup`);
+    }
+  }
+  const databaseBytes = database.size;
   let db: Database;
   try {
     db = openSnapshot(file);
@@ -193,15 +310,20 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
     if (!stats.isDirectory() || schemaVersion === 0 || schemaVersion > supportedVersion) {
       return report;
     }
-    if (!statSync(join(target, MANIFEST), { throwIfNoEntry: false })) {
-      throw new Error(`No ${MANIFEST} in ${target}: not a backup`);
+    const { uploads: directory } = readManifest(target);
+    if (typeof directory !== "string") {
+      throw new Error(`${join(target, MANIFEST)} names no upload directory: not a backup`);
     }
-    const { uploads: directory } = JSON.parse(readFileSync(join(target, MANIFEST), "utf-8")) as {
-      uploads: string;
-    };
     // What a restored server will serve: a relative setting says where, whatever the manifest says.
     const restored = storedUploadPath(db);
-    const uploads = uploadedFiles(join(target, isAbsolute(restored) ? directory : restored));
+    const uploadDirectory = resolve(target, isAbsolute(restored) ? directory : restored);
+    // `backup` writes only a path inside the backup, which a restored server requires (D64).
+    if (uploadDirectory === target || !inside(uploadDirectory, target)) {
+      throw new Error(
+        `${target} names an upload directory outside it (${relative(target, uploadDirectory) || "."}): not a backup`,
+      );
+    }
+    const uploads = uploadedFiles(uploadDirectory);
     const held = new Set(uploads.map(({ name }) => name));
     report.uploadFiles = uploads.length;
     report.uploadBytes = uploads.reduce((sum, { size }) => sum + size, 0);
@@ -243,9 +365,7 @@ function registeredSlugs(db: Database, clock: Clock): Array<string> {
 function inspectWhole(target: string, clock: Clock, supportedVersion: number): Array<Checked> {
   const instanceFile = join(target, INSTANCE_DATABASE);
   const instance = inspect(instanceFile, clock, instanceMigrations.length);
-  const { projects } = JSON.parse(readFileSync(join(target, MANIFEST), "utf-8")) as {
-    projects?: unknown;
-  };
+  const { projects } = readManifest(target);
   if (!Array.isArray(projects) || !projects.every((slug) => typeof slug === "string")) {
     throw new Error(`${join(target, MANIFEST)} names no projects: not a backup`);
   }
@@ -292,9 +412,29 @@ export function inspectBackup(
   clock: Clock,
   supportedVersion: number,
 ): Array<Checked> {
-  const target = resolve(path);
+  const given = resolve(path);
+  if (basename(given).startsWith(PARTIAL)) {
+    throw new Error(`${path} is an interrupted backup, not a backup`);
+  }
+  // The path given may be a symlink to a backup; inside the backup there may be none (D178).
+  let target: string;
+  try {
+    target = realpathSync(given);
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      throw new Error(`No backup at ${given}`, { cause: error });
+    }
+    throw error;
+  }
   if (basename(target).startsWith(PARTIAL)) {
     throw new Error(`${path} is an interrupted backup, not a backup`);
+  }
+  const found = statSync(target);
+  if (found.isDirectory()) {
+    refuseOddEntries(target);
+  } else if (!found.isFile()) {
+    // A bare snapshot is a file; SQLite's open of a FIFO would wait forever (D178).
+    throw new Error(`${path} is not a regular file: not a backup`);
   }
   if (isWholeBackup(target)) {
     return inspectWhole(target, clock, supportedVersion);
@@ -888,6 +1028,8 @@ export function createBackup(options: BackupOptions): BackupReport {
   let created: Array<MadeFolder> = [];
   let partial: MadeFolder | undefined;
   let flusher: Bun.Subprocess | undefined;
+  // The projects a whole backup set out to copy, until it is published: see the catch below.
+  let unpublished: Array<string> | undefined;
   try {
     // Every database is opened, and every check that can refuse is made, before any folder is.
     const instancePath = join(dataDir, INSTANCE_DATABASE);
@@ -901,6 +1043,7 @@ export function createBackup(options: BackupOptions): BackupReport {
       db: instance,
     });
     const registered = registeredSlugs(instance, clock);
+    unpublished = whole ? registered : undefined;
     if (options.project !== undefined && !registered.includes(options.project)) {
       throw new Error(`No project ${options.project} in ${dataDir}`);
     }
@@ -1013,7 +1156,7 @@ export function createBackup(options: BackupOptions): BackupReport {
           db.close(true);
         }
         if (copied.join("\n") !== registered.join("\n")) {
-          throw new Error("The registered projects changed while the backup ran; run it again");
+          throw new Error(REGISTRY_CHANGED);
         }
         const manifest = join(made.path, MANIFEST);
         writeFileSync(manifest, `${JSON.stringify({ projects: registered })}\n`, {
@@ -1037,6 +1180,7 @@ export function createBackup(options: BackupOptions): BackupReport {
     );
     options.beforePublish?.();
     const aside = publish(made, output, options.force ?? false, live);
+    unpublished = undefined;
     // The rename is the publication. From here nothing is undone: the partial is no longer a partial,
     // and the folders are the backup's parents and stay. Cleanup must not run over the backup from
     // here. A failed sync of the folder is an error, since the backup may not be durable; a failure
@@ -1066,6 +1210,23 @@ export function createBackup(options: BackupOptions): BackupReport {
       }
     }
     return { path: output, databases };
+  } catch (error) {
+    // A project created or deleted meanwhile fails a whole backup at whichever step meets it first:
+    // a deleted project's directory or upload path is gone. The cause to report is then the change
+    // of the registry, which a rerun takes whole, not that step's message (D164, D178).
+    const instance = sources[0]?.db;
+    if (unpublished !== undefined && instance !== undefined) {
+      let now: Array<string> | undefined;
+      try {
+        now = registeredSlugs(instance, clock);
+      } catch {
+        // The registry unread is no evidence of a change: the step's own error stands.
+      }
+      if (now !== undefined && now.join("\n") !== unpublished.join("\n")) {
+        throw new Error(REGISTRY_CHANGED, { cause: error });
+      }
+    }
+    throw error;
   } finally {
     flusher?.kill();
     for (const { db } of sources) {

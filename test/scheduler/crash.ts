@@ -1,5 +1,6 @@
 // Kill the compiled scheduler fixture (dist/scheduler-crash) at each crash point, restart it
-// with its clock past the 5-minute lease, and show that no step is ever sent twice.
+// with its clock past the 5-minute lease, and show that no step is ever sent twice: a row claimed at
+// the kill ends `unknown`, every other row is sent once (checkSmtpCrash, B156).
 // Run with `bun run scheduler:crash`. Mail goes only to the loopback sink below.
 import assert from "node:assert/strict";
 import { Database } from "bun:sqlite";
@@ -136,13 +137,17 @@ interface SendRow {
   step: number;
   status: string;
   skip_reason: string | null;
+  error: string | null;
 }
 function state(dir: string) {
   const db = new Database(join(dir, "iglo-email.db"), { readonly: true });
   try {
+    // The restarted fixture recovers the WAL the killed one left; a read meanwhile is BUSY_RECOVERY,
+    // which the busy handler retries instead of failing the poll.
+    db.run("PRAGMA busy_timeout = 5000");
     const sends = db
       .query<SendRow, []>(
-        "SELECT st.position AS step, s.status, s.skip_reason FROM sends s JOIN sequence_steps st ON st.id = s.step_id ORDER BY s.id",
+        "SELECT st.position AS step, s.status, s.skip_reason, s.error FROM sends s JOIN sequence_steps st ON st.id = s.step_id ORDER BY s.id",
       )
       .all();
     const enrollments = db
@@ -153,6 +158,56 @@ function state(dir: string) {
   } finally {
     db.close();
   }
+}
+type State = ReturnType<typeof state>;
+const stepMails = (subjects: ReadonlyArray<string>, step: number) =>
+  subjects.filter((s) => s.startsWith(`Step ${step} `)).length;
+/**
+ * A kill while step 0's SMTP data is held. Each step ends as the journal stood at the kill (D80,
+ * D155, 04-sending "Reserve before claim"): a row claimed `sending` may already be in SMTP flight, so
+ * it ends `unknown`/`interrupted` and is never pushed again; a row not yet claimed (queued, or not
+ * inserted yet) is sent exactly once by the restart. Since B141 step 1, a marketing row, is claimed
+ * by the outbox's second loop as soon as it has a grant, so it is usually `sending` at the kill,
+ * waiting for its start behind step 0. Returns how each step's row stood at the kill.
+ */
+function checkSmtpCrash(
+  label: string,
+  before: State,
+  after: State,
+  atKill: ReadonlyArray<string>,
+  subjects: ReadonlyArray<string>,
+) {
+  const outcome: Array<string> = [];
+  for (const step of [0, 1]) {
+    const rows = after.sends.filter((s) => s.step === step);
+    assert.equal(rows.length, 1, `${label}: one send row for step ${step}`);
+    const killed = before.sends.find((s) => s.step === step)?.status ?? "absent";
+    const mails = stepMails(subjects, step);
+    assert.ok(mails <= 1, `${label}: step ${step} reached SMTP at most once`);
+    if (step === 0) {
+      // The held delivery: in flight at the kill.
+      assert.equal(killed, "sending", `${label}: step 0 was in SMTP flight at the kill`);
+      assert.equal(mails, 1, `${label}: step 0 reached SMTP once`);
+    }
+    if (killed === "sending") {
+      assert.deepEqual(
+        [rows[0]!.status, rows[0]!.error],
+        ["unknown", "interrupted"],
+        `${label}: step ${step}, claimed at the kill, is unknown and never retried`,
+      );
+      assert.equal(mails, stepMails(atKill, step), `${label}: step ${step} not pushed again`);
+    } else {
+      assert.ok(["absent", "queued", "sent"].includes(killed), `${label}: step ${step} ${killed}`);
+      assert.equal(
+        rows[0]!.status,
+        "sent",
+        `${label}: step ${step}, unclaimed at the kill, is sent`,
+      );
+      assert.equal(mails, 1, `${label}: step ${step} sent once`);
+    }
+    outcome.push(`${step}:${killed}`);
+  }
+  return outcome.join(", ");
 }
 
 for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
@@ -170,6 +225,7 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
     const killed = await within(first.exited, 20_000, `${point} kill`);
     assert.equal(killed.signal, "SIGKILL", `${point}: fixture was killed at its barrier`);
     const before = state(dir);
+    const atKill = [...sink.subjects];
 
     // Restart six minutes later on the injected clock, so the dead process's lease expired.
     const second = launch(dir, sink.port, { SCHEDULER_CRASH_OFFSET_MS: String(6 * 60_000) });
@@ -191,26 +247,23 @@ for (const point of ["claim", "insert", "advance", "commit", "smtp"]) {
     );
     await stop(second.child, second.exited);
 
-    const perStep = [0, 1].map((step) => after.sends.filter((s) => s.step === step));
-    const mails = [0, 1].map((step) => sink.subjects.filter((s) => s.startsWith(`Step ${step} `)));
-    for (const step of [0, 1]) {
-      assert.equal(perStep[step]!.length, 1, `${point}: one send row for step ${step}`);
-      assert.ok(mails[step]!.length <= 1, `${point}: step ${step} reached SMTP at most once`);
-    }
     if (point === "smtp") {
-      // The interrupted delivery is unknown and never retried; the next step still sends once.
-      assert.equal(perStep[0]![0]!.status, "unknown");
-      assert.equal(perStep[1]![0]!.status, "sent");
-      assert.equal(mails[1]!.length, 1);
+      checkSmtpCrash(point, before, after, atKill, sink.subjects);
     } else {
+      const mails = [0, 1].map((step) => stepMails(sink.subjects, step));
+      for (const step of [0, 1]) {
+        assert.equal(
+          after.sends.filter((s) => s.step === step).length,
+          1,
+          `${point}: one send row for step ${step}`,
+        );
+        assert.ok(mails[step]! <= 1, `${point}: step ${step} reached SMTP at most once`);
+      }
       assert.deepEqual(
         after.sends.map((s) => s.status),
         ["sent", "sent"],
       );
-      assert.deepEqual(
-        mails.map((m) => m.length),
-        [1, 1],
-      );
+      assert.deepEqual(mails, [1, 1]);
     }
     console.log(
       `${point}: killed with ${before.sends.length} send row(s) [${before.sends.map((s) => `${s.step}:${s.status}`).join(", ")}]; after restart [${after.sends.map((s) => `${s.step}:${s.status}`).join(", ")}], SMTP data ${sink.subjects.length}`,
@@ -289,6 +342,7 @@ async function launchProduction(dir: string) {
     first.child.kill("SIGKILL");
     assert.equal((await within(first.exited, 20_000, "production kill")).signal, "SIGKILL");
     const before = state(project);
+    const atKill = [...sink.subjects];
     const second = await production(dir, launched);
     let after = state(project);
     await untilState(
@@ -307,15 +361,7 @@ async function launchProduction(dir: string) {
       },
     );
     await stop(second.child, second.exited);
-    assert.deepEqual(
-      after.sends.map((s) => [s.step, s.status]),
-      [
-        [0, "unknown"],
-        [1, "sent"],
-      ],
-    );
-    assert.ok(sink.subjects.filter((s) => s.startsWith("Step 0 ")).length <= 1);
-    assert.equal(sink.subjects.filter((s) => s.startsWith("Step 1 ")).length, 1);
+    checkSmtpCrash("production", before, after, atKill, sink.subjects);
     console.log(
       `production smtp: killed with [${before.sends.map((s) => `${s.step}:${s.status}`).join(", ")}]; after restart [${after.sends.map((s) => `${s.step}:${s.status}`).join(", ")}], SMTP data ${sink.subjects.length}`,
     );

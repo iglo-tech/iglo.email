@@ -908,9 +908,17 @@ export function createEnrollments(db: Database, clock: Clock) {
       const at = now.toISOString();
       q.get("claimed-end").run(status, reason, condition, at, at, claim.id, claim.lease);
     },
-    /** Move a claimed enrollment's due time (frequency cap `defer`) and release it. */
-    defer(claim: Claim, dueAt: Date) {
-      q.get("claimed-defer").run(dueAt.toISOString(), claim.id, claim.lease);
+    /**
+     * Move a claimed enrollment's due time (frequency cap `defer`) and release it. `error_since`
+     * and `error_last` (D172) are cleared unless `keepErrorSince` (no source read decided it, D180).
+     */
+    defer(claim: Claim, dueAt: Date, keepErrorSince = false) {
+      q.get("claimed-defer").run(
+        dueAt.toISOString(),
+        claim.id,
+        claim.lease,
+        keepErrorSince ? 1 : 0,
+      );
     },
     /**
      * Release a claimed enrollment, claimable again at `retryAt` (a bounded backoff) or at once

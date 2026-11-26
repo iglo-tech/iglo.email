@@ -9,6 +9,7 @@ import type { Condition, EventCount } from "@/conditions/types";
 import { validate } from "@/conditions/validate";
 import { AGGREGATE_LIMIT } from "@/events/aggregate";
 import type { Aggregate } from "@/events/aggregate";
+import { SCAN_LIMIT } from "@/sources/source";
 import { adapter, enableBatch, manyEvents } from "@/test/conditions/source-fixture";
 import { startPocketBase } from "@/test/sources/pocketbase";
 import type { PocketBase } from "@/test/sources/pocketbase";
@@ -305,6 +306,53 @@ test("AGGREGATE_LIMIT: a window over the limit has no total, whatever where keep
   expect(
     await totals({ recent: { event: "view", since: "PT1H", fn: "count" } }, ada.id, NOW - day + 1),
   ).toEqual({ ok: true, values: { recent: 3600 } });
+});
+
+test("SCAN_LIMIT: a where window of exactly the limit is read whole and decides; one more record does not (B155e, D180)", async () => {
+  const ada = await pb.user();
+  // `data.b = true` is loose in the filter: it keeps every `1`, which the strict check then refuses,
+  // so the count reads the whole window and matches nothing.
+  await manyEvents(pb, ada.id, "scan", SCAN_LIMIT, (i) => ({
+    at: new Date(NOW - day - i * 1000),
+    data: { b: 1 },
+  }));
+  const condition = { event: "scan", where: { "data.b": true } };
+  expect(await holds(condition, ada.id)).toBe(false);
+  expect(await holds({ not: condition }, ada.id)).toBe(true);
+  // A further record, even one sharing the newest record's instant, is a page the scan never read.
+  await pb.event(ada.id, "scan", { b: 1 }, at(NOW - day));
+  const result = await evaluateOnSource(
+    condition,
+    { externalId: ada.id, now: new Date(NOW) },
+    { source: adapter(pb) },
+  );
+  expect(result).toMatchObject({ ok: false, error: { kind: "source_permanent" } });
+});
+
+test("step windows end at now plus the ahead tolerance of a pushed event (B155e, D180)", async () => {
+  const ada = await pb.user();
+  await pb.event(ada.id, "renewal", { n: 1 }, at(NOW + 14 * 60_000));
+  await pb.event(ada.id, "renewal", { n: 10 }, at(NOW + 16 * 60_000));
+  await pb.event(ada.id, "renewal", { n: 100 }, at(NOW + 365 * day));
+  // Within 15 minutes ahead counts, as a pushed event's `occurred_at` is accepted; further does not.
+  expect(await holds({ event: "renewal", count: { eq: 1 } }, ada.id)).toBe(true);
+  expect(
+    await holds({ event: "renewal", where: { "data.n": 100 } }, ada.id, {
+      now: new Date(NOW + 365 * day - 15 * 60_000),
+    }),
+  ).toBe(true);
+  expect(
+    await totals(
+      {
+        count: { event: "renewal", fn: "count" },
+        sum: { event: "renewal", fn: "sum", field: "data.n" },
+      },
+      ada.id,
+    ),
+  ).toEqual({ ok: true, values: { count: 1, sum: 1 } });
+  expect(
+    await totals({ sum: { event: "renewal", fn: "sum", field: "data.n" } }, ada.id, NOW + 2 * day),
+  ).toEqual({ ok: true, values: { sum: 11 } });
 });
 
 test("trigger.condition counts the trigger record and ends at it", async () => {

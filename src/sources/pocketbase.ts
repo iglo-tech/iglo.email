@@ -17,7 +17,13 @@ import {
 } from "@/sources/filter";
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceJson, SourceObject } from "@/sources/json";
-import { DEFAULT_TIMEOUT_MS, PAGE_LIMIT, SCAN_LIMIT, SourceError } from "@/sources/source";
+import {
+  DEFAULT_TIMEOUT_MS,
+  isSourceError,
+  PAGE_LIMIT,
+  SCAN_LIMIT,
+  SourceError,
+} from "@/sources/source";
 import { streamReads } from "@/sources/stream-reads";
 import type {
   CallOptions,
@@ -118,9 +124,23 @@ function tokenExpiry(token: string): number | undefined {
   }
 }
 
+/**
+ * B155d (D179): an ID PocketBase cannot have, refused before any request. It is permanent like any
+ * malformed read, and marked so a caller can tell "no such user can exist in the source" (an
+ * `external_id` set by pushed events before the project moved to a source) from a failed read.
+ */
+export class NotSourceId extends SourceError {
+  readonly notSourceId = true;
+  constructor(id: string, what: string) {
+    super("permanent", `Not a source ${what} ID: ${JSON.stringify(id)}`);
+  }
+}
+export const isNotSourceId = (error: unknown): error is NotSourceId =>
+  isSourceError(error) && "notSourceId" in error && error.notSourceId === true;
+
 function checkedId(id: string, what: string): string {
   if (!idPattern.test(id)) {
-    throw new SourceError("permanent", `Not a source ${what} ID: ${JSON.stringify(id)}`);
+    throw new NotSourceId(id, what);
   }
   return id;
 }
