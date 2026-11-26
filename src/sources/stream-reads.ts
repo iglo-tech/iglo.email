@@ -88,6 +88,27 @@ function userItem(record: SourceObject): StreamItem {
   return { kind: "user", id, stamp: updated, record: { id, updated, fields: record } };
 }
 
+/** The ID characters the stream store keeps of a record (`MAX_ID` in src/sources/stream-store.ts). */
+const STORED_ID = 255;
+
+/**
+ * B155b (D177): the keyset condition past a record's ID. PocketBase caps no ID length (0.40.5 takes
+ * a 5,000-character ID), and the filter refuses a value over 4,096 bytes, so an ID longer than the
+ * store keeps (terminal: past the 100 characters the stream keys) never enters the filter: the
+ * bound is its stored prefix followed by the highest code point. IDs sharing that prefix at the same
+ * stamp are passed over with it, as the store's dedupe entry already counts them as one record.
+ */
+function pastId(id: string): string {
+  if (id.length <= STORED_ID) {
+    return `id > ${textLiteral(id)}`;
+  }
+  const cut = /[\uD800-\uDBFF]/.test(id[STORED_ID - 1] ?? "") ? STORED_ID - 1 : STORED_ID;
+  return `id > ${textLiteral(`${id.slice(0, cut)}\u{10FFFF}`)}`;
+}
+
+/** A record gone between two reads: the next catch-up or retry reads what is there then. */
+const gone = () => new SourceError("transient", "A source record changed while it was read");
+
 /** A page the source answered with a body the adapter refused to read (not JSON, too deep). */
 const unreadable = (error: unknown) =>
   isSourceError(error) &&
@@ -137,8 +158,10 @@ export function streamReads(parts: StreamReadParts): StreamSource {
    * `refusal`, a permanent error of the read itself (a `400` for a renamed filter field, a `404`
    * collection, a `403` lost access, a refused sign-in) is a `SettingsMismatch`: the source refuses
    * the read, the record is not at fault. A single record still unreadable alone (over the response
-   * limit, nested deeper than the JSON limit) is read again for its ID and stamp only, and becomes a
-   * terminal item (B155b, D177): one record never stalls a catch-up or a retry.
+   * limit, nested deeper than the JSON limit) is read again for its ID and stamp only, then once
+   * more in full by that ID: still unreadable, it becomes a terminal item (B155b, D177), so one
+   * record never stalls a catch-up or a retry; readable (the ID-only read met another record), it
+   * is an ordinary item and the next page meets the unreadable one again.
    */
   async function read(
     kind: StreamKind,
@@ -155,7 +178,6 @@ export function streamReads(parts: StreamReadParts): StreamSource {
         : error;
     for (let size = perPage; ; size = Math.max(1, Math.floor(size / 4))) {
       let items: ReadonlyArray<SourceObject> | null;
-      let reason = TOO_LARGE;
       try {
         items = await parts.page(collection, { filter, sort, perPage: size }, call);
       } catch (error) {
@@ -163,7 +185,6 @@ export function streamReads(parts: StreamReadParts): StreamSource {
           throw refused(error);
         }
         items = null;
-        reason = UNREADABLE;
       }
       if (items) {
         return { items: items.map((record) => itemOf(kind, record)), more: items.length === size };
@@ -176,12 +197,38 @@ export function streamReads(parts: StreamReadParts): StreamSource {
         } catch (error) {
           throw refused(error);
         }
-        const record = keys?.[0];
-        if (!record) {
-          // Gone between the two reads: the next catch-up or retry reads what is there then.
-          throw new SourceError("transient", "A source record changed while it was read");
+        const key = keys?.[0];
+        if (!key) {
+          throw gone();
         }
-        return { items: [terminal(kind, record, reason)], more: true };
+        const id = idOf(key);
+        if (!idPattern.test(id)) {
+          // Terminal whether it reads or not, and an ID past the filter limit cannot be read alone.
+          return { items: [terminal(kind, key, UNKEYED)], more: true };
+        }
+        // The ID-only read may have met another record, committed earlier in `(stamp, id)` order
+        // between the two reads: that record is terminal only if it, read alone, is unreadable too.
+        let confirmed: ReadonlyArray<SourceObject> | null;
+        try {
+          confirmed = await parts.page(
+            collection,
+            { filter: `(${filter}) && id = ${textLiteral(id)}`, sort, perPage: 1 },
+            call,
+          );
+        } catch (error) {
+          if (!unreadable(error)) {
+            throw refused(error);
+          }
+          return { items: [terminal(kind, key, UNREADABLE)], more: true };
+        }
+        if (!confirmed) {
+          return { items: [terminal(kind, key, TOO_LARGE)], more: true };
+        }
+        const record = confirmed[0];
+        if (!record) {
+          throw gone();
+        }
+        return { items: [itemOf(kind, record)], more: true };
       }
     }
   }
@@ -245,8 +292,7 @@ export function streamReads(parts: StreamReadParts): StreamSource {
       ];
       if (query.after) {
         const at = dateLiteral(query.after.stamp);
-        const id = textLiteral(query.after.id);
-        clauses.push(`(${field} > ${at} || (${field} = ${at} && id > ${id}))`);
+        clauses.push(`(${field} > ${at} || (${field} = ${at} && ${pastId(query.after.id)}))`);
       }
       return read(query.kind, clauses.join(" && "), query.perPage, call);
     },

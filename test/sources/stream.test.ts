@@ -670,17 +670,17 @@ function nested(levels: number): Record<string, unknown> {
 }
 
 /**
- * A fresh events collection whose IDs may be up to 120 characters: past the 100 the stream keys
+ * A fresh events collection whose IDs may be up to `max` characters: past the 100 the stream keys
  * (PocketBase refuses the characters the stream's pattern leaves out, so length is the one way).
  */
-async function longIdEventsCollection() {
+async function longIdEventsCollection(max = 120) {
   const events = await eventsCollection();
   const collection: { fields: Array<Record<string, unknown>> } = await pb.api(
     "GET",
     `/api/collections/${events.name}`,
   );
   const fields = collection.fields.map((field) =>
-    field.name === "id" ? { ...field, min: 1, max: 120 } : field,
+    field.name === "id" ? { ...field, min: 1, max } : field,
   );
   await pb.api("PATCH", `/api/collections/${events.name}`, { fields });
   return events;
@@ -740,6 +740,102 @@ test("B155b: a queued record edited past the nesting limit is terminal at its re
   expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([expect.stringContaining(id)]);
   expect(linesOf(s, REFUSED)).toEqual([]);
   expect(s.attempts.get(id)).toBe(1);
+});
+
+test("B155b: a readable record the ID-only read meets instead of the unreadable one is delivered, not terminal", async () => {
+  const name = unique("race");
+  const cut = proxy();
+  const manual = config(cut.url, {
+    events: { ...config().events, collection: "manual_events", key: "" },
+    users: { collection: "", leavingFilter: "" },
+  });
+  // The seam: a readable record commits, stamped earlier than the unreadable one, between the
+  // catch-up's failed read of the unreadable record alone and its read of that record's ID only.
+  let racer: string | undefined;
+  let commitRacer: (() => Promise<void>) | undefined;
+  const s = stream({
+    config: manual,
+    names: () => [name],
+    tuning: { pageSize: 5 },
+    async beforeRequest(url) {
+      if (commitRacer && url.searchParams.has("fields")) {
+        const commit = commitRacer;
+        commitRacer = undefined;
+        await commit();
+      }
+    },
+  });
+  await s.live();
+  const user = await pb.user();
+  const create = async (offsetMs: number, data: unknown = {}) =>
+    (
+      await pb.create("manual_events", {
+        user: user.id,
+        name,
+        data,
+        occurredAt: stamp(0),
+        created: stamp(offsetMs),
+      })
+    ).id;
+  const anchor = await create(0);
+  await s.until(() => s.eventIds().length === 1, "the anchor record");
+  cut.cut();
+  const deep = await create(2000, nested(70));
+  const later = await create(3000);
+  commitRacer = async () => {
+    racer = await create(1000);
+  };
+  await s.until(() => s.eventIds().includes(later), "the record after the unreadable one");
+  await s.live();
+  expect(commitRacer).toBeUndefined();
+  const raced = must(racer, "the racing record");
+  expect(sorted(s.eventIds())).toEqual(sorted([anchor, raced, later]));
+  expect(s.attempts.get(raced)).toBe(1);
+  expect(s.attempts.has(deep)).toBe(false);
+  expect(s.stream.retries().map((row) => [row.record_id, row.terminal])).toEqual([[deep, 1n]]);
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([expect.stringContaining(deep)]);
+  expect(linesOf(s, REFUSED)).toEqual([]);
+});
+
+test("B155b: an ID past the filter's 4,096-byte limit is terminal and never stalls the catch-up", async () => {
+  // PocketBase 0.40.5 caps no ID length: it takes this 5,000-character ID.
+  const events = await longIdEventsCollection(6000);
+  const long = `long${"c".repeat(4996)}`;
+  const cut = proxy();
+  const name = unique("longid");
+  // One record per page: every record, the long one too, is the bound of the next page.
+  const s = stream({
+    config: { ...events.settings, url: cut.url },
+    names: () => [name],
+    tuning: { pageSize: 1 },
+  });
+  await s.live();
+  const user = await pb.user();
+  const create = async (id?: string) =>
+    (
+      await pb.create(events.name, {
+        ...(id ? { id } : {}),
+        user: user.id,
+        name,
+        occurredAt: stamp(0),
+        data: {},
+      })
+    ).id;
+  const anchor = await create();
+  await s.until(() => s.eventIds().length === 1, "the anchor record");
+  cut.cut();
+  const meanwhile = [await create()];
+  expect(await create(long)).toBe(long);
+  meanwhile.push(await create(), await create());
+  await s.until(() => s.eventIds().length === 4, "every keyable record");
+  await s.live();
+  expect(sorted(s.eventIds())).toEqual(sorted([anchor, ...meanwhile]));
+  // The store keeps an ID's first 255 characters.
+  expect(s.stream.retries().map((row) => [row.record_id, row.terminal])).toEqual([
+    [long.slice(0, 255), 1n],
+  ]);
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([expect.stringContaining(long.slice(0, 255))]);
+  expect(linesOf(s, REFUSED)).toEqual([]);
 });
 
 test("B155b: a record whose ID the stream cannot key is terminal with one line, live and in a catch-up", async () => {

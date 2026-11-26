@@ -45,7 +45,9 @@ place, so none runs a half-written binary.
   directory.
 - A stream fixture (`stream-fixture.ts`) moves its test clock only while no source request is in
   flight and the stream is not connecting (`until`, `advance`, `retryAfter`): each request's time
-  limit is on that clock. Read attention lines by what they say, not by position.
+  limit is on that clock. Read attention lines by what they say, not by position. Its
+  `beforeRequest` option runs before each source request is sent, so a test can write to the
+  source between two of the stream's reads (a race the binary does not produce on demand).
 - `sourceConfig(pb.url, pb.service)` is the adapter's configuration for the fixture schema.
 
 Start one instance per test file (`beforeAll`) and give each test its own users, so tests do not

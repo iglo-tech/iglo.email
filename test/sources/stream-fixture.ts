@@ -77,6 +77,11 @@ export interface StreamFixtureOptions {
   clock?: TestClock;
   /** The adapter's response limit (a record past it, without writing megabytes). */
   maxResponseBytes?: number;
+  /**
+   * Runs before each source request is sent (B155b): a test writes to the source between two of
+   * the stream's reads, the race no schedule of the binary produces when asked.
+   */
+  beforeRequest?: (url: URL) => Promise<void> | void;
 }
 
 /** A stream on its own database; `close` stops it and removes the directory it made. */
@@ -94,8 +99,9 @@ export function startStream(options: StreamFixtureOptions) {
     guard: openGuard,
     ...(options.maxResponseBytes ? { maxResponseBytes: options.maxResponseBytes } : {}),
     transport: {
-      fetch: (input: URL, init: RequestInit) => {
+      fetch: async (input: URL, init: RequestInit) => {
         requests.push(`${init.method ?? "GET"} ${input.pathname}${input.search}`);
+        await options.beforeRequest?.(input);
         return fetch(input, init);
       },
     },
