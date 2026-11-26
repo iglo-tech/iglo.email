@@ -72,6 +72,32 @@ test("two deletes of one slug in the same millisecond keep two snapshots, neithe
   expect(f.failures).toEqual([]);
 });
 
+test("a delete removes the partial copies an earlier crashed attempt of it left, and no other slug's", async () => {
+  // B155a r1 (D176): a crash between the copy and its claim leaves a full-size `.db.partial`.
+  const f = await openLifecycle(createRealClock());
+  const host = "crashed.example.test";
+  const deleted = join(f.dataDir, "backups", "deleted");
+  const stale = "crashed-2026-11-01T10-00-00.000Z.db.partial";
+  const others = [
+    "crashed-old-2026-11-01T10-00-00.000Z.db.partial",
+    "crashed-2026-11-01T10-00-00.000Z.db",
+  ];
+  try {
+    await createProject(f, { slug: "crashed", name: "Crashed", hostname: host });
+    mkdirSync(deleted, { recursive: true });
+    for (const name of [stale, ...others]) {
+      writeFileSync(join(deleted, name), "an earlier copy");
+    }
+    const answer = await deleteProject(f, "crashed");
+    expect(answer.status).toBe(200);
+    const snapshot = deletedDatabase(answer.text).slice("backups/deleted/".length);
+    expect(readdirSync(deleted).toSorted()).toEqual([...others, snapshot].toSorted());
+  } finally {
+    await f.close();
+  }
+  expect(f.failures).toEqual([]);
+});
+
 test("a delete that stops part way keeps the project listed with its error and off the routing table; the next delete finishes it", async () => {
   const f = await openLifecycle(createRealClock());
   const host = "stuck.example.test";

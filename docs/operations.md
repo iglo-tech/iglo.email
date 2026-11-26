@@ -432,7 +432,11 @@ writes `[instance] projects/<name> has no registry row: it is not served`, and t
 lists it. Move it away, or bring it back as a deleted project is brought back. Its presence tells
 the server the instance has had several projects, as a deleted project's snapshot does. A delete
 that stopped part way leaves the project's database there as a copy of its snapshot in
-`backups/deleted`, never the snapshot itself, so opening it does not change the snapshot.
+`backups/deleted`, never the snapshot itself, so opening it does not change the snapshot. Only a
+directory whose name could be a project's slug (lowercase letters, digits and `-`) counts: a
+`lost+found` (when `projects/` is its own filesystem) is ignored. A `<slug>-<time>.db.partial` in
+`backups/deleted` is a copy a delete stopped by a crash left; it is never a snapshot, and the next
+delete of that slug removes it (it is safe to delete by hand).
 
 **Logs.** `/admin/instance/logs` shows the instance's own lines and the latest lines of every
 project, each labelled with its slug; a project's Logs page still shows only its own.

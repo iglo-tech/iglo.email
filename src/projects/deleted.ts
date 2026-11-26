@@ -7,7 +7,7 @@ import { Database } from "bun:sqlite";
 import { constants, existsSync, opendirSync } from "node:fs";
 import type { Dir } from "node:fs";
 import { copyFile, link, lstat, mkdir, open, readdir, rm } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import type { Clock } from "@/clock";
 import { PROJECT_DATABASE, projectDirectory } from "@/projects/layout";
 
@@ -103,6 +103,9 @@ export async function archiveDeleted(
   const source = join(directory, PROJECT_DATABASE);
   if (progress.database === undefined) {
     await mkdir(target, { recursive: true });
+    // B155a r1 (D176): a copy an earlier attempt of this delete left when it stopped (a crash)
+    // between the copy and its claim is never a snapshot; the copy is made again below.
+    await removeStalePartials(target, slug);
     if (existsSync(source)) {
       const db = new Database(source, { strict: true });
       try {
@@ -139,6 +142,13 @@ export async function archiveDeleted(
       throw error;
     }
   }
+  // B155a r1 (D176): the snapshot's and the tarball's names reach the disk before the project's
+  // directory goes, so a crash right after the delete never leaves the snapshot's name missing
+  // (each file's data was synced before its name was claimed). Repeated on a retry: a sync of a
+  // directory with nothing pending costs nothing.
+  for (const path of [target, dirname(target), dataDir]) {
+    await syncPath(path);
+  }
   await rm(directory, { recursive: true, force: true });
   return {
     database: relative(dataDir, database),
@@ -152,12 +162,16 @@ export async function archiveDeleted(
  * the claimed path. The copy is written as `<base>.db.partial` first (a clone where the filesystem
  * can, B155a, D176), then claimed with a hard link, which fails on a taken name where `rename`
  * would replace it. A name whose `.tar` exists is skipped too, so the pair is always one delete's.
- * A failure removes the partial copy; a crash can leave one, which no start counts as a snapshot.
+ * A failure removes the partial copy; a crash can leave one, which no start counts as a snapshot
+ * and the next attempt of the delete removes.
  */
 async function claimName(source: string, target: string, base: string): Promise<string> {
   const partial = join(target, `${base}.db.partial`);
   try {
     await copyFile(source, partial, constants.COPYFILE_FICLONE);
+    // B155a r1 (D176): the copy's data is on disk before any name claims it. A plain copy goes
+    // through the page cache, and the project's database is removed once the delete finishes.
+    await syncPath(partial);
     for (let n = 1; ; n++) {
       const name = n === 1 ? base : `${base}-${n}`;
       const database = join(target, `${name}.db`);
@@ -182,6 +196,31 @@ async function claimName(source: string, target: string, base: string): Promise<
   } finally {
     // The claimed name keeps the copy; one this cannot remove is left over, never counted.
     await rm(partial, { force: true }).catch(() => {});
+  }
+}
+
+/** Flushes a file's data, or a directory's entries, to the disk. */
+async function syncPath(path: string): Promise<void> {
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Removes the `.db.partial` copies an earlier attempt of this slug's delete left: the name is the
+ * slug, then the delete's timestamp, so another slug's (`<slug>-old-…`) never matches.
+ */
+async function removeStalePartials(target: string, slug: string): Promise<void> {
+  const stale = new RegExp(
+    `^${slug}-\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\.\\d{3}Z\\.db\\.partial$`,
+  );
+  for (const name of await readdir(target)) {
+    if (stale.test(name)) {
+      await rm(join(target, name), { force: true });
+    }
   }
 }
 

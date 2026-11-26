@@ -164,11 +164,15 @@ const notFound = () =>
     },
   });
 
-/** The directories under `projects/`, by name. */
+/**
+ * The directories under `projects/` whose names are project slugs, by name. Anything else there
+ * (`lost+found` when `projects/` is its own filesystem, a symlink, a file) is no project's
+ * (B155a r1, D176), so it neither marks the instance as several projects nor blocks a first start.
+ */
 function projectDirectories(root: string): Array<string> {
   return existsSync(resolve(root, PROJECTS))
     ? readdirSync(resolve(root, PROJECTS), { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
+        .filter((entry) => entry.isDirectory() && SLUG_PATTERN.test(entry.name))
         .map((entry) => entry.name)
         .toSorted()
     : [];

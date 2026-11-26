@@ -3,7 +3,7 @@
 // its own subscriber for a late notice about mail the deleted project sent. An instance that has
 // only ever served one project keeps the lookup. Compiled executable, signed SNS through the tunnel.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
@@ -567,6 +567,32 @@ test("a v2.0.0 leftover project directory with no registry row drops the lookup"
   const stderr = await stop();
   expect(countLines(stderr, UNMATCHED)).toBe(2);
   expect(countLines(stderr, "[instance] projects/old has no registry row")).toBe(1);
+});
+
+test("a directory under projects/ that no project could own keeps the lookup", async () => {
+  // B155a r1 (D176): `lost+found` (projects/ on its own filesystem) is no project's directory, nor
+  // is a symlink to one: neither marks the instance as several projects, at any start.
+  if (server) {
+    await stop();
+  }
+  dataDir = upgradedDataDir("upgraded-lost-found", [
+    { slug: "main", host: PRIMARY, primary: true },
+  ]);
+  mkdirSync(join(dataDir, "projects", "lost+found"), { recursive: true });
+  mkdirSync(join(dataDir, "elsewhere"), { recursive: true });
+  symlinkSync(join(dataDir, "elsewhere"), join(dataDir, "projects", "linked"));
+  for (const address of ["lost-found@example.com", "lost-found-restart@example.com"]) {
+    await start();
+    if (address === "lost-found@example.com") {
+      await configure();
+    }
+    const solo = await subscriber(PRIMARY, address);
+    expect(await deliver(notice(solo.email))).toBe(200);
+    expect(await statusOf(PRIMARY, solo.id)).toBe("blocklisted");
+    const stderr = await stop();
+    expect(countLines(stderr, UNMATCHED)).toBe(0);
+    expect(countLines(stderr, "[instance] projects/lost+found")).toBe(0);
+  }
 });
 
 // Root reads a mode-000 directory anyway, so the case cannot be made there.
