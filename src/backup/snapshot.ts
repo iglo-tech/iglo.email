@@ -85,6 +85,16 @@ const FLUSH_INTERVAL_MS = 200;
 export const MANIFEST_LIMIT = 1024 * 1024;
 const REGISTRY_CHANGED = "The registered projects changed while the backup ran; run it again";
 
+/**
+ * A whole backup met a registry change. Its cause, when it has one, is the error of the step that
+ * met the change, which the command prints on a line of its own (D178, D183).
+ */
+export class RegistryChangedError extends Error {
+  constructor(options?: ErrorOptions) {
+    super(REGISTRY_CHANGED, options);
+  }
+}
+
 export interface Inspection {
   schemaVersion: number;
   /** Schema version of this executable. */
@@ -429,12 +439,16 @@ export function inspectBackup(
   if (basename(target).startsWith(PARTIAL)) {
     throw new Error(`${path} is an interrupted backup, not a backup`);
   }
-  const found = statSync(target);
+  // A path that resolves to nothing on disk, such as `/dev/stdin` on a pipe (`pipe:[…]`), is no
+  // backup either (D183).
+  const found = statSync(target, { throwIfNoEntry: false });
+  if (found === undefined) {
+    throw new Error(`No backup at ${given}`);
+  }
+  // A bare snapshot that is not a regular file is refused by `inspect`, before SQLite opens it
+  // (D178, D183).
   if (found.isDirectory()) {
     refuseOddEntries(target);
-  } else if (!found.isFile()) {
-    // A bare snapshot is a file; SQLite's open of a FIFO would wait forever (D178).
-    throw new Error(`${path} is not a regular file: not a backup`);
   }
   if (isWholeBackup(target)) {
     return inspectWhole(target, clock, supportedVersion);
@@ -1156,7 +1170,7 @@ export function createBackup(options: BackupOptions): BackupReport {
           db.close(true);
         }
         if (copied.join("\n") !== registered.join("\n")) {
-          throw new Error(REGISTRY_CHANGED);
+          throw new RegistryChangedError();
         }
         const manifest = join(made.path, MANIFEST);
         writeFileSync(manifest, `${JSON.stringify({ projects: registered })}\n`, {
@@ -1223,7 +1237,7 @@ export function createBackup(options: BackupOptions): BackupReport {
         // The registry unread is no evidence of a change: the step's own error stands.
       }
       if (now !== undefined && now.join("\n") !== unpublished.join("\n")) {
-        throw new Error(REGISTRY_CHANGED, { cause: error });
+        throw new RegistryChangedError({ cause: error });
       }
     }
     throw error;
