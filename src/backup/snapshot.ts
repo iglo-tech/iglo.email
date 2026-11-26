@@ -131,12 +131,18 @@ function uploadedFiles(directory: string): Array<{ name: string; size: number }>
   });
 }
 
+/** A manifest's fields, unchecked: a project's backup names `uploads`, a whole one `projects`. */
+interface Manifest {
+  uploads?: unknown;
+  projects?: unknown;
+}
+
 /**
  * A backup's manifest, parsed, read with a bound (D178): a hand-made one can be any size, and it is
  * refused over MANIFEST_LIMIT before it is parsed. It must be a regular file, not a symlink, and is
  * opened without blocking, so a FIFO in its place is refused rather than waited on.
  */
-function readManifest(directory: string): Record<string, unknown> {
+function readManifest(directory: string): Manifest {
   const path = join(directory, MANIFEST);
   let descriptor: number;
   try {
@@ -189,7 +195,9 @@ function readManifest(directory: string): Record<string, unknown> {
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       throw new Error(`${path} is not a manifest: not a backup`);
     }
-    return parsed as Record<string, unknown>;
+    // Each field is checked where it is used: `uploads` by a project's check, `projects` by a whole one.
+    const { uploads, projects } = parsed as Manifest;
+    return { uploads, projects };
   } finally {
     closeSync(descriptor);
   }

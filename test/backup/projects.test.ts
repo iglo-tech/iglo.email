@@ -163,9 +163,13 @@ test("--verify refuses a manifest that names something other than a project slug
   expect(verified.stdout).toBe("");
 });
 
+/** A manifest's JSON padded past the limit with spaces: it would parse, and only the bound refuses it. */
+function padded(manifest: { projects: Array<string> } | { uploads: string }): string {
+  return `${JSON.stringify(manifest)}${" ".repeat(MANIFEST_LIMIT)}\n`;
+}
+
 test("--verify refuses a manifest over its size limit before parsing it", async () => {
-  // Valid JSON padded past 1 MiB: it would parse, and only the bound refuses it (D178).
-  const padded = (manifest: object) => `${JSON.stringify(manifest)}${" ".repeat(MANIFEST_LIMIT)}\n`;
+  // D178.
   const crafted = join(base, "large-whole");
   cpSync(whole(), crafted, { recursive: true });
   writeFileSync(join(crafted, "iglo-email-backup.json"), padded({ projects: ["a", "b", "main"] }));

@@ -6,24 +6,30 @@
 // out of date, and a build never deletes or truncates a file another run may be reading (D168):
 //
 // - Fresh: a stamp in `dist/.test-build` records a hash of the build's inputs (their paths and
-//   contents, not timestamps) and the identity of the outputs it produced. A run whose inputs hash
-//   the same and whose outputs are still the ones recorded builds nothing.
+//   contents, not timestamps), a hash of the template reference the build regenerates, and the
+//   identity of the outputs it produced. A run whose inputs hash the same, whose reference is the
+//   one the build wrote and whose outputs are still the ones recorded builds nothing.
 // - Staged: a rebuild runs `bun run build` in a copy of the inputs under `dist/.test-build`, then
 //   moves each new file into place with `rename`, the assets first, then the manifest that names
 //   them, then the executable. A reader sees either a whole old file or a whole new one. Old asset
 //   files stay, so a manifest a running file has already imported still names files that exist;
 //   the next `bun run build` (which deletes `dist/assets`) clears them.
-// - Serialized: builders in one checkout take a lock directory beside the stamp. A builder that
-//   waited checks the stamp again, so concurrent runs build once.
+// - Serialized: builders in one checkout take an exclusive `flock` on a file beside the stamp. A
+//   builder that waited checks the stamp again, so concurrent runs build once. The kernel releases
+//   the lock when its holder exits, killed or not, so there is no owner to check and nothing to
+//   take over (D178).
 //
 // The lock, the stamp and the staging copies live in the checkout's own `dist/`, so they go when
 // the checkout does. `bun run test` runs this file before its workers start and sets
 // IGLO_TEST_PREBUILT, so no file of that run checks again; any other `bun test` run (a file, a
 // directory, a bare `--parallel` run) checks through `test/preload.ts` before each file.
+import { FFIType, dlopen } from "bun:ffi";
 import {
+  closeSync,
   cpSync,
   existsSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -38,8 +44,9 @@ import { asBody } from "@/test/read-body";
 const repository = resolve(import.meta.dir, "..");
 const dist = join(repository, "dist");
 const work = join(dist, ".test-build");
-const lock = join(work, "lock");
-const ownerFile = join(lock, "owner");
+// Never removed: a waiter holds a descriptor of this file, and a removed file would give the next
+// builder another one, so two could hold "the" lock.
+const lockFile = join(work, "build.lock");
 const stampFile = join(work, "stamp");
 // What `bun run build` reads: copied into a staging checkout and hashed for the stamp. bun.lock and
 // patches/ stand for node_modules, which the staging checkout links to.
@@ -59,14 +66,17 @@ const inputs = [
   ".oxfmtrc.json",
 ];
 // Written by the build, so neither an input nor copied: the asset manifest, and the template
-// reference regenerated from docs/design/06-templates.md.
+// reference regenerated from docs/design/06-templates.md. The reference is tracked, so a checkout
+// can change it alone; its hash is in the stamp, and a copy that is not the one the build wrote is
+// rewritten by the next check (D178).
 const manifest = "src/server/asset-manifest.ts";
 const reference = "src/mcp/reference.ts";
 const generated = new Set([manifest, reference]);
-// A held lock is waited for as long as its owner lives (a build takes about a minute at most).
+// A held lock is waited for as long as its holder lives: a build takes seconds, and the kernel
+// releases the lock of a holder that dies.
 const holdLimitMs = 15 * 60_000;
-// Any other `mkdir` failure (permissions, full disk) cannot clear by waiting.
-const faultLimitMs = 5000;
+const LOCK_EX = 2;
+const LOCK_NB = 4;
 let built: Promise<void> | undefined;
 
 function files(path: string, into: Array<string>): Array<string> {
@@ -106,22 +116,44 @@ function inputHash(): string {
   return hash.digest("hex");
 }
 
-// The outputs as they are now: the manifest's contents and the inodes of the executable and the
-// assets directory. `bun run build` replaces all three, so a build made without this file (or from
-// other inputs) is never taken for the recorded one.
-function outputIdentity(): string | undefined {
+// A hash of the checkout's template reference, or "none" when it has none.
+function referenceHash(text = readReference()): string {
+  return text === undefined ? "none" : new Bun.CryptoHasher("sha256").update(text).digest("hex");
+}
+
+function readReference(): Buffer | undefined {
   try {
-    const executable = statSync(join(dist, "iglo.email"), { bigint: true });
-    const assets = statSync(join(dist, "assets"), { bigint: true });
-    const text = readFileSync(join(repository, manifest));
-    return `${Bun.hash(text).toString(36)}:${executable.ino}:${executable.size}:${assets.ino}`;
+    return readFileSync(join(repository, reference));
   } catch {
     return undefined;
   }
 }
 
-function stamp(inputs: string, outputs: string): string {
-  return `${inputs}\n${outputs}`;
+// The outputs as they are now: the manifest's contents, and the inode, size and change time of the
+// executable and the assets directory. Any write to the executable (`bun run build` from other
+// sources, even into the same inode at the same size) and any recreation of the assets directory
+// moves a change time, which no process can set back, so such a build is never taken for the
+// recorded one (D178). Reading or copying the executable moves nothing.
+function outputIdentity(): string | undefined {
+  try {
+    const executable = statSync(join(dist, "iglo.email"), { bigint: true });
+    const assets = statSync(join(dist, "assets"), { bigint: true });
+    const text = readFileSync(join(repository, manifest));
+    return [
+      Bun.hash(text).toString(36),
+      executable.ino,
+      executable.size,
+      executable.ctimeNs,
+      assets.ino,
+      assets.ctimeNs,
+    ].join(":");
+  } catch {
+    return undefined;
+  }
+}
+
+function stamp(inputs: string, referenced: string, outputs: string): string {
+  return `${inputs}\n${referenced}\n${outputs}`;
 }
 
 function fresh(inputs: string): boolean {
@@ -130,88 +162,39 @@ function fresh(inputs: string): boolean {
     return false;
   }
   try {
-    return readFileSync(stampFile, "utf-8") === stamp(inputs, outputs);
+    return readFileSync(stampFile, "utf-8") === stamp(inputs, referenceHash(), outputs);
   } catch {
     return false;
   }
 }
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return asBody<NodeJS.ErrnoException>(error).code === "EPERM";
-  }
+// libc's flock(2), loaded when a build is needed: neither Node's nor Bun's file API has it.
+let flock: ((descriptor: number, operation: number) => number) | undefined;
+
+function flockCall(descriptor: number, operation: number): number {
+  flock ??= dlopen("libc.so.6", {
+    flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+  }).symbols.flock;
+  return flock(descriptor, operation);
 }
 
-// A lock is stale when its recorded owner is gone. A lock without a readable owner yet is a
-// fresh `mkdir` whose owner has not written its PID: stale only after a few seconds.
-function stale(dir = lock): boolean {
+// Takes the checkout's build lock and returns its descriptor; closing it releases the lock. A
+// non-blocking attempt every 50 ms keeps this process's event loop running while it waits.
+async function acquire(): Promise<number> {
+  mkdirSync(work, { recursive: true });
+  const descriptor = openSync(lockFile, "a");
   try {
-    const pid = Number(readFileSync(join(dir, "owner"), "utf-8"));
-    if (Number.isInteger(pid) && pid > 0) {
-      return !alive(pid);
-    }
-  } catch {
-    // No readable owner yet: the age of the lock decides below.
-  }
-  try {
-    return Date.now() - statSync(dir).mtimeMs > 10_000;
-  } catch {
-    return false;
-  }
-}
-
-// Moves a stale lock away, so that of several processes finding it only one succeeds (a second
-// `rename` finds nothing). The moved directory is checked again: if a new owner took the path in
-// between, the lock is put back and nobody has been misled.
-function takeOver(): boolean {
-  const moved = `${lock}.stale-${process.pid}-${Date.now()}`;
-  try {
-    renameSync(lock, moved);
-  } catch {
-    return false;
-  }
-  if (!stale(moved)) {
-    try {
-      renameSync(moved, lock);
-    } catch {
-      // Best effort: if another process has taken the lock path, that process owns it now.
-    }
-    return false;
-  }
-  rmSync(moved, { recursive: true, force: true });
-  return true;
-}
-
-async function acquire(): Promise<void> {
-  const start = Date.now();
-  for (;;) {
-    try {
-      mkdirSync(work, { recursive: true });
-      mkdirSync(lock);
-      writeFileSync(ownerFile, String(process.pid));
-      return;
-    } catch (error) {
-      const code = asBody<NodeJS.ErrnoException>(error).code;
-      if (code === "EEXIST") {
-        if (stale() && takeOver()) {
-          continue;
-        }
-        if (Date.now() - start > holdLimitMs) {
-          throw new Error(`Production build lock ${lock} is still held by a live process`, {
-            cause: error,
-          });
-        }
-      } else if (Date.now() - start > faultLimitMs) {
-        throw new Error(
-          `Cannot create production build lock ${lock}: ${asBody<Error>(error).message}`,
-          { cause: error },
-        );
+    const start = Date.now();
+    while (flockCall(descriptor, LOCK_EX | LOCK_NB) !== 0) {
+      if (Date.now() - start > holdLimitMs) {
+        throw new Error(`Production build lock ${lockFile} is still held by a live process`);
       }
       await Bun.sleep(50);
     }
+    return descriptor;
+  } catch (error) {
+    closeSync(descriptor);
+    throw error;
   }
 }
 
@@ -235,7 +218,9 @@ function publishFile(source: string, target: string): void {
   renameSync(source, target);
 }
 
-async function rebuild(): Promise<void> {
+// Builds in a staging copy and moves the outputs into place; returns the template reference the
+// build wrote.
+async function rebuild(): Promise<Buffer> {
   // Staging copies left by a builder that died; the lock is held, so none is in use.
   for (const name of readdirSync(work)) {
     if (name.startsWith("stage-")) {
@@ -274,16 +259,12 @@ async function rebuild(): Promise<void> {
     // The build regenerates the reference from the design text; a checkout whose copy is out of
     // date gets the new one, as `bun run build` would write it.
     const next = readFileSync(join(stage, reference));
-    let current: Buffer | undefined;
-    try {
-      current = readFileSync(join(repository, reference));
-    } catch {
-      current = undefined;
-    }
+    const current = readReference();
     if (current === undefined || !next.equals(current)) {
       publishFile(join(stage, reference), join(repository, reference));
     }
     publishFile(join(stage, "dist/iglo.email"), join(dist, "iglo.email"));
+    return next;
   } finally {
     rmSync(stage, { recursive: true, force: true });
   }
@@ -293,23 +274,24 @@ async function build(): Promise<void> {
   if (fresh(inputHash())) {
     return;
   }
-  await acquire();
+  const held = await acquire();
   try {
     // Another run may have built while this one waited for the lock.
     const before = inputHash();
     if (fresh(before)) {
       return;
     }
-    await rebuild();
-    // Recorded against the inputs read before the build, so an edit made during it is rebuilt by
-    // the next check.
+    const written = await rebuild();
+    // Recorded against the inputs read before the build and the reference the build wrote, so an
+    // edit made during it, of either, is rebuilt by the next check.
     const outputs = outputIdentity();
     if (outputs !== undefined) {
-      writeFileSync(`${stampFile}.${process.pid}`, stamp(before, outputs));
+      writeFileSync(`${stampFile}.${process.pid}`, stamp(before, referenceHash(written), outputs));
       renameSync(`${stampFile}.${process.pid}`, stampFile);
     }
   } finally {
-    rmSync(lock, { recursive: true, force: true });
+    // Closing the descriptor releases the lock; the file stays (see lockFile).
+    closeSync(held);
   }
 }
 
