@@ -32,9 +32,11 @@ import {
 } from "@/sources/recipient-sync";
 import type { SubscriberRow } from "@/sources/recipient-sync";
 import { isAuthRefused } from "@/sources/pocketbase";
+import type { PocketBaseSource } from "@/sources/pocketbase";
 import type { GrantRule } from "@/sources/settings";
 import { isSourceError, SourceError } from "@/sources/source";
 import type { CallOptions, ExternalSource, SourceEvent } from "@/sources/source";
+import { isSettingsMismatch } from "@/sources/stream-record";
 import type { RecordCommit, RecordHandler, SourceUser } from "@/sources/stream-record";
 import type { SubscriberStore } from "@/subscribers/store";
 
@@ -63,8 +65,8 @@ export interface RecordHandlerOptions {
   db: Database;
   clock: Clock;
   logger: Pick<ErrorLogger, "attention">;
-  /** The project's source (the stream's own adapter). */
-  source: ExternalSource;
+  /** The project's source (the stream's own adapter) and its events schema probe. */
+  source: ExternalSource & Pick<PocketBaseSource, "eventsSchema">;
   /** The project's `source.grant_lists` rules, read for each record. */
   grantRules: () => ReadonlyArray<GrantRule>;
   subscribers: Pick<
@@ -156,36 +158,41 @@ const refused = (error: unknown): never => {
  *   committed, and the record waits for the settings;
  * - a `400` to an events query that is not the sign-in's is either the settings' (a renamed mapped
  *   field, a broken list rule) or the condition's own filter (one PocketBase refuses): the events
- *   collection is probed once with this user's newest record and every mapped field, no condition
- *   part. When the probe fails for good too, it is the settings'; when it answers, the `400` is the
- *   condition's, and only its sequence is skipped (D172). The recipients view and a record by ID
- *   send no condition filter, so a `400` there is always the settings'.
+ *   collection is probed once (`eventsSchema`) with a filter naming every mapped field and no
+ *   condition part, reading only an `id`, so it checks the fields and the list rule whatever rows
+ *   the collection holds and reads no record. When the probe fails for good too, it is the
+ *   settings' (a `SettingsMismatch`); when it fails for now, the record is retried; when it
+ *   answers, the `400` is the condition's, and only its sequence is skipped (D172). An abort or any
+ *   other failure of the probe is thrown on as it is. The recipients view and a record by ID send
+ *   no condition filter, so a `400` there is always the settings'.
  */
-function conditionSource(source: ExternalSource, record: SourceEvent): ExternalSource {
-  let probed: Promise<unknown> | undefined;
-  /** The probe's failure, or `null` when it answered. Read once per record. */
+function conditionSource(source: RecordHandlerOptions["source"]): ExternalSource {
+  let probed: Promise<void> | undefined;
+  /** The probe, sent once per record; it resolves when the source answered. */
   const probe = (call: CallOptions | undefined) => {
-    probed ??= (async () => {
-      const fields = ["user", "name", "data", "key"] as const;
-      for await (const _ of source.scan({ user: record.user }, fields, 1, call)) {
-        // One record is all the probe reads.
-      }
-      return null;
-    })().catch((error: unknown) => error);
+    if (!probed) {
+      probed = source.eventsSchema(call);
+      // Each caller awaits it; with none left waiting it must not go unhandled.
+      probed.catch(() => {});
+    }
     return probed;
   };
   const queried = async (error: unknown, call: CallOptions | undefined): Promise<never> => {
     if (!isSourceError(error) || error.status !== 400 || isAuthRefused(error)) {
       return refused(error);
     }
-    const failure = await probe(call);
-    if (failure === null) {
-      throw error;
+    try {
+      await probe(call);
+    } catch (error_) {
+      // The probe's failure. An abort (the stream stopping or switching settings), a transient
+      // failure, a settings mismatch already or anything unexpected: as it is, so nothing is
+      // committed.
+      if (!isSourceError(error_) || error_.kind !== "permanent" || isSettingsMismatch(error_)) {
+        throw error_;
+      }
+      throw settingsRefusal(error_, CONDITION_READ) ?? error;
     }
-    if (isSourceError(failure) && failure.kind === "transient") {
-      throw failure;
-    }
-    throw settingsRefusal(failure, CONDITION_READ) ?? error;
+    throw error;
   };
   return {
     recipient: (id, call) => source.recipient(id, call).catch(refused),
@@ -252,7 +259,7 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
       return [];
     }
     const chosen: Array<{ id: bigint; trigger: string }> = [];
-    const conditionReads = conditionSource(options.source, record);
+    const conditionReads = conditionSource(options.source);
     for (const sequence of enrollments.externalTriggers(record.name)) {
       const trigger = triggerOf(sequence.trigger);
       const where = trigger && scalarWhere(trigger.where);

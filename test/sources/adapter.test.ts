@@ -8,7 +8,7 @@ import { checkSource } from "@/sources/check";
 import type { Guard } from "@/sources/connect";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
-import { isSourceError } from "@/sources/source";
+import { isRecordUnreadable, isSourceError } from "@/sources/source";
 import type { SourceError } from "@/sources/source";
 import { TestClock } from "@/test/server/fixture";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
@@ -756,4 +756,46 @@ test("Test connection: an empty collection reads as 'no records yet, or the list
   expect(recipients?.message).toBe(
     "nobody_yet: read, but there are no records yet, or the list rule hides them from the service account.",
   );
+});
+
+test("B166: a large error page (a proxy's 502 or 403) on an events read is that status's failure, not a record too large to read", async () => {
+  const user = await pb.user();
+  await pb.event(user.id, "proxied");
+  // A 403 signs in again and repeats the read once; neither is narrowed to smaller pages.
+  for (const [status, kind, sent] of [
+    [502, "transient", 1],
+    [403, "permanent", 2],
+  ] as const) {
+    const reads: Array<string> = [];
+    const source = createPocketBaseSource({
+      config: sourceConfig(pb.url, pb.service),
+      clock: createRealClock(),
+      guard: open,
+      maxResponseBytes: 4000,
+      transport: {
+        fetch: async (input: URL, init: RequestInit) => {
+          if (input.pathname !== "/api/collections/events/records") {
+            return fetch(input, init);
+          }
+          reads.push(input.search);
+          return new Response(`<!doctype html><title>Bad gateway</title>${" ".repeat(5000)}`, {
+            status,
+            headers: { "content-type": "text/html" },
+          });
+        },
+      },
+    });
+    const refused = await failure(source.exists({ user: user.id, names: ["proxied"] }));
+    expect({
+      kind: refused.kind,
+      status: refused.status,
+      unreadable: isRecordUnreadable(refused),
+    }).toEqual({
+      kind,
+      status,
+      unreadable: false,
+    });
+    expect(refused.message).not.toContain("larger than the response limit");
+    expect(reads.length).toBe(sent);
+  }
 });

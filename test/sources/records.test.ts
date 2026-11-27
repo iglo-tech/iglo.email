@@ -12,7 +12,8 @@
 // answers one user's recipients read with the binary's row whose address is a number (a permanent
 // read failure that is not an ID the source cannot have). B166 adds three: `refuseRecipients`
 // answers the recipients view with PocketBase's `400`, `beforeQuery` runs a change on the binary (a
-// password rotation, a field rename) just before one events query is forwarded, and `html` answers
+// password rotation, a field rename) just before one events query is forwarded, `holdQuery` holds
+// one events query (the schema probe) until the test releases it, and `html` answers
 // every request with a 200 HTML page (a proxy put in front of the source).
 // Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
@@ -78,6 +79,10 @@ interface Harness {
   refuseRecipients: { on: boolean };
   /** Runs once before the first events query whose filter includes `includes` is forwarded. */
   beforeQuery: { current: { includes: string; run: () => Promise<void> } | null };
+  /** Holds the first events query whose filter includes `includes` until `released` settles. */
+  holdQuery: {
+    current: { includes: string; reached: () => void; released: Promise<void> } | null;
+  };
   /** While on, every source request is answered with a 200 HTML page (a proxy's or SSO page). */
   html: { on: boolean };
   /**
@@ -123,6 +128,7 @@ async function start(
   const malformed: Harness["malformed"] = { user: null };
   const refuseRecipients = { on: false };
   const beforeQuery: Harness["beforeQuery"] = { current: null };
+  const holdQuery: Harness["holdQuery"] = { current: null };
   const html = { on: false };
   const records = createSourceRecords({
     db: f.db,
@@ -166,6 +172,16 @@ async function start(
         ) {
           beforeQuery.current = null;
           return before.run().then(() => fetch(input, init));
+        }
+        const heldQuery = holdQuery.current;
+        if (
+          heldQuery &&
+          input.pathname === "/api/collections/events/records" &&
+          (input.searchParams.get("filter") ?? "").includes(heldQuery.includes)
+        ) {
+          holdQuery.current = null;
+          heldQuery.reached();
+          return heldQuery.released.then(() => fetch(input, init));
         }
         const refused = refuseHistory.name;
         if (
@@ -222,6 +238,7 @@ async function start(
     malformed,
     refuseRecipients,
     beforeQuery,
+    holdQuery,
     html,
     ev: (name) => `${name}_${tag}`,
   };
@@ -1550,11 +1567,127 @@ test("B166: a mapped events field renamed while a trigger.condition is read refu
   };
   try {
     const paid = await record(h, ana, "order_paid");
-    await waitsThenStartsOnce(h, seq, ana, paid, 'no field "name"', async () => {
+    await waitsThenStartsOnce(h, seq, ana, paid, CONDITION_REFUSED, async () => {
       await pb.renameField("events", "eventName", "name");
       renamed = false;
     });
   } finally {
+    if (renamed) {
+      await pb.renameField("events", "eventName", "name");
+    }
+  }
+});
+
+const CONDITION_REFUSED = "The source refused a trigger condition's read";
+/** The events schema probe's filter names every mapped field as `f = f`. */
+const PROBE = "name = name";
+
+test("B166 round 3: a mapped events field renamed when the user's only older event is nested 70 levels deep refuses the stream (the probe reads no record): nothing committed; renamed back, the sequence starts once", async () => {
+  const h = await start();
+  const seq = await conditioned(h);
+  const ana = await pb.user();
+  await pb.event(
+    ana.id,
+    h.ev("history"),
+    { deep: nested(70) },
+    { occurredAt: new Date(h.f.clock.now().getTime() - minute).toISOString() },
+  );
+  let renamed = false;
+  h.beforeQuery.current = {
+    includes: ana.id,
+    run: async () => {
+      await pb.renameField("events", "name", "eventName");
+      renamed = true;
+    },
+  };
+  try {
+    const paid = await record(h, ana, "order_paid");
+    await waitsThenStartsOnce(h, seq, ana, paid, CONDITION_REFUSED, async () => {
+      await pb.renameField("events", "eventName", "name");
+      renamed = false;
+    });
+  } finally {
+    if (renamed) {
+      await pb.renameField("events", "eventName", "name");
+    }
+  }
+});
+
+test("B166 round 3: a mapped events field renamed when the user has no event left at probe time refuses the stream: nothing committed and no condition failure", async () => {
+  const h = await start();
+  await conditioned(h);
+  const ana = await pb.user();
+  let renamed = false;
+  let paid: { id: string } | undefined;
+  h.beforeQuery.current = {
+    includes: ana.id,
+    run: async () => {
+      await pb.renameField("events", "name", "eventName");
+      renamed = true;
+      if (paid) {
+        await pb.remove("events", paid.id);
+      }
+    },
+  };
+  try {
+    paid = await record(h, ana, "order_paid");
+    await until(
+      h,
+      () => h.attention.some((line) => line.includes(CONDITION_REFUSED)),
+      "the refusal",
+    );
+    expect(h.records.stream()?.retries()).toEqual([]);
+    expect(h.outcomes.some((o) => o.record === paid?.id)).toBe(false);
+    expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+      false,
+    );
+    expect(await linked(h, ana)).toBeNull();
+  } finally {
+    if (renamed) {
+      await pb.renameField("events", "eventName", "name");
+    }
+  }
+});
+
+test("B166 round 3: the stream switching settings while the schema probe after a renamed field's 400 is in flight commits nothing; with the field back, the new stream starts the sequence once", async () => {
+  const h = await start();
+  const seq = await conditioned(h);
+  const ana = await pb.user();
+  let renamed = false;
+  const { promise: probing, resolve: reached } = Promise.withResolvers<void>();
+  const { promise: released, resolve: release } = Promise.withResolvers<void>();
+  h.beforeQuery.current = {
+    includes: ana.id,
+    run: async () => {
+      await pb.renameField("events", "name", "eventName");
+      renamed = true;
+    },
+  };
+  h.holdQuery.current = { includes: PROBE, reached, released };
+  try {
+    const paid = await record(h, ana, "order_paid");
+    await probing;
+    await pb.renameField("events", "eventName", "name");
+    renamed = false;
+    // A settings switch that keeps the events markers: the running stream is stopped mid-probe.
+    const first = h.records.stream();
+    h.config.current = { ...h.config.current, users: { collection: "", leavingFilter: "" } };
+    await h.records.refresh();
+    expect(first?.state().state).toBe("stopped");
+    release();
+    await live(h);
+    await handled(h, paid);
+    expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+    const subscriber = (await linked(h, ana))?.id ?? 0;
+    expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+      seq.id,
+    ]);
+    expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
+    expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+      false,
+    );
+  } finally {
+    release();
     if (renamed) {
       await pb.renameField("events", "eventName", "name");
     }

@@ -50,7 +50,7 @@ export interface RecipientSyncOptions {
 /**
  * A recipients-view read. B166 (D194): classified by exception. Only the failures of this one
  * record stay per-record permanent errors: an ID the source cannot have, an answer over the
- * response limit, a body that is no record, an address field that is not text. Every other
+ * response limit, JSON nested deeper than 64 levels, an address field that is not text. Every other
  * permanent failure (a `400`, `401`, `403` or `404` of the view, a redirect, a host the
  * private-address block refuses, a mapped field the rows lack, a row with no `id`) is the settings'
  * and a `SettingsMismatch`, so a caller waits for them to be fixed instead of giving the record up.

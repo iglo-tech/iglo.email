@@ -594,11 +594,13 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       `api/collections/${collection}/records?${search}`,
       call,
     );
-    if (answer.tooLarge) {
+    // B166 (D194): only a `200` page can be too large to read; a large error page (a proxy's 403,
+    // 404 or 502) is that status's failure.
+    if (answer.status === 200 && answer.tooLarge) {
       return { value: { tooLarge: true }, used };
     }
     if (answer.status !== 200) {
-      throw failure(answer, `a read of ${collection}`);
+      throw failure({ ...answer, tooLarge: false }, `a read of ${collection}`);
     }
     const items = member(answer.body, "items");
     if (!isSourceList(items) || !items.every(isSourceObject)) {
@@ -856,6 +858,33 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       return (await source.count(query, 1, call)) > 0;
     },
     scan,
+    /**
+     * B166 (D194): the events collection's schema probe, for a trigger condition's `400`: one
+     * `id` read with a filter naming every mapped field (`f = f`, as the settings check), so a
+     * renamed field or a broken list rule fails it whatever rows the collection holds, and no
+     * record is read (JSON nested too deep, a page too large or one that is not JSON is the
+     * configuration's). Resolves when the source answers.
+     */
+    async eventsSchema(call: CallOptions = {}): Promise<void> {
+      const what = `a read of ${ev.collection}`;
+      const filter = [ev.user, ev.name, ev.data, ev.occurredAt, ev.key]
+        .flatMap((field) => (field ? [`${field} = ${field}`] : []))
+        .join(" && ");
+      const search = new URLSearchParams({
+        page: "1",
+        perPage: "1",
+        skipTotal: "1",
+        fields: "id",
+        filter,
+      });
+      const { value: answer } = await notRecord(
+        get(`api/collections/${ev.collection}/records?${search}`, call),
+        what,
+      );
+      if (answer.status !== 200 || answer.tooLarge) {
+        throw failure(answer, what);
+      }
+    },
     /** Signs in now (the settings check). */
     async authenticate(call: CallOptions = {}): Promise<void> {
       call.signal?.throwIfAborted();
@@ -945,6 +974,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     }),
   } satisfies ExternalSource & {
     authenticate: unknown;
+    eventsSchema: unknown;
     probe: unknown;
     guestProbe: unknown;
     stream: unknown;
