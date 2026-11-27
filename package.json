@@ -9,6 +9,7 @@
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build",
     "db:measure": "bun test/db/measure.ts",
     "pocketbase:download": "bun test/sources/pocketbase-binary.ts",
+    "iglo-base:download": "bun test/sources/iglo-base-binary.ts",
     "auth:measure": "bun run build && bun test/users/measure.ts",
     "schema:measure": "bun test/schema/measure.ts",
     "backup:measure": "bun test/backup/measure.ts",
