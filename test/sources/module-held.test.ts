@@ -23,6 +23,7 @@ import { day, schedulerFixture } from "@/test/scheduler/fixture";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
 import type { PocketBase, PocketBaseRecord } from "@/test/sources/pocketbase";
 import { openGuard } from "@/test/sources/stream-fixture";
+import { startCutProxy } from "@/test/sources/stream-proxy";
 import { startSink } from "@/test/tx/sink";
 
 setDefaultTimeout(120_000);
@@ -74,6 +75,8 @@ interface Held {
   kit: { user: PocketBaseRecord; id: number };
   /** Not linked: no `external_id`. */
   una: { email: string; id: number };
+  /** Adds a confirmed member of News (source-linked with `externalId`). */
+  member: (email: string, name: string, externalId?: string) => Promise<number>;
 }
 
 /**
@@ -81,7 +84,7 @@ interface Held {
  * confirmed members of list News: two source-linked users (Opal opted out of marketing in the
  * source, Kit not) and one unlinked subscriber (Una). SMTP goes to the sink. The module is left on.
  */
-async function heldProject(name: string): Promise<Held> {
+async function heldProject(name: string, sourceUrl = `http://localhost:${pb.port}`): Promise<Held> {
   const clock = new TestClock();
   const f = await openLifecycle(clock);
   const instance = async (method: string, path: string, body?: unknown) => {
@@ -119,7 +122,7 @@ async function heldProject(name: string): Promise<Held> {
   const saved = await call("PUT", "/api/settings", {
     ...project,
     "source.connector": "pocketbase",
-    "source.url": `http://localhost:${pb.port}`,
+    "source.url": sourceUrl,
     "source.identity": pb.service.identity,
     "source.password": pb.service.password,
     "source.recipients": {
@@ -157,6 +160,7 @@ async function heldProject(name: string): Promise<Held> {
     opal: { user: opalUser, id: await member(emailOf(opalUser), "Opal", opalUser.id) },
     kit: { user: kitUser, id: await member(emailOf(kitUser), "Kit", kitUser.id) },
     una: { email: unaEmail, id: await member(unaEmail, "Una") },
+    member,
   };
 }
 
@@ -219,6 +223,116 @@ test("off with a stored source: a campaign sends to the unlinked subscriber only
     expect(mailTo(h.una.email)).toBe(1);
   } finally {
     await h.f.close();
+  }
+  expect(h.f.failures).toEqual([]);
+});
+
+// B162a r2 (D188): the module turned off while a campaign batch's source reads are in flight. The
+// batch passed the held check before its reads, so only the reads themselves can tell held from
+// absent: every read that starts after the toggle must hold its recipient, never send it unchecked.
+// More linked recipients than `SOURCE_LOOKUPS` (8), so reads start after the toggle. The timing is
+// driven by the harness and the test clock: PocketBase is paused, the clock steps the runner until
+// a proxy reports the batch's first recipients read (which then hangs), the module is turned off,
+// and PocketBase resumes.
+test("off during a campaign batch's source reads: no opted-out linked recipient is sent, the later reads are skipped unavailable", async () => {
+  const proxy = startCutProxy(pb.port);
+  const h = await heldProject("api-held-race", `http://localhost:${new URL(proxy.url).port}`);
+  let paused = false;
+  try {
+    const campaign = async (name: string, list: number) => {
+      const created = await h.call("POST", "/api/campaigns", {
+        name,
+        subject: name,
+        lists: [list],
+        content_type: "html",
+        body: "<p>News</p>",
+        messenger: "email",
+      });
+      expect(created.status, JSON.stringify(created.body)).toBe(200);
+      return asBody<number>(created.body.data.id);
+    };
+    const run = async (id: number) => {
+      const started = await h.call("PUT", `/api/campaigns/${id}/status`, { status: "running" });
+      expect(started.status, JSON.stringify(started.body)).toBe(200);
+    };
+    const finished = (id: number) =>
+      eventually(
+        async () => (await h.call("GET", `/api/campaigns/${id}`)).body.data.status === "finished",
+        "the campaign to finish",
+        () => h.clock.advance(1000),
+      );
+    // A warm-up campaign to Kit alone signs the project's source in, so the batch's first request
+    // through the proxy is a recipients read, not the sign-in.
+    const warm = asBody<number>(
+      (await h.call("POST", "/api/lists", { name: "Warm", type: "public", optin: "single" })).body
+        .data.id,
+    );
+    const added = await h.call("PUT", "/api/subscribers/lists", {
+      ids: [h.kit.id],
+      action: "add",
+      target_list_ids: [warm],
+      status: "confirmed",
+    });
+    expect(added.status, JSON.stringify(added.body)).toBe(200);
+    const warmId = await campaign("Warm", warm);
+    await run(warmId);
+    await finished(warmId);
+    await eventually(() => mailTo(emailOf(h.kit.user)) === 1, "Kit's warm-up mail");
+
+    // 20 more linked members of News, all opted out of marketing in the source, as Opal is.
+    const optedOut: Array<{ user: PocketBaseRecord; id: number }> = [h.opal];
+    for (let i = 0; i < 20; i++) {
+      const user = await pb.user({ name: `Opt${i}`, marketingOptOut: true });
+      optedOut.push({ user, id: await h.member(emailOf(user), `Opt${i}`, user.id) });
+    }
+    const id = await campaign("Race", h.list);
+    let read = false;
+    proxy.cutWhen((line) => {
+      read ||= line.includes("/api/collections/recipients/records");
+      return false;
+    });
+    await pb.pause();
+    paused = true;
+    await run(id);
+    // The runner claims on its tick; small steps keep the source's request timeout (on the test
+    // clock) far away while the first read hangs.
+    await eventually(
+      () => read,
+      "the batch's first recipients read",
+      () => h.clock.advance(200),
+    );
+    await h.setInstance({ "sources.enabled": false });
+    pb.resume();
+    paused = false;
+    await finished(id);
+    await eventually(() => mailTo(h.una.email) === 1, "Una's mail");
+
+    for (const { user } of optedOut) {
+      expect(mailTo(emailOf(user)), emailOf(user)).toBe(0);
+    }
+    const reasons = new Map(
+      asBody<Array<{ subscriber_id: number; reason: string }>>(
+        (await h.call("GET", `/api/campaigns/${id}/skipped?per_page=100`)).body.data.results,
+      ).map((row) => [row.subscriber_id, row.reason]),
+    );
+    // The reads in flight at the toggle saw the opt-out; the reads after it were held.
+    const of = optedOut.map(({ id: subscriber }) => reasons.get(subscriber));
+    expect(of.every((r) => r === "unsubscribed" || r === "subscriber_unavailable")).toBe(true);
+    expect(of).toContain("unsubscribed");
+    expect(of).toContain("subscriber_unavailable");
+    const lines = asBody<Array<string>>((await h.call("GET", "/api/logs")).body.data);
+    expect(
+      lines.filter((line) =>
+        line.includes("campaign recipients skipped: external sources are off"),
+      ),
+    ).toHaveLength(1);
+  } finally {
+    if (paused) {
+      pb.resume();
+    }
+    proxy.cutWhen(undefined);
+    await h.f.close();
+    proxy.stop();
   }
   expect(h.f.failures).toEqual([]);
 });

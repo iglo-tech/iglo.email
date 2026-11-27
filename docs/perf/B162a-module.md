@@ -47,3 +47,7 @@ vary, apart from the realtime idle timers (330 s) of streams that are mid-reconn
   topic check and its realtime idle timer: the same counts as main.
 - RSS and CPU per project differ by less than the noise between runs (about 1 MiB and 2 ms of CPU
   per project over 10 minutes in every scenario).
+- **The r1 held check is not measured.** It reads the project's settings once per campaign batch or
+  sequence step, and only for a batch with source-linked recipients or a step to a source-linked
+  subscriber, right next to the source's own HTTP read, which dominates that path; r2's per-read
+  check adds the same settings read only when the source is already missing.

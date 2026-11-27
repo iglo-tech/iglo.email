@@ -31,6 +31,7 @@ import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
 import type { SourceProvider } from "@/sources/project";
 import { isSubscriberChanged } from "@/sources/recipient-sync";
+import { isSourceHeld } from "@/sources/send-time";
 import type { SendTimeLookup } from "@/sources/send-time";
 import { isSourceError } from "@/sources/source";
 import type { ExternalSource, SourceEvent } from "@/sources/source";
@@ -363,6 +364,12 @@ export function createScheduler(options: SchedulerOptions) {
       }
       optedOut = planned?.plan.kind === "present" && planned.plan.recipient.optOut;
     } catch (error) {
+      if (isSourceHeld(error)) {
+        // D188 (r2): the module was turned off between the decide-time check and this read. The
+        // step waits as `decide`'s own held check makes it wait: nothing sent, ended or windowed.
+        retry(claim, lateBackoff(row));
+        return null;
+      }
       if (isSubscriberChanged(error)) {
         // Another write moved the user or the address meanwhile: decide again with fresh reads.
         commit(claim, () => enrollments.release(claim, null));

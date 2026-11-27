@@ -52,6 +52,21 @@ export interface SendTimePlan {
  */
 export type SendTimeResult = { kind: "left" } | { kind: "current"; row: SubscriberRow };
 
+/**
+ * D188 (r2): a send-time read found no source because the instance's sources module is off while
+ * the project still stores one. Distinct from "no source" (`read` returning null, the subscriber
+ * treated as unlinked): the subscriber is source-linked but unreadable, so the caller sends it
+ * nothing. Not a `SourceError`: it is neither an outage to wait out nor a refused view.
+ */
+export class SourceHeld extends Error {
+  readonly sourceHeld = true;
+  constructor() {
+    super("External sources are off on this instance");
+  }
+}
+export const isSourceHeld = (error: unknown): error is SourceHeld =>
+  error instanceof Error && "sourceHeld" in error && error.sourceHeld === true;
+
 export function createSendTimeLookup(options: SendTimeOptions) {
   const { db, subscribers, enrollments } = options;
   /**
@@ -77,9 +92,11 @@ export function createSendTimeLookup(options: SendTimeOptions) {
     held: () => options.held?.() ?? false,
     /**
      * The source reads for subscriber `subscriberId` linked to user `externalId`, or null without a
-     * source. Never inside a transaction. Throws a `SourceError` (a `SettingsMismatch` for a refused
-     * view, transient for an outage, permanent for an address the source cannot give), or the
-     * signal's reason.
+     * source. Never inside a transaction. Throws `SourceHeld` when the source is missing only
+     * because the module is off (`held`), checked on every call so a toggle during a batch's reads
+     * never turns a linked subscriber into an unlinked one (D188 r2). Otherwise throws a
+     * `SourceError` (a `SettingsMismatch` for a refused view, transient for an outage, permanent
+     * for an address the source cannot give), or the signal's reason.
      */
     async read(
       subscriberId: bigint,
@@ -88,6 +105,9 @@ export function createSendTimeLookup(options: SendTimeOptions) {
     ): Promise<SendTimePlan | null> {
       const source = options.source();
       if (!source) {
+        if (options.held?.()) {
+          throw new SourceHeld();
+        }
         return null;
       }
       const plan = await planRecipient(

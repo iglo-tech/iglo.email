@@ -23,6 +23,7 @@ import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { BrandSite } from "@/public/brand";
 import type { SubscriberRow } from "@/sources/recipient-sync";
+import { isSourceHeld } from "@/sources/send-time";
 import type { SendTimeLookup, SendTimePlan } from "@/sources/send-time";
 import { isPermanent, isSourceError } from "@/sources/source";
 import { isSettingsMismatch } from "@/sources/stream-record";
@@ -683,13 +684,13 @@ export function createCampaignRunner(deps: RunnerDeps) {
     if (!lookup || !linked.length) {
       return skip;
     }
-    if (lookup.held()) {
-      // D188 (r1): the sources module is off while the project stores a source. A linked
-      // recipient cannot be read, so its opt-out and its leaving cannot be checked: it is skipped,
-      // never sent and never retried (marketing at-most-once). One line per campaign run.
-      for (const i of linked) {
-        skip.set(i, { reason: SKIP_REASON.unavailable, message: "" });
-      }
+    /**
+     * D188 (r1, r2): the sources module is off while the project stores a source. Linked recipient
+     * `i` cannot be read, so its opt-out and its leaving cannot be checked: it is skipped, never
+     * sent and never retried (marketing at-most-once). One line per campaign run.
+     */
+    const held = (i: number) => {
+      skip.set(i, { reason: SKIP_REASON.unavailable, message: "" });
       if (!pipe.sourcesOffLogged) {
         pipe.sourcesOffLogged = true;
         log(
@@ -699,6 +700,9 @@ export function createCampaignRunner(deps: RunnerDeps) {
             "(sources.enabled), so their opt-out and leaving cannot be checked.",
         );
       }
+    };
+    if (lookup.held()) {
+      linked.forEach(held);
       return skip;
     }
     if (!lookup.configured()) {
@@ -735,7 +739,11 @@ export function createCampaignRunner(deps: RunnerDeps) {
             plans.push([i, planned]);
           }
         } catch (error) {
-          if (isPermanent(error) && !isSettingsMismatch(error)) {
+          if (isSourceHeld(error)) {
+            // The module was turned off during this batch's reads (D188 r2): this read found no
+            // source, which here means held, never unlinked.
+            held(i);
+          } else if (isPermanent(error) && !isSettingsMismatch(error)) {
             skip.set(i, { reason: SKIP_REASON.unavailable, message: error.message });
           } else {
             failure ??= { error };
