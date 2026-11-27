@@ -6,7 +6,7 @@
 import { dateLiteral, fieldName, parseSourceDate, textLiteral } from "@/sources/filter";
 import { isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceObject } from "@/sources/json";
-import { isSourceError, SourceError } from "@/sources/source";
+import { isRecordUnreadable, isSourceError, SourceError } from "@/sources/source";
 import type { CallOptions, SourceEvent } from "@/sources/source";
 import { SettingsMismatch } from "@/sources/stream-record";
 import type { CatchUpQuery, StreamItem, StreamKind, StreamSource } from "@/sources/stream-record";
@@ -48,8 +48,7 @@ const topic = (collection: string, filter: string) =>
 /** B155b (D177): why a record is terminal although the source answered. */
 const UNKEYED = "The source record's id is not 1 to 100 letters, digits, _ or -";
 const TOO_LARGE = "The source record is larger than the response limit";
-const UNREADABLE =
-  "The source record cannot be read: its JSON nests deeper than 64 levels or is not JSON";
+const UNREADABLE = "The source record cannot be read: its JSON nests deeper than 64 levels";
 
 /**
  * The ID of a record, or a `SettingsMismatch` for a page with no ID at all (not a PocketBase
@@ -114,13 +113,11 @@ function pastId(id: string): string {
 /** A record gone between two reads: the next catch-up or retry reads what is there then. */
 const gone = () => new SourceError("transient", "A source record changed while it was read");
 
-/** A page the source answered with a body the adapter refused to read (not JSON, too deep). */
-const unreadable = (error: unknown) =>
-  isSourceError(error) &&
-  error.kind === "permanent" &&
-  error.status !== undefined &&
-  error.status >= 200 &&
-  error.status < 300;
+/**
+ * A page with a record whose JSON nests too deep (`RecordUnreadable`). B166 (D194): a page that is
+ * not JSON at all is the configuration's failure, never narrowed to a record.
+ */
+const unreadable = isRecordUnreadable;
 
 export function streamReads(parts: StreamReadParts): StreamSource {
   const ev = parts.events;

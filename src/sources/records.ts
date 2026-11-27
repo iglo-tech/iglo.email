@@ -31,9 +31,10 @@ import {
   SubscriberChanged,
 } from "@/sources/recipient-sync";
 import type { SubscriberRow } from "@/sources/recipient-sync";
+import { isAuthRefused } from "@/sources/pocketbase";
 import type { GrantRule } from "@/sources/settings";
 import { isSourceError, SourceError } from "@/sources/source";
-import type { ExternalSource, SourceEvent } from "@/sources/source";
+import type { CallOptions, ExternalSource, SourceEvent } from "@/sources/source";
 import type { RecordCommit, RecordHandler, SourceUser } from "@/sources/stream-record";
 import type { SubscriberStore } from "@/subscribers/store";
 
@@ -139,35 +140,67 @@ const scalarWhere = (
   return out;
 };
 
-/**
- * B166 (D194): a trigger condition's failure as the settings' or the condition's. A `400` is
- * PocketBase refusing the filter the condition's query wrote, so the condition's own (D172: it
- * skips the sequence); every other failure is classified as `readRecipient` classifies it.
- */
+const CONDITION_READ = "The source refused a trigger condition's read";
+
+/** B166 (D194): a trigger condition's failure as `readRecipient` classifies it. */
 const refused = (error: unknown): never => {
-  if (isSourceError(error) && error.status === 400) {
-    throw error;
-  }
-  throw settingsRefusal(error, "The source refused a trigger condition's read") ?? error;
+  throw settingsRefusal(error, CONDITION_READ) ?? error;
 };
 
 /**
- * The source as a trigger condition reads it: a settings refusal is a `SettingsMismatch`, which the
- * evaluation hands on (src/conditions/source.ts), so the record waits for the settings instead of
- * starting nothing for good.
+ * The source as a trigger condition reads it for `record` (B166, D194). The stream must never wait
+ * for good on what no settings change can fix, and never drop a record for good over what one can:
+ *
+ * - a settings refusal (`settingsRefusal`, a refused sign-in or token check whatever its status) is
+ *   a `SettingsMismatch`, which the evaluation hands on (src/conditions/source.ts): nothing is
+ *   committed, and the record waits for the settings;
+ * - a `400` to an events query that is not the sign-in's is either the settings' (a renamed mapped
+ *   field, a broken list rule) or the condition's own filter (one PocketBase refuses): the events
+ *   collection is probed once with this user's newest record and every mapped field, no condition
+ *   part. When the probe fails for good too, it is the settings'; when it answers, the `400` is the
+ *   condition's, and only its sequence is skipped (D172). The recipients view and a record by ID
+ *   send no condition filter, so a `400` there is always the settings'.
  */
-function conditionSource(source: ExternalSource): ExternalSource {
+function conditionSource(source: ExternalSource, record: SourceEvent): ExternalSource {
+  let probed: Promise<unknown> | undefined;
+  /** The probe's failure, or `null` when it answered. Read once per record. */
+  const probe = (call: CallOptions | undefined) => {
+    probed ??= (async () => {
+      const fields = ["user", "name", "data", "key"] as const;
+      for await (const _ of source.scan({ user: record.user }, fields, 1, call)) {
+        // One record is all the probe reads.
+      }
+      return null;
+    })().catch((error: unknown) => error);
+    return probed;
+  };
+  const queried = async (error: unknown, call: CallOptions | undefined): Promise<never> => {
+    if (!isSourceError(error) || error.status !== 400 || isAuthRefused(error)) {
+      return refused(error);
+    }
+    const failure = await probe(call);
+    if (failure === null) {
+      throw error;
+    }
+    if (isSourceError(failure) && failure.kind === "transient") {
+      throw failure;
+    }
+    throw settingsRefusal(failure, CONDITION_READ) ?? error;
+  };
   return {
     recipient: (id, call) => source.recipient(id, call).catch(refused),
     record: (id, call) => source.record(id, call).catch(refused),
-    latest: (query, call) => source.latest(query, call).catch(refused),
-    count: (query, upTo, call) => source.count(query, upTo, call).catch(refused),
-    exists: (query, call) => source.exists(query, call).catch(refused),
+    latest: (query, call) =>
+      source.latest(query, call).catch((error: unknown) => queried(error, call)),
+    count: (query, upTo, call) =>
+      source.count(query, upTo, call).catch((error: unknown) => queried(error, call)),
+    exists: (query, call) =>
+      source.exists(query, call).catch((error: unknown) => queried(error, call)),
     async *scan(query, fields, limit, call) {
       try {
         yield* source.scan(query, fields, limit, call);
       } catch (error) {
-        refused(error);
+        await queried(error, call);
       }
     },
   };
@@ -175,7 +208,6 @@ function conditionSource(source: ExternalSource): ExternalSource {
 
 export function createRecordHandler(options: RecordHandlerOptions): RecordHandler {
   const { db, clock, subscribers, enrollments } = options;
-  const conditionReads = conditionSource(options.source);
   const warned = new Set<string>();
   const warn = (detail: string) => {
     if (warned.has(detail) || warned.size >= MAX_WARNED) {
@@ -220,6 +252,7 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
       return [];
     }
     const chosen: Array<{ id: bigint; trigger: string }> = [];
+    const conditionReads = conditionSource(options.source, record);
     for (const sequence of enrollments.externalTriggers(record.name)) {
       const trigger = triggerOf(sequence.trigger);
       const where = trigger && scalarWhere(trigger.where);

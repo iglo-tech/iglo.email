@@ -12,7 +12,8 @@ import { createRealClock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import { createEnrollments } from "@/sequences/enrollments";
 import type { Guard } from "@/sources/connect";
-import { createPocketBaseSource, isRecordUnreadable } from "@/sources/pocketbase";
+import { createPocketBaseSource } from "@/sources/pocketbase";
+import { isRecordUnreadable } from "@/sources/source";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
 import type { SourceProvider } from "@/sources/project";
 import { readRecipient } from "@/sources/recipient-sync";
@@ -962,16 +963,24 @@ test("B166: a subscriber whose external ID is cleared while its user's absent re
 /**
  * A small HTTP proxy in front of the binary that, while `html.on`, answers the service account's
  * sign-in with a 200 HTML page (a reverse proxy's maintenance or login page, which the binary never
- * serves). Every other request is forwarded to the binary and its answer returned unchanged.
+ * serves). With `afterSignIn`, it forwards the first sign-in and then, while `html.on`, answers every
+ * request with that page instead (an SSO proxy put in front after the adapter got its token). Every
+ * other request is forwarded to the binary and its answer returned unchanged.
  */
-function htmlSignInProxy() {
+function htmlSignInProxy(afterSignIn = false) {
   const html = { on: true };
+  let signedIn = false;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
-      if (html.on && url.pathname.endsWith("/auth-with-password")) {
+      const signIn = url.pathname.endsWith("/auth-with-password");
+      const page = afterSignIn ? signedIn : signIn;
+      if (signIn) {
+        signedIn = true;
+      }
+      if (html.on && page) {
         return new Response("<!doctype html><title>Down for maintenance</title>", {
           headers: { "content-type": "text/html" },
         });
@@ -989,6 +998,30 @@ function htmlSignInProxy() {
   closers.push(() => server.stop(true));
   return { url: `http://127.0.0.1:${server.port}`, html };
 }
+
+test("B166: a 200 HTML page on every path after the adapter signed in refuses the settings, not each record: the campaign pauses with nothing skipped and resumes, sending each once", async () => {
+  const proxy = htmlSignInProxy(true);
+  const user = await pb.user({ name: "Jun" });
+  const other = await pb.user({ name: "Kai" });
+  const { f } = await runner(false, { url: proxy.url });
+  const list = await f.list("news");
+  for (const u of [user, other]) {
+    await f.member(emailOf(u), [list], "confirmed", { external_id: u.id });
+  }
+  const c = await plainCampaign(f, "html after sign-in", [list]);
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "paused");
+  expect(f.pushes).toEqual([]);
+  expect(await skippedOf(f, c.id)).toEqual([]);
+  expect(messages(f, "the source refused a recipient read")).toBe(1);
+
+  proxy.html.on = false;
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1, [emailOf(other)]: 1 });
+  expect(await skippedOf(f, c.id)).toEqual([]);
+});
 
 test("B166: a sign-in answered with a 200 HTML page refuses the settings, not one record: the recipient read is a SettingsMismatch, the campaign pauses with nothing skipped and resumes once", async () => {
   const proxy = htmlSignInProxy();

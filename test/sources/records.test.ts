@@ -10,7 +10,10 @@
 // for that name only); `hold` delays one recipients read (the binary's answer, unchanged) so a
 // test can change SQLite between the handler's reads and its write transaction; and `malformed`
 // answers one user's recipients read with the binary's row whose address is a number (a permanent
-// read failure that is not an ID the source cannot have).
+// read failure that is not an ID the source cannot have). B166 adds three: `refuseRecipients`
+// answers the recipients view with PocketBase's `400`, `beforeQuery` runs a change on the binary (a
+// password rotation, a field rename) just before one events query is forwarded, and `html` answers
+// every request with a 200 HTML page (a proxy put in front of the source).
 // Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -71,6 +74,12 @@ interface Harness {
   hold: { current: { user: string; reached: () => void; released: Promise<void> } | null };
   /** This user's recipients-view reads answer its row with a number for the address; null: none. */
   malformed: { user: string | null };
+  /** While on, every recipients-view read is answered with PocketBase's `400`. */
+  refuseRecipients: { on: boolean };
+  /** Runs once before the first events query whose filter includes `includes` is forwarded. */
+  beforeQuery: { current: { includes: string; run: () => Promise<void> } | null };
+  /** While on, every source request is answered with a 200 HTML page (a proxy's or SSO page). */
+  html: { on: boolean };
   /**
    * This test's own record name for `name`. The tests share one PocketBase, and a new stream's first
    * catch-up starts at the source's `Date` (whole seconds), so a record another test made in the
@@ -86,6 +95,13 @@ afterEach(async () => {
     expect(h.inTransaction).toEqual([]);
   }
 });
+
+/** PocketBase's answer to a filter or a read it refuses. */
+const refusal = () =>
+  Response.json(
+    { status: 400, message: "Something went wrong while processing your request.", data: {} },
+    { status: 400 },
+  );
 
 async function start(
   options: {
@@ -105,6 +121,9 @@ async function start(
   const rules = { current: options.rules ?? [] };
   const hold: Harness["hold"] = { current: null };
   const malformed: Harness["malformed"] = { user: null };
+  const refuseRecipients = { on: false };
+  const beforeQuery: Harness["beforeQuery"] = { current: null };
+  const html = { on: false };
   const records = createSourceRecords({
     db: f.db,
     clock: f.clock,
@@ -125,6 +144,28 @@ async function start(
           /^\/api\/collections\/(recipients|contacts)\/records\//.test(input.pathname)
         ) {
           return Promise.resolve(new Response("unavailable", { status: 503 }));
+        }
+        if (html.on) {
+          return Promise.resolve(
+            new Response("<!doctype html><title>Sign in</title>", {
+              headers: { "content-type": "text/html" },
+            }),
+          );
+        }
+        if (
+          refuseRecipients.on &&
+          input.pathname.startsWith("/api/collections/recipients/records/")
+        ) {
+          return Promise.resolve(refusal());
+        }
+        const before = beforeQuery.current;
+        if (
+          before &&
+          input.pathname === "/api/collections/events/records" &&
+          (input.searchParams.get("filter") ?? "").includes(before.includes)
+        ) {
+          beforeQuery.current = null;
+          return before.run().then(() => fetch(input, init));
         }
         const refused = refuseHistory.name;
         if (
@@ -179,6 +220,9 @@ async function start(
     rules,
     hold,
     malformed,
+    refuseRecipients,
+    beforeQuery,
+    html,
     ev: (name) => `${name}_${tag}`,
   };
   open.push(h);
@@ -1417,6 +1461,225 @@ test("B166: a source host the private-address block refuses while a trigger.cond
   expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
     seq.id,
   ]);
+  expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
+  expect(h.records.stream()?.retries()).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------------------------
+// B166 round 2 (D194): the stream never waits for good on what no settings change can fix, and
+// never drops a record for good over what one can.
+
+/** A record for an external sequence whose condition counts the trigger record itself. */
+async function conditioned(h: Harness, condition?: JsonObject) {
+  const template = await h.f.template();
+  const seq = await h.f.sequence({
+    source: "external",
+    trigger: {
+      event: h.ev("order_paid"),
+      condition: condition ?? { event: h.ev("order_paid"), count: { gte: 1 } },
+    },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  return seq;
+}
+
+/**
+ * The record waits on a settings refusal (`refusal` names the attention line): nothing committed,
+ * no condition failure, nothing queued. After `fix`, it starts the sequence exactly once.
+ */
+async function waitsThenStartsOnce(
+  h: Harness,
+  seq: { id: number },
+  user: PocketBaseRecord,
+  paid: { id: string },
+  refusal: string,
+  fix: () => Promise<void> | void,
+) {
+  await until(h, () => h.attention.some((line) => line.includes(refusal)), "the refusal");
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(await linked(h, user)).toBeNull();
+  await fix();
+  await live(h);
+  await handled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+  const subscriber = (await linked(h, user))?.id ?? 0;
+  expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+    seq.id,
+  ]);
+  expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(h.records.stream()?.retries()).toEqual([]);
+}
+
+test("B166: a service-account password rotated while a trigger.condition is read refuses the stream (the sign-in's 400 is the settings'): nothing committed; with the password back, the sequence starts once", async () => {
+  const h = await start();
+  const seq = await conditioned(h);
+  const ana = await pb.user();
+  const [account] = (await pb.api("GET", "/api/collections/services/records")).items;
+  const rotate = (password: string) =>
+    pb.update("services", account.id, { password, passwordConfirm: password });
+  h.beforeQuery.current = { includes: ana.id, run: () => rotate("rotated-password-7").then() };
+  try {
+    const paid = await record(h, ana, "order_paid");
+    await waitsThenStartsOnce(h, seq, ana, paid, "Failed to authenticate", () =>
+      rotate(pb.service.password).then(),
+    );
+  } finally {
+    await rotate(pb.service.password);
+  }
+});
+
+test("B166: a mapped events field renamed while a trigger.condition is read refuses the stream (the probe fails too): nothing committed; renamed back, the sequence starts once", async () => {
+  const h = await start();
+  const seq = await conditioned(h);
+  const ana = await pb.user();
+  let renamed = false;
+  h.beforeQuery.current = {
+    includes: ana.id,
+    run: async () => {
+      await pb.renameField("events", "name", "eventName");
+      renamed = true;
+    },
+  };
+  try {
+    const paid = await record(h, ana, "order_paid");
+    await waitsThenStartsOnce(h, seq, ana, paid, 'no field "name"', async () => {
+      await pb.renameField("events", "eventName", "name");
+      renamed = false;
+    });
+  } finally {
+    if (renamed) {
+      await pb.renameField("events", "eventName", "name");
+    }
+  }
+});
+
+test("B166: a recipients view answering 400 to a recipient condition refuses the stream: nothing committed and no condition failure; answering again, the sequence starts once", async () => {
+  const h = await start();
+  const seq = await conditioned(h, { recipient: "email", op: "ne", value: "nobody@example.com" });
+  const ana = await pb.user();
+  h.refuseRecipients.on = true;
+  const paid = await record(h, ana, "order_paid");
+  await waitsThenStartsOnce(
+    h,
+    seq,
+    ana,
+    paid,
+    "The source refused a trigger condition's read",
+    () => {
+      h.refuseRecipients.on = false;
+    },
+  );
+});
+
+const long = (c: string) => c.repeat(1000);
+
+test("B166: a valid condition whose data comparisons are longer than PocketBase's 3,500-byte filter limit is decided, not refused: its sequence starts and the stream goes on", async () => {
+  const h = await start();
+  const data = { a: long("a"), b: long("b"), c: long("c"), d: long("d") };
+  const seq = await conditioned(h, {
+    event: h.ev("order_paid"),
+    count: { gte: 1 },
+    where: Object.fromEntries(Object.entries(data).map(([k, v]) => [`data.${k}`, v])),
+  });
+  const ana = await pb.user();
+  const paid = await record(h, ana, "order_paid", data);
+  await settled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+  const subscriber = (await linked(h, ana))?.id ?? 0;
+  expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+    seq.id,
+  ]);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  // The strict check still decides: the same data with one value changed does not count.
+  const bob = await pb.user();
+  const other = await record(h, bob, "order_paid", { ...data, d: long("e") });
+  await settled(h, other);
+  expect(outcome(h, other)).toMatchObject({ kind: "exits", started: 0 });
+});
+
+/** JSON nested `depth` levels deep. */
+function nested(depth: number): JsonObject {
+  let value: JsonObject = { leaf: 1 };
+  for (let i = 1; i < depth; i++) {
+    value = { x: value };
+  }
+  return value;
+}
+
+test("B166: an event nested 70 levels deep in a user's history skips only the condition's sequence; the record and the other sequence apply, and the stream goes on", async () => {
+  const h = await start();
+  const template = await h.f.template();
+  const deep = await h.f.sequence({
+    source: "external",
+    trigger: {
+      event: h.ev("order_paid"),
+      condition: { event: h.ev("history"), count: { gte: 1 }, where: { "data.plan": "pro" } },
+    },
+    steps: [tx(template)],
+  });
+  const plain = await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("order_paid") },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  const ana = await pb.user();
+  await pb.event(
+    ana.id,
+    h.ev("history"),
+    { plan: "pro", deep: nested(70) },
+    { occurredAt: new Date(h.f.clock.now().getTime() - minute).toISOString() },
+  );
+  const paid = await record(h, ana, "order_paid");
+  await settled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+  const subscriber = (await linked(h, ana))?.id ?? 0;
+  expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+    plain.id,
+  ]);
+  const lines = h.attention.filter((line) => line.includes("Sequence trigger condition failed"));
+  expect(lines).toEqual([expect.stringContaining(`sequence ${deep.id}`)]);
+  expect(lines[0]).toContain("nested deeper than 64 levels");
+  // The stream goes on: the next record is handled.
+  const bob = await pb.user();
+  const next = await record(h, bob, "order_paid");
+  await settled(h, next);
+  expect(outcome(h, next)).toMatchObject({ kind: "written", started: 1 });
+});
+
+test("B166: a 200 HTML page on every source path after the adapter signed in refuses the stream, not one record: nothing terminal; answered again, the record is delivered once", async () => {
+  const h = await start();
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("order_paid") },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  // The stream's adapter holds a token from the session's catch-up; the record arrives on the open
+  // connection, and the handler's recipients read gets the page.
+  h.html.on = true;
+  const ana = await pb.user();
+  const paid = await record(h, ana, "order_paid");
+  await until(h, () => h.attention.some((line) => line.includes("not JSON")), "the refusal");
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(await linked(h, ana)).toBeNull();
+
+  h.html.on = false;
+  await live(h);
+  await handled(h, paid);
+  expect((await linked(h, ana))?.email).toBe(emailOf(ana));
   expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
   expect(h.records.stream()?.retries()).toEqual([]);
 });

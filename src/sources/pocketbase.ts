@@ -20,8 +20,10 @@ import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json
 import type { SourceJson, SourceObject } from "@/sources/json";
 import {
   DEFAULT_TIMEOUT_MS,
+  isRecordUnreadable,
   isSourceError,
   PAGE_LIMIT,
+  RecordUnreadable,
   SCAN_LIMIT,
   SourceError,
 } from "@/sources/source";
@@ -83,6 +85,13 @@ const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const FALLBACK_TOKEN_MS = 60_000;
 /** The most names one query compares with. */
 const MAX_NAMES = 100;
+/**
+ * B166 (D194): PocketBase 0.40.5 refuses a filter longer than 3,500 bytes with a `400` (measured:
+ * 3,034 bytes read, 3,534 refused). `data` parts are written only while the filter stays within
+ * this, which leaves room for `scan`'s keyset condition (three field names of up to 100 characters,
+ * two dates and an ID of up to 100 characters).
+ */
+const DATA_FILTER_LIMIT = 3500 - 600;
 
 /** One answer: its status and JSON body, or `tooLarge` for a body over the size limit. */
 interface Answer {
@@ -98,49 +107,43 @@ interface Read<T> {
   used: string;
 }
 
-/**
- * B166 (D194): a permanent failure that is one record's own, not the settings': a single record's
- * answer over the response limit or with a body the adapter cannot read (not JSON, nested too deep,
- * not a record), or a mapped field of the record that is not of its type. Only a read of one record
- * raises it (a record by ID, a page already narrowed to one record); every other permanent failure
- * (a refused address, a redirect, a `401` after signing in again, a sign-in, token check or
- * collection probe answered with a page that is not JSON, a record with no `id`) is the
- * configuration's.
- */
-export class RecordUnreadable extends SourceError {
-  readonly recordUnreadable = true;
-}
-export const isRecordUnreadable = (error: unknown): error is RecordUnreadable =>
-  isSourceError(error) && "recordUnreadable" in error && error.recordUnreadable === true;
-
 const TOO_LARGE = "A source response is larger than the response limit";
 const recordTooLarge = () => new RecordUnreadable("permanent", TOO_LARGE);
 
-/** A 2xx answer whose body is not JSON (or nests too deep): `send` throws it with the status. */
-const notJson = (error: unknown): error is SourceError =>
-  isSourceError(error) &&
-  error.kind === "permanent" &&
-  error.status !== undefined &&
-  error.status >= 200 &&
-  error.status < 300;
-
 /**
- * B166 (D194): runs a request that is not a record read (a sign-in, a token check): a 2xx body
- * that is not JSON (a proxy's or a maintenance page) is the configuration's failure, without the
- * status that would make the stream read it as one unreadable record.
+ * B166 (D194): runs a request that reads no record (a sign-in, a token check, a collection probe,
+ * a realtime subscription): JSON nested too deep there is the configuration's failure, never one
+ * unreadable record. (A body that is not JSON is the configuration's on every path already.)
  */
 async function notRecord<T>(request: Promise<T>, what: string): Promise<T> {
   try {
     return await request;
   } catch (error) {
-    if (notJson(error)) {
-      throw new SourceError(
-        "permanent",
-        `The source answered ${what} with a body that is not JSON`,
-      );
+    if (isRecordUnreadable(error)) {
+      throw new SourceError("permanent", `The source answered ${what} with JSON nested too deep`);
     }
     throw error;
   }
+}
+
+/**
+ * B166 (D194): the service account's sign-in or token check refused for good (a wrong or rotated
+ * password, a removed account or auth collection, a page that is not JSON). PocketBase 0.40.5
+ * answers a refused sign-in with a `400` ("Failed to authenticate."), the status a refused filter
+ * also has, so the mark, not the status, tells a caller the settings are at fault.
+ */
+export class AuthRefused extends SourceError {
+  readonly authRefused = true;
+}
+export const isAuthRefused = (error: unknown): error is AuthRefused =>
+  isSourceError(error) && "authRefused" in error && error.authRefused === true;
+
+/** Throws a permanent failure of the sign-in or token check as `AuthRefused`, anything else as is. */
+function refuseAuth(error: unknown): never {
+  if (isSourceError(error) && error.kind === "permanent" && !isAuthRefused(error)) {
+    throw new AuthRefused("permanent", error.message, error.status);
+  }
+  throw error;
 }
 
 /** Whether a recipients-view value means "opted out": set, and not false, 0, "", "0" or "false". */
@@ -268,6 +271,18 @@ async function readBody(response: Response, limit: number): Promise<string | und
   return Buffer.concat(chunks).toString("utf-8");
 }
 
+/**
+ * The parsed text (`json` undefined when it nests deeper than the JSON limit), or `undefined` when
+ * it is not JSON.
+ */
+function parseText(text: string): { json: SourceJson | undefined } | undefined {
+  try {
+    return { json: sourceJson(JSON.parse(text)) };
+  } catch {
+    return undefined;
+  }
+}
+
 /** A rejection once `signal` aborts, with its reason. */
 function abortion(signal: AbortSignal): Promise<never> {
   const aborted = new Promise<never>((_resolve, reject) => {
@@ -377,16 +392,25 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     }
     let parsed: SourceJson | undefined;
     if (text) {
-      try {
-        parsed = sourceJson(JSON.parse(text));
-      } catch {
-        parsed = undefined;
-      }
-      if (parsed === undefined && status >= 200 && status < 300) {
-        // B166 (D194): whose fault it is depends on the read; a record read tells (`one`).
+      const ok = status >= 200 && status < 300;
+      const where = path.split("?", 1)[0];
+      const json = parseText(text);
+      if (!json && ok) {
+        // B166 (D194): PocketBase answers JSON on every path, so a 2xx page that is not JSON (a
+        // proxy's, maintenance or sign-in page) is the configuration's on every read, never a
+        // record's.
         throw new SourceError(
           "permanent",
-          `The source answered ${path.split("?", 1)[0]} with a body that is not JSON`,
+          `The source answered ${where} with a body that is not JSON`,
+        );
+      }
+      parsed = json ? json.json : null;
+      if (parsed === undefined && ok) {
+        // Valid JSON nested too deep comes from a record's own data: a read of no record strips
+        // the mark (`notRecord`), and the stream narrows a page to the record (D177).
+        throw new RecordUnreadable(
+          "permanent",
+          `The source answered ${where} with JSON nested deeper than 64 levels`,
           status,
         );
       }
@@ -457,6 +481,8 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
           }
           accept(next, answer.date);
           return token;
+        } catch (error) {
+          refuseAuth(error);
         } finally {
           signingIn = undefined;
         }
@@ -495,14 +521,14 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     const answer = await notRecord(
       send("POST", `api/collections/${authCollection}/auth-refresh`, used, undefined, call),
       "the token check",
-    );
+    ).catch(refuseAuth);
     if (answer.status === 401 || answer.status === 403 || answer.status === 404) {
       drop(used);
       return false;
     }
     const next = member(answer.body, "token");
     if (answer.status !== 200 || typeof next !== "string") {
-      throw failure(answer, "the token check");
+      refuseAuth(failure(answer, "the token check"));
     }
     // A token another caller got meanwhile is as good, so it is kept.
     if (token === used) {
@@ -604,8 +630,16 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     if (query.through) {
       parts.push(`${ev.occurredAt} <= ${dateLiteral(query.through)}`);
     }
+    // B166 (D194): `data` is a narrowing the caller checks again on the rows, so a part that would
+    // take the filter past PocketBase's limit is left out rather than sent to be refused.
+    let length = Buffer.byteLength(parts.join(" && "));
     for (const [path, value] of Object.entries(query.data ?? {})) {
-      parts.push(`${jsonPath(ev.data, path)} = ${scalarLiteral(value)}`);
+      const part = `${jsonPath(ev.data, path)} = ${scalarLiteral(value)}`;
+      const next = length + 4 + Buffer.byteLength(part);
+      if (next <= DATA_FILTER_LIMIT) {
+        parts.push(part);
+        length = next;
+      }
     }
     return parts.join(" && ");
   }
@@ -735,18 +769,13 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     const what = `a read of ${collection}`;
     const row = await confirmed(
       async () => {
-        let read: Read<Answer>;
-        try {
-          read = await get(`api/collections/${collection}/records/${id}`, call);
-        } catch (error) {
-          // B166 (D194): a sign-in's failure has no 2xx status (`notRecord`), so a 2xx body that
-          // is not JSON (or nests too deep) is this record's own answer.
-          if (notJson(error)) {
-            throw new RecordUnreadable("permanent", error.message, error.status);
-          }
-          throw error;
-        }
-        const { value: answer, used } = read;
+        // B166 (D194): JSON nested too deep is this record's own (`RecordUnreadable` from `send`;
+        // a sign-in strips the mark); a body that is not JSON, or JSON that is no record, is the
+        // configuration's (a proxy's page, another service at the URL).
+        const { value: answer, used } = await get(
+          `api/collections/${collection}/records/${id}`,
+          call,
+        );
         if (answer.status === 404 && !answer.tooLarge) {
           return { value: null, used };
         }
@@ -754,11 +783,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
           throw recordTooLarge();
         }
         if (answer.status === 200 && !isSourceObject(answer.body)) {
-          throw new RecordUnreadable(
-            "permanent",
-            `The source answered ${what} with no record`,
-            200,
-          );
+          throw new SourceError("permanent", `The source answered ${what} with no record`);
         }
         if (answer.status !== 200 || !isSourceObject(answer.body)) {
           throw failure(answer, what);
@@ -769,7 +794,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       call,
     );
     if (row === null) {
-      // The collection probe: any failure of it, a page that is not JSON or too large included,
+      // The collection probe: any failure of it, a page nested too deep or too large included,
       // is the configuration's (B166, D194).
       const search = new URLSearchParams({ page: "1", perPage: "1", skipTotal: "1", fields: "id" });
       const { value: answer } = await notRecord(
@@ -896,7 +921,10 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       async realtime(body, call) {
         for (let attempt = 0; attempt < 2; attempt++) {
           const used = await currentToken(call);
-          const answer = await send("POST", "api/realtime", used, body, call);
+          const answer = await notRecord(
+            send("POST", "api/realtime", used, body, call),
+            "the realtime subscription",
+          );
           if (answer.status === 204 || answer.status === 200) {
             if (await confirm(used, call)) {
               return;

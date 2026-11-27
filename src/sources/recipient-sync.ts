@@ -11,9 +11,9 @@
 import type { Enrollments } from "@/sequences/enrollments";
 import { trimSpace } from "@/lists/store";
 import { isUnfitQuery } from "@/sources/filter";
-import { isSourceError, SourceError } from "@/sources/source";
+import { isRecordUnreadable, isSourceError, SourceError } from "@/sources/source";
 import type { ExternalSource, SourceRecipient } from "@/sources/source";
-import { isNotSourceId, isRecordUnreadable } from "@/sources/pocketbase";
+import { isNotSourceId } from "@/sources/pocketbase";
 import { isSettingsMismatch, SettingsMismatch } from "@/sources/stream-record";
 import { sanitizeEmail } from "@/subscribers/email";
 import type { SubscriberStore } from "@/subscribers/store";
