@@ -108,13 +108,13 @@ function print(databases: Array<Checked>): void {
       (place ? `${place}\n` : "") +
         line(`Schema version: ${report.schemaVersion}`) +
         line(`Database: ${report.databaseBytes} bytes`) +
-        (place === "instance.db"
+        (report.kind === "instance"
           ? ""
           : line(`Uploads: ${report.uploadFiles} files, ${report.uploadBytes} bytes`)) +
         (report.hold
           ? report.hold.releasedAt === null
             ? line(
-                place === "instance.db"
+                report.kind === "instance"
                   ? `Hold: held since ${report.hold.since}; a restored instance sends nothing in any project until released`
                   : `Hold: held since ${report.hold.since}; a restored server sends nothing until released`,
               )
