@@ -267,7 +267,16 @@ function storedNames(db: Database, clock: Clock): Array<string> {
   }
 }
 
-function inspect(target: string, clock: Clock, supportedVersion: number): Inspection {
+/** The first schema version with the settings table: a project's migration 1, instance.db's 3. */
+const PROJECT_SETTINGS_FROM = 1;
+const INSTANCE_SETTINGS_FROM = 3;
+
+function inspect(
+  target: string,
+  clock: Clock,
+  supportedVersion: number,
+  settingsFrom = PROJECT_SETTINGS_FROM,
+): Inspection {
   const stats = statSync(target, { throwIfNoEntry: false });
   if (!stats) {
     throw new Error(`No backup at ${target}`);
@@ -307,6 +316,19 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
       throw new Error(`${target} failed its integrity check: ${integrity}`);
     }
     const schemaVersion = Number(single<bigint>(db, "user_version"));
+    // A database with no schema is no backup's, whatever kind it is: `backup` refuses such a source
+    // (D192, D193).
+    if (schemaVersion === 0) {
+      throw new Error(`${file} has no schema: not a backup`);
+    }
+    // The hold is in the settings table, which every schema of this executable from `settingsFrom`
+    // on has. One without it at such a version was not written by `backup` (D193).
+    const settings = hasSettings(db);
+    if (!settings && schemaVersion >= settingsFrom && schemaVersion <= supportedVersion) {
+      throw new Error(
+        `${file} has no settings table at schema version ${schemaVersion}: not a backup`,
+      );
+    }
     const report = {
       schemaVersion,
       supportedVersion,
@@ -314,10 +336,10 @@ function inspect(target: string, clock: Clock, supportedVersion: number): Inspec
       uploadFiles: 0,
       uploadBytes: 0,
       missing: [] as Array<string>,
-      hold: schemaVersion === 0 ? null : holdRecord(db),
+      hold: settings ? holdRecord(db) : null,
     };
     // A bare snapshot has no uploads, and a schema ahead of this executable cannot be read by it.
-    if (!stats.isDirectory() || schemaVersion === 0 || schemaVersion > supportedVersion) {
+    if (!stats.isDirectory() || schemaVersion > supportedVersion) {
       return report;
     }
     const { uploads: directory } = readManifest(target);
@@ -364,7 +386,7 @@ function isWholeBackup(path: string): boolean {
 /** A whole backup: instance.db, then each project the manifest names, which its registry names too. */
 function inspectWhole(target: string, clock: Clock, supportedVersion: number): Array<Checked> {
   const instanceFile = join(target, INSTANCE_DATABASE);
-  const instance = inspect(instanceFile, clock, instanceMigrations.length);
+  const instance = inspect(instanceFile, clock, instanceMigrations.length, INSTANCE_SETTINGS_FROM);
   const { projects } = readManifest(target);
   if (!Array.isArray(projects) || !projects.every((slug) => typeof slug === "string")) {
     throw new Error(`${join(target, MANIFEST)} names no projects: not a backup`);
@@ -377,10 +399,8 @@ function inspectWhole(target: string, clock: Clock, supportedVersion: number): A
       `${join(target, MANIFEST)} names ${JSON.stringify(invalid)}, which is not a project slug: not a backup`,
     );
   }
-  // An instance.db with no schema registers nothing to compare: it is no backup's (D192).
-  if (instance.schemaVersion === 0) {
-    throw new Error(`${instanceFile} has no schema: not a backup`);
-  }
+  // An instance.db with no schema, which registers nothing to compare, is refused by `inspect`
+  // (D192, D193).
   if (instance.schemaVersion <= instanceMigrations.length) {
     const db = openSnapshot(instanceFile);
     try {
@@ -399,9 +419,16 @@ function inspectWhole(target: string, clock: Clock, supportedVersion: number): A
     { place: INSTANCE_DATABASE, inspection: instance },
     ...projects.map((slug: string) => {
       const place = join(PROJECTS, slug);
+      const directory = join(target, place);
+      // `inspect` takes a file as a bare snapshot, but a whole backup restores each project as a
+      // directory, uploads and all: a file there cannot be restored (D193).
+      const entry = lstatSync(directory, { throwIfNoEntry: false });
+      if (entry !== undefined && !entry.isDirectory()) {
+        throw new Error(`${directory} is not a directory: not a backup`);
+      }
       return {
         place,
-        inspection: inspect(join(target, place), clock, supportedVersion),
+        inspection: inspect(directory, clock, supportedVersion),
       };
     }),
   ];

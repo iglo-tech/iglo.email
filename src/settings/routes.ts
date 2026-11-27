@@ -25,12 +25,16 @@ const bodyMedia = new Set([
 ]);
 
 /**
- * The native keys a listmonk client's full write leaves out; a full write without one keeps it.
+ * The native keys a listmonk client's full write leaves out: every key of a side that listmonk's
+ * settings API does not serve (models/settings.go at 6fcd95f). A full write without one keeps it
+ * (D193; test/settings/native-keys.test.ts fails on a native key missing here).
  * `source.password` is not one: left out it is blank, which keeps the stored password only for the
  * same source URL and identity (src/sources/settings.ts), so it never follows a new URL.
  */
 const nativeKeys: Record<SettingsSide, ReadonlyArray<string>> = {
   project: [
+    "app.site_url",
+    "privacy.preference_fields",
     "marketing.min_interval",
     "security.public_rate_limit",
     "source.url",
@@ -40,6 +44,9 @@ const nativeKeys: Record<SettingsSide, ReadonlyArray<string>> = {
     "source.recipients",
     "source.users",
     "source.grant_lists",
+    "appearance.brand.accent",
+    "appearance.brand.font",
+    "appearance.brand.header",
   ],
   instance: [
     "messaging.max_send_rate",

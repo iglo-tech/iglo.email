@@ -246,20 +246,35 @@ async function* walk(directory: string, base = directory): AsyncGenerator<string
 const BLOCK = 512;
 const encoder = new TextEncoder();
 
+/** The largest value of a 12-byte ustar number field: 11 octal digits (8 GiB less one byte). */
+const OCTAL_MAX = 0o777_7777_7777;
+
 function octal(header: Uint8Array, offset: number, length: number, value: number): void {
-  header.set(encoder.encode(value.toString(8).padStart(length - 1, "0")), offset);
+  const digits = value.toString(8);
+  // A value the field cannot hold would spill into the next field: callers carry it in PAX (D193).
+  if (!Number.isSafeInteger(value) || value < 0 || digits.length > length - 1) {
+    throw new Error(`${value} does not fit a ${length}-byte tar field`);
+  }
+  header.set(encoder.encode(digits.padStart(length - 1, "0")), offset);
 }
 
-/** One ustar header block; a name longer than its field is carried by a PAX record before it. */
-function header(name: string, type: "0" | "5" | "x", size: number, mtime: number): Uint8Array {
+/** A value clamped to the ustar number range; the exact one goes in a PAX record. */
+const clamped = (value: number) => Math.min(Math.max(value, 0), OCTAL_MAX);
+
+/**
+ * One ustar header block. A name longer than its field, a time before 1970 or past the field's
+ * range, and a size of 8 GiB or more are carried by PAX records before it; the fields hold the
+ * clamped value.
+ */
+function header(name: string, type: "0" | "5" | "x", size: number, seconds: number): Uint8Array {
   const block = new Uint8Array(BLOCK);
   const short = encoder.encode(name).subarray(0, 100);
   block.set(short, 0);
   octal(block, 100, 8, type === "5" ? 0o755 : 0o644);
   octal(block, 108, 8, 0);
   octal(block, 116, 8, 0);
-  octal(block, 124, 12, size);
-  octal(block, 136, 12, Math.floor(mtime / 1000));
+  octal(block, 124, 12, clamped(size));
+  octal(block, 136, 12, clamped(seconds));
   block.fill(0x20, 148, 156);
   block[156] = type.charCodeAt(0);
   block.set(encoder.encode("ustar\u000000"), 257);
@@ -268,14 +283,23 @@ function header(name: string, type: "0" | "5" | "x", size: number, mtime: number
   return block;
 }
 
-/** A PAX `path` record, for a name that does not fit the 100-byte field. */
-function paxPath(name: string): Uint8Array {
-  const body = ` path=${name}\n`;
+/** One PAX record: `path` for a long name, `mtime` and `size` for values the fields cannot hold. */
+function paxRecord(key: "path" | "mtime" | "size", value: string): string {
+  const body = ` ${key}=${value}\n`;
   const size = encoder.encode(body).length;
   // The record's length counts its own digits.
   let length = size + String(size).length;
   length = size + String(length).length;
-  return encoder.encode(`${length}${body}`);
+  return `${length}${body}`;
+}
+
+/** The PAX records an entry needs, or an empty string when its ustar header holds it all. */
+function paxRecords(name: string, size: number, seconds: number): string {
+  return (
+    (encoder.encode(name).length > 100 ? paxRecord("path", name) : "") +
+    (clamped(seconds) !== seconds ? paxRecord("mtime", String(seconds)) : "") +
+    (size > OCTAL_MAX ? paxRecord("size", String(size)) : "")
+  );
 }
 
 const padding = (size: number) => new Uint8Array((BLOCK - (size % BLOCK)) % BLOCK);
@@ -297,17 +321,20 @@ async function tarFiles(directory: string, path: string): Promise<string | null>
       const full = join(directory, name);
       const stat = await lstat(full);
       const entry = name;
-      if (encoder.encode(entry).length > 100) {
-        const record = paxPath(entry);
-        await handle.write(header("PaxHeader", "x", record.length, stat.mtimeMs));
+      const seconds = Math.floor(stat.mtimeMs / 1000);
+      const size = entry.endsWith("/") ? 0 : stat.size;
+      const records = paxRecords(entry, size, seconds);
+      if (records) {
+        const record = encoder.encode(records);
+        await handle.write(header("PaxHeader", "x", record.length, seconds));
         await handle.write(record);
         await handle.write(padding(record.length));
       }
       if (entry.endsWith("/")) {
-        await handle.write(header(entry, "5", 0, stat.mtimeMs));
+        await handle.write(header(entry, "5", 0, seconds));
         continue;
       }
-      await handle.write(header(entry, "0", stat.size, stat.mtimeMs));
+      await handle.write(header(entry, "0", size, seconds));
       let written = 0;
       for await (const chunk of Bun.file(full).stream()) {
         await handle.write(chunk);
