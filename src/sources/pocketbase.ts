@@ -254,6 +254,8 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
   let token = "";
   let renewAt = 0;
   let signingIn: Promise<string> | undefined;
+  /** The token checks in flight, by token: concurrent checks of one token share one request. */
+  const confirming = new Map<string, Promise<boolean>>();
 
   /**
    * One HTTP request under the guard and the time limit. A refused address and a body that is
@@ -356,7 +358,37 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     renewAt = clock.now().getTime() + (left > 0 ? left / 2 : FALLBACK_TOKEN_MS);
   }
 
-  /** Signs in with the service account; one sign-in runs at a time. */
+  /**
+   * B163 (D191): waits for work shared by concurrent callers on this caller's own signal and time
+   * limit. The shared work runs on the adapter's own time limit and no caller's signal, so one
+   * caller's abort or timeout rejects only that caller: an abort with its reason, a timeout as the
+   * transient failure `send` gives. The shared work's own failure reaches every caller as it is.
+   */
+  async function joined<T>(shared: Promise<T>, call: CallOptions): Promise<T> {
+    call.signal?.throwIfAborted();
+    const timer = new AbortController();
+    const timeout = new Error("timeout");
+    void clock.sleep(call.timeoutMs ?? DEFAULT_TIMEOUT_MS, timer.signal).then(
+      () => timer.abort(timeout),
+      () => {},
+    );
+    const signal = call.signal ? AbortSignal.any([call.signal, timer.signal]) : timer.signal;
+    try {
+      return await Promise.race([shared, abortion(signal)]);
+    } catch (error) {
+      if (error === timeout) {
+        throw new SourceError("transient", "The source did not answer in time");
+      }
+      throw error;
+    } finally {
+      timer.abort();
+    }
+  }
+
+  /**
+   * Signs in with the service account; one sign-in runs at a time, shared by every caller that
+   * needs one meanwhile, and each caller waits for it on its own signal and time limit.
+   */
   function signIn(call: CallOptions): Promise<string> {
     signingIn ??= (async () => {
       try {
@@ -365,7 +397,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
           `api/collections/${authCollection}/auth-with-password`,
           "",
           JSON.stringify({ identity: config.identity, password: config.password }),
-          call,
+          {},
         );
         const next = member(answer.body, "token");
         if (answer.status !== 200 || typeof next !== "string") {
@@ -377,7 +409,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         signingIn = undefined;
       }
     })();
-    return signingIn;
+    return joined(signingIn, call);
   }
 
   async function currentToken(call: CallOptions): Promise<string> {
@@ -396,32 +428,41 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
 
   /**
    * Whether the token `used` is still accepted. PocketBase reads an invalid token as a guest, so
-   * an empty answer proves nothing until this succeeds (401 means the token was not valid).
+   * an empty answer proves nothing until this succeeds (401 means the token was not valid). A
+   * token superseded by a newer one is still valid and passes. Concurrent checks of one token
+   * share one request, which runs on no caller's signal (B163, D191).
    */
-  async function confirm(used: string, call: CallOptions): Promise<boolean> {
+  function confirm(used: string, call: CallOptions): Promise<boolean> {
     if (!used) {
-      return false;
+      return Promise.resolve(false);
     }
-    const answer = await send(
-      "POST",
-      `api/collections/${authCollection}/auth-refresh`,
-      used,
-      undefined,
-      call,
-    );
-    if (answer.status === 401 || answer.status === 403 || answer.status === 404) {
-      drop(used);
-      return false;
+    let shared = confirming.get(used);
+    if (!shared) {
+      shared = (async () => {
+        const answer = await send(
+          "POST",
+          `api/collections/${authCollection}/auth-refresh`,
+          used,
+          undefined,
+          {},
+        );
+        if (answer.status === 401 || answer.status === 403 || answer.status === 404) {
+          drop(used);
+          return false;
+        }
+        const next = member(answer.body, "token");
+        if (answer.status !== 200 || typeof next !== "string") {
+          throw failure(answer, "the token check");
+        }
+        // A token another caller got meanwhile is as good, so it is kept.
+        if (token === used) {
+          accept(next, answer.date);
+        }
+        return true;
+      })().finally(() => confirming.delete(used));
+      confirming.set(used, shared);
     }
-    const next = member(answer.body, "token");
-    if (answer.status !== 200 || typeof next !== "string") {
-      throw failure(answer, "the token check");
-    }
-    // A token another caller got meanwhile is as good, so it is kept.
-    if (token === used) {
-      accept(next, answer.date);
-    }
-    return true;
+    return joined(shared, call);
   }
 
   /** An authenticated GET and the token it used; a 401 or 403 signs in again and repeats it once. */
@@ -438,9 +479,9 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
 
   /**
    * Runs `read`; an absent answer counts only once the token that read was sent with passes the
-   * check. When that token is no longer valid, or another caller has signed in again since the
-   * read (the held token is not the one the read used), it reads once more with the current token
-   * and checks that answer the same way. A second unconfirmed absent answer is transient.
+   * check, whether or not it is still the held token (a token superseded by a renewal is still
+   * valid; a revoked one gets 401). When it does not pass, it reads once more with the current
+   * token and checks that answer the same way. A second unconfirmed absent answer is transient.
    */
   async function confirmed<T>(
     read: () => Promise<Read<T>>,
@@ -449,7 +490,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
   ): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const { value, used } = await read();
-      if (!absent(value) || (used === token && (await confirm(used, call)))) {
+      if (!absent(value) || (await confirm(used, call))) {
         return value;
       }
       if (attempt > 0) {

@@ -404,6 +404,133 @@ test.each(races)(
   },
 );
 
+/**
+ * An adapter whose transport (the test seam) can hold responses: `hold(pattern)` holds the
+ * response of the next request whose path matches; `answered` settles once that request has been
+ * answered by the binary, and `release()` hands the answer on. Several holds may be armed.
+ */
+function gated() {
+  const armed: Array<{ pattern: RegExp; answered: () => void; gate: Promise<void> }> = [];
+  const requests: Array<string> = [];
+  const source = createPocketBaseSource({
+    config: sourceConfig(pb.url, pb.service),
+    clock: createRealClock(),
+    guard: open,
+    transport: {
+      fetch: async (input: URL, init: RequestInit) => {
+        const path = `${input.pathname}${input.search}`;
+        requests.push(`${init.method ?? "GET"} ${path}`);
+        const index = armed.findIndex(({ pattern }) => pattern.test(path));
+        const held = index >= 0 ? armed.splice(index, 1)[0] : undefined;
+        const response = await fetch(input, init);
+        if (held) {
+          held.answered();
+          await held.gate;
+        }
+        return response;
+      },
+    },
+  });
+  return {
+    source,
+    requests,
+    hold(pattern: RegExp) {
+      const answered = Promise.withResolvers<void>();
+      const gate = Promise.withResolvers<void>();
+      armed.push({ pattern, answered: answered.resolve, gate: gate.promise });
+      return { answered: answered.promise, release: () => gate.resolve() };
+    },
+  };
+}
+
+/** The settled value or the rejection of `work`, to compare either. */
+const outcomeOf = (work: Promise<unknown>) =>
+  work.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+
+test("B163: one caller's abort or timeout during a shared sign-in rejects only that caller", async () => {
+  const user = await pb.user();
+  for (const how of ["abort", "timeout"] as const) {
+    const { source, requests, hold } = gated();
+    // Caller A starts the sign-in; its answer is held while caller B joins it and A gives up.
+    const signIn = hold(/\/auth-with-password$/);
+    const controller = new AbortController();
+    const stopped = new Error("caller A stopped");
+    const a = outcomeOf(
+      source.recipient(
+        user.id,
+        how === "abort" ? { signal: controller.signal } : { timeoutMs: 200 },
+      ),
+    );
+    await signIn.answered;
+    const b = source.recipient(user.id);
+    if (how === "abort") {
+      controller.abort(stopped);
+    }
+    const first = await a;
+    signIn.release();
+    // B gets the right answer from the one sign-in; A gets only its own failure.
+    expect((await b)?.id).toBe(user.id);
+    expect(requests.filter((line) => line.includes("/auth-with-password"))).toHaveLength(1);
+    if (how === "abort") {
+      expect(first).toEqual({ error: stopped });
+    } else {
+      expect("error" in first && isSourceError(first.error) && first.error.kind).toBe("transient");
+    }
+  }
+});
+
+test("B163: one token check serves concurrent empty reads; one caller's abort during it rejects only that caller", async () => {
+  const { source, requests, hold } = gated();
+  const empty = await pb.user();
+  expect(await source.latest({ user: empty.id })).toBeNull();
+  const check = hold(/\/auth-refresh$/);
+  const controller = new AbortController();
+  const stopped = new Error("caller A stopped");
+  const a = outcomeOf(source.latest({ user: empty.id }, { signal: controller.signal }));
+  await check.answered;
+  const before = requests.filter((line) => line.includes("/auth-refresh")).length;
+  const read = hold(/\/events\/records\?/);
+  const b = source.latest({ user: empty.id });
+  // B's empty read is answered and then waits for the same token's check, which A started.
+  await read.answered;
+  read.release();
+  await Bun.sleep(100);
+  controller.abort(stopped);
+  expect(await a).toEqual({ error: stopped });
+  check.release();
+  expect(await b).toBeNull();
+  expect(requests.filter((line) => line.includes("/auth-refresh")).length).toBe(before);
+});
+
+test("B163: concurrent empty reads across token renewals are confirmed by the token each used", async () => {
+  const { source, requests, hold } = gated();
+  const empty = await pb.user();
+  const reads = /\/events\/records\?/;
+  expect(await source.latest({ user: empty.id })).toBeNull();
+  // Caller A's empty read is held; meanwhile, a second later (PocketBase's expiry has whole
+  // seconds), caller B's empty read is confirmed and renews the held token.
+  const first = hold(reads);
+  const a = outcomeOf(source.latest({ user: empty.id }));
+  await first.answered;
+  await Bun.sleep(1100);
+  expect(await source.latest({ user: empty.id })).toBeNull();
+  // Should A read again, its second read is held too, across another renewal by caller C.
+  const again = hold(reads);
+  first.release();
+  const settled = await Promise.race([a.then(() => "settled"), again.answered.then(() => "read")]);
+  if (settled === "read") {
+    await Bun.sleep(1100);
+    expect(await source.latest({ user: empty.id })).toBeNull();
+  }
+  again.release();
+  expect(await a).toEqual({ value: null });
+  // The renewals happened: the checks gave new tokens, and none was a sign-in.
+  expect(requests.filter((line) => line.includes("/auth-with-password"))).toHaveLength(1);
+});
+
 test("a wrong password is a permanent failure", async () => {
   const { source } = adapter({ config: { password: "not-the-password" } });
   const error = await failure(source.recipient("nosuchuser00000"));
