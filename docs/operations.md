@@ -416,7 +416,8 @@ A start that cannot list `backups/deleted` (a file there, or no permission) stil
 `[instance] backups/deleted cannot be listed`, and applies the rules for several projects until a start can list it again. Its hostnames then answer as
 unclaimed hosts. To bring one back, create a project with the same slug and hostname, stop the
 server, replace `projects/<slug>/iglo-email.db` with the snapshot, unpack the tarball into
-`projects/<slug>/`, and start the server again. Deleting the primary project leaves the instance without one: hosts no
+`projects/<slug>/` (GNU `tar` warns that a file dated before 1970 is "implausibly old" and restores
+its time), and start the server again. Deleting the primary project leaves the instance without one: hosts no
 project claims answer `404`, `/health` still answers, and `/admin` leads to the Projects page; a
 restart does not recreate `main`.
 
@@ -1153,7 +1154,10 @@ in the backup, which `backup` never writes. It also refuses a FIFO, socket or de
 the backup, given as the snapshot, or beside a bare snapshot as its `-journal`, `-wal` or `-shm`
 file, rather than wait on it. The path you give it may itself be a symlink to a backup; a path
 that names nothing on disk, such as `/dev/stdin` on a pipe, is "No backup at …". These checks
-come before SQLite opens the files, which it opens by name: `--verify` is for a backup that nothing
+come before SQLite opens the files, which it opens by name. A database with no schema (an empty
+file, given bare, as a project's backup or inside a whole backup), one that lacks the settings
+table its schema version has, and a whole backup whose `projects/<slug>` is a file rather than a
+directory are each refused by name as not a backup. `--verify` is for a backup that nothing
 changes while it runs (a backup `backup` published, or one copied or unpacked beforehand), not for
 files another process could swap meanwhile. The output may not be
 `<data-dir>/projects/` or inside it, where the projects are read from, or at

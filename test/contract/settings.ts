@@ -15,6 +15,7 @@ import {
 } from "@/test/contract/settings-reference-fetch";
 import type { Credentials, Mode } from "@/test/contract/types";
 import { asBody } from "@/test/read-body";
+import { listmonkSettingKeys } from "@/test/settings/upstream-keys";
 
 function check(condition: unknown, label: string): asserts condition {
   if (!condition) {
@@ -52,6 +53,19 @@ export async function runSettingsContract(target: {
     "scalar-types",
   );
   check(Array.isArray(snapshot.smtp) && Array.isArray(snapshot["app.from_email"]), "array-types");
+  // B165 (D193): the pinned list that tells a listmonk key from a native one is upstream's own.
+  if (target.mode === "reference") {
+    const served = Object.keys(snapshot);
+    const unlisted = served.filter((key) => !listmonkSettingKeys.includes(key));
+    // The S3 secret is `omitempty` upstream: served only once it is set.
+    const unserved = listmonkSettingKeys.filter(
+      (key) => !served.includes(key) && key !== "upload.s3.aws_secret_access_key",
+    );
+    check(
+      unlisted.length === 0 && unserved.length === 0,
+      `upstream-keys (unlisted: ${unlisted.join(", ")}; not served: ${unserved.join(", ")})`,
+    );
+  }
   check(typeof snapshot["security.captcha"].hcaptcha.secret === "string", "nested-projection");
   check(
     snapshot.smtp.every(
