@@ -466,11 +466,13 @@ export function createSesAccount(deps: {
     current: state,
     /**
      * The state a forecast uses: read again first when the snapshot is older than a minute
-     * (section 7, "on demand"). A failed read is not repeated within the minute either.
+     * (section 7, "on demand"). A failed read is not repeated within the minute either. A read in
+     * flight is awaited (B170, D198): it set `lastAttempt` when it began, so its young age must not
+     * answer the state from before it.
      */
     async fresh(): Promise<SesAccountState> {
       const age = lastAttempt === null ? Infinity : clock.now().getTime() - lastAttempt;
-      if (!stopped && credentials() && age > FAST_REFRESH_MS) {
+      if (!stopped && credentials() && (reading !== null || age > FAST_REFRESH_MS)) {
         await read();
       }
       return state();

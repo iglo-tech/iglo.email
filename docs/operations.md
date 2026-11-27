@@ -1143,7 +1143,10 @@ An unknown slug exits nonzero and writes nothing. Every database is snapshotted 
 the one partial directory described under **Failure**, and the backup is published only when all of
 them pass: a failure on any database leaves no backup at the final name. A project created or
 deleted while the backup runs fails it with "The registered projects changed while the backup
-ran; run it again", whichever step met the change first; run it again. When a step failed while the projects
+ran; run it again", whichever step met the change first; run it again. The registry is read again
+just before the backup is published, so a project deleted after its files were copied fails it too.
+A `--project <slug>` backup whose project is deleted while it runs fails with "Project <slug> was
+deleted while the backup ran". When a step failed while the projects
 changed, its error follows on a second line, `Cause: …`: if it is not about the project that
 changed (a full disk, a failed integrity check), the rerun will meet it too. When no step failed and
 only the final comparison of the registry found the change, the message stays one line. `--verify` prints each
@@ -1447,6 +1450,10 @@ Executable and backup versions:
   hold stays.
 - An older executable refuses a newer backup. `--verify` exits nonzero, and `serve` exits with
   `Database version N is ahead of this executable`. Restore with that version or a newer one.
+- An older executable does not back up a newer data directory: `backup` exits nonzero with
+  `<file> has schema version N, ahead of this executable, which supports M: use a newer one`
+  (`instance.db` and each project database by its own version) and writes nothing. Back up with
+  the executable the server runs. `--release-hold` refuses an ahead or negative version the same way.
 
 ## Upgrades
 

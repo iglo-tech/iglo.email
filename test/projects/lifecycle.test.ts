@@ -368,6 +368,17 @@ test("an extra hostname serves old unsubscribe links until it is removed", async
     const refused = await call("PUT", "/api/instance/projects/news", body);
     expect({ body, status: refused.status }).toEqual({ body, status });
   }
+  // B170 (D198): any field but `name` and `extra` is refused with its name, not ignored, and the
+  // name sent beside it is not written.
+  for (const field of ["slug", "hostname", "primary", "colour"]) {
+    const value = field === "primary" ? true : "other.example.test";
+    const refused = await call("PUT", "/api/instance/projects/news", {
+      name: "Not Written",
+      [field]: value,
+    });
+    expect({ field, status: refused.status }).toEqual({ field, status: 400 });
+    expect((await readJson<{ message: string }>(refused)).message).toContain(field);
+  }
   expect((await call("PUT", "/api/instance/projects/nothing", { name: "X" })).status).toBe(404);
   expect((await listProjects()).find((project) => project.slug === "news")).toMatchObject({
     name: "News Weekly",

@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { createBackup } from "@/backup/snapshot";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
-import { productionMigrations, runMigrations } from "@/db/migrations";
+import { instanceMigrations, productionMigrations, runMigrations } from "@/db/migrations";
 import {
   apiClient,
   buildExecutable,
@@ -464,6 +464,47 @@ test("a kill at publication leaves nothing at the name, and a retry works", asyn
   expect((await runBackup(executable, ["--verify", output])).exitCode).toBe(0);
 });
 
+test("a project deleted while the backup runs fails it, whole or --project, and nothing is published (B170)", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  const b = { slug: "b", name: "B", hostname: "b.example.test" };
+  registerProjects(dataDir, [
+    { slug: "main", name: "Main", hostname: "127.0.0.1", primary: true },
+    b,
+  ]);
+  server = await startServer(executable, dataDir);
+  await stopped();
+  const projectB = join(dataDir, "projects", "b");
+
+  // Whole: b is deleted after its uploads are copied, so the instance.db snapshot still names it.
+  const whole = join(base, "whole");
+  const failed = await publishing("unregister", projectB, "--data-dir", dataDir, "--output", whole);
+  expect(failed.exitCode, failed.stdout).toBe(1);
+  expect(failed.stderr).toContain(
+    "The registered projects changed while the backup ran; run it again",
+  );
+  expect(existsSync(whole)).toBe(false);
+  expect(names(base)).toEqual(["data"]);
+
+  // One project: the slug it backs up is gone by the time it would publish.
+  registerProjects(dataDir, [b]);
+  const only = join(base, "only-b");
+  const gone = await publishing(
+    "unregister",
+    projectB,
+    "--data-dir",
+    dataDir,
+    "--project",
+    "b",
+    "--output",
+    only,
+  );
+  expect(gone.exitCode, gone.stdout).toBe(1);
+  expect(gone.stderr).toContain("Project b was deleted while the backup ran");
+  expect(existsSync(only)).toBe(false);
+  expect(names(base)).toEqual(["data"]);
+});
+
 test("a pre-migration snapshot is held, and the install it came from is not", async () => {
   base = temporaryDirectory();
   dataDir = join(base, "data");
@@ -562,6 +603,69 @@ test("an older executable refuses a backup ahead of it", async () => {
   restoreInto(output, dataDir);
   const refused = await startServer(executable, dataDir).catch((error: unknown) => error);
   expect(String(refused)).toContain(`Database version ${version + 1} is ahead of this executable`);
+});
+
+/** Sets a stopped database's schema version. */
+function setVersion(path: string, value: number) {
+  const db = new Database(path);
+  db.run(`PRAGMA user_version = ${value}`);
+  db.close();
+}
+
+test("backup refuses a live database ahead of this executable, and writes nothing (B170)", async () => {
+  await live();
+  await stopped();
+  const projectDb = join(project(), "iglo-email.db");
+  const instanceDb = join(dataDir, "instance.db");
+  const output = join(base, "missing", "backup");
+  for (const [path, value, current] of [
+    [projectDb, version + 1, version],
+    [instanceDb, instanceMigrations.length + 1, instanceMigrations.length],
+  ] as const) {
+    setVersion(path, value);
+    // A project's backup copies no instance.db but reads its registry: refused all the same.
+    for (const args of [[], ["--project", "main"]]) {
+      const refused = await runBackup(executable, [
+        "--data-dir",
+        dataDir,
+        "--output",
+        output,
+        ...args,
+      ]);
+      expect({ path, args, exitCode: refused.exitCode }).toEqual({ path, args, exitCode: 1 });
+      expect(refused.stderr).toContain(
+        `${path} has schema version ${value}, ahead of this executable`,
+      );
+      expect(refused.stdout).toBe("");
+      // No folder, partial or sealed snapshot: the base holds only the data directory.
+      expect(names(base)).toEqual(["data"]);
+      expect(existsSync(join(dataDir, "backups"))).toBe(false);
+    }
+    setVersion(path, current);
+  }
+  expect((await runBackup(executable, ["--data-dir", dataDir, "--output", output])).exitCode).toBe(
+    0,
+  );
+});
+
+test("--release-hold refuses a database at a negative schema version (B170)", async () => {
+  await live();
+  await stopped();
+  for (const [path, args] of [
+    [join(project(), "iglo-email.db"), ["--project", "main"]],
+    [join(dataDir, "instance.db"), []],
+  ] as const) {
+    setVersion(path, -1);
+    const refused = await runBackup(executable, [
+      "--release-hold",
+      "--consent-reconciled",
+      "--data-dir",
+      dataDir,
+      ...args,
+    ]);
+    expect({ path, exitCode: refused.exitCode }).toEqual({ path, exitCode: 1 });
+    expect(refused.stderr).toContain(`${path} has invalid schema version -1`);
+  }
 });
 
 test("--verify reports a damaged file and changes nothing", async () => {

@@ -1105,6 +1105,9 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
         if (!/^[1-9]\d{0,15}$/.test(id) || Number(id) > Number.MAX_SAFE_INTEGER) {
           throw new HttpError(400, "Invalid campaign_id.");
         }
+        // B170 (D198): the list scope first, as every campaign endpoint, so a scoped user cannot
+        // tell a missing campaign from one outside its lists.
+        checkCampaign(context, false, BigInt(id));
         const campaign = capacity.campaign(BigInt(id));
         if (!campaign) {
           throw new HttpError(
@@ -1112,7 +1115,6 @@ export function registerCampaignRoutes(router: Router, deps: CampaignDeps) {
             t(context).Ts("globals.messages.notFound", "name", "{globals.terms.campaign}"),
           );
         }
-        checkCampaign(context, false, BigInt(id));
         exclude = Number(id);
         recipients ??= campaign.recipients;
         start ??= campaign.sendAt === null ? null : new Date(campaign.sendAt);
