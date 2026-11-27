@@ -482,27 +482,65 @@ test("B163: one caller's abort or timeout during a shared sign-in rejects only t
   }
 });
 
-test("B163: one token check serves concurrent empty reads; one caller's abort during it rejects only that caller", async () => {
+test("B163 r1: a token check sent before another caller's guest read is not shared with it: a live user is read again, never null", async () => {
   const { source, requests, hold } = gated();
   const empty = await pb.user();
+  const live = await pb.user();
   expect(await source.latest({ user: empty.id })).toBeNull();
+  // Caller A's empty read is confirmed; its check reaches PocketBase before the revocation and its
+  // answer (200) is held.
   const check = hold(/\/auth-refresh$/);
-  const controller = new AbortController();
-  const stopped = new Error("caller A stopped");
-  const a = outcomeOf(source.latest({ user: empty.id }, { signal: controller.signal }));
+  const a = outcomeOf(source.latest({ user: empty.id }));
   await check.answered;
-  const before = requests.filter((line) => line.includes("/auth-refresh")).length;
-  const read = hold(/\/events\/records\?/);
-  const b = source.latest({ user: empty.id });
-  // B's empty read is answered and then waits for the same token's check, which A started.
+  await revokeTokens();
+  // Caller B reads a live user with the now revoked token: as a guest it gets a 404, after A's
+  // check was sent, so A's 200 proves nothing about B's read.
+  const read = hold(/\/recipients\/records\/[^?]+$/);
+  const b = outcomeOf(source.recipient(live.id));
   await read.answered;
   read.release();
   await Bun.sleep(100);
-  controller.abort(stopped);
-  expect(await a).toEqual({ error: stopped });
   check.release();
-  expect(await b).toBeNull();
-  expect(requests.filter((line) => line.includes("/auth-refresh")).length).toBe(before);
+  expect(await b).toEqual({ value: expect.objectContaining({ id: live.id }) });
+  expect(await a).toEqual({ value: null });
+  // B checked its own token (401) and signed in again.
+  expect(requests.filter((line) => line.includes("/auth-refresh")).length).toBeGreaterThanOrEqual(
+    3,
+  );
+  expect(requests.filter((line) => line.includes("/auth-with-password"))).toHaveLength(2);
+});
+
+test("B163 r1: an already aborted caller sends no sign-in, leaves no unhandled rejection and keeps the token", async () => {
+  const unhandled: Array<unknown> = [];
+  const listener = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", listener);
+  try {
+    const wrong = adapter({ config: { password: "not-the-password" } });
+    const controller = new AbortController();
+    const stopped = new Error("caller stopped");
+    controller.abort(stopped);
+    expect(
+      await outcomeOf(wrong.source.recipient("nosuchuser00000", { signal: controller.signal })),
+    ).toEqual({ error: stopped });
+    expect(await outcomeOf(wrong.source.authenticate({ signal: controller.signal }))).toEqual({
+      error: stopped,
+    });
+    // A sign-in that had been sent would have been refused by now.
+    await Bun.sleep(300);
+    expect(wrong.requests).toEqual([]);
+    expect(unhandled).toEqual([]);
+    // An aborted settings check does not drop the token the adapter holds.
+    const { source, signIns } = adapter();
+    const user = await pb.user();
+    expect((await source.recipient(user.id))?.id).toBe(user.id);
+    expect(await outcomeOf(source.authenticate({ signal: controller.signal }))).toEqual({
+      error: stopped,
+    });
+    expect((await source.recipient(user.id))?.id).toBe(user.id);
+    expect(signIns()).toBe(1);
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
 });
 
 test("B163: concurrent empty reads across token renewals are confirmed by the token each used", async () => {

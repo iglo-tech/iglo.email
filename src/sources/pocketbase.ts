@@ -254,8 +254,6 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
   let token = "";
   let renewAt = 0;
   let signingIn: Promise<string> | undefined;
-  /** The token checks in flight, by token: concurrent checks of one token share one request. */
-  const confirming = new Map<string, Promise<boolean>>();
 
   /**
    * One HTTP request under the guard and the time limit. A refused address and a body that is
@@ -390,25 +388,31 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
    * needs one meanwhile, and each caller waits for it on its own signal and time limit.
    */
   function signIn(call: CallOptions): Promise<string> {
-    signingIn ??= (async () => {
-      try {
-        const answer = await send(
-          "POST",
-          `api/collections/${authCollection}/auth-with-password`,
-          "",
-          JSON.stringify({ identity: config.identity, password: config.password }),
-          {},
-        );
-        const next = member(answer.body, "token");
-        if (answer.status !== 200 || typeof next !== "string") {
-          throw failure(answer, "the service account's sign-in");
+    // An aborted caller starts nothing.
+    call.signal?.throwIfAborted();
+    if (!signingIn) {
+      signingIn = (async () => {
+        try {
+          const answer = await send(
+            "POST",
+            `api/collections/${authCollection}/auth-with-password`,
+            "",
+            JSON.stringify({ identity: config.identity, password: config.password }),
+            {},
+          );
+          const next = member(answer.body, "token");
+          if (answer.status !== 200 || typeof next !== "string") {
+            throw failure(answer, "the service account's sign-in");
+          }
+          accept(next, answer.date);
+          return token;
+        } finally {
+          signingIn = undefined;
         }
-        accept(next, answer.date);
-        return token;
-      } finally {
-        signingIn = undefined;
-      }
-    })();
+      })();
+      // Callers get its failure through `joined`; with none left waiting it must not go unhandled.
+      signingIn.catch(() => {});
+    }
     return joined(signingIn, call);
   }
 
@@ -429,40 +433,34 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
   /**
    * Whether the token `used` is still accepted. PocketBase reads an invalid token as a guest, so
    * an empty answer proves nothing until this succeeds (401 means the token was not valid). A
-   * token superseded by a newer one is still valid and passes. Concurrent checks of one token
-   * share one request, which runs on no caller's signal (B163, D191).
+   * token superseded by a newer one is still valid and passes. Each check sends its own request
+   * on the caller's signal and time limit and is never shared: a `200` proves only reads that had
+   * finished before the check was sent (D170, D191).
    */
-  function confirm(used: string, call: CallOptions): Promise<boolean> {
+  async function confirm(used: string, call: CallOptions): Promise<boolean> {
     if (!used) {
-      return Promise.resolve(false);
+      return false;
     }
-    let shared = confirming.get(used);
-    if (!shared) {
-      shared = (async () => {
-        const answer = await send(
-          "POST",
-          `api/collections/${authCollection}/auth-refresh`,
-          used,
-          undefined,
-          {},
-        );
-        if (answer.status === 401 || answer.status === 403 || answer.status === 404) {
-          drop(used);
-          return false;
-        }
-        const next = member(answer.body, "token");
-        if (answer.status !== 200 || typeof next !== "string") {
-          throw failure(answer, "the token check");
-        }
-        // A token another caller got meanwhile is as good, so it is kept.
-        if (token === used) {
-          accept(next, answer.date);
-        }
-        return true;
-      })().finally(() => confirming.delete(used));
-      confirming.set(used, shared);
+    const answer = await send(
+      "POST",
+      `api/collections/${authCollection}/auth-refresh`,
+      used,
+      undefined,
+      call,
+    );
+    if (answer.status === 401 || answer.status === 403 || answer.status === 404) {
+      drop(used);
+      return false;
     }
-    return joined(shared, call);
+    const next = member(answer.body, "token");
+    if (answer.status !== 200 || typeof next !== "string") {
+      throw failure(answer, "the token check");
+    }
+    // A token another caller got meanwhile is as good, so it is kept.
+    if (token === used) {
+      accept(next, answer.date);
+    }
+    return true;
   }
 
   /** An authenticated GET and the token it used; a 401 or 403 signs in again and repeats it once. */
@@ -763,6 +761,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     scan,
     /** Signs in now (the settings check). */
     async authenticate(call: CallOptions = {}): Promise<void> {
+      call.signal?.throwIfAborted();
       token = "";
       await signIn(call);
     },
