@@ -1,6 +1,6 @@
 // B165 (D193, 14-projects section 12 "CLI"): `backup --verify` refuses, by name and with a non-zero
-// exit, what is not a backup: a database with no schema (bare, as a project's backup or in a whole
-// backup), a whole backup whose project is a file, and a database at a version that has the
+// exit, what is not a backup: a database with no schema or a negative schema version (bare, as a
+// project's backup or in a whole backup), a whole backup whose project is a file, and a database at a version that has the
 // settings table but lacks it. A valid backup still verifies. On the compiled executable.
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
@@ -120,6 +120,27 @@ test("--verify refuses a database with no schema, bare, as a project's backup or
   const wholeProject = join(whole, "projects", "main", DATABASE);
   replaceDatabase(wholeProject);
   await refused(whole, `${wholeProject} has no schema: not a backup`);
+});
+
+test("--verify refuses a database at a negative schema version, bare, as a project's backup or in a whole backup", async () => {
+  const { whole, project } = await backups();
+  const bare = join(base, "bare.db");
+  new Database(bare, { create: true }).close();
+  replaceDatabase(bare, -1);
+  await refused(bare, `${bare} has invalid schema version -1: not a backup`);
+
+  const projectDatabase = join(project, DATABASE);
+  replaceDatabase(projectDatabase, -1);
+  await refused(project, `${projectDatabase} has invalid schema version -1: not a backup`);
+
+  // The project's database first: instance.db is read before it.
+  const wholeProject = join(whole, "projects", "main", DATABASE);
+  replaceDatabase(wholeProject, -2_147_483_648);
+  await refused(whole, `${wholeProject} has invalid schema version -2147483648: not a backup`);
+
+  const instance = join(whole, "instance.db");
+  replaceDatabase(instance, -1);
+  await refused(whole, `${instance} has invalid schema version -1: not a backup`);
 });
 
 test("--verify refuses a whole backup whose project is a file, not a directory", async () => {

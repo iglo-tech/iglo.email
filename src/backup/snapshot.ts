@@ -317,9 +317,13 @@ function inspect(
     }
     const schemaVersion = Number(single<bigint>(db, "user_version"));
     // A database with no schema is no backup's, whatever kind it is: `backup` refuses such a source
-    // (D192, D193).
+    // (D192, D193). SQLite stores the version as a signed 32-bit integer; a negative one is no
+    // schema this executable writes, and `runMigrations` refuses it.
     if (schemaVersion === 0) {
       throw new Error(`${file} has no schema: not a backup`);
+    }
+    if (schemaVersion < 0) {
+      throw new Error(`${file} has invalid schema version ${schemaVersion}: not a backup`);
     }
     // The hold is in the settings table, which every schema of this executable from `settingsFrom`
     // on has. One without it at such a version was not written by `backup` (D193).

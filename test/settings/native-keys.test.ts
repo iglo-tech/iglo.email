@@ -34,6 +34,21 @@ const write = async (path: string, body: Record<string, unknown>) => {
   expect(response.status, await response.clone().text()).toBe(200);
 };
 
+/**
+ * Whether a served value is what a full PUT binds a key it leaves out to: false, 0, "", an empty
+ * list (served as [] or null), or an object of only such fields. A value to keep must not be, or a
+ * key missing from `nativeKeys` would read back as kept.
+ */
+function omitted(value: unknown): boolean {
+  if (value === null || value === false || value === 0 || value === "") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.length === 0;
+  }
+  return typeof value === "object" && Object.values(value).every(omitted);
+}
+
 /** A value other than the default for each native key; `list` is the id a grant rule names. */
 function changed(list: number): Record<string, Record<string, unknown>> {
   return {
@@ -76,7 +91,8 @@ function changed(list: number): Record<string, Record<string, unknown>> {
       "ses.api_region": "eu-west-1",
       "ses.api_access_key_id": "AKIASYNTHETIC0000000",
       "ses.api_secret_access_key": "synthetic-ses-secret",
-      "webhooks.block_private_addresses": false,
+      // The default, but not what an omitted boolean binds to.
+      "webhooks.block_private_addresses": true,
       "sources.private_hosts": ["pocketbase"],
       "security.trusted_proxies": ["127.0.0.1"],
       "bounce.ses_topic_arns": ["arn:aws:sns:eu-west-1:123456789012:bounces"],
@@ -101,9 +117,15 @@ test("a full PUT without the native keys, as a listmonk client sends it, keeps e
     await write(path, { ...served, ...values[side], ...extra });
     const set = await read(path);
     for (const key of native) {
-      expect(set[key], `${side} ${key} changed`).not.toEqual(
-        (defaults as Record<string, unknown>)[key],
-      );
+      // Kept must be told apart from what a full write binds an omitted key to; a boolean has two
+      // values, so one whose default is `true` keeps `true`, and only the others also differ from
+      // their default.
+      expect(omitted(set[key]), `${side} ${key} differs from an omitted key's value`).toBe(false);
+      if (typeof set[key] !== "boolean") {
+        expect(set[key], `${side} ${key} changed`).not.toEqual(
+          (defaults as Record<string, unknown>)[key],
+        );
+      }
     }
 
     // What a listmonk client sends: the keys upstream serves, with the values just read.
