@@ -233,7 +233,16 @@ export function normalizeSource(next: Settings, current: Settings): void {
   if (collection && !filter) {
     fail("source.users needs a leaving_filter with its collection, such as deletedAt != ''.");
   }
-  if (collection && leavingTopic(collection, filter) === null) {
+  // B171 (D199, D136 item 9): the topic length is checked only when a save changes the users
+  // setting or turns the source on, so a filter an older build stored cannot block other saves or
+  // clearing the source; Test connection's users step still names it.
+  const storedUsers = read(current, "source.users");
+  const checkTopic =
+    !!url &&
+    (!textAt(current, "source.url") ||
+      collection !== text(member(storedUsers, "collection")) ||
+      filter !== text(member(storedUsers, "leaving_filter")));
+  if (collection && checkTopic && leavingTopic(collection, filter) === null) {
     fail(`Invalid source.users leaving_filter: ${LEAVING_TOO_LONG}.`);
   }
   next["source.users"] = { collection, leaving_filter: collection ? filter : "" };
