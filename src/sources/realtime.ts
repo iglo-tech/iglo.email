@@ -6,7 +6,7 @@
 // is a dead one) and after `maxAgeMs` (PocketBase's forced close at 30 minutes), both on the
 // injected clock. A close at any point is routine: the stream reconnects and catches up.
 import type { Clock } from "@/clock";
-import { guardedFetch, refusedMessage } from "@/sources/connect";
+import { guardedFetch } from "@/sources/connect";
 import type { Guard, SourceTransport } from "@/sources/connect";
 import { isSourceObject, member, sourceJson } from "@/sources/json";
 import { SourceError } from "@/sources/source";
@@ -212,7 +212,7 @@ export async function openRealtime(options: RealtimeOptions): Promise<RealtimeCo
     const outcome = await Promise.race([pending, aborted]);
     if (!("status" in outcome)) {
       timers.abort();
-      throw new SourceError("permanent", refusedMessage(outcome.refused));
+      throw new SourceError("permanent", outcome.message);
     }
     response = outcome;
   } catch (error) {

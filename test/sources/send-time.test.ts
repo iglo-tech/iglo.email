@@ -1058,3 +1058,66 @@ test("B166: a sign-in answered with a 200 HTML page refuses the settings, not on
   expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1, [emailOf(other)]: 1 });
   expect(await skippedOf(f, c.id)).toEqual([]);
 });
+
+/**
+ * B168: a proxy in front of the binary that, while `on`, answers every recipients read by ID with
+ * PocketBase's 404 and the recipients collection probe with a 200 `{}` (no PocketBase list). Every
+ * other request is forwarded unchanged, so the sign-in and the token check pass.
+ */
+function goneRecipientsProxy() {
+  const gone = { on: true };
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (gone.on && url.pathname.startsWith("/api/collections/recipients/records/")) {
+        return Response.json(
+          { status: 404, message: "The requested resource wasn't found.", data: {} },
+          { status: 404 },
+        );
+      }
+      if (gone.on && url.pathname === "/api/collections/recipients/records") {
+        return Response.json({});
+      }
+      const headers = new Headers(request.headers);
+      headers.delete("host");
+      headers.set("accept-encoding", "identity");
+      const init: RequestInit = { method: request.method, headers };
+      if (request.method !== "GET") {
+        init.body = await request.arrayBuffer();
+      }
+      return fetch(new URL(`${url.pathname}${url.search}`, pb.url), init);
+    },
+  });
+  closers.push(() => server.stop(true));
+  return { url: `http://127.0.0.1:${server.port}`, gone };
+}
+
+test("B168: a recipient read answered 404 whose collection probe gets a 200 that is no PocketBase list pauses the campaign: no live subscriber removed or skipped; resumed, each gets it once", async () => {
+  const proxy = goneRecipientsProxy();
+  const user = await pb.user({ name: "Lea" });
+  const other = await pb.user({ name: "Max" });
+  const { f } = await runner(false, { url: proxy.url });
+  const list = await f.list("news");
+  const ids: Array<number> = [];
+  for (const u of [user, other]) {
+    ids.push((await f.member(emailOf(u), [list], "confirmed", { external_id: u.id })).id);
+  }
+  const c = await plainCampaign(f, "gone behind a proxy", [list]);
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "paused");
+  expect(f.pushes).toEqual([]);
+  expect(await skippedOf(f, c.id)).toEqual([]);
+  expect(messages(f, "the source refused a recipient read")).toBe(1);
+  for (const id of ids) {
+    expect((await f.json(`/api/subscribers/${id}`)).status).toBe(200);
+  }
+
+  proxy.gone.on = false;
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1, [emailOf(other)]: 1 });
+  expect(await skippedOf(f, c.id)).toEqual([]);
+});
