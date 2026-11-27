@@ -287,7 +287,7 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
     const i18n = context.app.i18n;
     const title = i18n.T("globals.buttons.login");
     const body = render(
-      <PublicShell title={title} site={site} assetVersion={assetVersion}>
+      <PublicShell title={title} site={site} assetVersion={assetVersion} customAssets={false}>
         <section class="login" data-testid="instance-login">
           <h2>{title}</h2>
           {auth.username() === null ? (
@@ -333,7 +333,7 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
     const i18n = context.app.i18n;
     const title = i18n.T("users.twoFA");
     const body = render(
-      <PublicShell title={title} site={site} assetVersion={assetVersion}>
+      <PublicShell title={title} site={site} assetVersion={assetVersion} customAssets={false}>
         <section class="login">
           <h2>{title}</h2>
           <p>{i18n.T("users.totpCodeHelp")}</p>

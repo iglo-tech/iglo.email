@@ -38,6 +38,12 @@ export interface PublicShellProps {
   readonly site: PageSite;
   readonly assetVersion: string;
   readonly archiveTitle?: string;
+  /**
+   * Loads the project's `/public/custom.css` and `/public/custom.js` (the default). The instance
+   * login pages pass false: no project-authored asset reaches the page where the instance
+   * credentials are typed (B172, D200).
+   */
+  readonly customAssets?: boolean;
   readonly children?: Child;
 }
 
@@ -67,6 +73,7 @@ export function PublicShell({
   site,
   assetVersion,
   archiveTitle,
+  customAssets = true,
   children,
 }: PublicShellProps) {
   if (!/^[a-f0-9]{10}$/.test(assetVersion)) {
@@ -118,8 +125,12 @@ export function PublicShell({
           rel="stylesheet"
           type="text/css"
         />
-        <link href={`/public/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
-        <script src={`/public/custom.js?v=${assetVersion}`} async defer></script>
+        {customAssets ? (
+          <>
+            <link href={`/public/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
+            <script src={`/public/custom.js?v=${assetVersion}`} async defer></script>
+          </>
+        ) : null}
         {site.faviconUrl ? (
           <link rel="icon" href={site.faviconUrl} type="image/x-icon" />
         ) : (

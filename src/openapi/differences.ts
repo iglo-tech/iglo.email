@@ -839,6 +839,12 @@ export const differences: Array<Difference> = [
     applies: [],
   },
   {
+    area: "Public custom JS on the instance host (B172, D200)",
+    summary:
+      "On the instance host and hosts no project claims, `/public/custom.js` is an empty script: the primary project's `appearance.public.custom_js` does not run where the instance credentials are typed. The instance login pages load no custom asset. Upstream serves the setting.",
+    applies: [],
+  },
+  {
     area: "Sort direction (`order`)",
     summary:
       "`order` takes `asc`, `ASC` or `Asc` (any case) on every endpoint that documents it. Upstream's documented `ASC` sorts descending, so a client that reads the enum gets the wrong order there.",

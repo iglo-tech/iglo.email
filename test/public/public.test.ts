@@ -10,6 +10,7 @@ import type { PublicFixture } from "@/test/public/fixture";
 import { TestClock } from "@/test/server/fixture";
 import type { JsonObject } from "@/test/json-object";
 import { asBody } from "@/test/read-body";
+import { ascending } from "@/test/order";
 
 const cors = (response: Response) =>
   Object.fromEntries(
@@ -769,6 +770,47 @@ test("view in browser writes nothing and escapes subscriber data", async () => {
   expect(archived).not.toContain("script&gt;");
   expect(counts()).toEqual(before);
   expect(campaign.id).toBeGreaterThan(0n);
+});
+
+test("an archived campaign's script runs nowhere in the public origin: the page is sandboxed and the feed holds it as text", async () => {
+  // B172 (D200): the primary project's public pages share the instance host's origin.
+  const f = await open();
+  const breakout = `]]><script xmlns="http://www.w3.org/1999/xhtml">globalThis.ran = 1</script>`;
+  f.db.run(
+    `INSERT INTO campaigns (uuid, name, subject, from_email, body, content_type, status, type, messenger, max_subscriber_id, last_subscriber_id, archive, archive_slug, archive_meta)
+     VALUES (?, 'c', ?, 'a@b.test', ?, 'html', 'finished', 'regular', 'email', 0, 0, 1, 'scripted', '{}')`,
+    [
+      "33333333-3333-4333-8333-333333333333",
+      `<script xmlns="http://www.w3.org/1999/xhtml">1</script>`,
+      `<p>Body</p><script>globalThis.ran = 1</script>${breakout}`,
+    ],
+  );
+  const page = await f.peer("/archive/scripted", "192.0.2.41");
+  expect(page.status).toBe(200);
+  const policy = page.headers.get("content-security-policy") ?? "";
+  expect(policy).toMatch(/^sandbox( |$)/);
+  expect(policy).not.toContain("allow-scripts");
+  expect(policy).not.toContain("allow-same-origin");
+  const feed = await f.peer("/archive.xml", "192.0.2.41");
+  expect(feed.headers.get("content-type")).toBe("text/xml; charset=utf-8");
+  expect(feed.headers.get("x-content-type-options")).toBe("nosniff");
+  const xml = await feed.text();
+  expect(xml).toContain("globalThis.ran = 1");
+  // Outside its CDATA sections the feed has no element but the RSS ones.
+  const outside = xml.replaceAll(/<!\[CDATA\[[\s\S]*?\]\]>/g, "");
+  expect(outside).not.toMatch(/<script/i);
+  expect(
+    [...new Set([...outside.matchAll(/<([a-z:]+)[\s>]/gi)].map((m) => m[1] ?? ""))].sort(ascending),
+  ).toEqual([
+    "channel",
+    "content:encoded",
+    "description",
+    "item",
+    "link",
+    "pubDate",
+    "rss",
+    "title",
+  ]);
 });
 
 test("embedded images are public media URLs on the campaign page and the archive", async () => {

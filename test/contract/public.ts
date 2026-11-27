@@ -1527,12 +1527,18 @@ export async function runPublicContract(target: {
         "custom-css",
       );
     });
-    const js = await visit("/public/custom.js");
-    check(
-      js.status === 200 &&
-        js.headers.get("content-type") === "application/javascript; charset=utf-8",
-      "custom-js",
-    );
+    // B172 (D200, deliberate difference): this host is the instance's, where the instance login's
+    // credentials are typed, so production answers the primary project's custom JS as an empty
+    // script; upstream serves the setting.
+    await withSetting("appearance.public.custom_js", `/* ${marker} */`, async () => {
+      const js = await visit("/public/custom.js");
+      check(
+        js.status === 200 &&
+          js.headers.get("content-type") === "application/javascript; charset=utf-8" &&
+          js.text === (reference ? `/* ${marker} */` : ""),
+        "custom-js-d200",
+      );
+    });
     check((await visit("/subscription/form")).text.includes("/public/custom.css"), "custom-link");
 
     // Settings gates.

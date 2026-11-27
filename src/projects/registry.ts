@@ -142,6 +142,21 @@ export function registeredSlugs(db: Database): Array<string> {
   }
 }
 
+/**
+ * Each registered project's slug and creation time, by slug. A slug deleted and created again has a
+ * new creation time, so a backup tells the two projects apart (B172, D200).
+ */
+export function registeredProjects(db: Database): Array<{ slug: string; created_at: string }> {
+  const statement = db.query<{ slug: string; created_at: string }, []>(
+    "SELECT slug, created_at FROM projects ORDER BY slug",
+  );
+  try {
+    return statement.all();
+  } finally {
+    statement.finalize();
+  }
+}
+
 export type Registry = ReturnType<typeof createRegistry>;
 
 /** The registry over an open, migrated instance database. */

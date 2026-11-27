@@ -74,6 +74,23 @@ function instancePath(pathname: string): boolean {
   );
 }
 
+/** The one path that serves project-authored text as a script (`appearance.public.custom_js`). */
+const CUSTOM_SCRIPT_PATH = "/public/custom.js";
+
+/**
+ * The primary project's public custom script where the instance routes answer (B172, D200): an
+ * empty script, so no project-authored code runs in the origin where the instance credentials are
+ * typed and sent. The project's other hosts (extra hostnames) still serve it.
+ */
+function emptyCustomScript(method: string): Response {
+  return new Response(method === "HEAD" ? null : "", {
+    headers: {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
 /** The fresh install's one project (D151). Its name is the site name's default. */
 export const PRIMARY_SLUG = "main";
 
@@ -784,23 +801,31 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       const { pathname } = new URL(request.url);
       // The instance routes come first on the instance host and on a host no project claims
       // (section 2); on a project's own host these paths are that project's.
-      if ((!claimed || hostname === instanceHost) && instancePath(pathname)) {
+      const instanceOrigin = !claimed || hostname === instanceHost;
+      if (instanceOrigin && instancePath(pathname)) {
         return instanceRouter.handle(instanceApp, request, peerAddress);
       }
       // SES notices are the instance's on those hosts, with or without a primary (B142).
-      if (
-        (!claimed || hostname === instanceHost) &&
-        pathname === SES_PATH &&
-        request.method === "POST"
-      ) {
+      if (instanceOrigin && pathname === SES_PATH && request.method === "POST") {
         return sesRouter.handle(instanceApp, request, peerAddress);
       }
       const entry = claimed ?? primary;
+      // No project-authored script runs where the instance's cookies live (D200). The router
+      // matches this exact spelling only, so no other spelling reaches the project's route.
+      if (
+        entry &&
+        instanceOrigin &&
+        pathname === CUSTOM_SCRIPT_PATH &&
+        (request.method === "GET" || request.method === "HEAD")
+      ) {
+        return Promise.resolve(emptyCustomScript(request.method));
+      }
       if (entry) {
         return serve(entry, request, peerAddress);
       }
-      // Without a primary, the instance pages still need the admin's stylesheet and scripts.
-      if (pathname.startsWith("/admin/static/")) {
+      // Without a primary, the instance pages still need their bundled stylesheets, favicon and
+      // scripts: the login pages use the public ones, the signed-in pages the admin's (D200).
+      if (pathname.startsWith("/admin/static/") || pathname.startsWith("/public/static/")) {
         return instanceRouter.handle(instanceApp, request, peerAddress);
       }
       return Promise.resolve(answerWithoutPrimary(request));

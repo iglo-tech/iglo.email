@@ -398,6 +398,16 @@ instance pages after their own login, `/admin/instance/login`:
 Everything else (subscribers, lists, campaigns, templates, sequences, sends, webhooks, media, users,
 roles, the project's settings and its API and MCP) belongs to one project and is on its host.
 
+**No project script on the instance host** ([D200](design/09-decisions.md#d200-no-project-authored-script-in-the-instance-origin-b172-lead-2026-11-27)).
+The admin's password, TOTP code and instance session are typed and sent on the instance host, and the
+primary project's pages are served on the same host, so the primary project's
+`appearance.public.custom_js` does not run there: on the instance host and on any host no project
+claims, `/public/custom.js` answers an empty script. It still runs on the primary project's extra
+hostnames and on every other project's host. The instance login and 2FA pages load neither
+`/public/custom.css` nor `/public/custom.js`; the primary project's public pages still load its
+custom CSS. Uploaded files, archived campaigns and previews never run as scripts on any host
+([Uploads](#uploads)).
+
 **Editing** renames a project and replaces its extra hostnames. Removing an extra hostname makes
 links in mail already sent from it stop working: the host then reaches the primary project, as any
 host no project claims. To move a project to a new domain, add the new name as an extra hostname
@@ -1499,6 +1509,14 @@ template bodies and subjects; and sequence step subject overrides. Where a whole
 `, true`, which rounds down, so `-10 | divided_by: 4, true` is -3. Until then the match prints decimals.
 A named argument such as `integer: true` is refused at save, so write `, true` instead. There is no
 `floor` filter. See [D134](design/09-decisions.md#d134-liquid-authoring-bounded-filters-a-save-time-render-and-the-converters-names-lead-2026-11-22).
+
+From the release that keeps project script off the instance host (D200), the primary project's
+`appearance.public.custom_js` no longer runs on its own host (the root URL's) or on hosts no project
+claims: `/public/custom.js` answers `200` with an empty script there, and the setting is kept as it
+is. Its public URLs and every other page keep working; custom CSS is unchanged. A deployment that
+needs custom JavaScript on its public pages serves them from a non-primary project, or from an extra
+hostname of the primary project, where it runs as before. No instance cookie changes, so instance
+sessions survive the upgrade.
 
 From the release that pairs privacy actions (D126), the preference links of mail sent before the
 upgrade change in three ways. A transactional mail sent before the upgrade has a manage link to a
