@@ -169,6 +169,12 @@ export async function checkSource(
   );
   if (users.collection) {
     await run("users", async () => {
+      // B169 (D197): the stream sorts and bounds the users it catches up by `updated`, as the
+      // events step probes `created`.
+      const named = await fields(source, "users", users.collection, ["updated"]);
+      if (!named.ok) {
+        return named;
+      }
       const answer = await source.probe(users.collection, users.leavingFilter, {
         timeoutMs: TIMEOUT_MS,
       });

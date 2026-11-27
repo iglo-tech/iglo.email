@@ -1479,6 +1479,103 @@ for (const how of ["left", "wiped"] as const) {
   });
 }
 
+// ---------------------------------------------------------------------------------------------
+// B169 (D197): a holder whose source user the view confirms absent is that user leaving, whichever
+// path sees it first. The leave reaches the users stream before the holder is linked (as a missed
+// leave), so only the address conflict sees it; the outcome is the B166 "unsubscribed and left" one.
+
+for (const path of ["carry", "re-point"] as const) {
+  test(`B169: a ${path} over the holder of a user who unsubscribed and left takes the withdrawal as the users stream would: every list unsubscribed, nothing sent, and the returning leaver is not re-granted`, async () => {
+    const h = await start();
+    const news = await h.f.list("News");
+    const other = await h.f.list("Other");
+    h.rules.current = [{ event: h.ev("visit"), where: {}, lists: [news] }];
+    const template = await h.f.template();
+    await h.f.sequence({
+      source: "external",
+      list_id: news,
+      trigger: { event: h.ev("order_paid") },
+      steps: [{ wait: "P1D", kind: "marketing", template_id: template }],
+    });
+    await resubscribed(h);
+
+    // The user leaves, its address freed in the source, before iglo.email links its subscriber.
+    const gone = await pb.user();
+    const address = emailOf(gone);
+    await pb.update("users", gone.id, {
+      deletedAt: new Date().toISOString(),
+      email: `freed-${crypto.randomUUID().slice(0, 8)}@x.test`,
+    });
+    await until(
+      h,
+      () => h.outcomes.some((o) => o.record === gone.id && o.kind === "left"),
+      "leaving",
+    );
+    const holder = await createSubscriber(h, {
+      email: address,
+      external_id: gone.id,
+      lists: [news, other],
+      preconfirm_subscriptions: true,
+    });
+    await unsubscribe(h, holder, news);
+
+    let taker: number;
+    if (path === "carry") {
+      // Another user's subscriber, confirmed on both lists and in the marketing sequence, takes the
+      // address in the source.
+      const mover = await pb.user();
+      taker = await createSubscriber(h, {
+        email: emailOf(mover),
+        external_id: mover.id,
+        lists: [news, other],
+        preconfirm_subscriptions: true,
+      });
+      const order = await record(h, mover, "order_paid");
+      await settled(h, order);
+      expect(outcome(h, order)).toMatchObject({ started: 1 });
+      await pb.update("users", mover.id, { email: address });
+      const visit = await record(h, mover, "visit");
+      await settled(h, visit);
+      expect(outcome(h, visit)).toMatchObject({
+        subscriberId: BigInt(taker),
+        grants: [{ list_id: news, result: "suppressed" }],
+      });
+      expect(await byId(h, holder)).toBeNull();
+      const [enrollment] = await enrollmentsOf(h, taker);
+      expect(enrollment).toMatchObject({ status: "exited", exit_reason: "unsubscribed" });
+    } else {
+      // A new user with the address and no subscriber yet: the holder is re-pointed to it.
+      const incoming = await pb.user({ email: address });
+      const visit = await record(h, incoming, "visit");
+      await settled(h, visit);
+      expect(outcome(h, visit)).toMatchObject({
+        subscriberId: BigInt(holder),
+        grants: [{ list_id: news, result: "suppressed" }],
+      });
+      taker = holder;
+      expect((await byId(h, taker))?.external_id).toBe(incoming.id);
+    }
+    const row = await byId(h, taker);
+    expect(row).toMatchObject({ email: address, status: "enabled" });
+    expect(statusOn(row, news)).toBe("unsubscribed");
+    expect(statusOn(row, other)).toBe("unsubscribed");
+
+    // The leaver comes back under a new address: the withdrawal stays with its user ID.
+    await pb.update("users", gone.id, {
+      deletedAt: "",
+      email: `back-${crypto.randomUUID().slice(0, 8)}@example.com`,
+    });
+    const back = await record(h, gone, "visit");
+    await settled(h, back);
+    expect(outcome(h, back)).toMatchObject({ grants: [{ list_id: news, result: "suppressed" }] });
+    expect(statusOn(await linked(h, gone), news)).toBeNull();
+
+    await h.f.pass(day);
+    await h.f.pass(day);
+    expect(await h.f.sendLog()).toEqual([]);
+  });
+}
+
 test("B166: a source host the private-address block refuses while a record is handled refuses the stream: nothing terminal; listed again, the record is delivered", async () => {
   const hosts = { current: ["localhost"] };
   const h = await start({
