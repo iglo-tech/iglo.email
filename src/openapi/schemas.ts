@@ -276,10 +276,24 @@ export const schemas = {
       status: choice("enabled", "disabled"),
       user_role_id: integer,
       list_role_id: nullable(integer),
+      current_password: {
+        ...string,
+        description:
+          "The caller's current password. Required when the instance admin's copy changes its own password or email (D201); ignored otherwise.",
+      },
     },
     ["username", "type", "status", "user_role_id"],
   ),
-  ProfileInput: input({ name: string, email: string, password: string }),
+  ProfileInput: input({
+    name: string,
+    email: string,
+    password: string,
+    current_password: {
+      ...string,
+      description:
+        "The caller's current password. Required when the instance admin's copy changes its own password or email (D201); ignored otherwise.",
+    },
+  }),
   TotpSecret: object({ secret: string, qr: { ...string, description: "Base64 PNG." } }),
   UserRole: object({
     id: integer,

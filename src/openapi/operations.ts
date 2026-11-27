@@ -230,7 +230,18 @@ const users: Array<Operation> = [
     tag: "Users",
     summary: "Enable TOTP for the session's own user.",
     session: true,
-    body: object({ secret: string, code: string }),
+    body: object(
+      {
+        secret: string,
+        code: string,
+        password: {
+          ...string,
+          description:
+            "The session user's current password. Required for the instance admin's copy (D201), as for disabling TOTP; ignored for other users.",
+        },
+      },
+      ["password"],
+    ),
     data: yes,
   },
   {
