@@ -25,10 +25,12 @@ const field = (key: string, type: PreferenceField["type"]): PreferenceField => (
   options: [],
 });
 
-async function managed(attribs: Record<string, string> = {}) {
+async function managed(attribs: Record<string, string> = {}, bornLabel = "Born") {
   const f = await publicFixture();
   fixtures.push(f);
-  Object.assign(f.overrides, { preferenceFields: [field("born", "date"), field("bio", "text")] });
+  Object.assign(f.overrides, {
+    preferenceFields: [{ ...field("born", "date"), label: bornLabel }, field("bio", "text")],
+  });
   const news = await f.list("News");
   const other = await f.list("Other");
   const ada = await f.subscriber("ada@example.test", "Ada", {
@@ -95,4 +97,11 @@ test("attributes that would pass the size limit answer the page's 400, and nothi
   const saved = await save([["attribs.bio", "short"]]);
   expect(saved.status).toBe(200);
   expect(await read()).toMatchObject({ name: "Ada Renamed", news: "unsubscribed" });
+});
+
+test("B170 (D198): a field label with $ patterns appears in the invalid-fields message as written", async () => {
+  const { save } = await managed({}, "Budget ($$ $& $')");
+  const refused = await save([["attribs.born", "0050-13-01"]]);
+  expect(refused.status).toBe(400);
+  expect(await refused.text()).toContain("Budget ($$ $&amp; $&#39;)");
 });

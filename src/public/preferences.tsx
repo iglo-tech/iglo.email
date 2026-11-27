@@ -557,7 +557,9 @@ export function savePreferences(
   // it. Only the editable fields are read; any other submitted key is never written.
   const change = rename && form.profile ? readProfile(options.preferenceFields, form) : null;
   if (change && !change.ok) {
-    return failed(t.T("globals.messages.invalidFields").replaceAll("{name}", change.field.label));
+    // B170 (D198): a function replacer, as `t.Ts` uses (D123), so `$` patterns in the label stay as written.
+    const label = change.field.label;
+    return failed(t.T("globals.messages.invalidFields").replaceAll("{name}", () => label));
   }
   const kept = new Set(form.lists.map((uuid) => uuid.toLowerCase()));
   // B149d (D167): attributes that would grow past the stored size limit refuse the whole save. The store

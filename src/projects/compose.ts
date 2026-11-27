@@ -1112,7 +1112,11 @@ export async function createProject(
     registerMcpRoutes(router, {
       auth,
       router,
-      project: options.name ?? options.slug,
+      // B170 (D198): the registry's current name, read on each `initialize`.
+      project: () =>
+        services.projects?.().find((entry) => entry.slug === options.slug)?.name ??
+        options.name ??
+        options.slug,
     });
     summaryRefresh = createSummaryRefresh({
       clock,

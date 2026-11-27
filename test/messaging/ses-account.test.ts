@@ -470,6 +470,23 @@ test("a key change during a read: the loop reads again with the new keys at once
   expect(account.current().snapshot?.sentLast24Hours).toBe(200);
 });
 
+test("on demand: two forecasts during one read both get its snapshot, with one GetAccount (B170, D198)", async () => {
+  const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+  answer = { ...quota(50_000, 100), gate };
+  const { account } = setup();
+  const first = account.fresh();
+  while (calls.length === 0) {
+    await Bun.sleep(1);
+  }
+  // The read is in flight and began just now: the second forecast shares it, not the empty state.
+  const second = account.fresh();
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  expect(a.snapshot?.sentLast24Hours).toBe(100);
+  expect(b.snapshot?.sentLast24Hours).toBe(100);
+  expect(calls).toHaveLength(1);
+});
+
 test("a key change during a read: a forecast's read waits for it, then reads with the new keys", async () => {
   const { promise: gate, resolve: release } = Promise.withResolvers<void>();
   answer = { ...quota(50_000, 100), gate };

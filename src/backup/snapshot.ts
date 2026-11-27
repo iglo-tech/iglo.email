@@ -1042,8 +1042,12 @@ interface Source {
   uploads?: string;
 }
 
-/** Opens a live database read-only, as the server's readers do; it must have a schema. */
-function openSource(path: string): Database {
+/**
+ * Opens a live database read-only, as the server's readers do. Its schema must be one this
+ * executable knows, 1 to `supportedVersion` (B170, D198): sealing writes into it, so one ahead of
+ * the executable is refused before any folder is made.
+ */
+function openSource(path: string, supportedVersion: number): Database {
   if (!statSync(path, { throwIfNoEntry: false })) {
     throw new Error(`No database at ${path}`);
   }
@@ -1054,13 +1058,30 @@ function openSource(path: string): Database {
   });
   try {
     db.run("PRAGMA busy_timeout = 5000");
-    if (single<bigint>(db, "user_version") === 0n) {
+    const version = single<bigint>(db, "user_version");
+    if (version === 0n) {
       throw new Error(`${path} has no schema yet; start the server once`);
     }
+    checkVersion(path, version, supportedVersion);
     return db;
   } catch (error) {
     db.close(true);
     throw error;
+  }
+}
+
+/**
+ * A live database's schema version past 0: refused when negative (SQLite stores a signed 32-bit
+ * integer, and no migration writes one) or ahead of this executable (B170, D198).
+ */
+function checkVersion(path: string, version: bigint, supportedVersion: number): void {
+  if (version < 0n) {
+    throw new Error(`${path} has invalid schema version ${version}`);
+  }
+  if (Number(version) > supportedVersion) {
+    throw new Error(
+      `${path} has schema version ${version}, ahead of this executable, which supports ${supportedVersion}: use a newer one`,
+    );
   }
 }
 
@@ -1101,7 +1122,7 @@ export function createBackup(options: BackupOptions): BackupReport {
   try {
     // Every database is opened, and every check that can refuse is made, before any folder is.
     const instancePath = join(dataDir, INSTANCE_DATABASE);
-    const instance = openSource(instancePath);
+    const instance = openSource(instancePath, instanceMigrations.length);
     const root = realpathSync(dataDir);
     sources.push({
       place: INSTANCE_DATABASE,
@@ -1118,7 +1139,7 @@ export function createBackup(options: BackupOptions): BackupReport {
     for (const slug of options.project === undefined ? registered : [options.project]) {
       const directory = projectDirectory(dataDir, slug);
       const path = join(directory, DATABASE);
-      const db = openSource(path);
+      const db = openSource(path, options.supportedVersion);
       const data = realpathSync(directory);
       sources.push({
         place: whole ? join(PROJECTS, slug) : "",
@@ -1247,6 +1268,16 @@ export function createBackup(options: BackupOptions): BackupReport {
           ],
     );
     options.beforePublish?.();
+    // B170 (D198): the live registry, read again just before the rename. The instance.db snapshot
+    // was taken first, so a project deleted while its uploads were copied is still in it, and its
+    // missing files were skipped as deleted ones: only the live registry shows the change.
+    const now = registeredSlugs(instance);
+    if (whole && now.join("\n") !== registered.join("\n")) {
+      throw new RegistryChangedError();
+    }
+    if (options.project !== undefined && !now.includes(options.project)) {
+      throw new Error(`Project ${options.project} was deleted while the backup ran`);
+    }
     const aside = publish(made, output, options.force ?? false, live);
     unpublished = undefined;
     // The rename is the publication. From here nothing is undone: the partial is no longer a partial,
@@ -1376,6 +1407,10 @@ function openStopped(path: string, supportedVersion: number): Database {
     db.run("ROLLBACK");
     if (version === 0n) {
       throw new Error(`${path} has no schema yet; start the server once`);
+    }
+    // B170 (D198): a negative version is no schema any migration writes.
+    if (version < 0n) {
+      throw new Error(`${path} has invalid schema version ${version}`);
     }
     if (Number(version) > supportedVersion) {
       throw new Error(`Database version ${version} is ahead of this executable`);

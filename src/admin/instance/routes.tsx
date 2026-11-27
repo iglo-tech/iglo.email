@@ -874,6 +874,13 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
     "/api/instance/projects/:slug",
     api(async (context) => {
       const body = await jsonObject(context.request);
+      // B170 (D198): only `name` and `extra` can change; any other field (the slug, the main
+      // hostname, the primary flag) is refused by name instead of ignored.
+      for (const key of body.keys()) {
+        if (key !== "name" && key !== "extra") {
+          throw new HttpError(400, `${key} cannot be changed: send only name and extra`);
+        }
+      }
       // A field left out keeps its value.
       const change = {
         name: body.has("name") ? text(body, "name") : undefined,

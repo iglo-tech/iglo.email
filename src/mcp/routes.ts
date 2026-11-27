@@ -54,8 +54,11 @@ export function instructions(project: string): string {
 export interface McpDeps {
   auth: Authentication;
   router: Router;
-  /** The project this endpoint serves, named in the instructions (B145a). */
-  project?: string;
+  /**
+   * The name of the project this endpoint serves, named in the instructions (B145a); read on each
+   * `initialize`, so a rename shows at once (B170, D198).
+   */
+  project?: () => string;
 }
 
 /** A parsed JSON object that is not an array: the only shape a JSON-RPC request can take here. */
@@ -70,7 +73,6 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
     errorResponse(new HttpError(405, "Method Not Allowed", { Allow: "POST" }), "GET"),
   );
 
-  const projectInstructions = instructions(deps.project ?? "");
   router.route("POST", "/api/mcp", async (context: RequestContext) => {
     // 1. Origin validation: reuse auth.checkOrigin to validate Origin when present
     deps.auth.checkOrigin(context.request);
@@ -229,7 +231,8 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
               name: "iglo.email",
               version,
             },
-            instructions: projectInstructions,
+            // B170 (D198): the project's current name, so a rename shows without a restart.
+            instructions: instructions(deps.project?.() ?? ""),
           },
         }),
         {

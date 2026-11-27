@@ -512,6 +512,38 @@ test("a bad candidate is a 400; an unknown campaign a 404", async () => {
   expect(offset.body.forecast?.start).toBe("2030-01-02T10:00:00.500Z");
 });
 
+test("B170 (D198): a list-scoped user gets 403 for a campaign outside its lists and for a missing one", async () => {
+  const key = keys.get(B)!;
+  const made = async (path: string, body: unknown) => {
+    const response = await api(port, B, key, "POST", path, body);
+    expect({ path, status: response.status }).toEqual({ path, status: 200 });
+    return asBody<{ data: { id: number; password?: string } }>(JSON.parse(response.text)).data;
+  };
+  const own = await made("/api/lists", { name: "Scoped own", type: "private", optin: "single" });
+  const role = await made("/api/roles/users", {
+    name: "b170-scoped",
+    permissions: ["campaigns:get"],
+  });
+  const lists = await made("/api/roles/lists", {
+    name: "b170-scoped-lists",
+    lists: [{ id: own.id, permissions: ["list:get"] }],
+  });
+  const user = await made("/api/users", {
+    username: "b170-scoped",
+    type: "api",
+    status: "enabled",
+    user_role_id: role.id,
+    list_role_id: lists.id,
+  });
+  const scoped = `Basic ${btoa(`b170-scoped:${user.password}`)}`;
+  for (const id of ["1", "999"]) {
+    const response = await api(port, B, scoped, "GET", `/api/sending/capacity?campaign_id=${id}`);
+    expect({ id, status: response.status }).toEqual({ id, status: 403 });
+  }
+  // Without a campaign the scoped user still reads the forecast.
+  expect((await api(port, B, scoped, "GET", "/api/sending/capacity")).status).toBe(200);
+});
+
 test("MCP tools/call of get_sending_capacity works with a project token and names no project", async () => {
   const response = await api(port, B, keys.get(B)!, "POST", "/api/mcp", {
     jsonrpc: "2.0",
@@ -544,6 +576,42 @@ test("MCP tools/call of get_sending_capacity works with a project token and name
     .instructions;
   expect(instructions).toContain('serves only the project "Beta Brand"');
   expect(instructions).toContain("`get_sending_capacity`");
+});
+
+/** Project beta's MCP `initialize` instructions. */
+async function initialize() {
+  const init = await api(port, B, keys.get(B)!, "POST", "/api/mcp", {
+    jsonrpc: "2.0",
+    id: 3,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "t", version: "1" },
+    },
+  });
+  expect(init.status).toBe(200);
+  return asBody<{ result: { instructions: string } }>(JSON.parse(init.text)).result.instructions;
+}
+
+/** Renames project beta through the instance API. */
+async function rename(name: string) {
+  const edited = await instanceCall(port, PRIMARY, operator, "PUT", "/api/instance/projects/beta", {
+    name,
+  });
+  expect(edited.status).toBe(200);
+}
+
+test("B170 (D198): MCP initialize names a renamed project by its new name, with no restart", async () => {
+  await rename("Beta Renamed");
+  try {
+    const renamed = await initialize();
+    expect(renamed).toContain('serves only the project "Beta Renamed"');
+    expect(renamed).not.toContain("Beta Brand");
+  } finally {
+    await rename("Beta Brand");
+  }
+  expect(await initialize()).toContain('serves only the project "Beta Brand"');
 });
 
 test("a long project name is cut in the MCP instructions on a whole character, never inside one", async () => {
