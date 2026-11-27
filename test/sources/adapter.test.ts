@@ -81,7 +81,7 @@ test("recipient: the view's row, its opt-out field, and null for a user the view
   expect(await source.recipient("nosuchuser00000")).toBeNull();
   // An ID that is not a PocketBase ID never reaches a path.
   expect((await failure(source.recipient("../x"))).kind).toBe("notFound");
-  expect((await failure(source.recipient(""))).kind).toBe("permanent");
+  expect((await failure(source.recipient(""))).kind).toBe("notFound");
 });
 
 test("record: one events record with the mapped fields, and null for an ID with no record", async () => {

@@ -362,7 +362,7 @@ describe("the compiled executable", () => {
   });
 });
 
-test("a new instance's upgrade mark is not set: an instance with no project source stays off", async () => {
+test("an upgrade with no project naming a source keeps the module off", async () => {
   const admin = await adminCredentials();
   const prepared = await prepareExecutable();
   try {
