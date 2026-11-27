@@ -97,8 +97,20 @@ interface Read<T> {
   used: string;
 }
 
+/**
+ * B166 (D194): a permanent failure that is the record's own, not the settings': an answer over the
+ * response limit, a body the adapter cannot read (not JSON, not a record), or a mapped field of the
+ * record that is not of its type. Every other permanent failure of a read (a refused address, a
+ * redirect, a `401` after signing in again, a record with no `id`) is the configuration's.
+ */
+export class RecordUnreadable extends SourceError {
+  readonly recordUnreadable = true;
+}
+export const isRecordUnreadable = (error: unknown): error is RecordUnreadable =>
+  isSourceError(error) && "recordUnreadable" in error && error.recordUnreadable === true;
+
 const tooLargeError = () =>
-  new SourceError("permanent", "A source response is larger than the response limit");
+  new RecordUnreadable("permanent", "A source response is larger than the response limit");
 
 /** Whether a recipients-view value means "opted out": set, and not false, 0, "", "0" or "false". */
 export function optedOut(value: SourceJson | undefined): boolean {
@@ -336,7 +348,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         parsed = undefined;
       }
       if (parsed === undefined && status >= 200 && status < 300) {
-        throw new SourceError(
+        throw new RecordUnreadable(
           "permanent",
           `The source answered ${path.split("?", 1)[0]} with a body that is not JSON`,
           status,
@@ -659,9 +671,10 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         (answer) => !("tooLarge" in answer) && answer.items.length < perPage,
         call,
       );
-      // A page too large to hold is read again in smaller pages, down to one record.
-      if ("tooLarge" in page && size > 1) {
-        size = Math.max(1, Math.floor(size / 4));
+      // A page too large to hold is read again in smaller pages, down to one record. B166 (D194):
+      // smaller than the page just sent, so a short last page (an `exists`) is not sent again as is.
+      if ("tooLarge" in page && perPage > 1) {
+        size = Math.max(1, Math.floor(perPage / 4));
         continue;
       }
       const items = itemsOf(page);
@@ -693,6 +706,13 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         if (answer.status === 404 && !answer.tooLarge) {
           return { value: null, used };
         }
+        if (answer.status === 200 && !answer.tooLarge && !isSourceObject(answer.body)) {
+          throw new RecordUnreadable(
+            "permanent",
+            `The source answered ${what} with no record`,
+            200,
+          );
+        }
         if (answer.status !== 200 || !isSourceObject(answer.body)) {
           throw failure(answer, what);
         }
@@ -719,7 +739,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       }
       const email = has(row, rc.email, rc.collection);
       if (typeof email !== "string") {
-        throw new SourceError("permanent", `The source's ${rc.email} field is not text`);
+        throw new RecordUnreadable("permanent", `The source's ${rc.email} field is not text`);
       }
       return {
         id: idOf(row),

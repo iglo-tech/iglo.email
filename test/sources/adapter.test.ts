@@ -607,6 +607,36 @@ test("a response over the size limit is permanent for one record; a scan reads s
   expect((await failure(tiny.source.record(first.id))).kind).toBe("permanent");
 });
 
+test("B166: exists over a single matching record too large to read sends one request, then the permanent too-large error", async () => {
+  const user = await pb.user();
+  await pb.event(user.id, "oversized");
+  // `exists` reads only `id` and `occurredAt`, so no real record of the fixture schema is over a
+  // limit the sign-in still fits under: the binary's events list answer is padded with JSON
+  // whitespace past it, and is otherwise unchanged.
+  const reads: Array<string> = [];
+  const source = createPocketBaseSource({
+    config: sourceConfig(pb.url, pb.service),
+    clock: createRealClock(),
+    guard: open,
+    maxResponseBytes: 4000,
+    transport: {
+      fetch: async (input: URL, init: RequestInit) => {
+        const answer = await fetch(input, init);
+        if (input.pathname !== "/api/collections/events/records") {
+          return answer;
+        }
+        reads.push(input.search);
+        return new Response(`${await answer.text()}${" ".repeat(5000)}`, answer);
+      },
+    },
+  });
+  const refused = await failure(source.exists({ user: user.id, names: ["oversized"] }));
+  expect(refused.kind).toBe("permanent");
+  expect(refused.message).toContain("larger than the response limit");
+  expect(reads.length).toBe(1);
+  expect(new URLSearchParams(reads[0]).get("perPage")).toBe("1");
+});
+
 test("the private-address block: refused unless the host is listed; a listed name still resolves to a checked address", async () => {
   const user = await pb.user();
   const blocked: Guard = { blockPrivate: () => true, privateHosts: () => [] };

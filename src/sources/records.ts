@@ -77,8 +77,13 @@ export interface RecordHandlerOptions {
     | "membership"
     | "insertConfirmedIfAbsent"
     | "suppressed"
+    | "addressSuppressed"
+    | "unsubscribeAll"
   >;
-  enrollments: Pick<Enrollments, "externalTriggers" | "recordExitThenTrigger" | "endSubscriber">;
+  enrollments: Pick<
+    Enrollments,
+    "externalTriggers" | "recordExitThenTrigger" | "endSubscriber" | "unsubscribeEffects"
+  >;
   /** The privacy domain policy for a new or changed address. */
   emailAllowed: (email: string) => boolean;
   /** Called after each committed record (tests and measurements). */

@@ -15,6 +15,7 @@
 // transaction was open when it was sent: none may be (no network call inside a transaction).
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { writeTransaction } from "@/db/transaction";
+import type { Guard } from "@/sources/connect";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
 import type { RecordOutcome } from "@/sources/records";
 import { createSourceRecords } from "@/sources/records-stream";
@@ -91,6 +92,7 @@ async function start(
     config?: Partial<PocketBaseConfig>;
     rules?: Array<GrantRule>;
     emailAllowed?: (email: string) => boolean;
+    guard?: Guard;
   } = {},
 ): Promise<Harness> {
   const f = await schedulerFixture({ source: () => adapter(pb) });
@@ -112,7 +114,7 @@ async function start(
     },
     config: () => config.current,
     grantRules: () => rules.current,
-    guard: openGuard,
+    guard: options.guard ?? openGuard,
     transport: {
       fetch(input: URL, init: RequestInit) {
         if (f.db.inTransaction) {
@@ -1256,4 +1258,120 @@ test("a suppression left on leaving is lifted by an operator's DELETE or the per
     });
     expect(statusOn(await linked(h, user), news)).toBe("confirmed");
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// B166 (D194).
+
+for (const how of ["left", "wiped"] as const) {
+  test(`B166: a subscriber moving onto the address of a person who ${how === "left" ? "unsubscribed and left" : "wiped their data"} takes the withdrawal: every list unsubscribed, its marketing enrollment ended, nothing sent`, async () => {
+    const h = await start();
+    const news = await h.f.list("News");
+    const other = await h.f.list("Other");
+    h.rules.current = [{ event: h.ev("visit"), where: {}, lists: [news] }];
+    const template = await h.f.template();
+    await h.f.sequence({
+      source: "external",
+      list_id: news,
+      trigger: { event: h.ev("order_paid") },
+      steps: [{ wait: "P1D", kind: "marketing", template_id: template }],
+    });
+    await resubscribed(h);
+
+    let address: string;
+    if (how === "left") {
+      const gone = await pb.user();
+      address = emailOf(gone);
+      const id = await createSubscriber(h, {
+        email: address,
+        external_id: gone.id,
+        lists: [news, other],
+        preconfirm_subscriptions: true,
+      });
+      await unsubscribe(h, id, news);
+      await pb.update("users", gone.id, { deletedAt: new Date().toISOString() });
+      await until(
+        h,
+        () => h.outcomes.some((o) => o.record === gone.id && o.kind === "left"),
+        "leaving",
+      );
+      // The account is gone from the view; its address is free in the source.
+      await pb.update("users", gone.id, {
+        email: `freed-${crypto.randomUUID().slice(0, 8)}@x.test`,
+      });
+    } else {
+      address = `wiped-${crypto.randomUUID().slice(0, 8)}@example.com`;
+      const id = await createSubscriber(h, {
+        email: address,
+        lists: [news, other],
+        preconfirm_subscriptions: true,
+      });
+      writeTransaction(h.f.db, () => h.f.stores.subscribers.remove([BigInt(id)], { wipe: true }));
+    }
+
+    // Another user's subscriber: confirmed on both lists, in the marketing sequence.
+    const mover = await pb.user();
+    const moverId = await createSubscriber(h, {
+      email: emailOf(mover),
+      external_id: mover.id,
+      lists: [news, other],
+      preconfirm_subscriptions: true,
+    });
+    const order = await record(h, mover, "order_paid");
+    await settled(h, order);
+    expect(outcome(h, order)).toMatchObject({ started: 1 });
+
+    // The user takes the address in the source; the next record writes it.
+    await pb.update("users", mover.id, { email: address });
+    const visit = await record(h, mover, "visit");
+    await settled(h, visit);
+    expect(outcome(h, visit)).toMatchObject({
+      subscriberId: BigInt(moverId),
+      grants: [{ list_id: news, result: "suppressed" }],
+    });
+    const moved = await linked(h, mover);
+    expect(moved).toMatchObject({ id: moverId, email: address, status: "enabled" });
+    expect(statusOn(moved, news)).toBe("unsubscribed");
+    expect(statusOn(moved, other)).toBe("unsubscribed");
+    const [enrollment] = await enrollmentsOf(h, moverId);
+    expect(enrollment).toMatchObject({ status: "exited", exit_reason: "unsubscribed" });
+
+    await h.f.pass(day);
+    await h.f.pass(day);
+    expect(await h.f.sendLog()).toEqual([]);
+  });
+}
+
+test("B166: a source host the private-address block refuses while a record is handled refuses the stream: nothing terminal; listed again, the record is delivered", async () => {
+  const hosts = { current: ["localhost"] };
+  const h = await start({
+    config: { url: `http://localhost:${pb.port}` },
+    guard: { blockPrivate: () => true, privateHosts: () => hosts.current },
+  });
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("order_paid") },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  // The connection is open; an instance admin then removes the host from the list. The record
+  // arrives on the open connection, and the handler's recipients read is refused.
+  hosts.current = [];
+  const ana = await pb.user();
+  const paid = await record(h, ana, "order_paid");
+  await until(
+    h,
+    () => h.attention.some((line) => line.includes("block_private_addresses")),
+    "the refusal",
+  );
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(await linked(h, ana)).toBeNull();
+
+  hosts.current = ["localhost"];
+  await live(h);
+  await handled(h, paid);
+  expect((await linked(h, ana))?.email).toBe(emailOf(ana));
+  expect(h.records.stream()?.retries()).toEqual([]);
 });

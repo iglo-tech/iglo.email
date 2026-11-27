@@ -184,12 +184,32 @@ export async function openRealtime(options: RealtimeOptions): Promise<RealtimeCo
   );
   let response: Response;
   try {
-    const outcome = await guardedFetch(
+    // B166 (D194): a resolver cannot be cancelled, so the request races the signal (the connect
+    // deadline, a stop, a settings switch), as the adapter's requests do. A response that comes
+    // after the race was lost has its body cancelled.
+    const pending = guardedFetch(
       url,
       { method: "GET", headers, signal },
       options.guard,
       options.transport ?? {},
     );
+    const aborted = new Promise<never>((_resolve, reject) => {
+      if (signal.aborted) {
+        reject(signal.reason);
+      } else {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      }
+    });
+    aborted.catch(() => {});
+    void pending.then(
+      (late) => {
+        if (signal.aborted && "status" in late) {
+          void late.body?.cancel().catch(() => {});
+        }
+      },
+      () => {},
+    );
+    const outcome = await Promise.race([pending, aborted]);
     if (!("status" in outcome)) {
       timers.abort();
       throw new SourceError("permanent", refusedMessage(outcome.refused));

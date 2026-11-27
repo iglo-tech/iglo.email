@@ -526,6 +526,12 @@ export function createSubscriberStore(
     },
     /** Whether a suppression names this subscriber's address or external ID (B124, D125). */
     suppressed: suppressedBy,
+    /**
+     * B166 (D194): whether a suppression names this address, whatever external ID it was left under:
+     * a source-linked subscriber taking the address takes the withdrawal with it.
+     */
+    addressSuppressed: (email: string) =>
+      q.get("suppression-match").get(emailHash(secret(), email), null) !== null,
     /** The suppressions of one address, removed on an operator's explicit request. Their count. */
     unsuppress(email: string): number {
       return Number(q.get("suppression-clear").run(emailHash(secret(), email), null).changes);

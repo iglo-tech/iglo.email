@@ -12,8 +12,8 @@ import type { Enrollments } from "@/sequences/enrollments";
 import { trimSpace } from "@/lists/store";
 import { isSourceError, SourceError } from "@/sources/source";
 import type { ExternalSource, SourceRecipient } from "@/sources/source";
-import { isNotSourceId } from "@/sources/pocketbase";
-import { SettingsMismatch } from "@/sources/stream-record";
+import { isNotSourceId, isRecordUnreadable } from "@/sources/pocketbase";
+import { isSettingsMismatch, SettingsMismatch } from "@/sources/stream-record";
 import { sanitizeEmail } from "@/subscribers/email";
 import type { SubscriberStore } from "@/subscribers/store";
 
@@ -33,17 +33,27 @@ export interface RecipientSyncOptions {
   source: ExternalSource;
   subscribers: Pick<
     SubscriberStore,
-    "external" | "byEmail" | "sourceWrite" | "carryConsent" | "remove"
+    | "external"
+    | "byEmail"
+    | "sourceWrite"
+    | "carryConsent"
+    | "remove"
+    | "addressSuppressed"
+    | "unsubscribeAll"
   >;
-  enrollments: Pick<Enrollments, "endSubscriber">;
+  enrollments: Pick<Enrollments, "endSubscriber" | "unsubscribeEffects">;
   /** The privacy domain policy for a new or changed address. */
   emailAllowed: (email: string) => boolean;
 }
 
 /**
- * A recipients-view read whose failure is the settings' (a `400`, `403` or `404` of the view, or a
- * mapped field the rows lack) is a `SettingsMismatch`. Any other failure is the record's or
- * transient.
+ * A recipients-view read. B166 (D194): classified by exception. Only the failures of this one
+ * record stay per-record permanent errors: an ID the source cannot have, an answer over the
+ * response limit, a body that is no record, an address field that is not text. Every other
+ * permanent failure (a `400`, `401`, `403` or `404` of the view, a redirect, a host the
+ * private-address block refuses, a mapped field the rows lack, a row with no `id`) is the settings'
+ * and a `SettingsMismatch`, so a caller waits for them to be fixed instead of giving the record up.
+ * Transient failures stay transient.
  */
 export async function readRecipient(
   source: ExternalSource,
@@ -56,10 +66,9 @@ export async function readRecipient(
     if (
       isSourceError(error) &&
       error.kind === "permanent" &&
-      (error.status === 400 ||
-        error.status === 403 ||
-        error.status === 404 ||
-        (error.status === undefined && error.message.includes(" records have no field ")))
+      !isSettingsMismatch(error) &&
+      !isNotSourceId(error) &&
+      !isRecordUnreadable(error)
     ) {
       throw new SettingsMismatch(`The recipients view refused a read: ${error.message}`);
     }
@@ -244,6 +253,19 @@ export function applyRecipient(
       `The address holder's user ${conflict.holder.external_id} moved to a blocklisted domain`,
     );
   }
+  /**
+   * B166 (D194): a row that has just taken `previous`'s place with a new address a suppression
+   * names takes the withdrawal it stands for, as a holder row would have carried it: the public
+   * "all lists" path (D128), every membership unsubscribed with its consent webhook and the running
+   * enrollments whose next step is marketing ended. The status stays, so transactional mail flows.
+   */
+  const took = (row: SubscriberRow, previous: string | undefined): SubscriberRow => {
+    if (row.email !== previous && subscribers.addressSuppressed(row.email)) {
+      subscribers.unsubscribeAll(row.id);
+      enrollments.unsubscribeEffects.unsubscribedAll({ subscriberId: row.id });
+    }
+    return row;
+  };
   // Every write below goes by ID and touches only the fields the source owns (address, name,
   // user ID), and every status decision reads the rows as they are now: a blocklist, bounce or
   // unsubscribe that landed while the source was read stays.
@@ -260,24 +282,34 @@ export function applyRecipient(
         email: `swap-${crypto.randomUUID()}@swap.invalid`,
       });
     }
-    subscribers.sourceWrite(conflict.holder.id, {
-      externalId: conflict.holder.external_id ?? "",
-      email: conflict.email,
-    });
-    return subscribers.sourceWrite(now?.id ?? null, { externalId: userId, email, name });
+    took(
+      subscribers.sourceWrite(conflict.holder.id, {
+        externalId: conflict.holder.external_id ?? "",
+        email: conflict.email,
+      }),
+      conflict.holder.email,
+    );
+    return took(
+      subscribers.sourceWrite(now?.id ?? null, { externalId: userId, email, name }),
+      now?.email,
+    );
   }
   if (conflict.kind === "gone") {
     enrollments.endSubscriber(conflict.holder.id);
     if (!now) {
       // Re-point the holder to the incoming user: blocklist, unsubscribes and cap history stay.
+      // The holder row keeps its own address: it takes nothing new.
       return subscribers.sourceWrite(conflict.holder.id, { externalId: userId, email, name });
     }
     // Carry the holder's consent onto the incoming row, delete the holder, take the address.
     subscribers.carryConsent(conflict.holder.id, now.id);
     subscribers.remove([conflict.holder.id]);
-    return subscribers.sourceWrite(now.id, { externalId: userId, email, name });
+    return took(subscribers.sourceWrite(now.id, { externalId: userId, email, name }), now.email);
   }
-  return subscribers.sourceWrite(now?.id ?? null, { externalId: userId, email, name });
+  return took(
+    subscribers.sourceWrite(now?.id ?? null, { externalId: userId, email, name }),
+    now?.email,
+  );
 }
 
 /**

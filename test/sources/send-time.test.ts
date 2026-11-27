@@ -9,7 +9,9 @@
 import type { Database } from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { createRealClock } from "@/clock";
+import { writeTransaction } from "@/db/transaction";
 import { createEnrollments } from "@/sequences/enrollments";
+import type { Guard } from "@/sources/connect";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
 import type { SourceProvider } from "@/sources/project";
@@ -68,6 +70,8 @@ interface Observed {
   fail: { from: number | null };
   /** Holds the next recipients-view read of `user` (the binary's answer, unchanged) until released. */
   hold: { current: { user: string; reached: () => void; released: Promise<void> } | null };
+  /** Called with each recipients-view read's number as it is sent (it has passed the guard). */
+  onRead: { current: (count: number) => void };
 }
 const observed: Array<Observed> = [];
 const closers: Array<() => Promise<void>> = [];
@@ -80,7 +84,10 @@ afterEach(async () => {
   }
 });
 
-function observedSource(config: Partial<PocketBaseConfig> = {}): Observed {
+function observedSource(
+  config: Partial<PocketBaseConfig> = {},
+  guard: Guard = openGuard,
+): Observed {
   const o: Observed = {
     provider: () => null,
     db: { current: null },
@@ -88,11 +95,12 @@ function observedSource(config: Partial<PocketBaseConfig> = {}): Observed {
     reads: { count: 0 },
     fail: { from: null },
     hold: { current: null },
+    onRead: { current: () => {} },
   };
   const source = createPocketBaseSource({
     config: { ...sourceConfig(pb.url, pb.service), ...config },
     clock: createRealClock(),
-    guard: openGuard,
+    guard,
     transport: {
       fetch(input: URL, init: RequestInit) {
         if (o.db.current?.inTransaction) {
@@ -100,6 +108,7 @@ function observedSource(config: Partial<PocketBaseConfig> = {}): Observed {
         }
         if (/^\/api\/collections\/(recipients|contacts|nowhere)\/records\//.test(input.pathname)) {
           o.reads.count++;
+          o.onRead.current(o.reads.count);
           if (o.fail.from !== null && o.reads.count >= o.fail.from) {
             return Promise.resolve(new Response("unavailable", { status: 503 }));
           }
@@ -375,8 +384,9 @@ async function runner(
   realEmailer: boolean,
   config: Partial<PocketBaseConfig> = {},
   emailAllowed: (email: string) => boolean = () => true,
+  guard: Guard = openGuard,
 ): Promise<{ f: RunnerFixture; o: Observed }> {
-  const o = observedSource(config);
+  const o = observedSource(config, guard);
   const f = await runnerFixture({
     realEmailer,
     sendTime: (fixture) =>
@@ -775,4 +785,174 @@ test("a campaign paused while it waits for its source starts afresh on resume: n
   await f.until(c.id, "finished");
   expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1 });
   expect((await f.read(c.id)).sent).toBe(1);
+});
+
+// ---------------------------------------------------------------------------------------------
+// B166 (D194).
+
+const plainCampaign = (f: RunnerFixture, name: string, lists: Array<number>) =>
+  f.campaign({
+    name,
+    subject: "Hi {{ subscriber.name }}",
+    lists,
+    content_type: "html",
+    body: "<p>x</p>",
+  });
+/** Holds the next recipients-view read of `user`; `reached` settles when it is out. */
+function holdRead(o: Observed, user: PocketBaseRecord) {
+  let reached!: () => void;
+  let release!: () => void;
+  const out = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  o.hold.current = { user: user.id, reached, released };
+  return { out, release };
+}
+
+for (const how of ["left", "wiped"] as const) {
+  test(`B166: a subscriber moving onto the address of a person who ${how === "left" ? "unsubscribed and left" : "wiped their data"} is unsubscribed from every list at the batch's lookup and gets no campaign`, async () => {
+    const { f } = await runner(false);
+    const news = await f.list("news");
+    const other = await f.list("other");
+    f.start();
+    const gone = await pb.user({ name: "Gone" });
+    const address = emailOf(gone);
+    const goneId = (await f.member(address, [news, other], "confirmed", { external_id: gone.id }))
+      .id;
+    if (how === "left") {
+      // Unsubscribed from one list, then gone from the source: a campaign to the other list
+      // removes the subscriber and keeps the withdrawal as a suppression (D125, D173).
+      const left = await f.json("/api/subscribers/lists", "PUT", {
+        ids: [goneId],
+        action: "unsubscribe",
+        target_list_ids: [news],
+      });
+      expect(left.status).toBe(200);
+      await pb.remove("users", gone.id);
+      const first = await plainCampaign(f, "first", [other]);
+      expect((await f.status(first.id, "running")).status).toBe(200);
+      await f.until(first.id, "finished");
+    } else {
+      writeTransaction(f.db, () => f.owners.subscribers.remove([BigInt(goneId)], { wipe: true }));
+      await pb.remove("users", gone.id);
+    }
+    expect((await f.json(`/api/subscribers/${goneId}`)).status).toBe(GONE);
+
+    // Another user's subscriber, confirmed on both lists, takes the address in the source.
+    const mover = await pb.user({ name: "Mover" });
+    const moverId = (
+      await f.member(emailOf(mover), [news, other], "confirmed", {
+        external_id: mover.id,
+        name: "Mover",
+      })
+    ).id;
+    await pb.update("users", mover.id, { email: address });
+    const c = await plainCampaign(f, "after", [news, other]);
+    expect((await f.status(c.id, "running")).status).toBe(200);
+    await f.until(c.id, "finished");
+
+    expect(pushCounts(f)).toEqual({});
+    expect(await skippedOf(f, c.id)).toEqual([[moverId, "unsubscribed"]]);
+    const moved = asBody<{ email: string; status: string }>(
+      (await f.json(`/api/subscribers/${moverId}`)).body.data,
+    );
+    expect(moved).toMatchObject({ email: address, status: "enabled" });
+    expect(await f.listStatus(moverId, news)).toBe("unsubscribed");
+    expect(await f.listStatus(moverId, other)).toBe("unsubscribed");
+  });
+}
+
+test("B166: a source host the private-address block refuses mid-campaign pauses it with nothing skipped; listed again and resumed, every recipient gets it once", async () => {
+  const hosts = { current: ["localhost"] };
+  const { f, o } = await runner(false, { url: `http://localhost:${pb.port}` }, () => true, {
+    blockPrivate: () => true,
+    privateHosts: () => hosts.current,
+  });
+  const list = await f.list("news");
+  const users: Array<PocketBaseRecord> = [];
+  for (let i = 0; i < 4; i++) {
+    const user = await pb.user({ name: `User ${i}` });
+    users.push(user);
+    await f.member(emailOf(user), [list], "confirmed", { external_id: user.id });
+  }
+  // Batches of two: an instance admin removes the host from `sources.private_hosts` once the
+  // first batch's reads are out, so every read of the second batch is refused.
+  f.control.grant = 2;
+  o.onRead.current = (count) => {
+    if (count === 2) {
+      hosts.current = [];
+    }
+  };
+  const c = await plainCampaign(f, "refused host", [list]);
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "paused");
+  expect(f.pushes.length).toBe(2);
+  expect(await skippedOf(f, c.id)).toEqual([]);
+  expect(messages(f, "the source refused a recipient read")).toBe(1);
+  expect(messages(f, "block_private_addresses")).toBe(1);
+
+  hosts.current = ["localhost"];
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual(Object.fromEntries(users.map((user) => [emailOf(user), 1])));
+  expect(await skippedOf(f, c.id)).toEqual([]);
+  expect((await f.read(c.id)).sent).toBe(4);
+});
+
+test("B166: a subscriber updated between the claim and the lookup gets the campaign once, at the new address with the new name", async () => {
+  const { f, o } = await runner(false);
+  const list = await f.list("news");
+  const user = await pb.user({ name: "Nina New" });
+  const id = (
+    await f.member(fresh(), [list], "confirmed", { external_id: user.id, name: "Old Name" })
+  ).id;
+  // The batch is claimed with the old values; while its lookup is out, the subscriber takes the
+  // source's address and name (as the stream or a sequence step writes them), so the lookup finds
+  // nothing to write.
+  const held = holdRead(o, user);
+  const c = await plainCampaign(f, "updated", [list]);
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.drive(async () => {
+    await Promise.race([held.out, Bun.sleep(1)]);
+    return o.hold.current === null;
+  });
+  const updated = await f.json(`/api/subscribers/${id}`, "PATCH", {
+    email: emailOf(user),
+    name: "Nina New",
+  });
+  expect(updated.status).toBe(200);
+  held.release();
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1 });
+  expect(f.pushes[0]?.message.subject).toBe("Hi Nina New");
+  expect(await skippedOf(f, c.id)).toEqual([]);
+});
+
+test("B166: a subscriber whose external ID is cleared while its user's absent read is out is read again and gets the campaign once", async () => {
+  const { f, o } = await runner(false);
+  const list = await f.list("news");
+  const user = await pb.user({ name: "Una" });
+  const id = (await f.member(emailOf(user), [list], "confirmed", { external_id: user.id })).id;
+  // While the read is out, the user goes from the source and an operator unlinks the subscriber.
+  const held = holdRead(o, user);
+  const c = await plainCampaign(f, "unlinked", [list]);
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.drive(async () => {
+    await Promise.race([held.out, Bun.sleep(1)]);
+    return o.hold.current === null;
+  });
+  await pb.remove("users", user.id);
+  const unlinked = await f.json(`/api/subscribers/${id}`, "PATCH", { external_id: null });
+  expect(unlinked.status).toBe(200);
+  held.release();
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1 });
+  expect(await skippedOf(f, c.id)).toEqual([]);
+  expect((await f.json(`/api/subscribers/${id}`)).status).toBe(200);
 });
