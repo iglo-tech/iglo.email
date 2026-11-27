@@ -27,6 +27,11 @@ export interface SendTimeOptions {
   db: Database;
   /** The project's source; null without one (then nothing is looked up). */
   source: SourceProvider;
+  /**
+   * D188 (r1): the instance's sources module is off while the project stores a source. Its
+   * source-linked subscribers are then unreadable: the callers send them nothing. Omitted: never.
+   */
+  held?: () => boolean;
   subscribers: RecipientSyncOptions["subscribers"] & Pick<SubscriberStore, "removeLeaving" | "get">;
   enrollments: RecipientSyncOptions["enrollments"];
   /** The privacy domain policy for a new or changed address. */
@@ -64,6 +69,12 @@ export function createSendTimeLookup(options: SendTimeOptions) {
   return {
     /** Whether the project has a source: without one, no subscriber is source-linked. */
     configured: () => options.source() !== null,
+    /**
+     * D188 (r1): the module is off but the project stores a source. A subscriber with an
+     * `external_id` is then source-linked yet cannot be read: never sent to, never treated as
+     * unlinked.
+     */
+    held: () => options.held?.() ?? false,
     /**
      * The source reads for subscriber `subscriberId` linked to user `externalId`, or null without a
      * source. Never inside a transaction. Throws a `SourceError` (a `SettingsMismatch` for a refused

@@ -94,6 +94,8 @@ interface Pipe {
   /** Tracked links seen in the current batch; campaign_links is the lasting record. */
   links: Map<string, string | null>;
   errors: number;
+  /** D188 (r1): the "sources off" line was written for this run of the campaign. */
+  sourcesOffLogged?: boolean;
 }
 type Attachments = NonNullable<Message["attachments"]>;
 interface Batch {
@@ -678,7 +680,28 @@ export function createCampaignRunner(deps: RunnerDeps) {
     const { pipe, recipients } = batch;
     const c = pipe.campaign;
     const linked = recipients.flatMap((sub, i) => (sub.external_id === null ? [] : [i]));
-    if (!lookup || !linked.length || !lookup.configured()) {
+    if (!lookup || !linked.length) {
+      return skip;
+    }
+    if (lookup.held()) {
+      // D188 (r1): the sources module is off while the project stores a source. A linked
+      // recipient cannot be read, so its opt-out and its leaving cannot be checked: it is skipped,
+      // never sent and never retried (marketing at-most-once). One line per campaign run.
+      for (const i of linked) {
+        skip.set(i, { reason: SKIP_REASON.unavailable, message: "" });
+      }
+      if (!pipe.sourcesOffLogged) {
+        pipe.sourcesOffLogged = true;
+        log(
+          "campaign recipients skipped: external sources are off",
+          `${label(c)}: source-linked recipients are skipped (subscriber_unavailable): the ` +
+            "project stores an external source but the instance's sources module is off " +
+            "(sources.enabled), so their opt-out and leaving cannot be checked.",
+        );
+      }
+      return skip;
+    }
+    if (!lookup.configured()) {
       return skip;
     }
     const plans: Array<[number, SendTimePlan]> = [];

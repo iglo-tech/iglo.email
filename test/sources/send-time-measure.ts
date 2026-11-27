@@ -99,6 +99,7 @@ const f = await runnerFixture(
           });
           // Timed: each read, and each batch from its lookup's start to its last read or write.
           const timed: SendTimeLookup = {
+            held: () => lookup.held(),
             configured() {
               closeBatch();
               batchStart = performance.now();

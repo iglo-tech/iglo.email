@@ -51,7 +51,7 @@ import { createSourceProvider } from "@/sources/project";
 import { createSendTimeLookup } from "@/sources/send-time";
 import { createSourceRecords, storedGrantRules } from "@/sources/records-stream";
 import type { SourceRecords } from "@/sources/records-stream";
-import { hasSourceUrl, sourceSetup, sourcesEnabled } from "@/sources/settings";
+import { hasSourceUrl, sourceHeld, sourceSetup, sourcesEnabled } from "@/sources/settings";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
 import type { Dispatcher, Sender } from "@/messaging/dispatcher";
 import { createSMTPTest } from "@/messaging/test";
@@ -887,6 +887,7 @@ export async function createProject(
     const sendTime = createSendTimeLookup({
       db,
       source: externalSource,
+      held: () => sourceHeld(projectSettings.read()),
       subscribers: subscriberStore,
       enrollments,
       emailAllowed: (email) => {
@@ -1213,6 +1214,17 @@ export async function createProject(
           must(sourceRecords, "sourceRecords").start();
         } catch (error) {
           fail(error);
+        }
+        // D188 (r1): a project that stores a source opened while the module is off (a restore of
+        // a backup with a source, an upgrade whose switch was turned off): said once per start, as
+        // nothing reads the source and its source-linked recipients get nothing until it is on.
+        if (sourceHeld(must(settings, "settings").read())) {
+          app.logger.attention(
+            "This project stores an external source, but the instance's sources module is off: " +
+              "the source is held (no stream, no external sequence step, nothing sent to " +
+              "source-linked subscribers) until an instance admin turns sources.enabled on.",
+            "Source held: external sources are off on this instance",
+          );
         }
       },
       stop() {

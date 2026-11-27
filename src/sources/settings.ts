@@ -370,6 +370,19 @@ export function sourceSetup(settings: Settings): SourceSetup | null {
   return config.url ? { connector, config } : null;
 }
 
+/**
+ * D188 (r1): the module is off but the project stores a source (a connector and a URL). Its
+ * source-linked subscribers are then unreadable, not unlinked: the source may have opted them out
+ * of marketing or deleted them, and only a read can tell, so nothing is sent to them.
+ */
+export function sourceHeld(settings: Settings): boolean {
+  return (
+    !sourcesEnabled(settings) &&
+    isConnectorName(text(read(settings, "source.connector"))) &&
+    textAt(settings, "source.url") !== ""
+  );
+}
+
 /** Whether the project names a source URL, whatever the module and connector (the upgrade's check). */
 export const hasSourceUrl = (settings: Settings): boolean => textAt(settings, "source.url") !== "";
 

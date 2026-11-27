@@ -534,6 +534,13 @@ export function createScheduler(options: SchedulerOptions) {
       }
       return;
     }
+    // D188 (r1): the sources module is off while the project stores a source: a source-linked
+    // subscriber cannot be read, so its opt-out and its leaving cannot be checked. The step waits
+    // as for an unreadable source, with nothing sent or ended and no outage window written, and
+    // runs (with its send-time read) once the module is on again.
+    if (subscriber.external_id !== null && options.sendTime?.held()) {
+      return retry(claim, lateBackoff(row));
+    }
     // D174: a source-linked subscriber's address and name are read fresh before the consent
     // recheck and the render, so both see what the source has now.
     if (options.sendTime?.configured() && subscriber.external_id !== null) {

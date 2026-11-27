@@ -607,6 +607,20 @@ ended; their 72-hour outage window starts again when the module is back on). Tur
 stream catches up from its marker, so records made meanwhile are delivered once, and the held
 enrollments continue.
 
+While the module is off, a project that still stores a source (a connector and a URL) cannot check
+its source-linked subscribers (those with an external ID) for the source's opt-out or for having
+left, so it sends them nothing. A campaign skips them as `subscriber_unavailable` (they are not sent
+it later) and writes one "campaign recipients skipped: external sources are off" line per run; a
+sequence step to one of them waits, unsent and not ended, and runs with its send-time check once the
+module is on again. Subscribers without an external ID are sent as usual. A project whose source is
+gone for good should have it cleared (connector None) while the module is on, rather than be left
+held.
+
+A restore needs the switch too. A project backup that stores a source, restored into an instance
+whose module is off (a new 2.3 instance starts with it off), is held as above. At start it writes
+one "Source held: external sources are off on this instance" line. Turn `sources.enabled` on after
+the restore.
+
 **1. The service account.** In PocketBase, create an auth collection for iglo.email (for example
 `services`) and one record in it with an email and a strong password. iglo.email signs in as it.
 Do not use a superuser.

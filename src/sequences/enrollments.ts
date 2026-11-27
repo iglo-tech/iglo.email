@@ -863,8 +863,9 @@ export function createEnrollments(db: Database, clock: Clock) {
         .map((row) => row.id);
     },
     /**
-     * D188: the sources module turned on again. Every active external enrollment's source outage
-     * window (D172) starts anew, so the time it was held never counts toward the 72-hour limit.
+     * D188: the sources module turned on again. Every active enrollment's source outage window
+     * (D172) starts anew, so the time it was held never counts toward the 72-hour limit (external
+     * sequences' enrollments and, r1, pushed sequences' source-linked ones are held while off).
      */
     restartSourceWindows(): void {
       writeTransaction(db, () => {

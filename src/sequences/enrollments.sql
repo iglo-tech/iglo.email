@@ -178,8 +178,8 @@ SELECT e.id, e.sequence_id, e.trigger_event_id, e.exit_reason, e.finished_at,
         WHERE e.exit_reason = 'event:' || json_extract(j.value, '$.name')
           AND e.finished_at = json_extract(j.value, '$.at')));
 -- name: restart-source-windows
--- D188: the sources module turned on again: a held external enrollment's outage window starts anew,
--- so the time it was held never counts toward the 72-hour limit (D172).
+-- D188: the sources module turned on again: a held enrollment's outage window starts anew, so the
+-- time it was held never counts toward the 72-hour limit (D172). External sequences' enrollments and
+-- (r1) pushed sequences' source-linked ones are held; only source reads open a window (D180).
 UPDATE enrollments SET error_since = NULL, error_last = NULL
-  WHERE status = 'active' AND (error_since IS NOT NULL OR error_last IS NOT NULL)
-    AND sequence_id IN (SELECT id FROM sequences WHERE source = 'external');
+  WHERE status = 'active' AND (error_since IS NOT NULL OR error_last IS NOT NULL);
