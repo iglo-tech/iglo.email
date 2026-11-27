@@ -27,12 +27,16 @@ import {
   applyRecipient,
   leaveUser,
   planRecipient,
+  settingsRefusal,
   SubscriberChanged,
 } from "@/sources/recipient-sync";
 import type { SubscriberRow } from "@/sources/recipient-sync";
+import { isAuthRefused } from "@/sources/pocketbase";
+import type { PocketBaseSource } from "@/sources/pocketbase";
 import type { GrantRule } from "@/sources/settings";
-import { SourceError } from "@/sources/source";
-import type { ExternalSource, SourceEvent } from "@/sources/source";
+import { isSourceError, SourceError } from "@/sources/source";
+import type { CallOptions, ExternalSource, SourceEvent } from "@/sources/source";
+import { isSettingsMismatch } from "@/sources/stream-record";
 import type { RecordCommit, RecordHandler, SourceUser } from "@/sources/stream-record";
 import type { SubscriberStore } from "@/subscribers/store";
 
@@ -61,8 +65,8 @@ export interface RecordHandlerOptions {
   db: Database;
   clock: Clock;
   logger: Pick<ErrorLogger, "attention">;
-  /** The project's source (the stream's own adapter). */
-  source: ExternalSource;
+  /** The project's source (the stream's own adapter) and its events schema probe. */
+  source: ExternalSource & Pick<PocketBaseSource, "eventsSchema">;
   /** The project's `source.grant_lists` rules, read for each record. */
   grantRules: () => ReadonlyArray<GrantRule>;
   subscribers: Pick<
@@ -77,8 +81,13 @@ export interface RecordHandlerOptions {
     | "membership"
     | "insertConfirmedIfAbsent"
     | "suppressed"
+    | "addressSuppressed"
+    | "unsubscribeAll"
   >;
-  enrollments: Pick<Enrollments, "externalTriggers" | "recordExitThenTrigger" | "endSubscriber">;
+  enrollments: Pick<
+    Enrollments,
+    "externalTriggers" | "recordExitThenTrigger" | "endSubscriber" | "unsubscribeEffects"
+  >;
   /** The privacy domain policy for a new or changed address. */
   emailAllowed: (email: string) => boolean;
   /** Called after each committed record (tests and measurements). */
@@ -133,8 +142,79 @@ const scalarWhere = (
   return out;
 };
 
+const CONDITION_READ = "The source refused a trigger condition's read";
+
+/** B166 (D194): a trigger condition's failure as `readRecipient` classifies it. */
+const refused = (error: unknown): never => {
+  throw settingsRefusal(error, CONDITION_READ) ?? error;
+};
+
+/**
+ * The source as a trigger condition reads it for `record` (B166, D194). The stream must never wait
+ * for good on what no settings change can fix, and never drop a record for good over what one can:
+ *
+ * - a settings refusal (`settingsRefusal`, a refused sign-in or token check whatever its status) is
+ *   a `SettingsMismatch`, which the evaluation hands on (src/conditions/source.ts): nothing is
+ *   committed, and the record waits for the settings;
+ * - a `400` to an events query that is not the sign-in's is either the settings' (a renamed mapped
+ *   field, a broken list rule) or the condition's own filter (one PocketBase refuses): the events
+ *   collection is probed once (`eventsSchema`) with a filter naming every mapped field and no
+ *   condition part, reading only an `id`, so it checks the fields and the list rule whatever rows
+ *   the collection holds and reads no record. When the probe fails for good too, it is the
+ *   settings' (a `SettingsMismatch`); when it fails for now, the record is retried; when it
+ *   answers, the `400` is the condition's, and only its sequence is skipped (D172). An abort or any
+ *   other failure of the probe is thrown on as it is. The recipients view and a record by ID send
+ *   no condition filter, so a `400` there is always the settings'.
+ */
+function conditionSource(source: RecordHandlerOptions["source"]): ExternalSource {
+  let probed: Promise<void> | undefined;
+  /** The probe, sent once per record; it resolves when the source answered. */
+  const probe = (call: CallOptions | undefined) => {
+    if (!probed) {
+      probed = source.eventsSchema(call);
+      // Each caller awaits it; with none left waiting it must not go unhandled.
+      probed.catch(() => {});
+    }
+    return probed;
+  };
+  const queried = async (error: unknown, call: CallOptions | undefined): Promise<never> => {
+    if (!isSourceError(error) || error.status !== 400 || isAuthRefused(error)) {
+      return refused(error);
+    }
+    try {
+      await probe(call);
+    } catch (error_) {
+      // The probe's failure. An abort (the stream stopping or switching settings), a transient
+      // failure, a settings mismatch already or anything unexpected: as it is, so nothing is
+      // committed.
+      if (!isSourceError(error_) || error_.kind !== "permanent" || isSettingsMismatch(error_)) {
+        throw error_;
+      }
+      throw settingsRefusal(error_, CONDITION_READ) ?? error;
+    }
+    throw error;
+  };
+  return {
+    recipient: (id, call) => source.recipient(id, call).catch(refused),
+    record: (id, call) => source.record(id, call).catch(refused),
+    latest: (query, call) =>
+      source.latest(query, call).catch((error: unknown) => queried(error, call)),
+    count: (query, upTo, call) =>
+      source.count(query, upTo, call).catch((error: unknown) => queried(error, call)),
+    exists: (query, call) =>
+      source.exists(query, call).catch((error: unknown) => queried(error, call)),
+    async *scan(query, fields, limit, call) {
+      try {
+        yield* source.scan(query, fields, limit, call);
+      } catch (error) {
+        await queried(error, call);
+      }
+    },
+  };
+}
+
 export function createRecordHandler(options: RecordHandlerOptions): RecordHandler {
-  const { db, clock, source, subscribers, enrollments } = options;
+  const { db, clock, subscribers, enrollments } = options;
   const warned = new Set<string>();
   const warn = (detail: string) => {
     if (warned.has(detail) || warned.size >= MAX_WARNED) {
@@ -179,6 +259,7 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
       return [];
     }
     const chosen: Array<{ id: bigint; trigger: string }> = [];
+    const conditionReads = conditionSource(options.source);
     for (const sequence of enrollments.externalTriggers(record.name)) {
       const trigger = triggerOf(sequence.trigger);
       const where = trigger && scalarWhere(trigger.where);
@@ -187,7 +268,7 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
       }
       if (trigger.condition !== undefined) {
         const result = await evaluateTriggerCondition(
-          source,
+          conditionReads,
           trigger.condition,
           record.user,
           record,
@@ -197,8 +278,10 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
           if (result.kind === "transient") {
             throw new SourceError("transient", result.message);
           }
-          // A condition the source refuses, or that no longer validates, starts nothing; the
-          // record's grants and other sequences still apply.
+          // A condition the source refuses for its own query or for this user's records, or that
+          // no longer validates, starts nothing; the record's grants and other sequences still
+          // apply. A refusal of the settings is thrown as a `SettingsMismatch` instead (B166,
+          // D194): nothing is committed, and the stream waits for the settings to be fixed.
           warn(`sequence ${sequence.id}: ${result.message}`);
           continue;
         }

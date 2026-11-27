@@ -3,7 +3,7 @@
 // and nowhere else. Measured against the 0.40.5 binary (test/sources/filter.test.ts): a single-quoted
 // literal with each backslash and each single quote escaped by a backslash reads back exactly,
 // whatever the text holds (quotes, backslashes, `&&`, `||`, unicode).
-import { SourceError } from "@/sources/source";
+import { isSourceError, SourceError } from "@/sources/source";
 import type { SourceScalar } from "@/sources/source";
 
 /** A field, collection or JSON path segment name the adapter writes into a filter or a path. */
@@ -14,10 +14,24 @@ const MAX_SEGMENTS = 8;
 /** The longest text literal, in UTF-8 bytes. */
 const MAX_TEXT_BYTES = 4096;
 
+/**
+ * B166 (D194): a query the adapter cannot write as a filter (a value too long, a number out of
+ * range, a data path PocketBase cannot name, too many names). It is the query's own fault, a
+ * condition's, not the source settings': a caller never waits for the settings to fix it.
+ */
+export class UnfitQuery extends SourceError {
+  readonly unfitQuery = true;
+  constructor(message: string) {
+    super("permanent", message);
+  }
+}
+export const isUnfitQuery = (error: unknown): error is UnfitQuery =>
+  isSourceError(error) && "unfitQuery" in error && error.unfitQuery === true;
+
 /** A text literal. */
 export function textLiteral(value: string): string {
   if (value.includes("\0") || Buffer.byteLength(value, "utf-8") > MAX_TEXT_BYTES) {
-    throw new SourceError("permanent", "A filter value is too long or holds a NUL character");
+    throw new UnfitQuery("A filter value is too long or holds a NUL character");
   }
   return `'${value
     .toWellFormed()
@@ -36,7 +50,7 @@ export function scalarLiteral(value: SourceScalar | null): string {
   if (typeof value === "number") {
     const text = String(value);
     if (!Number.isFinite(value) || /e/i.test(text)) {
-      throw new SourceError("permanent", `A filter number is out of range: ${text}`);
+      throw new UnfitQuery(`A filter number is out of range: ${text}`);
     }
     return text;
   }
@@ -46,7 +60,7 @@ export function scalarLiteral(value: SourceScalar | null): string {
 /** PocketBase's date text: `YYYY-MM-DD HH:mm:ss.sssZ`, UTC. */
 export function sourceDate(date: Date): string {
   if (!Number.isFinite(date.getTime())) {
-    throw new SourceError("permanent", "A filter date is invalid");
+    throw new UnfitQuery("A filter date is invalid");
   }
   return date.toISOString().replace("T", " ");
 }
@@ -75,7 +89,7 @@ export function fieldName(name: string): string {
 export function jsonPath(field: string, path: string): string {
   const segments = path.split(".");
   if (segments.length > MAX_SEGMENTS || !segments.every((part) => segmentPattern.test(part))) {
-    throw new SourceError("permanent", `Not a data path: ${JSON.stringify(path)}`);
+    throw new UnfitQuery(`Not a data path: ${JSON.stringify(path)}`);
   }
   return `${fieldName(field)}.${path}`;
 }

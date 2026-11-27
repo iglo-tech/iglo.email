@@ -1,9 +1,13 @@
 // B150b (15-external-sources section 4, D171): the realtime client's server-sent events parser on
 // an injected byte stream. A line over the limit is dropped up to its end and its message marked
 // oversized; a message's data lines together are bounded the same way; the next message is whole.
+// B166 (D194): the connect gives up on its deadline (injected clock) or a stop while the guard's
+// address lookup never answers, and cancels the body of a response that comes too late.
 import { expect, test } from "bun:test";
-import { MAX_LINE, sseMessages } from "@/sources/realtime";
+import type { Guard } from "@/sources/connect";
+import { CONNECT_TIMEOUT_MS, MAX_LINE, openRealtime, sseMessages } from "@/sources/realtime";
 import type { SseMessage } from "@/sources/realtime";
+import { TestClock } from "@/test/server/fixture";
 
 async function* chunks(parts: ReadonlyArray<string>) {
   const encoder = new TextEncoder();
@@ -86,4 +90,77 @@ test("the production limit is 1 MiB per line and per message", async () => {
     ["b", fits.length, false],
     ["c", 0, true],
   ]);
+});
+
+// ---------------------------------------------------------------------------------------------
+// B166 (D194): a connect whose address lookup stalls.
+
+const blocking: Guard = { blockPrivate: () => true, privateHosts: () => [] };
+
+/** How `work` settled within `ms` of real time: its rejection's message, or "pending". */
+async function settledWithin(work: Promise<unknown>, ms: number): Promise<string> {
+  const timeout = new Promise<string>((resolve) => {
+    setTimeout(() => resolve("pending"), ms);
+  });
+  return Promise.race([
+    work.then(
+      () => "resolved",
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    ),
+    timeout,
+  ]);
+}
+
+test("B166: a connect whose address lookup never answers gives up at the connect deadline on the injected clock", async () => {
+  const clock = new TestClock();
+  const connecting = openRealtime({
+    url: "http://stalled.example",
+    guard: blocking,
+    transport: { lookup: () => new Promise<Array<string>>(() => {}) },
+    clock,
+    signal: new AbortController().signal,
+  });
+  await clock.whenSleeping(1);
+  expect(await settledWithin(connecting, 50)).toBe("pending");
+  clock.advance(CONNECT_TIMEOUT_MS);
+  expect(await settledWithin(connecting, 2000)).toBe("The realtime stream did not connect in time");
+});
+
+test("B166: a stop during a stalled lookup ends the connect at once; a response that comes later has its body cancelled", async () => {
+  const clock = new TestClock();
+  const stop = new AbortController();
+  let answer!: (addresses: Array<string>) => void;
+  let cancelled = false;
+  const connecting = openRealtime({
+    url: "http://stalled.example",
+    guard: blocking,
+    transport: {
+      lookup: () =>
+        new Promise<Array<string>>((resolve) => {
+          answer = resolve;
+        }),
+      fetch: () =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "text/event-stream" } },
+          ),
+        ),
+    },
+    clock,
+    signal: stop.signal,
+  });
+  await clock.whenSleeping(1);
+  stop.abort(new Error("stopping"));
+  expect(await settledWithin(connecting, 2000)).toBe("stopping");
+  // The lookup answers after the stop with a public address: the response is not read.
+  answer(["93.184.216.34"]);
+  for (let i = 0; i < 100 && !cancelled; i++) {
+    await Bun.sleep(10);
+  }
+  expect(cancelled).toBe(true);
 });

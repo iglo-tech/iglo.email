@@ -8,7 +8,7 @@ import { checkSource } from "@/sources/check";
 import type { Guard } from "@/sources/connect";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
-import { isSourceError } from "@/sources/source";
+import { isRecordUnreadable, isSourceError } from "@/sources/source";
 import type { SourceError } from "@/sources/source";
 import { TestClock } from "@/test/server/fixture";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
@@ -607,6 +607,36 @@ test("a response over the size limit is permanent for one record; a scan reads s
   expect((await failure(tiny.source.record(first.id))).kind).toBe("permanent");
 });
 
+test("B166: exists over a single matching record too large to read sends one request, then the permanent too-large error", async () => {
+  const user = await pb.user();
+  await pb.event(user.id, "oversized");
+  // `exists` reads only `id` and `occurredAt`, so no real record of the fixture schema is over a
+  // limit the sign-in still fits under: the binary's events list answer is padded with JSON
+  // whitespace past it, and is otherwise unchanged.
+  const reads: Array<string> = [];
+  const source = createPocketBaseSource({
+    config: sourceConfig(pb.url, pb.service),
+    clock: createRealClock(),
+    guard: open,
+    maxResponseBytes: 4000,
+    transport: {
+      fetch: async (input: URL, init: RequestInit) => {
+        const answer = await fetch(input, init);
+        if (input.pathname !== "/api/collections/events/records") {
+          return answer;
+        }
+        reads.push(input.search);
+        return new Response(`${await answer.text()}${" ".repeat(5000)}`, answer);
+      },
+    },
+  });
+  const refused = await failure(source.exists({ user: user.id, names: ["oversized"] }));
+  expect(refused.kind).toBe("permanent");
+  expect(refused.message).toContain("larger than the response limit");
+  expect(reads.length).toBe(1);
+  expect(new URLSearchParams(reads[0]).get("perPage")).toBe("1");
+});
+
 test("the private-address block: refused unless the host is listed; a listed name still resolves to a checked address", async () => {
   const user = await pb.user();
   const blocked: Guard = { blockPrivate: () => true, privateHosts: () => [] };
@@ -726,4 +756,76 @@ test("Test connection: an empty collection reads as 'no records yet, or the list
   expect(recipients?.message).toBe(
     "nobody_yet: read, but there are no records yet, or the list rule hides them from the service account.",
   );
+});
+
+test("B166: a large error page (a proxy's 502 or 403) on an events read is that status's failure, not a record too large to read", async () => {
+  const user = await pb.user();
+  await pb.event(user.id, "proxied");
+  // A 403 signs in again and repeats the read once; neither is narrowed to smaller pages.
+  for (const [status, kind, sent] of [
+    [502, "transient", 1],
+    [403, "permanent", 2],
+  ] as const) {
+    const reads: Array<string> = [];
+    const source = createPocketBaseSource({
+      config: sourceConfig(pb.url, pb.service),
+      clock: createRealClock(),
+      guard: open,
+      maxResponseBytes: 4000,
+      transport: {
+        fetch: async (input: URL, init: RequestInit) => {
+          if (input.pathname !== "/api/collections/events/records") {
+            return fetch(input, init);
+          }
+          reads.push(input.search);
+          return new Response(`<!doctype html><title>Bad gateway</title>${" ".repeat(5000)}`, {
+            status,
+            headers: { "content-type": "text/html" },
+          });
+        },
+      },
+    });
+    const refused = await failure(source.exists({ user: user.id, names: ["proxied"] }));
+    expect({
+      kind: refused.kind,
+      status: refused.status,
+      unreadable: isRecordUnreadable(refused),
+    }).toEqual({
+      kind,
+      status,
+      unreadable: false,
+    });
+    expect(refused.message).not.toContain("larger than the response limit");
+    expect(reads.length).toBe(sent);
+  }
+});
+
+test("B166 round 4: a large 502 page on a record or recipient by ID, or on the events schema probe, is a transient 502, not a page too large to read", async () => {
+  const user = await pb.user();
+  const event = await pb.event(user.id, "proxied_one");
+  const source = createPocketBaseSource({
+    config: sourceConfig(pb.url, pb.service),
+    clock: createRealClock(),
+    guard: open,
+    maxResponseBytes: 4000,
+    transport: {
+      fetch: async (input: URL, init: RequestInit) => {
+        if (!input.pathname.startsWith("/api/collections/") || input.pathname.includes("/auth-")) {
+          return fetch(input, init);
+        }
+        return new Response(`<!doctype html><title>Bad gateway</title>${" ".repeat(5000)}`, {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    },
+  });
+  for (const work of [source.record(event.id), source.recipient(user.id), source.eventsSchema()]) {
+    const refused = await failure(work);
+    expect({
+      kind: refused.kind,
+      status: refused.status,
+      tooLarge: refused.message.includes("larger than the response limit"),
+    }).toEqual({ kind: "transient", status: 502, tooLarge: false });
+  }
 });

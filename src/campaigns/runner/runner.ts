@@ -22,6 +22,7 @@ import type { Grant, Sender } from "@/messaging/dispatcher";
 import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { BrandSite } from "@/public/brand";
+import type { SubscriberRow } from "@/sources/recipient-sync";
 import type { SendTimeLookup, SendTimePlan } from "@/sources/send-time";
 import { isSourceError } from "@/sources/source";
 import { isSettingsMismatch } from "@/sources/stream-record";
@@ -681,6 +682,17 @@ export function createCampaignRunner(deps: RunnerDeps) {
       return skip;
     }
     const plans: Array<[number, SendTimePlan]> = [];
+    /** The batch's copy of recipient `i` takes the subscriber row as the lookup found or wrote it. */
+    const adopt = (i: number, row: SubscriberRow) => {
+      recipients[i] = {
+        id: row.id,
+        uuid: row.uuid,
+        email: row.email,
+        name: row.name,
+        attribs: row.attribs,
+        external_id: row.external_id,
+      };
+    };
     let failure: { error: unknown } | null = null;
     let cursor = 0;
     const reader = async () => {
@@ -712,7 +724,13 @@ export function createCampaignRunner(deps: RunnerDeps) {
     if (!failure) {
       try {
         for (const [i, planned] of plans) {
-          if (!planned.unchanged) {
+          const { plan } = planned;
+          if (planned.unchanged && plan.kind === "present" && plan.current) {
+            // B166 (D194): nothing to write, but the row the reads verified may be newer than the
+            // claim (the stream or a sequence step wrote it since): the batch takes it, so the
+            // push's identity check and the render see the row as it is.
+            adopt(i, plan.current);
+          } else if (!planned.unchanged) {
             let result: ReturnType<typeof lookup.apply>;
             try {
               result = lookup.apply(planned);
@@ -734,15 +752,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
               skip.set(i, { reason: SKIP_REASON.unavailable, message: "" });
               continue;
             }
-            const { row } = result;
-            recipients[i] = {
-              id: row.id,
-              uuid: row.uuid,
-              email: row.email,
-              name: row.name,
-              attribs: row.attribs,
-              external_id: row.external_id,
-            };
+            adopt(i, result.row);
           }
           // The view's opt-out field set: the user declined marketing, which a campaign is.
           // Skipped as unsubscribed, with no membership change (the source owns the flag).

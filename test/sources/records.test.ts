@@ -10,11 +10,17 @@
 // for that name only); `hold` delays one recipients read (the binary's answer, unchanged) so a
 // test can change SQLite between the handler's reads and its write transaction; and `malformed`
 // answers one user's recipients read with the binary's row whose address is a number (a permanent
-// read failure that is not an ID the source cannot have).
+// read failure that is not an ID the source cannot have). B166 adds three: `refuseRecipients`
+// answers the recipients view with PocketBase's `400`, `beforeQuery` runs a change on the binary (a
+// password rotation, a field rename) just before one events query is forwarded, `holdQuery` holds
+// one events query (the schema probe) until the test releases it, and `html` answers
+// every request with a 200 HTML page (a proxy put in front of the source); round 4's `emptyProbe`
+// answers the events schema probe with a 200 `{}` (a misconfigured proxy).
 // Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { writeTransaction } from "@/db/transaction";
+import type { Guard } from "@/sources/connect";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
 import type { RecordOutcome } from "@/sources/records";
 import { createSourceRecords } from "@/sources/records-stream";
@@ -70,6 +76,18 @@ interface Harness {
   hold: { current: { user: string; reached: () => void; released: Promise<void> } | null };
   /** This user's recipients-view reads answer its row with a number for the address; null: none. */
   malformed: { user: string | null };
+  /** While on, every recipients-view read is answered with PocketBase's `400`. */
+  refuseRecipients: { on: boolean };
+  /** Runs once before the first events query whose filter includes `includes` is forwarded. */
+  beforeQuery: { current: { includes: string; run: () => Promise<void> } | null };
+  /** Holds the first events query whose filter includes `includes` until `released` settles. */
+  holdQuery: {
+    current: { includes: string; reached: () => void; released: Promise<void> } | null;
+  };
+  /** While on, every source request is answered with a 200 HTML page (a proxy's or SSO page). */
+  html: { on: boolean };
+  /** While on, the events schema probe is answered with a 200 `{}` (a misconfigured proxy). */
+  emptyProbe: { on: boolean };
   /**
    * This test's own record name for `name`. The tests share one PocketBase, and a new stream's first
    * catch-up starts at the source's `Date` (whole seconds), so a record another test made in the
@@ -86,11 +104,19 @@ afterEach(async () => {
   }
 });
 
+/** PocketBase's answer to a filter or a read it refuses. */
+const refusal = () =>
+  Response.json(
+    { status: 400, message: "Something went wrong while processing your request.", data: {} },
+    { status: 400 },
+  );
+
 async function start(
   options: {
     config?: Partial<PocketBaseConfig>;
     rules?: Array<GrantRule>;
     emailAllowed?: (email: string) => boolean;
+    guard?: Guard;
   } = {},
 ): Promise<Harness> {
   const f = await schedulerFixture({ source: () => adapter(pb) });
@@ -103,6 +129,11 @@ async function start(
   const rules = { current: options.rules ?? [] };
   const hold: Harness["hold"] = { current: null };
   const malformed: Harness["malformed"] = { user: null };
+  const refuseRecipients = { on: false };
+  const beforeQuery: Harness["beforeQuery"] = { current: null };
+  const holdQuery: Harness["holdQuery"] = { current: null };
+  const html = { on: false };
+  const emptyProbe = { on: false };
   const records = createSourceRecords({
     db: f.db,
     clock: f.clock,
@@ -112,7 +143,7 @@ async function start(
     },
     config: () => config.current,
     grantRules: () => rules.current,
-    guard: openGuard,
+    guard: options.guard ?? openGuard,
     transport: {
       fetch(input: URL, init: RequestInit) {
         if (f.db.inTransaction) {
@@ -123,6 +154,45 @@ async function start(
           /^\/api\/collections\/(recipients|contacts)\/records\//.test(input.pathname)
         ) {
           return Promise.resolve(new Response("unavailable", { status: 503 }));
+        }
+        if (html.on) {
+          return Promise.resolve(
+            new Response("<!doctype html><title>Sign in</title>", {
+              headers: { "content-type": "text/html" },
+            }),
+          );
+        }
+        if (
+          refuseRecipients.on &&
+          input.pathname.startsWith("/api/collections/recipients/records/")
+        ) {
+          return Promise.resolve(refusal());
+        }
+        const before = beforeQuery.current;
+        if (
+          before &&
+          input.pathname === "/api/collections/events/records" &&
+          (input.searchParams.get("filter") ?? "").includes(before.includes)
+        ) {
+          beforeQuery.current = null;
+          return before.run().then(() => fetch(input, init));
+        }
+        const heldQuery = holdQuery.current;
+        if (
+          heldQuery &&
+          input.pathname === "/api/collections/events/records" &&
+          (input.searchParams.get("filter") ?? "").includes(heldQuery.includes)
+        ) {
+          holdQuery.current = null;
+          heldQuery.reached();
+          return heldQuery.released.then(() => fetch(input, init));
+        }
+        if (
+          emptyProbe.on &&
+          input.pathname === "/api/collections/events/records" &&
+          (input.searchParams.get("filter") ?? "").includes(PROBE)
+        ) {
+          return Promise.resolve(Response.json({}));
         }
         const refused = refuseHistory.name;
         if (
@@ -177,6 +247,11 @@ async function start(
     rules,
     hold,
     malformed,
+    refuseRecipients,
+    beforeQuery,
+    holdQuery,
+    html,
+    emptyProbe,
     ev: (name) => `${name}_${tag}`,
   };
   open.push(h);
@@ -1256,4 +1331,524 @@ test("a suppression left on leaving is lifted by an operator's DELETE or the per
     });
     expect(statusOn(await linked(h, user), news)).toBe("confirmed");
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// B166 (D194).
+
+for (const how of ["left", "wiped"] as const) {
+  test(`B166: a subscriber moving onto the address of a person who ${how === "left" ? "unsubscribed and left" : "wiped their data"} takes the withdrawal: every list unsubscribed, its marketing enrollment ended, nothing sent`, async () => {
+    const h = await start();
+    const news = await h.f.list("News");
+    const other = await h.f.list("Other");
+    h.rules.current = [{ event: h.ev("visit"), where: {}, lists: [news] }];
+    const template = await h.f.template();
+    await h.f.sequence({
+      source: "external",
+      list_id: news,
+      trigger: { event: h.ev("order_paid") },
+      steps: [{ wait: "P1D", kind: "marketing", template_id: template }],
+    });
+    await resubscribed(h);
+
+    let address: string;
+    if (how === "left") {
+      const gone = await pb.user();
+      address = emailOf(gone);
+      const id = await createSubscriber(h, {
+        email: address,
+        external_id: gone.id,
+        lists: [news, other],
+        preconfirm_subscriptions: true,
+      });
+      await unsubscribe(h, id, news);
+      await pb.update("users", gone.id, { deletedAt: new Date().toISOString() });
+      await until(
+        h,
+        () => h.outcomes.some((o) => o.record === gone.id && o.kind === "left"),
+        "leaving",
+      );
+      // The account is gone from the view; its address is free in the source.
+      await pb.update("users", gone.id, {
+        email: `freed-${crypto.randomUUID().slice(0, 8)}@x.test`,
+      });
+    } else {
+      address = `wiped-${crypto.randomUUID().slice(0, 8)}@example.com`;
+      const id = await createSubscriber(h, {
+        email: address,
+        lists: [news, other],
+        preconfirm_subscriptions: true,
+      });
+      writeTransaction(h.f.db, () => h.f.stores.subscribers.remove([BigInt(id)], { wipe: true }));
+    }
+
+    // Another user's subscriber: confirmed on both lists, in the marketing sequence.
+    const mover = await pb.user();
+    const moverId = await createSubscriber(h, {
+      email: emailOf(mover),
+      external_id: mover.id,
+      lists: [news, other],
+      preconfirm_subscriptions: true,
+    });
+    const order = await record(h, mover, "order_paid");
+    await settled(h, order);
+    expect(outcome(h, order)).toMatchObject({ started: 1 });
+
+    // The user takes the address in the source; the next record writes it.
+    await pb.update("users", mover.id, { email: address });
+    const visit = await record(h, mover, "visit");
+    await settled(h, visit);
+    expect(outcome(h, visit)).toMatchObject({
+      subscriberId: BigInt(moverId),
+      grants: [{ list_id: news, result: "suppressed" }],
+    });
+    const moved = await linked(h, mover);
+    expect(moved).toMatchObject({ id: moverId, email: address, status: "enabled" });
+    expect(statusOn(moved, news)).toBe("unsubscribed");
+    expect(statusOn(moved, other)).toBe("unsubscribed");
+    const [enrollment] = await enrollmentsOf(h, moverId);
+    expect(enrollment).toMatchObject({ status: "exited", exit_reason: "unsubscribed" });
+
+    await h.f.pass(day);
+    await h.f.pass(day);
+    expect(await h.f.sendLog()).toEqual([]);
+  });
+}
+
+test("B166: a source host the private-address block refuses while a record is handled refuses the stream: nothing terminal; listed again, the record is delivered", async () => {
+  const hosts = { current: ["localhost"] };
+  const h = await start({
+    config: { url: `http://localhost:${pb.port}` },
+    guard: { blockPrivate: () => true, privateHosts: () => hosts.current },
+  });
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("order_paid") },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  // The connection is open; an instance admin then removes the host from the list. The record
+  // arrives on the open connection, and the handler's recipients read is refused.
+  hosts.current = [];
+  const ana = await pb.user();
+  const paid = await record(h, ana, "order_paid");
+  await until(
+    h,
+    () => h.attention.some((line) => line.includes("block_private_addresses")),
+    "the refusal",
+  );
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(await linked(h, ana)).toBeNull();
+
+  hosts.current = ["localhost"];
+  await live(h);
+  await handled(h, paid);
+  expect((await linked(h, ana))?.email).toBe(emailOf(ana));
+  expect(h.records.stream()?.retries()).toEqual([]);
+});
+
+test("B166: a source host the private-address block refuses while a trigger.condition is read refuses the stream: nothing committed; listed again, the record starts its sequence once", async () => {
+  const hosts = { current: ["localhost"] };
+  const h = await start({
+    config: { url: `http://localhost:${pb.port}` },
+    guard: { blockPrivate: () => true, privateHosts: () => hosts.current },
+  });
+  const template = await h.f.template();
+  // The condition counts the trigger record itself, so it holds once it can be read. No grant
+  // rules: the condition's read is the record's first source read.
+  const seq = await h.f.sequence({
+    source: "external",
+    trigger: {
+      event: h.ev("order_paid"),
+      condition: { event: h.ev("order_paid"), count: { gte: 1 } },
+    },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  hosts.current = [];
+  const ana = await pb.user();
+  const paid = await record(h, ana, "order_paid");
+  await until(
+    h,
+    () => h.attention.some((line) => line.includes("block_private_addresses")),
+    "the refusal",
+  );
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(await linked(h, ana)).toBeNull();
+
+  hosts.current = ["localhost"];
+  await live(h);
+  await handled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+  const subscriber = (await linked(h, ana))?.id ?? 0;
+  expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+    seq.id,
+  ]);
+  expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
+  expect(h.records.stream()?.retries()).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------------------------
+// B166 round 2 (D194): the stream never waits for good on what no settings change can fix, and
+// never drops a record for good over what one can.
+
+/** A record for an external sequence whose condition counts the trigger record itself. */
+async function conditioned(h: Harness, condition?: JsonObject) {
+  const template = await h.f.template();
+  const seq = await h.f.sequence({
+    source: "external",
+    trigger: {
+      event: h.ev("order_paid"),
+      condition: condition ?? { event: h.ev("order_paid"), count: { gte: 1 } },
+    },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  return seq;
+}
+
+/**
+ * The record waits on a settings refusal (`refusal` names the attention line): nothing committed,
+ * no condition failure, nothing queued. After `fix`, it starts the sequence exactly once.
+ */
+async function waitsThenStartsOnce(
+  h: Harness,
+  seq: { id: number },
+  user: PocketBaseRecord,
+  paid: { id: string },
+  refusal: string,
+  fix: () => Promise<void> | void,
+) {
+  await until(h, () => h.attention.some((line) => line.includes(refusal)), "the refusal");
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(await linked(h, user)).toBeNull();
+  await fix();
+  await live(h);
+  await handled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+  const subscriber = (await linked(h, user))?.id ?? 0;
+  expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+    seq.id,
+  ]);
+  expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(h.records.stream()?.retries()).toEqual([]);
+}
+
+test("B166: a service-account password rotated while a trigger.condition is read refuses the stream (the sign-in's 400 is the settings'): nothing committed; with the password back, the sequence starts once", async () => {
+  const h = await start();
+  const seq = await conditioned(h);
+  const ana = await pb.user();
+  const [account] = (await pb.api("GET", "/api/collections/services/records")).items;
+  const rotate = (password: string) =>
+    pb.update("services", account.id, { password, passwordConfirm: password });
+  h.beforeQuery.current = { includes: ana.id, run: () => rotate("rotated-password-7").then() };
+  try {
+    const paid = await record(h, ana, "order_paid");
+    await waitsThenStartsOnce(h, seq, ana, paid, "Failed to authenticate", () =>
+      rotate(pb.service.password).then(),
+    );
+  } finally {
+    await rotate(pb.service.password);
+  }
+});
+
+test("B166: a mapped events field renamed while a trigger.condition is read refuses the stream (the probe fails too): nothing committed; renamed back, the sequence starts once", async () => {
+  const h = await start();
+  const seq = await conditioned(h);
+  const ana = await pb.user();
+  let renamed = false;
+  h.beforeQuery.current = {
+    includes: ana.id,
+    run: async () => {
+      await pb.renameField("events", "name", "eventName");
+      renamed = true;
+    },
+  };
+  try {
+    const paid = await record(h, ana, "order_paid");
+    await waitsThenStartsOnce(h, seq, ana, paid, CONDITION_REFUSED, async () => {
+      await pb.renameField("events", "eventName", "name");
+      renamed = false;
+    });
+  } finally {
+    if (renamed) {
+      await pb.renameField("events", "eventName", "name");
+    }
+  }
+});
+
+const CONDITION_REFUSED = "The source refused a trigger condition's read";
+/** The events schema probe's filter names every mapped field as `f = f`. */
+const PROBE = "name = name";
+
+test("B166 round 3: a mapped events field renamed when the user's only older event is nested 70 levels deep refuses the stream (the probe reads no record): nothing committed; renamed back, the sequence starts once", async () => {
+  const h = await start();
+  const seq = await conditioned(h);
+  const ana = await pb.user();
+  await pb.event(
+    ana.id,
+    h.ev("history"),
+    { deep: nested(70) },
+    { occurredAt: new Date(h.f.clock.now().getTime() - minute).toISOString() },
+  );
+  let renamed = false;
+  h.beforeQuery.current = {
+    includes: ana.id,
+    run: async () => {
+      await pb.renameField("events", "name", "eventName");
+      renamed = true;
+    },
+  };
+  try {
+    const paid = await record(h, ana, "order_paid");
+    await waitsThenStartsOnce(h, seq, ana, paid, CONDITION_REFUSED, async () => {
+      await pb.renameField("events", "eventName", "name");
+      renamed = false;
+    });
+  } finally {
+    if (renamed) {
+      await pb.renameField("events", "eventName", "name");
+    }
+  }
+});
+
+test("B166 round 3: a mapped events field renamed when the user has no event left at probe time refuses the stream: nothing committed and no condition failure", async () => {
+  const h = await start();
+  await conditioned(h);
+  const ana = await pb.user();
+  let renamed = false;
+  let paid: { id: string } | undefined;
+  h.beforeQuery.current = {
+    includes: ana.id,
+    run: async () => {
+      await pb.renameField("events", "name", "eventName");
+      renamed = true;
+      if (paid) {
+        await pb.remove("events", paid.id);
+      }
+    },
+  };
+  try {
+    paid = await record(h, ana, "order_paid");
+    await until(
+      h,
+      () => h.attention.some((line) => line.includes(CONDITION_REFUSED)),
+      "the refusal",
+    );
+    expect(h.records.stream()?.retries()).toEqual([]);
+    expect(h.outcomes.some((o) => o.record === paid?.id)).toBe(false);
+    expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+      false,
+    );
+    expect(await linked(h, ana)).toBeNull();
+  } finally {
+    if (renamed) {
+      await pb.renameField("events", "eventName", "name");
+    }
+  }
+});
+
+test("B166 round 3: the stream switching settings while the schema probe after a renamed field's 400 is in flight commits nothing; with the field back, the new stream starts the sequence once", async () => {
+  const h = await start();
+  const seq = await conditioned(h);
+  const ana = await pb.user();
+  let renamed = false;
+  const { promise: probing, resolve: reached } = Promise.withResolvers<void>();
+  const { promise: released, resolve: release } = Promise.withResolvers<void>();
+  h.beforeQuery.current = {
+    includes: ana.id,
+    run: async () => {
+      await pb.renameField("events", "name", "eventName");
+      renamed = true;
+    },
+  };
+  h.holdQuery.current = { includes: PROBE, reached, released };
+  try {
+    const paid = await record(h, ana, "order_paid");
+    await probing;
+    await pb.renameField("events", "eventName", "name");
+    renamed = false;
+    // A settings switch that keeps the events markers: the running stream is stopped mid-probe.
+    const first = h.records.stream();
+    h.config.current = { ...h.config.current, users: { collection: "", leavingFilter: "" } };
+    await h.records.refresh();
+    expect(first?.state().state).toBe("stopped");
+    release();
+    await live(h);
+    await handled(h, paid);
+    expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+    const subscriber = (await linked(h, ana))?.id ?? 0;
+    expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+      seq.id,
+    ]);
+    expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
+    expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+      false,
+    );
+  } finally {
+    release();
+    if (renamed) {
+      await pb.renameField("events", "eventName", "name");
+    }
+  }
+});
+
+test("B166 round 4: a condition's 400 whose schema probe gets a 200 that is no PocketBase list (a proxy's {}) refuses the stream: nothing committed and no condition failure; with the probe answered, the 400 is the condition's own", async () => {
+  const h = await start();
+  const seq = await conditioned(h, { event: h.ev("history"), count: { gte: 1 } });
+  const ana = await pb.user();
+  h.refuseHistory.name = h.ev("history");
+  h.emptyProbe.on = true;
+  const paid = await record(h, ana, "order_paid");
+  await until(h, () => h.attention.some((line) => line.includes(CONDITION_REFUSED)), "the refusal");
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(await linked(h, ana)).toBeNull();
+  // The probe answered by the source: the 400 is the condition's, and only its sequence is skipped.
+  h.emptyProbe.on = false;
+  await live(h);
+  await handled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ started: 0 });
+  const lines = h.attention.filter((line) => line.includes("Sequence trigger condition failed"));
+  expect(lines.length).toBe(1);
+  expect(lines[0]).toContain(`sequence ${seq.id}`);
+});
+
+test("B166: a recipients view answering 400 to a recipient condition refuses the stream: nothing committed and no condition failure; answering again, the sequence starts once", async () => {
+  const h = await start();
+  const seq = await conditioned(h, { recipient: "email", op: "ne", value: "nobody@example.com" });
+  const ana = await pb.user();
+  h.refuseRecipients.on = true;
+  const paid = await record(h, ana, "order_paid");
+  await waitsThenStartsOnce(
+    h,
+    seq,
+    ana,
+    paid,
+    "The source refused a trigger condition's read",
+    () => {
+      h.refuseRecipients.on = false;
+    },
+  );
+});
+
+const long = (c: string) => c.repeat(1000);
+
+test("B166: a valid condition whose data comparisons are longer than PocketBase's 3,500-byte filter limit is decided, not refused: its sequence starts and the stream goes on", async () => {
+  const h = await start();
+  const data = { a: long("a"), b: long("b"), c: long("c"), d: long("d") };
+  const seq = await conditioned(h, {
+    event: h.ev("order_paid"),
+    count: { gte: 1 },
+    where: Object.fromEntries(Object.entries(data).map(([k, v]) => [`data.${k}`, v])),
+  });
+  const ana = await pb.user();
+  const paid = await record(h, ana, "order_paid", data);
+  await settled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+  const subscriber = (await linked(h, ana))?.id ?? 0;
+  expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+    seq.id,
+  ]);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  // The strict check still decides: the same data with one value changed does not count.
+  const bob = await pb.user();
+  const other = await record(h, bob, "order_paid", { ...data, d: long("e") });
+  await settled(h, other);
+  expect(outcome(h, other)).toMatchObject({ kind: "exits", started: 0 });
+});
+
+/** JSON nested `depth` levels deep. */
+function nested(depth: number): JsonObject {
+  let value: JsonObject = { leaf: 1 };
+  for (let i = 1; i < depth; i++) {
+    value = { x: value };
+  }
+  return value;
+}
+
+test("B166: an event nested 70 levels deep in a user's history skips only the condition's sequence; the record and the other sequence apply, and the stream goes on", async () => {
+  const h = await start();
+  const template = await h.f.template();
+  const deep = await h.f.sequence({
+    source: "external",
+    trigger: {
+      event: h.ev("order_paid"),
+      condition: { event: h.ev("history"), count: { gte: 1 }, where: { "data.plan": "pro" } },
+    },
+    steps: [tx(template)],
+  });
+  const plain = await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("order_paid") },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  const ana = await pb.user();
+  await pb.event(
+    ana.id,
+    h.ev("history"),
+    { plan: "pro", deep: nested(70) },
+    { occurredAt: new Date(h.f.clock.now().getTime() - minute).toISOString() },
+  );
+  const paid = await record(h, ana, "order_paid");
+  await settled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+  const subscriber = (await linked(h, ana))?.id ?? 0;
+  expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+    plain.id,
+  ]);
+  const lines = h.attention.filter((line) => line.includes("Sequence trigger condition failed"));
+  expect(lines).toEqual([expect.stringContaining(`sequence ${deep.id}`)]);
+  expect(lines[0]).toContain("nested deeper than 64 levels");
+  // The stream goes on: the next record is handled.
+  const bob = await pb.user();
+  const next = await record(h, bob, "order_paid");
+  await settled(h, next);
+  expect(outcome(h, next)).toMatchObject({ kind: "written", started: 1 });
+});
+
+test("B166: a 200 HTML page on every source path after the adapter signed in refuses the stream, not one record: nothing terminal; answered again, the record is delivered once", async () => {
+  const h = await start();
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    trigger: { event: h.ev("order_paid") },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  // The stream's adapter holds a token from the session's catch-up; the record arrives on the open
+  // connection, and the handler's recipients read gets the page.
+  h.html.on = true;
+  const ana = await pb.user();
+  const paid = await record(h, ana, "order_paid");
+  await until(h, () => h.attention.some((line) => line.includes("not JSON")), "the refusal");
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(await linked(h, ana)).toBeNull();
+
+  h.html.on = false;
+  await live(h);
+  await handled(h, paid);
+  expect((await linked(h, ana))?.email).toBe(emailOf(ana));
+  expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
+  expect(h.records.stream()?.retries()).toEqual([]);
 });

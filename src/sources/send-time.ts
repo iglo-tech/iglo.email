@@ -12,7 +12,6 @@
 // Nothing here sends.
 import type { Database } from "bun:sqlite";
 import { writeTransaction } from "@/db/transaction";
-import type { Enrollments } from "@/sequences/enrollments";
 import type { SourceProvider } from "@/sources/project";
 import {
   applyRecipient,
@@ -28,8 +27,8 @@ export interface SendTimeOptions {
   db: Database;
   /** The project's source; null without one (then nothing is looked up). */
   source: SourceProvider;
-  subscribers: RecipientSyncOptions["subscribers"] & Pick<SubscriberStore, "removeLeaving">;
-  enrollments: Pick<Enrollments, "endSubscriber">;
+  subscribers: RecipientSyncOptions["subscribers"] & Pick<SubscriberStore, "removeLeaving" | "get">;
+  enrollments: RecipientSyncOptions["enrollments"];
   /** The privacy domain policy for a new or changed address. */
   emailAllowed: (email: string) => boolean;
 }
@@ -50,6 +49,18 @@ export type SendTimeResult = { kind: "left" } | { kind: "current"; row: Subscrib
 
 export function createSendTimeLookup(options: SendTimeOptions) {
   const { db, subscribers, enrollments } = options;
+  /**
+   * An absent user may stand for the claimed subscriber only while that subscriber still has the
+   * user ID. B166 (D194): one that still exists without it (its `external_id` cleared or changed
+   * during the read) is a changed subscriber, read again, not one that left; and so is the user ID
+   * now on another subscriber.
+   */
+  const absentChecked = (subscriberId: bigint, userId: string) => {
+    const row = subscribers.external(userId);
+    if (row ? row.id !== subscriberId : subscribers.get(subscriberId) !== null) {
+      throw new SubscriberChanged();
+    }
+  };
   return {
     /** Whether the project has a source: without one, no subscriber is source-linked. */
     configured: () => options.source() !== null,
@@ -78,6 +89,9 @@ export function createSendTimeLookup(options: SendTimeOptions) {
         // re-point a subscriber at send time. The caller reads again.
         throw new SubscriberChanged();
       }
+      if (plan.kind === "absent") {
+        absentChecked(subscriberId, externalId);
+      }
       return { subscriberId, plan, unchanged: planUnchanged(plan) };
     },
     /**
@@ -88,10 +102,7 @@ export function createSendTimeLookup(options: SendTimeOptions) {
       const { plan } = planned;
       return writeTransaction(db, (): SendTimeResult => {
         if (plan.kind === "absent") {
-          const row = subscribers.external(plan.userId);
-          if (row && row.id !== planned.subscriberId) {
-            throw new SubscriberChanged();
-          }
+          absentChecked(planned.subscriberId, plan.userId);
           leaveUser({ subscribers, enrollments }, plan.userId);
           return { kind: "left" };
         }

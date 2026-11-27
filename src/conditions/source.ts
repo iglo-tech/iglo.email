@@ -41,6 +41,7 @@ import type {
   SourceRecipient,
   SourceScalar,
 } from "@/sources/source";
+import { isSettingsMismatch } from "@/sources/stream-record";
 
 const SAFE = Number.MAX_SAFE_INTEGER;
 /** A `data` path segment the source's filter states exactly: an ASCII key, never an array index. */
@@ -88,8 +89,15 @@ const sourceFailure = (error: SourceError): ConditionError => ({
   message: error.message,
 });
 
-/** The failure of a walk as a result; anything else (a caller's abort) is thrown on. */
+/**
+ * The failure of a walk as a result; anything else (a caller's abort) is thrown on. B166 (D194): so
+ * is a `SettingsMismatch` the caller's source raised for a refusal of the source settings, which is
+ * no answer about this subscriber.
+ */
 function failed(error: unknown): Failed {
+  if (isSettingsMismatch(error)) {
+    throw error;
+  }
   if (isSourceError(error)) {
     return { ok: false, error: sourceFailure(error) };
   }
@@ -344,8 +352,9 @@ export type TriggerConditionResult =
  * Evaluates an external sequence's `trigger.condition` for the user of an arriving record. Durations
  * count back from the record's `occurredAt`, and every window ends at it (inclusive), so the record
  * itself counts. Only `event` and `recipient` predicates are allowed (validated on save); a stored
- * condition that no longer validates is a permanent failure. A network call: never call it inside a
- * transaction.
+ * condition that no longer validates is a permanent failure. A `SettingsMismatch` the source raises
+ * is thrown on, not returned (B166, D194): the caller waits for the settings. A network call: never
+ * call it inside a transaction.
  */
 export async function evaluateTriggerCondition(
   source: ExternalSource,

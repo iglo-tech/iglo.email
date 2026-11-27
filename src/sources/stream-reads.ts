@@ -6,7 +6,7 @@
 import { dateLiteral, fieldName, parseSourceDate, textLiteral } from "@/sources/filter";
 import { isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceObject } from "@/sources/json";
-import { isSourceError, SourceError } from "@/sources/source";
+import { isRecordUnreadable, isSourceError, SourceError } from "@/sources/source";
 import type { CallOptions, SourceEvent } from "@/sources/source";
 import { SettingsMismatch } from "@/sources/stream-record";
 import type { CatchUpQuery, StreamItem, StreamKind, StreamSource } from "@/sources/stream-record";
@@ -48,26 +48,30 @@ const topic = (collection: string, filter: string) =>
 /** B155b (D177): why a record is terminal although the source answered. */
 const UNKEYED = "The source record's id is not 1 to 100 letters, digits, _ or -";
 const TOO_LARGE = "The source record is larger than the response limit";
-const UNREADABLE =
-  "The source record cannot be read: its JSON nests deeper than 64 levels or is not JSON";
+const UNREADABLE = "The source record cannot be read: its JSON nests deeper than 64 levels";
 
 /**
- * The ID of a record, or a permanent failure for a page with no ID at all (not a PocketBase
+ * The ID of a record, or a `SettingsMismatch` for a page with no ID at all (not a PocketBase
  * record: the settings name the wrong collection). An ID the stream does not key is the record's
  * own fault: its item is terminal.
  */
 function idOf(record: SourceObject): string {
   const id = member(record, "id");
   if (typeof id !== "string" || !id) {
-    throw new SourceError("permanent", "A source record has no id");
+    throw new SettingsMismatch("A source record has no id");
   }
   return id;
 }
 
+/**
+ * The stamp of a record, or a `SettingsMismatch` (B166, D194): a collection without `created` or
+ * `updated` is not the one the settings mean, so a retry waits for them as a missing configured
+ * field makes it wait, instead of turning terminal.
+ */
 function stampOf(record: SourceObject, field: "created" | "updated"): Date {
   const stamp = parseSourceDate(member(record, field));
   if (!stamp) {
-    throw new SourceError("permanent", `The source's records have no ${field} date`);
+    throw new SettingsMismatch(`The source's records have no ${field} date`);
   }
   return stamp;
 }
@@ -109,13 +113,11 @@ function pastId(id: string): string {
 /** A record gone between two reads: the next catch-up or retry reads what is there then. */
 const gone = () => new SourceError("transient", "A source record changed while it was read");
 
-/** A page the source answered with a body the adapter refused to read (not JSON, too deep). */
-const unreadable = (error: unknown) =>
-  isSourceError(error) &&
-  error.kind === "permanent" &&
-  error.status !== undefined &&
-  error.status >= 200 &&
-  error.status < 300;
+/**
+ * A page with a record whose JSON nests too deep (`RecordUnreadable`). B166 (D194): a page that is
+ * not JSON at all is the configuration's failure, never narrowed to a record.
+ */
+const unreadable = isRecordUnreadable;
 
 export function streamReads(parts: StreamReadParts): StreamSource {
   const ev = parts.events;

@@ -41,6 +41,20 @@ export const isSourceError = (error: unknown): error is SourceError =>
   error.name === "SourceError" &&
   "kind" in error;
 
+/**
+ * B166 (D194): a permanent failure that is one record's own, not the settings': a single record's
+ * answer over the response limit, an answer whose JSON nests deeper than the limit (on a page, one of
+ * its records), or a mapped field of the record that is not of its type. A body that is not JSON at
+ * all (a proxy's, maintenance or sign-in page) is never one: it is the configuration's. The adapter
+ * raises it (src/sources/pocketbase.ts), and the stream narrows a page to the record it names
+ * (src/sources/stream-reads.ts).
+ */
+export class RecordUnreadable extends SourceError {
+  readonly recordUnreadable = true;
+}
+export const isRecordUnreadable = (error: unknown): error is RecordUnreadable =>
+  isSourceError(error) && "recordUnreadable" in error && error.recordUnreadable === true;
+
 /** Per call: the caller's signal and each request's time limit (default `DEFAULT_TIMEOUT_MS`). */
 export interface CallOptions {
   signal?: AbortSignal;
@@ -90,7 +104,11 @@ export interface EventQuery {
   names?: ReadonlyArray<string>;
   after?: Date;
   through?: Date;
-  /** Keys are paths inside `data` (`plan`, `order.total`), without a `data.` prefix. */
+  /**
+   * Keys are paths inside `data` (`plan`, `order.total`), without a `data.` prefix. A narrowing
+   * only: the adapter may leave a part out (one past PocketBase's filter limit, B166), so a caller
+   * checks `data` again on the rows it reads (src/conditions/source.ts does).
+   */
   data?: Readonly<Record<string, SourceScalar>>;
 }
 
