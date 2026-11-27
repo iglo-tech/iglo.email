@@ -5,8 +5,13 @@
 // address lookup never answers, and cancels the body of a response that comes too late.
 import { expect, test } from "bun:test";
 import type { Guard } from "@/sources/connect";
-import { CONNECT_TIMEOUT_MS, MAX_LINE, openRealtime, sseMessages } from "@/sources/realtime";
-import type { SseMessage } from "@/sources/realtime";
+import {
+  CONNECT_TIMEOUT_MS,
+  MAX_LINE,
+  openRealtime,
+  sseMessages,
+} from "@/sources/pocketbase-realtime";
+import type { SseMessage } from "@/sources/pocketbase-realtime";
 import { TestClock } from "@/test/server/fixture";
 
 async function* chunks(parts: ReadonlyArray<string>) {

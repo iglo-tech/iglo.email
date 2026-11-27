@@ -248,11 +248,22 @@ export function registerSequenceRoutes(
     auth: Authentication;
     /** The project's source, which external sequences read (D172). */
     source?: SourceProvider;
+    /** D188: the instance's sources module is on; omitted, it is. Off, a refusal says so. */
+    sourcesEnabled?: () => boolean;
   },
 ) {
   const { sequences, enrollments, subscribers, events, sends, templates, roles, auth, testSends } =
     deps;
   const currentSource = (): ExternalSource | null => deps.source?.() ?? null;
+  const sourcesOn = () => deps.sourcesEnabled?.() ?? true;
+  /** Why an external sequence cannot read its source now (D172, D188). */
+  const noSource = () =>
+    new HttpError(
+      409,
+      sourcesOn()
+        ? "The project has no source configured."
+        : "External sources are off on this instance.",
+    );
   /** Validate a definition and write it, both inside one write transaction. */
   const save = (
     c: RequestContext,
@@ -273,6 +284,7 @@ export function registerSequenceRoutes(
             (roles.canList(i.role, i.user.list_role_id, "list:get", [id]) ||
               roles.canList(i.role, i.user.list_role_id, "list:manage", [id])),
           sourceConfigured: () => currentSource() !== null,
+          sourcesEnabled: sourcesOn,
           ...(storedSource === null ? {} : { storedSource }),
         });
         return write(input);
@@ -552,7 +564,7 @@ export function registerSequenceRoutes(
     if (sequence.source === "external") {
       const source = currentSource();
       if (!source) {
-        throw new HttpError(409, "The project has no source configured.");
+        throw noSource();
       }
       reads = sourcePreviewReads(source, c.request.signal);
     } else {
@@ -767,7 +779,7 @@ export function registerSequenceRoutes(
     }
     const source = currentSource();
     if (!source) {
-      throw new HttpError(409, "The project has no source configured.");
+      throw noSource();
     }
     const event = (sequence.trigger as { event: string }).event;
     const call = c.request.signal ? { signal: c.request.signal } : {};

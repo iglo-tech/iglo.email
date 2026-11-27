@@ -1,6 +1,7 @@
 // The document's schemas. Upstream's docs/swagger/collections.yaml is where the ported ones started;
 // each is corrected to what the server answers, which the OpenAPI contract checks.
 import { ERROR_CODES } from "@/server/error-codes";
+import { connectors } from "@/sources/connectors";
 
 export type Schema = Record<string, unknown>;
 
@@ -136,102 +137,120 @@ const counts = {
   unique_clicks: integer,
 };
 
+/** The source keys (B150a, D170, D188): absent while the instance's sources module is off. */
+const SOURCE_KEYS = [
+  "source.connector",
+  "source.url",
+  "source.auth_collection",
+  "source.identity",
+  "source.password",
+  "source.events",
+  "source.recipients",
+  "source.users",
+  "source.grant_lists",
+];
+
 // B139 (D154): a project host's settings API serves its project keys and the read-only root URL;
 // the instance keys are on the instance host, which is not in this document.
 const settings = (): Schema =>
-  object({
-    "app.site_name": string,
-    "app.site_url": string,
-    "app.favicon_url": string,
-    "app.from_email": array(string),
-    "app.logo_url": string,
-    "app.max_send_errors": integer,
-    "app.enable_public_archive": boolean,
-    "app.enable_public_subscription_page": boolean,
-    "app.show_optin_page": boolean,
-    "app.enable_public_archive_rss_content": boolean,
-    "app.send_optin_confirmation": boolean,
-    "app.notify_emails": array(string),
-    "app.lang": string,
-    "privacy.individual_tracking": boolean,
-    "privacy.disable_tracking": boolean,
-    "privacy.unsubscribe_header": boolean,
-    "privacy.allow_blocklist": boolean,
-    "privacy.allow_export": boolean,
-    "privacy.allow_wipe": boolean,
-    "privacy.allow_preferences": boolean,
-    // B147 (D160): the preference center's profile fields.
-    "privacy.preference_fields": array(
-      object({
+  object(
+    {
+      "app.site_name": string,
+      "app.site_url": string,
+      "app.favicon_url": string,
+      "app.from_email": array(string),
+      "app.logo_url": string,
+      "app.max_send_errors": integer,
+      "app.enable_public_archive": boolean,
+      "app.enable_public_subscription_page": boolean,
+      "app.show_optin_page": boolean,
+      "app.enable_public_archive_rss_content": boolean,
+      "app.send_optin_confirmation": boolean,
+      "app.notify_emails": array(string),
+      "app.lang": string,
+      "privacy.individual_tracking": boolean,
+      "privacy.disable_tracking": boolean,
+      "privacy.unsubscribe_header": boolean,
+      "privacy.allow_blocklist": boolean,
+      "privacy.allow_export": boolean,
+      "privacy.allow_wipe": boolean,
+      "privacy.allow_preferences": boolean,
+      // B147 (D160): the preference center's profile fields.
+      "privacy.preference_fields": array(
+        object({
+          key: string,
+          label: string,
+          type: choice("text", "number", "boolean", "date", "select"),
+          editable: boolean,
+          required: boolean,
+          min: nullable(integer),
+          max: nullable(integer),
+          options: array(string),
+        }),
+      ),
+      "privacy.exportable": array(string),
+      "privacy.domain_blocklist": array(string),
+      "privacy.domain_allowlist": array(string),
+      "privacy.record_optin_ip": boolean,
+      "marketing.min_interval": string,
+      "security.captcha": object({
+        altcha: object({ enabled: boolean, complexity: integer }),
+        hcaptcha: object({ enabled: boolean, key: string, secret: string }),
+      }),
+      "security.trusted_urls": array(string),
+      "security.public_rate_limit": object({
+        subscribe: integer,
+        optin: integer,
+        unsubscribe: integer,
+        privacy: integer,
+      }),
+      "upload.extensions": array(string),
+      "upload.filesystem.upload_path": string,
+      "upload.filesystem.upload_uri": string,
+      "bounce.actions": object({
+        soft: object({ count: integer, action: string }),
+        hard: object({ count: integer, action: string }),
+        complaint: object({ count: integer, action: string }),
+      }),
+      "appearance.brand.accent": string,
+      "appearance.brand.font": string,
+      "appearance.brand.header": string,
+      "appearance.public.custom_css": string,
+      "appearance.public.custom_js": string,
+      // B150a (D170, D188): the project's external source (15-external-sources section 2); the
+      // password is masked, and no connector or an empty URL is no source. Absent while the
+      // instance's sources module is off.
+      "source.connector": choice("", ...Object.keys(connectors)),
+      "source.url": string,
+      "source.auth_collection": string,
+      "source.identity": string,
+      "source.password": string,
+      "source.events": object({
+        collection: string,
+        user: string,
+        name: string,
+        data: string,
+        occurred_at: string,
         key: string,
-        label: string,
-        type: choice("text", "number", "boolean", "date", "select"),
-        editable: boolean,
-        required: boolean,
-        min: nullable(integer),
-        max: nullable(integer),
-        options: array(string),
       }),
-    ),
-    "privacy.exportable": array(string),
-    "privacy.domain_blocklist": array(string),
-    "privacy.domain_allowlist": array(string),
-    "privacy.record_optin_ip": boolean,
-    "marketing.min_interval": string,
-    "security.captcha": object({
-      altcha: object({ enabled: boolean, complexity: integer }),
-      hcaptcha: object({ enabled: boolean, key: string, secret: string }),
-    }),
-    "security.trusted_urls": array(string),
-    "security.public_rate_limit": object({
-      subscribe: integer,
-      optin: integer,
-      unsubscribe: integer,
-      privacy: integer,
-    }),
-    "upload.extensions": array(string),
-    "upload.filesystem.upload_path": string,
-    "upload.filesystem.upload_uri": string,
-    "bounce.actions": object({
-      soft: object({ count: integer, action: string }),
-      hard: object({ count: integer, action: string }),
-      complaint: object({ count: integer, action: string }),
-    }),
-    "appearance.brand.accent": string,
-    "appearance.brand.font": string,
-    "appearance.brand.header": string,
-    "appearance.public.custom_css": string,
-    "appearance.public.custom_js": string,
-    // B150a (D170): the project's external source (15-external-sources section 2); the password is
-    // masked, and an empty URL is no source.
-    "source.url": string,
-    "source.auth_collection": string,
-    "source.identity": string,
-    "source.password": string,
-    "source.events": object({
-      collection: string,
-      user: string,
-      name: string,
-      data: string,
-      occurred_at: string,
-      key: string,
-    }),
-    "source.recipients": object({
-      collection: string,
-      email: string,
-      name: string,
-      opt_out: string,
-    }),
-    "source.users": object({ collection: string, leaving_filter: string }),
-    "source.grant_lists": array(
-      object({
-        event: string,
-        where: map({ type: ["string", "number", "boolean"] }),
-        lists: array(integer),
+      "source.recipients": object({
+        collection: string,
+        email: string,
+        name: string,
+        opt_out: string,
       }),
-    ),
-    "app.root_url": string,
-  });
+      "source.users": object({ collection: string, leaving_filter: string }),
+      "source.grant_lists": array(
+        object({
+          event: string,
+          where: map({ type: ["string", "number", "boolean"] }),
+          lists: array(integer),
+        }),
+      ),
+      "app.root_url": string,
+    },
+    SOURCE_KEYS,
+  );
 
 export const schemas = {
   Error: {

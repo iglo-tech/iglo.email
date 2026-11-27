@@ -12,6 +12,7 @@ import type { Translation } from "@/i18n/i18n";
 import type { Child } from "@/jsx/render";
 import { assetVersion } from "@/server/asset-manifest";
 import type { SettingsSide } from "@/settings/keys";
+import { connectors } from "@/sources/connectors";
 
 const smtpPresets = [
   ["gmail", "Gmail"],
@@ -614,6 +615,14 @@ function Security({ t, side }: { t: Translation; side: SettingsSide }) {
             label={t.T("settings.security.blockPrivateAddresses")}
             hint={t.T("settings.security.blockPrivateAddressesHelp")}
           />
+        </fieldset>
+        <fieldset class="card" data-keywords="external sources module connector source enabled">
+          <legend>External sources</legend>
+          <Switch
+            model="form['sources.enabled']"
+            label="External sources"
+            hint="Lets each project read user activity from its own backend through a connector. Off, no project reads a source and the source settings, routes and tools are hidden; stored settings, stream state and external sequences are kept, and their enrollments wait until it is on again."
+          />
           <label data-field="">
             Private source hosts
             <textarea
@@ -1203,23 +1212,39 @@ const sourceField = (key: string, member: string, label: string, placeholder: st
   />
 );
 /**
- * The project's external source (B150a, D170; 15-external-sources section 2): the PocketBase URL
- * and service account, the field mappings, the leaving filter and the grant rules. "Test connection"
- * checks the form's values without saving them.
+ * The project's external source (B150a, D170, D188; 15-external-sources section 2): the connector,
+ * its URL and service account, the field mappings, the leaving filter and the grant rules. "Test
+ * connection" checks the form's values without saving them. Shown only while the instance's
+ * sources module is on.
  */
 function Source() {
   return (
     <div class="settings-items" data-testid="source-settings">
       <fieldset
         class="card"
-        data-keywords="source pocketbase url service account identity password"
+        data-keywords={`source connector ${Object.values(connectors)
+          .map((connector) => connector.displayName.toLowerCase())
+          .join(" ")} url service account identity password`}
       >
-        <legend>PocketBase</legend>
+        <legend>External source</legend>
         <p class="text-light">
-          Sequences can read user activity from the PocketBase of this project. Leave the URL empty
-          for no source. A saved password stays masked; enter it again when the URL or identity
-          changes.
+          Sequences can read user activity from the backend of this project through a connector.
+          Choose no connector or leave the URL empty for no source. A saved password stays masked;
+          enter it again when the URL or identity changes.
         </p>
+        <label data-field="">
+          Connector
+          <select
+            name="source.connector"
+            x-model="form['source.connector']"
+            data-testid="source-connector"
+          >
+            <option value="">None</option>
+            {Object.entries(connectors).map(([name, connector]) => (
+              <option value={name}>{connector.displayName}</option>
+            ))}
+          </select>
+        </label>
         <TextField
           model="form['source.url']"
           name="source.url"
@@ -1418,6 +1443,8 @@ export function settingsPage(
     instanceSettingsUrl?: string;
     /** The instance side's SES rate line (B145b). */
     ses?: SesRateLine | undefined;
+    /** D188: the project side shows the source tab only while the sources module is on. */
+    sourcesEnabled?: boolean;
   },
 ): SettingsPage {
   const { canManage } = options;
@@ -1432,7 +1459,7 @@ export function settingsPage(
         ["security", t.T("globals.terms.security"), <Security t={t} side={side} />],
         ["media", t.T("settings.media.title"), <Media t={t} side={side} />],
         ["bounces", t.T("globals.terms.bounces"), <Bounces t={t} side={side} />],
-        ["source", "Source", <Source />],
+        ...(options.sourcesEnabled ? [["source", "Source", <Source />] as const] : []),
         ["appearance", t.T("globals.terms.appearance"), <Appearance t={t} side={side} />],
       ]
     : [
@@ -1556,6 +1583,7 @@ export const settingsView: AdminView = ({ context, can, site }) => {
   const options: Parameters<typeof settingsPage>[2] = {
     canManage: can("settings:manage"),
     canUpload: can("settings:manage") && can("media:manage"),
+    sourcesEnabled: site.sourcesEnabled === true,
   };
   if (site.instanceUrl) {
     options.instanceSettingsUrl = `${site.instanceUrl.replace(/\/+$/, "")}/admin/instance/settings`;

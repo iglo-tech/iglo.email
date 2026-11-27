@@ -1,8 +1,28 @@
 // Native screens with no upstream spec (15-external-sources section 4, B155f, D181): the source
 // stream's retry queue. A test stack has no source, so the page says no stream is running and
 // lists nothing; the queue's rows are covered through the API in test/admin/source-retries.test.ts.
+// B162a (D188): a test stack starts with the instance's sources module off, as a new instance does;
+// each test that needs the queue turns it on and puts it back off.
 import { expect } from "@playwright/test";
-import { createUser, login, logout, PASSWORD, signIn, test } from "../helpers.js";
+import { api, createUser, login, logout, PASSWORD, signIn, test } from "../helpers.js";
+
+/** Turns the instance's sources module on or off through the instance settings. */
+async function sources(page, enabled) {
+  const response = await api(page, "/api/settings/sources.enabled", "PUT", enabled);
+  expect(response.status, JSON.stringify(response.body)).toBe(200);
+}
+
+test("with the sources module off there is no source tab, retry queue link or page", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.goto("/admin/settings");
+  await expect(page.getByTestId("settings-project")).toBeVisible();
+  await expect(page.getByTestId("source-settings")).toHaveCount(0);
+  await expect(page.locator('a[href="/admin/settings/source-retries"]')).toHaveCount(0);
+  const absent = await page.goto("/admin/settings/source-retries");
+  expect(absent?.status()).toBe(404);
+});
 
 test("the retry queue is reached from the settings menu and says when no stream runs", async ({
   page,
@@ -10,16 +30,24 @@ test("the retry queue is reached from the settings menu and says when no stream 
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await signIn(page);
-  await page.goto("/admin/settings");
-  await page.locator('a[href="/admin/settings/source-retries"]').first().click();
-  await expect(page).toHaveURL(/\/admin\/settings\/source-retries$/);
-  await expect(page.getByRole("heading", { name: "Source retry queue" })).toBeVisible();
-  await expect(page.getByTestId("retries-help")).toContainText("waiting for settings");
-  await expect(page.getByTestId("retries-no-source")).toBeVisible();
-  await expect(page.getByTestId("retries-no-source")).toContainText("No source stream is running");
-  await expect(page.getByTestId("retry-row")).toHaveCount(0);
-  await expect(page.getByTestId("error")).toBeHidden();
-  expect(errors).toEqual([]);
+  await sources(page, true);
+  try {
+    await page.goto("/admin/settings");
+    await expect(page.getByTestId("source-settings")).toHaveCount(1);
+    await page.locator('a[href="/admin/settings/source-retries"]').first().click();
+    await expect(page).toHaveURL(/\/admin\/settings\/source-retries$/);
+    await expect(page.getByRole("heading", { name: "Source retry queue" })).toBeVisible();
+    await expect(page.getByTestId("retries-help")).toContainText("waiting for settings");
+    await expect(page.getByTestId("retries-no-source")).toBeVisible();
+    await expect(page.getByTestId("retries-no-source")).toContainText(
+      "No source stream is running",
+    );
+    await expect(page.getByTestId("retry-row")).toHaveCount(0);
+    await expect(page.getByTestId("error")).toBeHidden();
+    expect(errors).toEqual([]);
+  } finally {
+    await sources(page, false);
+  }
 });
 
 /** A queue row in the API's shape (src/openapi/schemas.ts SourceRetryQueue). */
@@ -56,31 +84,42 @@ test("each queue row shows its record, status, attempts and error", async ({ pag
     }),
   );
   await signIn(page);
-  await page.goto("/admin/settings/source-retries");
-  const rows = page.getByTestId("retry-row");
-  await expect(rows).toHaveCount(3);
-  await expect(rows.nth(0)).toContainText("rec1");
-  await expect(rows.nth(0).getByTestId("retry-status")).toHaveText("Retrying");
-  await expect(rows.nth(1).getByTestId("retry-status")).toHaveText("Waiting for settings");
-  await expect(rows.nth(1)).toContainText("Leaving user");
-  await expect(rows.nth(1).getByTestId("retry-error")).toHaveText(
-    '<img src=x onerror="window.pwned=1">',
-  );
-  await expect(rows.nth(2).getByTestId("retry-status")).toHaveText("Failed for good");
-  await expect(rows.nth(2)).toContainText("-");
-  await expect(page.getByTestId("retries-more")).toBeVisible();
-  await expect(page.getByTestId("retries-no-source")).toBeHidden();
-  expect(await page.evaluate(() => window.pwned)).toBeUndefined();
-  expect(await page.locator("section.source-retries img").count()).toBe(0);
+  await sources(page, true);
+  try {
+    await page.goto("/admin/settings/source-retries");
+    const rows = page.getByTestId("retry-row");
+    await expect(rows).toHaveCount(3);
+    await expect(rows.nth(0)).toContainText("rec1");
+    await expect(rows.nth(0).getByTestId("retry-status")).toHaveText("Retrying");
+    await expect(rows.nth(1).getByTestId("retry-status")).toHaveText("Waiting for settings");
+    await expect(rows.nth(1)).toContainText("Leaving user");
+    await expect(rows.nth(1).getByTestId("retry-error")).toHaveText(
+      '<img src=x onerror="window.pwned=1">',
+    );
+    await expect(rows.nth(2).getByTestId("retry-status")).toHaveText("Failed for good");
+    await expect(rows.nth(2)).toContainText("-");
+    await expect(page.getByTestId("retries-more")).toBeVisible();
+    await expect(page.getByTestId("retries-no-source")).toBeHidden();
+    expect(await page.evaluate(() => window.pwned)).toBeUndefined();
+    expect(await page.locator("section.source-retries img").count()).toBe(0);
+  } finally {
+    await sources(page, false);
+  }
 });
 
 test("a settings reader sees no retry queue link and is refused the page", async ({ page }) => {
   await signIn(page);
-  const reader = await createUser(page, ["settings:get"]);
-  await logout(page);
-  await login(page, reader.username, PASSWORD, "/admin/settings/logs");
-  await expect(page.locator('a[href="/admin/settings/logs"]').first()).toBeVisible();
-  await expect(page.locator('a[href="/admin/settings/source-retries"]')).toHaveCount(0);
-  const refused = await page.goto("/admin/settings/source-retries");
-  expect(refused?.status()).toBe(403);
+  await sources(page, true);
+  try {
+    const reader = await createUser(page, ["settings:get"]);
+    await logout(page);
+    await login(page, reader.username, PASSWORD, "/admin/settings/logs");
+    await expect(page.locator('a[href="/admin/settings/logs"]').first()).toBeVisible();
+    await expect(page.locator('a[href="/admin/settings/source-retries"]')).toHaveCount(0);
+    const refused = await page.goto("/admin/settings/source-retries");
+    expect(refused?.status()).toBe(403);
+  } finally {
+    await signIn(page);
+    await sources(page, false);
+  }
 });

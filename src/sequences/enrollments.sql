@@ -95,12 +95,14 @@ UPDATE enrollments SET status = 'exited', exit_reason = 'sequence_archived', ste
 -- name: claim-due
 -- Scheduler claim: due, unleased enrollments of sequences that can run (paused and draft wait).
 -- A retried enrollment is due again at its retry time and queues by it behind other due work.
+-- D188: with ?4 = 1 (the instance's sources module off) external sequences' enrollments are held.
 UPDATE enrollments SET claimed_until = ?1
   WHERE id IN (
     SELECT id FROM enrollments
     WHERE status = 'active' AND coalesce(retry_at, due_at) <= ?2
       AND (claimed_until IS NULL OR claimed_until < ?2)
-      AND sequence_id IN (SELECT id FROM sequences WHERE status IN ('active', 'archived'))
+      AND sequence_id IN (SELECT id FROM sequences WHERE status IN ('active', 'archived')
+        AND (?4 = 0 OR source <> 'external'))
     ORDER BY coalesce(retry_at, due_at), id LIMIT ?3)
   RETURNING id, coalesce(retry_at, due_at) AS run_at;
 -- name: scheduler-context
@@ -175,3 +177,9 @@ SELECT e.id, e.sequence_id, e.trigger_event_id, e.exit_reason, e.finished_at,
       OR EXISTS (SELECT 1 FROM json_each(?3) j
         WHERE e.exit_reason = 'event:' || json_extract(j.value, '$.name')
           AND e.finished_at = json_extract(j.value, '$.at')));
+-- name: restart-source-windows
+-- D188: the sources module turned on again: a held external enrollment's outage window starts anew,
+-- so the time it was held never counts toward the 72-hour limit (D172).
+UPDATE enrollments SET error_since = NULL, error_last = NULL
+  WHERE status = 'active' AND (error_since IS NOT NULL OR error_last IS NOT NULL)
+    AND sequence_id IN (SELECT id FROM sequences WHERE source = 'external');

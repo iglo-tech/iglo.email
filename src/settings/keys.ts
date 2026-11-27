@@ -46,6 +46,8 @@ export const settingSides: Readonly<Record<SettingKey, SettingsSide>> = {
   "ses.api_secret_access_key": "instance",
   "webhooks.block_private_addresses": "instance",
   "sources.private_hosts": "instance",
+  "sources.enabled": "instance",
+  "source.connector": "project",
   "source.url": "project",
   "source.auth_collection": "project",
   "source.identity": "project",

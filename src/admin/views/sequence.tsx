@@ -284,9 +284,11 @@ const status = (handler: string, test: string, label: string, when: string) => (
   </template>
 );
 function sequenceView(isNew: boolean): AdminView {
-  return ({ context, can }) => {
+  return ({ context, can, site }) => {
     const t = context.app.i18n;
     const canManage = can("sequences:manage");
+    // D188: an external sequence's enrollments are held while the instance's sources module is off.
+    const sourcesOff = site.sourcesEnabled !== true;
     const canSql = can("subscribers:sql_query");
     const heading = t.T("sequences.newSequence");
     return {
@@ -428,6 +430,19 @@ function sequenceView(isNew: boolean): AdminView {
                       </select>
                       <small data-hint="">{t.T("sequences.sourceHelp")}</small>
                     </label>
+                    {sourcesOff ? (
+                      <p
+                        role="status"
+                        class="text-light"
+                        data-testid="sources-off"
+                        x-show="form.source === 'external'"
+                        style="display: none"
+                      >
+                        External sources are off on this instance: the enrollments of this sequence
+                        wait, neither advanced nor ended, until an instance admin turns them on
+                        again.
+                      </p>
+                    ) : null}
                     <div data-field="">
                       <label>{t.T("sequences.triggerWhere")}</label>
                       <template x-if="ready">

@@ -45,10 +45,12 @@ import sourceStream from "@/migrations/0036_source_stream.sql" with { type: "tex
 import externalSequences from "@/migrations/0037_external_sequences.sql" with { type: "text" };
 import streamRetrySource from "@/migrations/0038_source_stream_retry_source.sql" with { type: "text" };
 import customJsUnreviewed from "@/migrations/0039_custom_js_unreviewed.sql" with { type: "text" };
+import sourceConnector from "@/migrations/0040_source_connector.sql" with { type: "text" };
 import instanceRegistry from "@/migrations/instance/0001_registry.sql" with { type: "text" };
 import adminAccount from "@/migrations/instance/0002_admin_account.sql" with { type: "text" };
 import instanceSettings from "@/migrations/instance/0003_settings.sql" with { type: "text" };
 import severalProjects from "@/migrations/instance/0004_several_projects.sql" with { type: "text" };
+import sourcesEnabled from "@/migrations/instance/0005_sources_enabled.sql" with { type: "text" };
 
 export interface Migration {
   readonly version: number;
@@ -96,6 +98,7 @@ export const productionMigrations: ReadonlyArray<Migration> = [
   { version: 37, sql: externalSequences },
   { version: 38, sql: streamRetrySource },
   { version: 39, sql: customJsUnreviewed },
+  { version: 40, sql: sourceConnector },
 ];
 
 /** The instance database's own manifest (D142, 14-projects section 1), applied by the same runner. */
@@ -104,6 +107,7 @@ export const instanceMigrations: ReadonlyArray<Migration> = [
   { version: 2, sql: adminAccount },
   { version: 3, sql: instanceSettings },
   { version: 4, sql: severalProjects },
+  { version: 5, sql: sourcesEnabled },
 ];
 
 /** Where a pre-migration snapshot goes and what its file is called. */

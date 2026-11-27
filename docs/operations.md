@@ -594,6 +594,19 @@ events records, reads users' addresses and names from a recipients view, and rea
 sequence conditions. It copies no events. One source per project; PocketBase 0.40.5 is the version
 it is tested against. A sequence uses pushed events or the source, never both.
 
+**0. Turn the module on.** External sources are a module the instance turns on or off
+(`sources.enabled`, D188): on the instance Settings page under Security, "External sources", or the
+instance's `PUT /api/instance/settings`. A new instance starts with it off; an upgrade from a release
+before 2.3.0 turns it on when a project already names a source URL, so a running source keeps
+working. While it is off no project reads a source: there is no stream, catch-up or retry loop, the
+project Settings page has no Source tab, `source.*` keys are absent from `GET /api/settings` and a
+write naming one is a 400, the source routes answer 404 and their MCP tools are not listed, and an
+external sequence cannot be created. Nothing is lost: the source settings, the stream's markers and
+retry queue stay, and existing external sequences keep their enrollments, held (not advanced, not
+ended; their 72-hour outage window starts again when the module is back on). Turned on again, each
+stream catches up from its marker, so records made meanwhile are delivered once, and the held
+enrollments continue.
+
 **1. The service account.** In PocketBase, create an auth collection for iglo.email (for example
 `services`) and one record in it with an email and a strong password. iglo.email signs in as it.
 Do not use a superuser.
@@ -653,7 +666,7 @@ for a user who came back under a new address, send the address they had when the
 one removes nothing (`{"removed": 0}`).
 
 **6. Settings.** On the project's Settings page, "Source" tab (or the `source.*` keys of
-`PUT /api/settings`): the URL (a direct internal URL is best, because a proxy that cuts quiet
+`PUT /api/settings`): the connector (`source.connector`: `pocketbase`; none means no source), the URL (a direct internal URL is best, because a proxy that cuts quiet
 streams makes the stream reconnect more often; it must use a host name, not an IP address, because
 `sources.private_hosts` takes only host names: use `http://localhost:8090`, not
 `http://127.0.0.1:8090`), the auth collection, identity and password, the

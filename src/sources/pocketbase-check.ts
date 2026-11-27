@@ -1,25 +1,13 @@
-// Native (15-external-sources section 2, D170): "Test connection". Signs in with the service
-// account, reads one page of the recipients view and one of the events collection, and the users
+// Native (15-external-sources section 2, D170, D188): the PocketBase connector's "Test connection".
+// Signs in with the service account, reads one page of the recipients view and one of the events collection, and the users
 // collection with the leaving filter when one is set, and reports each step and what is missing.
 import type { Clock } from "@/clock";
 import type { Guard, SourceTransport } from "@/sources/connect";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig, PocketBaseSource } from "@/sources/pocketbase";
+import { LEAVING_TOO_LONG, leavingTopic } from "@/sources/pocketbase-stream";
 import { isSourceError } from "@/sources/source";
-import { LEAVING_TOO_LONG, leavingTopic } from "@/sources/stream-reads";
-
-export interface CheckStep {
-  /** `auth`, `recipients`, `events` or `users`. */
-  step: string;
-  ok: boolean;
-  message: string;
-  /** Mapped fields the collection does not have. */
-  missing: Array<string>;
-}
-export interface CheckReport {
-  ok: boolean;
-  steps: Array<CheckStep>;
-}
+import type { CheckReport, CheckStep } from "@/sources/source";
 
 const TIMEOUT_MS = 10_000;
 

@@ -1375,10 +1375,16 @@ export async function runOpenApiContract(target: {
         email: "smtp-test@fixture.test",
       },
     });
+    // B162a (D188): with the instance's sources module off (a new instance's default) the source
+    // routes are absent, a documented 404; turned on, they answer.
+    await op("POST /api/settings/source/test", { body: {}, expect: 404 });
+    await op("GET /api/settings/source/retries", { expect: 404 });
+    await configure("PUT", "/api/settings/sources.enabled", { body: true });
     // B150a (D170): Test connection of unsaved source keys. A loopback URL is refused by the
     // private-address block, so the report's sign-in step fails without a PocketBase.
     const sourceTest = await op("POST /api/settings/source/test", {
       body: {
+        "source.connector": "pocketbase",
         "source.url": "http://127.0.0.1:9",
         "source.identity": "iglo@fixture.test",
         "source.password": "fixture-password",

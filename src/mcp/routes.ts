@@ -4,6 +4,7 @@ import { HttpError, errorResponse } from "@/server/response";
 import type { Router } from "@/server/router";
 import { cookie } from "@/users/auth";
 import type { Authentication } from "@/users/auth";
+import { GENERATED } from "@/mcp/generated";
 import { TOOLS, executeTool } from "@/mcp/tools";
 import { version } from "@/../package.json";
 
@@ -59,7 +60,19 @@ export interface McpDeps {
    * `initialize`, so a rename shows at once (B170, D198).
    */
   project?: () => string;
+  /**
+   * D188: whether the instance's sources module is on. Off, the source routes' tools are
+   * not listed and a call of one is an unknown tool, as if absent. Omitted, the module is on.
+   */
+  sourcesEnabled?: () => boolean;
 }
+
+/** The operations of the source routes (D188), whose tools exist only while the module is on. */
+const SOURCE_OPERATIONS = new Set(["testSourceSettings", "getSourceRetries"]);
+/** Their tools' names. */
+const SOURCE_TOOLS: ReadonlySet<string> = new Set(
+  GENERATED.filter((entry) => SOURCE_OPERATIONS.has(entry.operation.id)).map((entry) => entry.name),
+);
 
 /** A parsed JSON object that is not an array: the only shape a JSON-RPC request can take here. */
 function isRpcObject(value: unknown): value is Record<string, unknown> {
@@ -67,6 +80,8 @@ function isRpcObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function registerMcpRoutes(router: Router, deps: McpDeps): void {
+  /** Whether a tool is offered now: a source tool only while the sources module is on (D188). */
+  const present = (name: string) => !SOURCE_TOOLS.has(name) || (deps.sourcesEnabled?.() ?? true);
   // GET /api/mcp answers 405 Method Not Allowed for Streamable HTTP servers without a stream. The
   // body is the API's JSON error, as the OpenAPI document declares for every 405.
   router.route("GET", "/api/mcp", () =>
@@ -249,7 +264,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
           jsonrpc: "2.0",
           id,
           result: {
-            tools: TOOLS,
+            tools: TOOLS.filter((tool) => present(tool.name)),
           },
         }),
         {
@@ -275,7 +290,7 @@ export function registerMcpRoutes(router: Router, deps: McpDeps): void {
         );
       }
 
-      const tool = TOOLS.find((t) => t.name === params.name);
+      const tool = TOOLS.find((t) => t.name === params.name && present(t.name));
       if (!tool) {
         return new Response(
           JSON.stringify({

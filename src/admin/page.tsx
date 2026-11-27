@@ -38,6 +38,8 @@ export interface AdminSite {
   /** appearance.admin.*: what /admin/custom.css and /admin/custom.js answer. */
   readonly customCss: string;
   readonly customJs: string;
+  /** D188: the instance's sources module is on: the Settings page shows the source tab. */
+  readonly sourcesEnabled?: boolean;
   /** The instance host's root URL, for the Settings page's link to the instance settings (B139). */
   readonly instanceUrl?: string;
   /** This project's slug and every served project, for the admin's switcher (B143a, D157). */
@@ -211,7 +213,9 @@ export function createAdminPages(deps: {
           i18n,
           ...(page.translationKeys ? { translationKeys: page.translationKeys } : {}),
           config: { root_url: current.rootUrl, ...page.config },
-          navigation: sidebar(page.pageId, i18n, can, context.app.clock.now()),
+          navigation: sidebar(page.pageId, i18n, can, context.app.clock.now(), {
+            sources: current.sourcesEnabled === true,
+          }),
           profile: { name: identity.user.username },
           ...(switcher ? { switcher } : {}),
           customAssets: true,

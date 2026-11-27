@@ -24,7 +24,7 @@ import type { AdminNotifier } from "@/messaging/notify";
 import type { BrandSite } from "@/public/brand";
 import type { SubscriberRow } from "@/sources/recipient-sync";
 import type { SendTimeLookup, SendTimePlan } from "@/sources/send-time";
-import { isSourceError } from "@/sources/source";
+import { isPermanent, isSourceError } from "@/sources/source";
 import { isSettingsMismatch } from "@/sources/stream-record";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
@@ -712,7 +712,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
             plans.push([i, planned]);
           }
         } catch (error) {
-          if (isSourceError(error) && error.kind === "permanent" && !isSettingsMismatch(error)) {
+          if (isPermanent(error) && !isSettingsMismatch(error)) {
             skip.set(i, { reason: SKIP_REASON.unavailable, message: error.message });
           } else {
             failure ??= { error };
@@ -738,11 +738,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
               // B159a (D182): the write's own re-check refused this recipient (a domain
               // blocklisted since the reads, D179). Its transaction rolled back; the source is up,
               // so this recipient is skipped as the read path skips it, and the batch goes on.
-              if (
-                isSourceError(error) &&
-                error.kind === "permanent" &&
-                !isSettingsMismatch(error)
-              ) {
+              if (isPermanent(error) && !isSettingsMismatch(error)) {
                 skip.set(i, { reason: SKIP_REASON.unavailable, message: error.message });
                 continue;
               }

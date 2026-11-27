@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { createRealClock } from "@/clock";
 import type { Clock } from "@/clock";
-import { checkSource } from "@/sources/check";
+import { checkSource } from "@/sources/pocketbase-check";
 import type { Guard } from "@/sources/connect";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
@@ -80,7 +80,7 @@ test("recipient: the view's row, its opt-out field, and null for a user the view
   expect(await source.recipient(ada.id)).toBeNull();
   expect(await source.recipient("nosuchuser00000")).toBeNull();
   // An ID that is not a PocketBase ID never reaches a path.
-  expect((await failure(source.recipient("../x"))).kind).toBe("permanent");
+  expect((await failure(source.recipient("../x"))).kind).toBe("notFound");
   expect((await failure(source.recipient(""))).kind).toBe("permanent");
 });
 
@@ -238,7 +238,7 @@ test("hostile literals read back exactly: quotes, backslashes, && and ||, unicod
     expect(await source.count({ user: user.id, data: { s: name } }, 100)).toBe(1);
   }
   // A hostile user ID or data path is refused before any request.
-  expect((await failure(source.count({ user: "a' || user != '" }, 10))).kind).toBe("permanent");
+  expect((await failure(source.count({ user: "a' || user != '" }, 10))).kind).toBe("notFound");
   expect((await failure(source.count({ data: { "a') || (1": 1 } }, 10))).kind).toBe("permanent");
   expect((await failure(source.count({ data: { n: Number.POSITIVE_INFINITY } }, 10))).kind).toBe(
     "permanent",

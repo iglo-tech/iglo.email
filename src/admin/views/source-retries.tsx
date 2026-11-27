@@ -1,8 +1,9 @@
 // Native (15-external-sources section 4, B155f, D181): the source stream's retry queue, read-only.
 // source-retries.js reads the rows from /api/settings/source/retries, so a record ID or error text
-// only reaches the page through x-text.
+// only reaches the page through x-text. Absent while the instance's sources module is off (D188).
 import type { AdminView } from "@/admin/page";
 import { Alert, Breadcrumbs, EmptyRow } from "@/admin/views/parts";
+import { HttpError } from "@/server/response";
 
 const keys = [
   "sources.retries.kind.event",
@@ -12,7 +13,11 @@ const keys = [
   "sources.retries.status.terminal",
 ];
 
-export const sourceRetriesView: AdminView = ({ context }) => {
+export const sourceRetriesView: AdminView = ({ context, site }) => {
+  // D188: while the instance's sources module is off the page is absent, as an unknown page.
+  if (site.sourcesEnabled !== true) {
+    throw new HttpError(404, "404 page not found");
+  }
   const t = context.app.i18n;
   return {
     title: t.T("sources.retries.title"),

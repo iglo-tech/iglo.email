@@ -1,11 +1,12 @@
-// Native (15-external-sources section 1, D172): a project's current source. The adapter keeps its
-// service-account token, so one adapter serves every reader of the project until the `source.*`
-// settings change; a changed configuration builds a new one, and an empty URL is no source.
+// Native (15-external-sources section 1, D172, D188): a project's current source. The connector
+// keeps its service-account token, so one source serves every reader of the project until the
+// `source.*` settings change; a changed configuration builds a new one, and no source (the module
+// off, no connector or an empty URL) is null.
 import type { Clock } from "@/clock";
 import type { Settings } from "@/settings/validate";
 import type { Guard, SourceTransport } from "@/sources/connect";
-import { createPocketBaseSource } from "@/sources/pocketbase";
-import { sourceConfig } from "@/sources/settings";
+import { connectors } from "@/sources/connectors";
+import { sourceSetup } from "@/sources/settings";
 import type { ExternalSource } from "@/sources/source";
 
 /** The project's source, or null when it has none configured. */
@@ -20,24 +21,21 @@ export function createSourceProvider(options: {
   let key = "";
   let current: ExternalSource | null = null;
   return () => {
-    const config = sourceConfig(options.settings());
-    if (!config) {
+    const setup = sourceSetup(options.settings());
+    if (!setup) {
       key = "";
       current = null;
       return null;
     }
-    const next = JSON.stringify(config);
+    const next = JSON.stringify(setup);
     if (next !== key || !current) {
       key = next;
-      const adapter: Parameters<typeof createPocketBaseSource>[0] = {
-        config,
+      current = connectors[setup.connector].create({
+        config: setup.config,
         clock: options.clock,
         guard: options.guard,
-      };
-      if (options.transport) {
-        adapter.transport = options.transport;
-      }
-      current = createPocketBaseSource(adapter);
+        transport: options.transport,
+      });
     }
     return current;
   };
