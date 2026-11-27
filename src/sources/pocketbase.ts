@@ -215,6 +215,26 @@ function failure(answer: Answer, what: string): SourceError {
   );
 }
 
+/**
+ * B169 (D197): the rows of a settings-check probe's answer (an `id` read of no record). A `200`
+ * too large to read, or one that is no PocketBase list (a proxy's `{}` or empty body), is not the
+ * source answering: a permanent failure, as `list()` and `eventsSchema()` treat it. Any other
+ * status has no rows; the caller reports it.
+ */
+function probeRows(answer: Answer, collection: string, what: string): number {
+  if (answer.status !== 200) {
+    return 0;
+  }
+  if (answer.tooLarge) {
+    throw failure(answer, what);
+  }
+  const items = member(answer.body, "items");
+  if (!isSourceList(items) || !items.every(isSourceObject)) {
+    throw new SourceError("permanent", `The source's ${collection} list has no items`);
+  }
+  return items.length;
+}
+
 /** A field of a record; a missing one is a permanent failure (a renamed or removed field). */
 function has(record: SourceObject, field: string, collection: string): SourceJson {
   const value = member(record, field);
@@ -916,15 +936,22 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       filter: string,
       call: CallOptions = {},
     ): Promise<{ status: number; rows: number; message: string }> {
-      const search = new URLSearchParams({ page: "1", perPage: "1", skipTotal: "1", filter });
-      const { value: answer } = await get(
-        `api/collections/${fieldName(collection)}/records?${search}`,
-        call,
+      // B169 (D197): IDs only, so a first record nested too deep or too large is not read.
+      const search = new URLSearchParams({
+        page: "1",
+        perPage: "1",
+        skipTotal: "1",
+        fields: "id",
+        filter,
+      });
+      const what = `a read of ${collection}`;
+      const { value: answer } = await notRecord(
+        get(`api/collections/${fieldName(collection)}/records?${search}`, call),
+        what,
       );
-      const items = member(answer.body, "items");
       return {
         status: answer.status,
-        rows: isSourceList(items) ? items.length : 0,
+        rows: probeRows(answer, collection, what),
         message: reason(answer),
       };
     },
@@ -938,15 +965,18 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       call: CallOptions = {},
     ): Promise<{ status: number; rows: number }> {
       const search = new URLSearchParams({ page: "1", perPage: "1", skipTotal: "1", fields: "id" });
-      const answer = await send(
-        "GET",
-        `api/collections/${fieldName(collection)}/records?${search}`,
-        "",
-        undefined,
-        call,
+      const what = `a guest's read of ${collection}`;
+      const answer = await notRecord(
+        send(
+          "GET",
+          `api/collections/${fieldName(collection)}/records?${search}`,
+          "",
+          undefined,
+          call,
+        ),
+        what,
       );
-      const items = member(answer.body, "items");
-      return { status: answer.status, rows: isSourceList(items) ? items.length : 0 };
+      return { status: answer.status, rows: probeRows(answer, collection, what) };
     },
     /** The realtime stream's reads and subscription (src/sources/stream-reads.ts, B150b). */
     stream: streamReads({

@@ -829,3 +829,108 @@ test("B166 round 4: a large 502 page on a record or recipient by ID, or on the e
     }).toEqual({ kind: "transient", status: 502, tooLarge: false });
   }
 });
+
+// B169 (D197): Test connection's probes read only IDs and need a PocketBase list on a 200.
+const serviceRule = '@request.auth.collectionName = "services"';
+const stepsOf = (report: Awaited<ReturnType<typeof checkSource>>) =>
+  Object.fromEntries(report.steps.map((step) => [step.step, step]));
+
+test("B169: Test connection fails a 200 that is no PocketBase list (a proxy's {}), for the service account's probes and a guest's", async () => {
+  for (const who of ["service", "guest"] as const) {
+    const report = await checkSource(sourceConfig(pb.url, pb.service), createRealClock(), open, {
+      fetch: (input: URL, init: RequestInit) => {
+        const guest = !new Headers(init.headers).get("authorization");
+        if (
+          /^\/api\/collections\/[^/]+\/records$/.test(input.pathname) &&
+          (who === "service" || guest)
+        ) {
+          return Promise.resolve(Response.json({}));
+        }
+        return fetch(input, init);
+      },
+    });
+    const steps = stepsOf(report);
+    expect(report.ok).toBe(false);
+    expect(steps.auth?.ok).toBe(true);
+    for (const collection of ["recipients", "events"] as const) {
+      expect({ who, ...steps[collection] }).toMatchObject({
+        who,
+        ok: false,
+        message: `The source's ${collection} list has no items`,
+      });
+    }
+    if (who === "service") {
+      expect(steps.users).toMatchObject({
+        ok: false,
+        message: "The source's users list has no items",
+      });
+    }
+  }
+  // Answered by PocketBase itself, every step passes.
+  expect((await checkSource(sourceConfig(pb.url, pb.service), createRealClock(), open)).ok).toBe(
+    true,
+  );
+});
+
+test("B169: Test connection passes a valid events collection whose first record is nested past 64 levels", async () => {
+  await pb.api("POST", "/api/collections", {
+    name: "deep_events",
+    type: "base",
+    listRule: serviceRule,
+    viewRule: serviceRule,
+    fields: [
+      { name: "user", type: "relation", collectionId: "_pb_users_auth_", maxSelect: 1 },
+      { name: "name", type: "text" },
+      { name: "data", type: "json" },
+      { name: "occurredAt", type: "date" },
+      { name: "key", type: "text" },
+      { name: "created", type: "autodate", onCreate: true, onUpdate: false },
+      { name: "updated", type: "autodate", onCreate: true, onUpdate: true },
+    ],
+  });
+  let data: unknown = "deep";
+  for (let level = 0; level < 70; level++) {
+    data = { a: data };
+  }
+  const user = await pb.user();
+  await pb.create("deep_events", {
+    user: user.id,
+    name: "deep",
+    data,
+    occurredAt: new Date().toISOString(),
+  });
+  const config = sourceConfig(pb.url, pb.service);
+  const report = await checkSource(
+    { ...config, events: { ...config.events, collection: "deep_events" } },
+    createRealClock(),
+    open,
+  );
+  expect(stepsOf(report).events).toMatchObject({ ok: true, message: "deep_events: read." });
+  expect(report.ok).toBe(true);
+});
+
+test("B169: Test connection fails a users collection without `updated`, naming the field", async () => {
+  await pb.api("POST", "/api/collections", {
+    name: "people_no_updated",
+    type: "base",
+    listRule: serviceRule,
+    viewRule: serviceRule,
+    fields: [
+      { name: "deletedAt", type: "date" },
+      { name: "created", type: "autodate", onCreate: true, onUpdate: false },
+    ],
+  });
+  const config = sourceConfig(pb.url, pb.service);
+  const report = await checkSource(
+    { ...config, users: { collection: "people_no_updated", leavingFilter: "deletedAt != ''" } },
+    createRealClock(),
+    open,
+  );
+  expect(report.ok).toBe(false);
+  expect(stepsOf(report).users).toEqual({
+    step: "users",
+    ok: false,
+    message: "people_no_updated has no field updated.",
+    missing: ["updated"],
+  });
+});

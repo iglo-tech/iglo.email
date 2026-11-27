@@ -38,6 +38,7 @@ export interface RecipientSyncOptions {
     | "byEmail"
     | "sourceWrite"
     | "carryConsent"
+    | "suppressLeaving"
     | "remove"
     | "addressSuppressed"
     | "suppressed"
@@ -108,12 +109,14 @@ function nameOf(recipient: SourceRecipient): string {
  * How the incoming address meets another subscriber that holds it (spec section 4), as read before
  * the transaction: `moved` (the holder's user now has `email` in the view: move the holder there,
  * also when `email` is the incoming user's own current address, a swap), `gone` (the holder has no
- * `external_id`, one the source cannot have, or the view no longer has its user).
+ * `external_id`, one the source cannot have, or the view no longer has its user). B169 (D197): a
+ * gone holder is `left` when the view confirmed its source user absent: that user is leaving, as
+ * `leaveUser` handles it.
  */
 type Conflict =
   | { kind: "none" }
   | { kind: "moved"; holder: SubscriberRow; email: string }
-  | { kind: "gone"; holder: SubscriberRow };
+  | { kind: "gone"; holder: SubscriberRow; left: boolean };
 
 /** What the reads found for one source user. */
 export type RecipientPlan =
@@ -150,7 +153,7 @@ async function conflictOf(
     return { kind: "none" };
   }
   if (holder.external_id === null) {
-    return { kind: "gone", holder };
+    return { kind: "gone", holder, left: false };
   }
   let row: SourceRecipient | null;
   try {
@@ -159,12 +162,12 @@ async function conflictOf(
     // B155d (D179): an `external_id` the source cannot have (set by pushed events before the
     // project moved to a source) names no source user: the holder is gone, as one with none.
     if (isNotSourceId(error)) {
-      return { kind: "gone", holder };
+      return { kind: "gone", holder, left: false };
     }
     throw error;
   }
   if (!row) {
-    return { kind: "gone", holder };
+    return { kind: "gone", holder, left: true };
   }
   const moved = addressOf(row);
   if (moved === null || moved === email) {
@@ -309,6 +312,15 @@ export function applyRecipient(
   }
   if (conflict.kind === "gone") {
     enrollments.endSubscriber(conflict.holder.id);
+    // B169 (D197): a holder whose source user the view confirmed absent is that user leaving: the
+    // withdrawal it holds stays as the suppression `leaveUser` would leave, written before the row
+    // is deleted or re-pointed, so `took()` and the re-point's check below apply it to the row
+    // taking the address, and a returning leaver is not re-granted it. The outcome is the same
+    // whichever path sees the leaving first. An unlinked holder (no or a non-source user ID) is
+    // unchanged.
+    if (conflict.left) {
+      subscribers.suppressLeaving(conflict.holder.id);
+    }
     if (!now) {
       // Re-point the holder to the incoming user: blocklist, unsubscribes and cap history stay.
       // The holder row keeps its own address, but it takes a user ID: B168 (D196), a row now named
