@@ -3,7 +3,9 @@
 // are saved, validated and masked on the project host; the instance key `sources.private_hosts`
 // lets a listed host name reach PocketBase on loopback while `webhooks.block_private_addresses`
 // stays on, and nothing else: an unlisted host and a webhook to the listed host stay refused.
+import { join } from "node:path";
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { openDatabase } from "@/db/connection";
 import { instanceCall, instanceLogin } from "@/test/projects/admin-fixture";
 import type { InstanceSession } from "@/test/projects/admin-fixture";
 import {
@@ -342,6 +344,119 @@ test("the private-address block: an unlisted host is refused, and a webhook to t
     expect(hits).toBe(0);
   } finally {
     await receiver.stop(true);
+  }
+});
+
+/** B171: a leaving filter of `count` short clauses. */
+const clauses = (count: number) => Array.from({ length: count }, () => "id != ''").join(" || ");
+
+test("B171: a leaving filter whose users topic is too long to subscribe to is refused on save and by Test connection; one that fits saves", async () => {
+  const long = clauses(100);
+  expect(long.length).toBeLessThan(1300);
+  const url = `http://localhost:${pb.port}`;
+  const before = (await settings())["source.users"];
+  const refused = await save({
+    ...sourceAt(url),
+    "source.users": { collection: "users", leaving_filter: long },
+  });
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain("source.users leaving_filter");
+  expect(refused.body.message).toContain("too long to subscribe to");
+  expect((await settings())["source.users"]).toEqual(before);
+  const tested = await call("POST", "/api/settings/source/test", {
+    "source.users": { collection: "users", leaving_filter: long },
+  });
+  expect(tested.status).toBe(400);
+  expect(tested.body.message).toContain("too long to subscribe to");
+  const fits = { collection: "users", leaving_filter: clauses(80) };
+  expect((await save({ ...sourceAt(url), "source.users": fits })).status).toBe(200);
+  expect((await settings())["source.users"]).toEqual(fits);
+  const passes = await call("POST", "/api/settings/source/test", {});
+  expect(stepsOf(passes).steps.find((step) => step.step === "users")?.ok).toBe(true);
+  expect((await save({ ...sourceAt(url), "source.users": before })).status).toBe(200);
+});
+
+/** Writes a project setting straight into the project database, as an older build stored it. */
+function storeAsOlderBuild(name: string, value: unknown): void {
+  const db = openDatabase(join(prepared.directory, "data", "projects", "main"));
+  try {
+    db.run("UPDATE settings SET value = ? WHERE key = ?", [JSON.stringify(value), name]);
+  } finally {
+    db.close();
+  }
+}
+
+test("B171 (D136 item 9): a too-long leaving filter stored before B171 blocks no other save and not clearing the source; Test connection names it", async () => {
+  const url = `http://localhost:${pb.port}`;
+  const before = (await settings())["source.users"];
+  const fits = { collection: "users", leaving_filter: clauses(80) };
+  expect((await save({ ...sourceAt(url), "source.users": fits })).status).toBe(200);
+  const stored = { collection: "users", leaving_filter: clauses(100) };
+  storeAsOlderBuild("source.users", stored);
+  try {
+    // An unrelated one-key save and the whole form, as the admin posts it.
+    expect((await call("PUT", "/api/settings/app.site_name", "Past a stored filter")).status).toBe(
+      200,
+    );
+    expect((await save({})).status).toBe(200);
+    expect((await settings())["source.users"]).toEqual(stored);
+    // Test connection with the form unchanged reaches the users step, which names the filter.
+    const tested = await call("POST", "/api/settings/source/test", {});
+    expect(tested.status).toBe(200);
+    const users = stepsOf(tested).steps.find((step) => step.step === "users");
+    expect(users?.ok).toBe(false);
+    expect(users?.message).toContain("users: the leaving filter is too long to subscribe to");
+    // Editing it to another too-long filter is refused, naming the key; nothing is written.
+    const edited = await save({
+      "source.users": { collection: "users", leaving_filter: clauses(101) },
+    });
+    expect(edited.status).toBe(400);
+    expect(edited.body.message).toContain("source.users leaving_filter");
+    expect((await settings())["source.users"]).toEqual(stored);
+    // Clearing the source succeeds; turning it on again with the filter is refused.
+    expect((await save({ "source.url": "" })).status).toBe(200);
+    expect((await settings())["source.url"]).toBe("");
+    const on = await save({ ...sourceAt(url) });
+    expect(on.status).toBe(400);
+    expect(on.body.message).toContain("source.users leaving_filter");
+  } finally {
+    storeAsOlderBuild("source.users", before);
+    expect((await save({ ...sourceAt(url) })).status).toBe(200);
+  }
+});
+
+test("B171 (D199): a changed users setting must fit the topic with no source URL too, and when one save clears the URL", async () => {
+  const url = `http://localhost:${pb.port}`;
+  const before = (await settings())["source.users"];
+  // Fits with `users` (2,497 characters), not with `users_archive`.
+  const fits = { collection: "users", leaving_filter: clauses(94) };
+  const tooLong = { collection: "users", leaving_filter: clauses(100) };
+  try {
+    expect((await save({ "source.url": "" })).status).toBe(200);
+    // No source URL: a new too-long filter is refused, naming the key; nothing is written.
+    const refused = await save({ "source.users": tooLong });
+    expect(refused.status).toBe(400);
+    expect(refused.body.message).toContain("source.users leaving_filter");
+    expect(refused.body.message).toContain("too long to subscribe to");
+    expect((await settings())["source.users"]).toEqual(before);
+    // A collection-only change that pushes the stored filter past the limit is refused.
+    expect((await save({ "source.users": fits })).status).toBe(200);
+    const moved = await save({ "source.users": { ...fits, collection: "users_archive" } });
+    expect(moved.status).toBe(400);
+    expect(moved.body.message).toContain("source.users leaving_filter");
+    expect((await settings())["source.users"]).toEqual(fits);
+    // One save that clears the URL while editing the filter to a too-long one is refused.
+    expect((await save({ ...sourceAt(url) })).status).toBe(200);
+    const cleared = await save({ "source.url": "", "source.users": tooLong });
+    expect(cleared.status).toBe(400);
+    expect(cleared.body.message).toContain("source.users leaving_filter");
+    const after = await settings();
+    expect(after["source.url"]).toBe(url);
+    expect(after["source.users"]).toEqual(fits);
+    // Clearing the URL with the stored filter unchanged still succeeds.
+    expect((await save({ "source.url": "" })).status).toBe(200);
+  } finally {
+    expect((await save({ ...sourceAt(url), "source.users": before })).status).toBe(200);
   }
 });
 

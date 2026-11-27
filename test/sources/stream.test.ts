@@ -590,6 +590,97 @@ test("B163: going idle drops the markers, so a name subscribed again does not re
   expect(s.attention).toEqual([]);
 });
 
+/** Goes idle (no name, no users topic), and back to `names` once `whileIdle` has run. */
+async function idleThen(
+  s: StreamFixture,
+  subscribed: { current: Array<string> },
+  whileIdle: () => Promise<void>,
+) {
+  const names = subscribed.current;
+  subscribed.current = [];
+  s.stream.refresh();
+  await s.settle(() => s.stream.state().state === "idle", "the stream to go idle");
+  await whileIdle();
+  subscribed.current = names;
+  s.stream.refresh();
+}
+
+test("B171: going idle clears the failing clock: one short failure after 20 idle minutes writes no line", async () => {
+  const subscribed = { current: [unique("idle_fail")] };
+  const cut = proxy();
+  cut.cutWhen(() => true);
+  const s = stream({ config: eventsOnly(cut.url), names: () => subscribed.current });
+  await s.settle(() => s.stream.state().state === "waiting", "the first failed connect");
+  // The realtime connection is not a transport request: the proxy's cuts count the tries.
+  let before = 0;
+  await idleThen(s, subscribed, async () => {
+    await s.advance(20 * 60_000);
+    before = cut.cuts;
+  });
+  await s.settle(
+    () => cut.cuts > before && s.stream.state().state === "waiting",
+    "one failed connect after going idle",
+  );
+  expect(s.attention).toEqual([]);
+  cut.cutWhen(undefined);
+  await s.live();
+  expect(s.attention).toEqual([]);
+});
+
+test("B171: a refusal written before going idle is written again when the stream is refused after it", async () => {
+  const subscribed = { current: [unique("idle_refused")] };
+  const s = stream({
+    config: { ...eventsOnly(), password: "not-the-password" },
+    names: () => subscribed.current,
+  });
+  await s.settle(() => linesOf(s, REFUSED).length === 1, "the refusal");
+  await s.settle(() => s.stream.state().state === "waiting", "the wait after it");
+  await idleThen(s, subscribed, async () => {});
+  await s.settle(() => linesOf(s, REFUSED).length === 2, "the refusal after going idle");
+  expect(linesOf(s, REFUSED)[1]).toBe(linesOf(s, REFUSED)[0]);
+  expect(s.attention).toHaveLength(2);
+});
+
+/** PocketBase's `401` body, answered by a proxy to every subscription. */
+const unauthorized = (url: URL, init: RequestInit) =>
+  init.method === "POST" && url.pathname === "/api/realtime"
+    ? Response.json(
+        {
+          status: 401,
+          message: "The request requires valid record authorization token.",
+          data: {},
+        },
+        { status: 401 },
+      )
+    : undefined;
+
+test("B171: a 401 on the subscription after a fresh sign-in refuses the stream: one line, a try every 5 minutes", async () => {
+  const s = stream({
+    config: eventsOnly(),
+    names: () => [unique("unauthorized")],
+    answer: unauthorized,
+  });
+  const subscriptions = () => s.requests.filter((line) => line.startsWith("POST /api/realtime"));
+  const signIns = () => s.requests.filter((line) => line.includes("/auth-with-password")).length;
+  await s.settle(() => s.attention.length === 1, "the refusal");
+  expect(linesOf(s, REFUSED)).toHaveLength(1);
+  expect(linesOf(s, REFUSED)[0]).toContain("401");
+  // The subscription was sent twice, with a sign-in before each.
+  await s.settle(() => s.stream.state().state === "waiting", "the wait");
+  expect(subscriptions()).toHaveLength(2);
+  expect(signIns()).toBe(2);
+  // Nothing more for 5 minutes, then one more refused try with no other line.
+  await s.advance(5 * 60_000 - 1000);
+  await Bun.sleep(200);
+  expect(subscriptions()).toHaveLength(2);
+  await s.advance(1000);
+  await s.settle(
+    () => subscriptions().length === 4 && s.stream.state().state === "waiting",
+    "the next refused try",
+  );
+  expect(s.attention).toHaveLength(1);
+});
+
 test("the retry queue: a transient failure retries later without holding the stream up", async () => {
   const name = unique("retry");
   const s = stream({ config: eventsOnly(), names: () => [name] });

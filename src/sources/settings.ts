@@ -7,6 +7,7 @@ import { identifierPattern } from "@/sources/filter";
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceJson } from "@/sources/json";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
+import { LEAVING_TOO_LONG, leavingTopic } from "@/sources/stream-reads";
 import type { SourceScalar } from "@/sources/source";
 
 /** The `source.*` keys and their defaults: no source (an empty URL). */
@@ -231,6 +232,18 @@ export function normalizeSource(next: Settings, current: Settings): void {
   }
   if (collection && !filter) {
     fail("source.users needs a leaving_filter with its collection, such as deletedAt != ''.");
+  }
+  // B171 (D199, D136 item 9): the topic length is checked only when a save changes the users
+  // setting or turns the source on, so a filter an older build stored cannot block other saves or
+  // clearing the source; Test connection's users step still names it. A changed users setting is
+  // checked whether or not a source URL is set, so a filter saved ahead of the URL fits too.
+  const storedUsers = read(current, "source.users");
+  const checkTopic =
+    (!!url && !textAt(current, "source.url")) ||
+    collection !== text(member(storedUsers, "collection")) ||
+    filter !== text(member(storedUsers, "leaving_filter"));
+  if (collection && checkTopic && leavingTopic(collection, filter) === null) {
+    fail(`Invalid source.users leaving_filter: ${LEAVING_TOO_LONG}.`);
   }
   next["source.users"] = { collection, leaving_filter: collection ? filter : "" };
   const stored = read(next, "source.grant_lists");
