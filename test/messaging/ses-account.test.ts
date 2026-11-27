@@ -244,6 +244,42 @@ test("refresh: a rate change that does not shorten the wait reads nothing extra 
   expect(calls).toHaveLength(2);
 });
 
+test("refresh: a forecast's read that shortens the refresh brings the loop's read to a minute after it (B164)", async () => {
+  // Rate setting 0: SES's MaxSendRate 10 applies. 3,500 left of 10,000, line max(1,000, 3,000) = 3,000.
+  answer = quota(10_000, 6500, 10);
+  const { account, clock, step } = setup({ rate: 0 });
+  account.start();
+  await clock.whenSleeping();
+  expect(calls).toHaveLength(1);
+  await step(70_000);
+  // MaxSendRate 20: line 6,000, so 3,500 left needs a read every minute from this read's start.
+  answer = quota(10_000, 6500, 20);
+  await account.fresh();
+  expect(calls).toHaveLength(2);
+  expect(account.rate()).toBe(20);
+  await clock.whenSleeping();
+  await step(59_999);
+  expect(calls).toHaveLength(2);
+  await step(1);
+  expect(calls).toHaveLength(3);
+});
+
+test("refresh: a forecast's read that keeps the slow refresh adds no loop read; the next is 5 minutes after it (B164, D175)", async () => {
+  answer = quota(10_000, 6500, 10);
+  const { account, clock, step } = setup({ rate: 0 });
+  account.start();
+  await clock.whenSleeping();
+  await step(70_000);
+  await account.fresh();
+  expect(calls).toHaveLength(2);
+  await clock.whenSleeping();
+  // The refresh counts from the last read's start: 70 s + 300 s.
+  await step(300_000 - 1);
+  expect(calls).toHaveLength(2);
+  await step(1);
+  expect(calls).toHaveLength(3);
+});
+
 const snapshot = (max: number, sent: number, maxSendRate = 14) => ({
   maxSendRate,
   max24HourSend: max,

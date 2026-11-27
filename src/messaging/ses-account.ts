@@ -361,6 +361,10 @@ export function createSesAccount(deps: {
             error = null;
             lastAttention = null;
             evaluate();
+            // An on-demand read (a forecast or the check button) may shorten the refresh: the
+            // loop, asleep only when this read is not its own, works out its wait again from this
+            // read's start and reads only when that is due (B164, D192).
+            sleeping?.abort();
           }
         },
         (error_: unknown) => {
@@ -433,7 +437,8 @@ export function createSesAccount(deps: {
         try {
           await clock.sleep(wait, sleeping.signal);
         } catch {
-          // Woken early: the credentials or the effective rate changed, or the service stops.
+          // Woken early: the credentials or the effective rate changed, an on-demand read gave a
+          // new snapshot, or the service stops.
         }
         sleeping = null;
         // Stopped, or new keys: read them now.
