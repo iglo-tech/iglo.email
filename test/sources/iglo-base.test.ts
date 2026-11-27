@@ -328,6 +328,32 @@ describe.each(harnesses)("section 9 facts on %s", (binary, start) => {
     expect(await refresh(service)).toBe(200);
   });
 
+  test("a guest (no Authorization header) lists no fixture records and views none", async () => {
+    const user = await base.user();
+    const event = await base.event(user.id, "guest-check", {});
+    const guest = async (path: string) => {
+      const response = await fetch(`${base.url}${path}`);
+      const text = await response.text();
+      return { status: response.status, body: asBody<Answer>(text ? JSON.parse(text) : {}) };
+    };
+    for (const [collection, id] of [
+      ["events", event.id],
+      ["recipients", user.id],
+      ["users", user.id],
+    ] as const) {
+      // The service account can read the record, so an empty answer is the rule, not a miss.
+      expect((await read(`/api/collections/${collection}/records/${id}`)).status).toBe(200);
+      const listed = await guest(`/api/collections/${collection}/records`);
+      expect({ collection, status: listed.status, items: listed.body.items }).toEqual({
+        collection,
+        status: 200,
+        items: [],
+      });
+      const viewed = await guest(`/api/collections/${collection}/records/${id}`);
+      expect({ collection, status: viewed.status }).toEqual({ collection, status: 404 });
+    }
+  });
+
   test("filter literals: backslash escaping reads back exactly; unknown fields are a 400", async () => {
     const user = await base.user();
     const hostile = `it's a \\ trap\\`;

@@ -21,7 +21,7 @@ import { asBody } from "@/test/read-body";
 import { igloBaseBinary } from "@/test/sources/iglo-base-binary";
 import { SERVICE_IDENTITY, SERVICE_PASSWORD } from "@/test/sources/pocketbase";
 import type { PocketBase } from "@/test/sources/pocketbase";
-import { startOnFreePort, stderrDrained } from "@/test/serve-port";
+import { listensOn, restartOnPort, startOnFreePort, stderrDrained } from "@/test/serve-port";
 
 const SUPERUSER = "root@example.com";
 const SUPERUSER_PASSWORD = "superuser-password-1";
@@ -75,7 +75,12 @@ async function stopped(pid: number): Promise<void> {
   }
 }
 
-/** Starts the binary on `port`; resolves once it answers /api/health. */
+/**
+ * Starts the binary on `port`; resolves once it answers /api/health and this very process listens
+ * on the port. Under parallel test workers another test's server can take a freed port and answer
+ * /api/health while this child is failing its bind, so a 200 alone does not prove the start
+ * (`listensOn` in serve-port.ts). A start that fails is killed and reaped before it throws.
+ */
 async function serve(binary: string, root: string, port: number): Promise<ChildProcess> {
   const child = spawn(
     binary,
@@ -104,15 +109,19 @@ async function serve(binary: string, root: string, port: number): Promise<ChildP
       throw new Error(`iglo.base exited (${code}): ${stderr}`);
     }
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/health`);
-      if (response.ok) {
+      const response = await fetch(`http://127.0.0.1:${port}/api/health`, {
+        signal: AbortSignal.timeout(500),
+      });
+      await response.body?.cancel();
+      if (response.ok && child.pid !== undefined && listensOn(child.pid, port)) {
         return child;
       }
     } catch {
-      /* not listening yet */
+      /* not listening yet, or no answer within the fetch timeout */
     }
   }
   child.kill("SIGKILL");
+  await exited;
   throw new Error(`iglo.base did not start: ${stderr}`);
 }
 
@@ -121,10 +130,10 @@ export async function startIgloBase(): Promise<PocketBase> {
   const binary = await igloBaseBinary();
   const root = mkdtempSync(join(tmpdir(), "iglo-base-"));
   const dir = join(root, "pb_data");
-  await igloBaseCommand(["superuser", "upsert", SUPERUSER, SUPERUSER_PASSWORD, `--dir=${dir}`]);
   let child: ChildProcess | undefined;
   let port = 0;
   try {
+    await igloBaseCommand(["superuser", "upsert", SUPERUSER, SUPERUSER_PASSWORD, `--dir=${dir}`]);
     child = await startOnFreePort(async (free) => {
       port = free;
       return serve(binary, root, free);
@@ -277,7 +286,8 @@ export async function startIgloBase(): Promise<PocketBase> {
     stop,
     async start() {
       if (!process) {
-        process = await serve(binary, root, port);
+        // Another test can take the port this one just released: retried on the same port.
+        process = await restartOnPort(port, (same) => serve(binary, root, same));
         await signIn();
       }
     },
