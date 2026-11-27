@@ -75,6 +75,7 @@ export interface RecordHandlerOptions {
     | "byEmail"
     | "sourceWrite"
     | "carryConsent"
+    | "suppressLeaving"
     | "remove"
     | "removeLeaving"
     | "grantable"

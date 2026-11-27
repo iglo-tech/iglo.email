@@ -504,6 +504,20 @@ export function createSubscriberStore(
      * (an administrative one: its webhook payload is unchanged). The caller holds the write.
      */
     removeLeaving(id: bigint): void {
+      if (!get(id)) {
+        return;
+      }
+      store.suppressLeaving(id);
+      store.remove([id]);
+    },
+    /**
+     * B169 (D197): the suppression `removeLeaving` writes for a leaving user, without the delete: an
+     * address holder whose source user is confirmed absent (15-external-sources section 4) leaves it
+     * before its row is deleted or re-pointed. Written only when the subscriber withdrew consent
+     * (blocklisted, or unsubscribed from any list) and suppressions do not already name both keys.
+     * The caller holds the write.
+     */
+    suppressLeaving(id: bigint): void {
       const row = get(id);
       if (!row) {
         return;
@@ -522,7 +536,6 @@ export function createSubscriberStore(
           suppress(row, held);
         }
       }
-      store.remove([id]);
     },
     /** Whether a suppression names this subscriber's address or external ID (B124, D125). */
     suppressed: suppressedBy,
