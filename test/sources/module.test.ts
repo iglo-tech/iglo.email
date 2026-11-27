@@ -494,6 +494,15 @@ test("off, an external enrollment is held for days and new records reach nothing
     }
     await Bun.sleep(500);
     expect((await call("GET", `/api/subscribers/external/${bob.id}`)).status).toBe(404);
+    // With its source still stored, no external sequence can be created while off.
+    const refused = await call("POST", "/api/sequences", {
+      name: "While off",
+      source: "external",
+      trigger: { event: "signup" },
+      steps: [{ wait: "P1D", kind: "transactional", template_id: template.body.data.id }],
+    });
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(refused.body)).toContain("sources.enabled");
     const during = (await call("GET", `/api/enrollments/${held.id}`)).body.data;
     expect(during).toMatchObject({
       status: "active",
