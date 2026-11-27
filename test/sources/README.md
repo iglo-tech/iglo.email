@@ -1,6 +1,7 @@
 # External source tests (B150, D169, D170)
 
-The tests here run against the real PocketBase 0.40.5 binary, never a mock of its protocol
+The tests here run against the real PocketBase 0.40.5 binary (and, for iglo.base, the real
+iglo.base 1.3.0 binary), never a mock of its protocol
 ([15-external-sources section 8](../../docs/design/15-external-sources.md#8-tests)).
 
 ## The binary
@@ -56,6 +57,31 @@ place, so none runs a half-written binary.
 Start one instance per test file (`beforeAll`) and give each test its own users, so tests do not
 see each other's records; start a second instance for a test that changes the schema or stops the
 server.
+
+## iglo.base (B162b, D189)
+
+iglo.base is the second connector's source (D187): an API-compatible Bun port of PocketBase
+0.42.3. Its harness mirrors PocketBase's, so a test written against the `PocketBase` harness
+interface runs on either binary.
+
+- `iglo-base-binary.ts` downloads the official iglo.base 1.3.0 release archive for this machine
+  (`iglo-base_1.3.0_linux_amd64.zip` or `_linux_arm64.zip`) from the `iglo-tech/iglo.base` GitHub
+  release, checks its SHA-256 against the value pinned in the file (from the release's
+  `SHA256SUMS`), extracts `iglo-base` and caches it at
+  `node_modules/.cache/iglo-base-1.3.0/iglo-base`, with the same rename-into-place as PocketBase's.
+  `bun run iglo-base:download` fetches it ahead of the tests; a `ci.yml` step running it next to
+  `pocketbase:download` is an owner item (agents lack the `workflow` scope). A new version means a
+  new version constant and both checksums, from the release's `SHA256SUMS`.
+- `iglo-base.ts`: `startIgloBase()` creates the superuser with the CLI (`superuser upsert`),
+  starts `iglo-base serve` on a free loopback port in its own temporary directory and creates the
+  same fixture schema, service account and helpers as `startPocketBase()` with the same API calls.
+  It returns the `PocketBase` interface from `pocketbase.ts`, so `sourceConfig(url, service)`
+  applies unchanged. The one difference in the command line: no `--hooksDir` (iglo.base refuses
+  it and exits with status 1). `igloBaseCommand(args)` runs one CLI command and returns its output.
+- `iglo-base.test.ts`: the smoke test (the version line, the fixture schema, records written by
+  the helpers and read through the PocketBase adapter, a restart on the same data) and the facts
+  of 15-external-sources section 9, each run on both binaries; where the two differ, the test names
+  the value per binary (D189).
 
 ## Files
 
