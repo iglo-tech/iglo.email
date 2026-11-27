@@ -12,10 +12,12 @@ import { createRealClock } from "@/clock";
 import { writeTransaction } from "@/db/transaction";
 import { createEnrollments } from "@/sequences/enrollments";
 import type { Guard } from "@/sources/connect";
-import { createPocketBaseSource } from "@/sources/pocketbase";
+import { createPocketBaseSource, isRecordUnreadable } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
 import type { SourceProvider } from "@/sources/project";
+import { readRecipient } from "@/sources/recipient-sync";
 import { createSendTimeLookup } from "@/sources/send-time";
+import { isSettingsMismatch } from "@/sources/stream-record";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import type { RunnerFixture } from "@/test/campaigns/runner/fixture";
 import type { JsonObject } from "@/test/json-object";
@@ -955,4 +957,71 @@ test("B166: a subscriber whose external ID is cleared while its user's absent re
   expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1 });
   expect(await skippedOf(f, c.id)).toEqual([]);
   expect((await f.json(`/api/subscribers/${id}`)).status).toBe(200);
+});
+
+/**
+ * A small HTTP proxy in front of the binary that, while `html.on`, answers the service account's
+ * sign-in with a 200 HTML page (a reverse proxy's maintenance or login page, which the binary never
+ * serves). Every other request is forwarded to the binary and its answer returned unchanged.
+ */
+function htmlSignInProxy() {
+  const html = { on: true };
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (html.on && url.pathname.endsWith("/auth-with-password")) {
+        return new Response("<!doctype html><title>Down for maintenance</title>", {
+          headers: { "content-type": "text/html" },
+        });
+      }
+      const headers = new Headers(request.headers);
+      headers.delete("host");
+      headers.set("accept-encoding", "identity");
+      const init: RequestInit = { method: request.method, headers };
+      if (request.method !== "GET") {
+        init.body = await request.arrayBuffer();
+      }
+      return fetch(new URL(`${url.pathname}${url.search}`, pb.url), init);
+    },
+  });
+  closers.push(() => server.stop(true));
+  return { url: `http://127.0.0.1:${server.port}`, html };
+}
+
+test("B166: a sign-in answered with a 200 HTML page refuses the settings, not one record: the recipient read is a SettingsMismatch, the campaign pauses with nothing skipped and resumes once", async () => {
+  const proxy = htmlSignInProxy();
+  const user = await pb.user({ name: "Hana" });
+  const other = await pb.user({ name: "Ivo" });
+  const direct = createPocketBaseSource({
+    config: { ...sourceConfig(pb.url, pb.service), url: proxy.url },
+    clock: createRealClock(),
+    guard: openGuard,
+  });
+  const refused = await readRecipient(direct, user.id, undefined).then(
+    () => null,
+    (error: unknown) => error,
+  );
+  expect(isSettingsMismatch(refused)).toBe(true);
+  expect(isRecordUnreadable(refused)).toBe(false);
+
+  const { f } = await runner(false, { url: proxy.url });
+  const list = await f.list("news");
+  for (const u of [user, other]) {
+    await f.member(emailOf(u), [list], "confirmed", { external_id: u.id });
+  }
+  const c = await plainCampaign(f, "html sign-in", [list]);
+  f.start();
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "paused");
+  expect(f.pushes).toEqual([]);
+  expect(await skippedOf(f, c.id)).toEqual([]);
+  expect(messages(f, "the source refused a recipient read")).toBe(1);
+
+  proxy.html.on = false;
+  expect((await f.status(c.id, "running")).status).toBe(200);
+  await f.until(c.id, "finished");
+  expect(pushCounts(f)).toEqual({ [emailOf(user)]: 1, [emailOf(other)]: 1 });
+  expect(await skippedOf(f, c.id)).toEqual([]);
 });

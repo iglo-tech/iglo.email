@@ -27,11 +27,12 @@ import {
   applyRecipient,
   leaveUser,
   planRecipient,
+  settingsRefusal,
   SubscriberChanged,
 } from "@/sources/recipient-sync";
 import type { SubscriberRow } from "@/sources/recipient-sync";
 import type { GrantRule } from "@/sources/settings";
-import { SourceError } from "@/sources/source";
+import { isSourceError, SourceError } from "@/sources/source";
 import type { ExternalSource, SourceEvent } from "@/sources/source";
 import type { RecordCommit, RecordHandler, SourceUser } from "@/sources/stream-record";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -138,8 +139,43 @@ const scalarWhere = (
   return out;
 };
 
+/**
+ * B166 (D194): a trigger condition's failure as the settings' or the condition's. A `400` is
+ * PocketBase refusing the filter the condition's query wrote, so the condition's own (D172: it
+ * skips the sequence); every other failure is classified as `readRecipient` classifies it.
+ */
+const refused = (error: unknown): never => {
+  if (isSourceError(error) && error.status === 400) {
+    throw error;
+  }
+  throw settingsRefusal(error, "The source refused a trigger condition's read") ?? error;
+};
+
+/**
+ * The source as a trigger condition reads it: a settings refusal is a `SettingsMismatch`, which the
+ * evaluation hands on (src/conditions/source.ts), so the record waits for the settings instead of
+ * starting nothing for good.
+ */
+function conditionSource(source: ExternalSource): ExternalSource {
+  return {
+    recipient: (id, call) => source.recipient(id, call).catch(refused),
+    record: (id, call) => source.record(id, call).catch(refused),
+    latest: (query, call) => source.latest(query, call).catch(refused),
+    count: (query, upTo, call) => source.count(query, upTo, call).catch(refused),
+    exists: (query, call) => source.exists(query, call).catch(refused),
+    async *scan(query, fields, limit, call) {
+      try {
+        yield* source.scan(query, fields, limit, call);
+      } catch (error) {
+        refused(error);
+      }
+    },
+  };
+}
+
 export function createRecordHandler(options: RecordHandlerOptions): RecordHandler {
-  const { db, clock, source, subscribers, enrollments } = options;
+  const { db, clock, subscribers, enrollments } = options;
+  const conditionReads = conditionSource(options.source);
   const warned = new Set<string>();
   const warn = (detail: string) => {
     if (warned.has(detail) || warned.size >= MAX_WARNED) {
@@ -192,7 +228,7 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
       }
       if (trigger.condition !== undefined) {
         const result = await evaluateTriggerCondition(
-          source,
+          conditionReads,
           trigger.condition,
           record.user,
           record,
@@ -202,8 +238,10 @@ export function createRecordHandler(options: RecordHandlerOptions): RecordHandle
           if (result.kind === "transient") {
             throw new SourceError("transient", result.message);
           }
-          // A condition the source refuses, or that no longer validates, starts nothing; the
-          // record's grants and other sequences still apply.
+          // A condition the source refuses for its own query or for this user's records, or that
+          // no longer validates, starts nothing; the record's grants and other sequences still
+          // apply. A refusal of the settings is thrown as a `SettingsMismatch` instead (B166,
+          // D194): nothing is committed, and the stream waits for the settings to be fixed.
           warn(`sequence ${sequence.id}: ${result.message}`);
           continue;
         }

@@ -14,6 +14,7 @@ import {
   parseSourceDate,
   scalarLiteral,
   textLiteral,
+  UnfitQuery,
 } from "@/sources/filter";
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceJson, SourceObject } from "@/sources/json";
@@ -98,10 +99,13 @@ interface Read<T> {
 }
 
 /**
- * B166 (D194): a permanent failure that is the record's own, not the settings': an answer over the
- * response limit, a body the adapter cannot read (not JSON, not a record), or a mapped field of the
- * record that is not of its type. Every other permanent failure of a read (a refused address, a
- * redirect, a `401` after signing in again, a record with no `id`) is the configuration's.
+ * B166 (D194): a permanent failure that is one record's own, not the settings': a single record's
+ * answer over the response limit or with a body the adapter cannot read (not JSON, nested too deep,
+ * not a record), or a mapped field of the record that is not of its type. Only a read of one record
+ * raises it (a record by ID, a page already narrowed to one record); every other permanent failure
+ * (a refused address, a redirect, a `401` after signing in again, a sign-in, token check or
+ * collection probe answered with a page that is not JSON, a record with no `id`) is the
+ * configuration's.
  */
 export class RecordUnreadable extends SourceError {
   readonly recordUnreadable = true;
@@ -109,8 +113,35 @@ export class RecordUnreadable extends SourceError {
 export const isRecordUnreadable = (error: unknown): error is RecordUnreadable =>
   isSourceError(error) && "recordUnreadable" in error && error.recordUnreadable === true;
 
-const tooLargeError = () =>
-  new RecordUnreadable("permanent", "A source response is larger than the response limit");
+const TOO_LARGE = "A source response is larger than the response limit";
+const recordTooLarge = () => new RecordUnreadable("permanent", TOO_LARGE);
+
+/** A 2xx answer whose body is not JSON (or nests too deep): `send` throws it with the status. */
+const notJson = (error: unknown): error is SourceError =>
+  isSourceError(error) &&
+  error.kind === "permanent" &&
+  error.status !== undefined &&
+  error.status >= 200 &&
+  error.status < 300;
+
+/**
+ * B166 (D194): runs a request that is not a record read (a sign-in, a token check): a 2xx body
+ * that is not JSON (a proxy's or a maintenance page) is the configuration's failure, without the
+ * status that would make the stream read it as one unreadable record.
+ */
+async function notRecord<T>(request: Promise<T>, what: string): Promise<T> {
+  try {
+    return await request;
+  } catch (error) {
+    if (notJson(error)) {
+      throw new SourceError(
+        "permanent",
+        `The source answered ${what} with a body that is not JSON`,
+      );
+    }
+    throw error;
+  }
+}
 
 /** Whether a recipients-view value means "opted out": set, and not false, 0, "", "0" or "false". */
 export function optedOut(value: SourceJson | undefined): boolean {
@@ -166,7 +197,7 @@ function reason(answer: Answer): string {
 /** A non-2xx answer as an error: 429 and 5xx are transient, the rest permanent. */
 function failure(answer: Answer, what: string): SourceError {
   if (answer.tooLarge) {
-    return tooLargeError();
+    return new SourceError("permanent", `${TOO_LARGE} (${what})`);
   }
   const kind = answer.status === 429 || answer.status >= 500 ? "transient" : "permanent";
   const detail = reason(answer);
@@ -197,10 +228,14 @@ function idOf(record: SourceObject): string {
   return id;
 }
 
-/** The records of a page, or the permanent failure of a page too large to read. */
+/**
+ * The records of a page, or the permanent failure of a page too large to read. Every caller has
+ * narrowed the page to one record first (`latest`, `scan` down to `perPage=1`), so it is that
+ * record's own failure.
+ */
 function itemsOf(page: Page): ReadonlyArray<SourceObject> {
   if ("tooLarge" in page) {
-    throw tooLargeError();
+    throw recordTooLarge();
   }
   return page.items;
 }
@@ -348,7 +383,8 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         parsed = undefined;
       }
       if (parsed === undefined && status >= 200 && status < 300) {
-        throw new RecordUnreadable(
+        // B166 (D194): whose fault it is depends on the read; a record read tells (`one`).
+        throw new SourceError(
           "permanent",
           `The source answered ${path.split("?", 1)[0]} with a body that is not JSON`,
           status,
@@ -405,12 +441,15 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     if (!signingIn) {
       signingIn = (async () => {
         try {
-          const answer = await send(
-            "POST",
-            `api/collections/${authCollection}/auth-with-password`,
-            "",
-            JSON.stringify({ identity: config.identity, password: config.password }),
-            {},
+          const answer = await notRecord(
+            send(
+              "POST",
+              `api/collections/${authCollection}/auth-with-password`,
+              "",
+              JSON.stringify({ identity: config.identity, password: config.password }),
+              {},
+            ),
+            "the service account's sign-in",
           );
           const next = member(answer.body, "token");
           if (answer.status !== 200 || typeof next !== "string") {
@@ -453,12 +492,9 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     if (!used) {
       return false;
     }
-    const answer = await send(
-      "POST",
-      `api/collections/${authCollection}/auth-refresh`,
-      used,
-      undefined,
-      call,
+    const answer = await notRecord(
+      send("POST", `api/collections/${authCollection}/auth-refresh`, used, undefined, call),
+      "the token check",
     );
     if (answer.status === 401 || answer.status === 403 || answer.status === 404) {
       drop(used);
@@ -556,7 +592,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         return null;
       }
       if (query.names.length > MAX_NAMES) {
-        throw new SourceError("permanent", `A source query compares at most ${MAX_NAMES} names`);
+        throw new UnfitQuery(`A source query compares at most ${MAX_NAMES} names`);
       }
       parts.push(
         `(${query.names.map((name) => `${ev.name} = ${textLiteral(name)}`).join(" || ")})`,
@@ -578,7 +614,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     const value = has(record, ev.user, ev.collection);
     const user = isSourceList(value) ? value[0] : value;
     if (typeof user !== "string") {
-      throw new SourceError("permanent", `The source's ${ev.user} field is not a relation`);
+      throw new RecordUnreadable("permanent", `The source's ${ev.user} field is not a relation`);
     }
     return user;
   }
@@ -586,7 +622,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
   function occurredOf(record: SourceObject): Date {
     const date = parseSourceDate(has(record, ev.occurredAt, ev.collection));
     if (!date) {
-      throw new SourceError(
+      throw new RecordUnreadable(
         "permanent",
         `The source's events record ${idOf(record)} has no ${ev.occurredAt}`,
       );
@@ -699,14 +735,25 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     const what = `a read of ${collection}`;
     const row = await confirmed(
       async () => {
-        const { value: answer, used } = await get(
-          `api/collections/${collection}/records/${id}`,
-          call,
-        );
+        let read: Read<Answer>;
+        try {
+          read = await get(`api/collections/${collection}/records/${id}`, call);
+        } catch (error) {
+          // B166 (D194): a sign-in's failure has no 2xx status (`notRecord`), so a 2xx body that
+          // is not JSON (or nests too deep) is this record's own answer.
+          if (notJson(error)) {
+            throw new RecordUnreadable("permanent", error.message, error.status);
+          }
+          throw error;
+        }
+        const { value: answer, used } = read;
         if (answer.status === 404 && !answer.tooLarge) {
           return { value: null, used };
         }
-        if (answer.status === 200 && !answer.tooLarge && !isSourceObject(answer.body)) {
+        if (answer.status === 200 && answer.tooLarge) {
+          throw recordTooLarge();
+        }
+        if (answer.status === 200 && !isSourceObject(answer.body)) {
           throw new RecordUnreadable(
             "permanent",
             `The source answered ${what} with no record`,
@@ -722,9 +769,14 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       call,
     );
     if (row === null) {
+      // The collection probe: any failure of it, a page that is not JSON or too large included,
+      // is the configuration's (B166, D194).
       const search = new URLSearchParams({ page: "1", perPage: "1", skipTotal: "1", fields: "id" });
-      const { value: answer } = await get(`api/collections/${collection}/records?${search}`, call);
-      if (answer.status !== 200) {
+      const { value: answer } = await notRecord(
+        get(`api/collections/${collection}/records?${search}`, call),
+        what,
+      );
+      if (answer.status !== 200 || answer.tooLarge) {
         throw failure(answer, what);
       }
     }

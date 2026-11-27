@@ -10,6 +10,7 @@
 // - `leaveUser` removes a leaving user's subscriber inside the caller's write transaction.
 import type { Enrollments } from "@/sequences/enrollments";
 import { trimSpace } from "@/lists/store";
+import { isUnfitQuery } from "@/sources/filter";
 import { isSourceError, SourceError } from "@/sources/source";
 import type { ExternalSource, SourceRecipient } from "@/sources/source";
 import { isNotSourceId, isRecordUnreadable } from "@/sources/pocketbase";
@@ -63,17 +64,28 @@ export async function readRecipient(
   try {
     return await source.recipient(userId, signal ? { signal } : {});
   } catch (error) {
-    if (
-      isSourceError(error) &&
-      error.kind === "permanent" &&
-      !isSettingsMismatch(error) &&
-      !isNotSourceId(error) &&
-      !isRecordUnreadable(error)
-    ) {
-      throw new SettingsMismatch(`The recipients view refused a read: ${error.message}`);
-    }
-    throw error;
+    throw settingsRefusal(error, "The recipients view refused a read") ?? error;
   }
+}
+
+/**
+ * B166 (D194): a source read's failure as `readRecipient` classifies it: a permanent failure that
+ * is not the read's own record's (an ID the source cannot have, `RecordUnreadable`) nor the query's
+ * own (`UnfitQuery`: a filter value the adapter cannot write) nor a `SettingsMismatch` already is
+ * the settings', returned as a `SettingsMismatch` led by `what`. Anything else returns `null`.
+ */
+export function settingsRefusal(error: unknown, what: string): SettingsMismatch | null {
+  if (
+    isSourceError(error) &&
+    error.kind === "permanent" &&
+    !isSettingsMismatch(error) &&
+    !isNotSourceId(error) &&
+    !isRecordUnreadable(error) &&
+    !isUnfitQuery(error)
+  ) {
+    return new SettingsMismatch(`${what}: ${error.message}`);
+  }
+  return null;
 }
 
 /** The view's address as iglo.email stores it, or null when it is no address. */

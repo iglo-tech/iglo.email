@@ -1375,3 +1375,48 @@ test("B166: a source host the private-address block refuses while a record is ha
   expect((await linked(h, ana))?.email).toBe(emailOf(ana));
   expect(h.records.stream()?.retries()).toEqual([]);
 });
+
+test("B166: a source host the private-address block refuses while a trigger.condition is read refuses the stream: nothing committed; listed again, the record starts its sequence once", async () => {
+  const hosts = { current: ["localhost"] };
+  const h = await start({
+    config: { url: `http://localhost:${pb.port}` },
+    guard: { blockPrivate: () => true, privateHosts: () => hosts.current },
+  });
+  const template = await h.f.template();
+  // The condition counts the trigger record itself, so it holds once it can be read. No grant
+  // rules: the condition's read is the record's first source read.
+  const seq = await h.f.sequence({
+    source: "external",
+    trigger: {
+      event: h.ev("order_paid"),
+      condition: { event: h.ev("order_paid"), count: { gte: 1 } },
+    },
+    steps: [tx(template)],
+  });
+  await resubscribed(h);
+  hosts.current = [];
+  const ana = await pb.user();
+  const paid = await record(h, ana, "order_paid");
+  await until(
+    h,
+    () => h.attention.some((line) => line.includes("block_private_addresses")),
+    "the refusal",
+  );
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(await linked(h, ana)).toBeNull();
+
+  hosts.current = ["localhost"];
+  await live(h);
+  await handled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ kind: "written", started: 1 });
+  const subscriber = (await linked(h, ana))?.id ?? 0;
+  expect((await enrollmentsOf(h, subscriber)).map((e) => asBody<number>(e.sequence_id))).toEqual([
+    seq.id,
+  ]);
+  expect(h.outcomes.filter((o) => o.record === paid.id)).toHaveLength(1);
+  expect(h.records.stream()?.retries()).toEqual([]);
+});

@@ -52,22 +52,27 @@ const UNREADABLE =
   "The source record cannot be read: its JSON nests deeper than 64 levels or is not JSON";
 
 /**
- * The ID of a record, or a permanent failure for a page with no ID at all (not a PocketBase
+ * The ID of a record, or a `SettingsMismatch` for a page with no ID at all (not a PocketBase
  * record: the settings name the wrong collection). An ID the stream does not key is the record's
  * own fault: its item is terminal.
  */
 function idOf(record: SourceObject): string {
   const id = member(record, "id");
   if (typeof id !== "string" || !id) {
-    throw new SourceError("permanent", "A source record has no id");
+    throw new SettingsMismatch("A source record has no id");
   }
   return id;
 }
 
+/**
+ * The stamp of a record, or a `SettingsMismatch` (B166, D194): a collection without `created` or
+ * `updated` is not the one the settings mean, so a retry waits for them as a missing configured
+ * field makes it wait, instead of turning terminal.
+ */
 function stampOf(record: SourceObject, field: "created" | "updated"): Date {
   const stamp = parseSourceDate(member(record, field));
   if (!stamp) {
-    throw new SourceError("permanent", `The source's records have no ${field} date`);
+    throw new SettingsMismatch(`The source's records have no ${field} date`);
   }
   return stamp;
 }

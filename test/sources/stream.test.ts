@@ -690,6 +690,42 @@ test("the retry queue: a re-read the source refuses waits past 72 hours, then de
   expect(s.attention.some((line) => line.startsWith("Source record failed for good"))).toBe(false);
 });
 
+test("B166: a queued retry whose events collection no longer gives a created date waits for the settings, not terminal; with the date back it delivers once", async () => {
+  // `manual_events`' `created` is a plain date field, so the record's can be emptied: the re-read
+  // still sorts on `created`, and finds a record without one, as a collection that is not the
+  // events collection the settings mean would answer.
+  const name = unique("nostamp");
+  const manual = config(pb.url, {
+    events: { ...config().events, collection: "manual_events", key: "" },
+    users: { collection: "", leavingFilter: "" },
+  });
+  const s = stream({ config: manual, names: () => [name] });
+  await s.live();
+  const user = await pb.user();
+  const id = recordId();
+  s.fail.set(id, ["transient"]);
+  const created = stamp(0);
+  await pb.create("manual_events", { id, user: user.id, name, occurredAt: stamp(0), created });
+  await s.until(() => s.stream.retries().length === 1, "the queued record");
+  const handlerCalls = s.attempts.get(id);
+  await pb.update("manual_events", id, { created: "" });
+  const start = s.clock.now().getTime();
+  while (s.clock.now().getTime() - start <= RETRY_WINDOW_MS + 3_600_000) {
+    await s.retryAfter(2 * 3_600_000);
+  }
+  expect(s.attempts.get(id)).toBe(handlerCalls);
+  expect(s.stream.retries()).toMatchObject([{ record_id: id, terminal: 0n, waiting: 1n }]);
+  expect(s.stream.retries()[0]?.last_error).toContain("no created date");
+  expect(linesOf(s, FAILED_FOR_GOOD)).toEqual([]);
+  expect(linesOf(s, `${REFUSED}event ${id}:`)).toHaveLength(1);
+  // The date is back: the next retry delivers the record, once.
+  await pb.update("manual_events", id, { created });
+  await s.retryAfter(3_600_000);
+  expect(s.stream.retries()).toEqual([]);
+  expect(s.attempts.get(id)).toBe((handlerCalls ?? 0) + 1);
+  expect(s.eventIds()).toEqual([id]);
+});
+
 /** JSON nested `levels` objects deep (the adapter refuses past 64). */
 function nested(levels: number): Record<string, unknown> {
   let value: Record<string, unknown> = { leaf: true };
