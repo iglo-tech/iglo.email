@@ -44,7 +44,7 @@ export function createPasswordReset(deps: ResetDeps) {
   const { auth, renderer, send, settings, logger } = deps;
   const form = (context: RequestContext, title: string, children: Child): Response => {
     const body = render(
-      <PublicShell title={title} site={settings()} assetVersion={assetVersion}>
+      <PublicShell title={title} site={settings()} assetVersion={assetVersion} customAssets={false}>
         <section class="login">
           <h2>{title}</h2>
           {children}
@@ -68,6 +68,8 @@ export function createPasswordReset(deps: ResetDeps) {
         title: context.app.i18n.T("users.resetPassword"),
         message: text,
         site: settings(),
+        // An authentication page's answer: no custom asset (D201).
+        customAssets: false,
       },
       { ...pageHeaders, ...headers },
     );

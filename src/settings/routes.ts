@@ -60,6 +60,38 @@ const nativeKeys: Record<SettingsSide, ReadonlyArray<string>> = {
   ],
 };
 
+/** A project's public custom CSS and JS, as the instance reads and writes them (D201). */
+export interface CustomCode {
+  readonly css: string;
+  readonly js: string;
+}
+
+/** The instance's write of them: a field left undefined keeps its stored value. */
+export interface CustomCodeChange {
+  readonly css: string | undefined;
+  readonly js: string | undefined;
+}
+
+/**
+ * Project keys only the instance admin writes (D201): the public custom CSS and JS, which run on
+ * the project's pages beside its users' sessions. A project write leaves them as stored: one that
+ * omits them or repeats the stored value succeeds, one that changes them is a 403 naming the key.
+ */
+const instanceAuthored = ["appearance.public.custom_css", "appearance.public.custom_js"];
+
+function keepInstanceAuthored(next: Settings, current: Settings, body?: unknown): void {
+  for (const key of instanceAuthored) {
+    if (body !== undefined && !hasField(body, key)) {
+      next[key] = current[key];
+    } else if (next[key] !== current[key]) {
+      throw new HttpError(
+        403,
+        `${key} is set by the instance admin: change it on the instance host's Projects page.`,
+      );
+    }
+  }
+}
+
 const refusal = (side: SettingsSide, key: string) =>
   new HttpError(
     400,
@@ -179,6 +211,7 @@ export function settingsHandlers(api: SettingsApi) {
         }
         if (side === "project") {
           next["app.root_url"] = current["app.root_url"];
+          keepInstanceAuthored(next, current, body);
         }
         api.check?.(next, current);
         return next;
@@ -199,6 +232,9 @@ export function settingsHandlers(api: SettingsApi) {
         // is kept only for the same URL and identity, as in a full write.
         if (key.startsWith("source.") && key !== "source.password") {
           next["source.password"] = "";
+        }
+        if (side === "project") {
+          keepInstanceAuthored(next, current);
         }
         api.check?.(next, current);
         return next;

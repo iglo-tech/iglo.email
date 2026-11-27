@@ -42,7 +42,7 @@ function Enabled({ t }: { t: Translation }) {
     </div>
   );
 }
-function Setup({ t }: { t: Translation }) {
+function Setup({ t, copy }: { t: Translation; copy: boolean }) {
   return (
     <div class="card content">
       <div class="row mb-4">
@@ -93,6 +93,19 @@ function Setup({ t }: { t: Translation }) {
                   required
                 />
               </div>
+              {copy ? (
+                <label data-field="">
+                  {t.T("globals.fields.password")}
+                  <input
+                    type="password"
+                    x-model="totpPassword"
+                    autocomplete="current-password"
+                    minlength="8"
+                    required
+                    data-testid="totp-password"
+                  />
+                </label>
+              ) : null}
               <div class="hstack gap-3">
                 <button type="submit" data-variant="primary">
                   {t.T("globals.buttons.enable")}
@@ -113,11 +126,18 @@ export const profileView: AdminView = ({ context, identity }) => {
   const t = context.app.i18n;
   const { user, role } = identity;
   const passwordLogin = user.password_login !== 0n;
+  // D201: the instance admin's copy proves its current password to change its credentials.
+  const copy = user.admin_copy === 1n;
   return {
     title: t.T("globals.terms.profile"),
     pageId: "profile",
     script: "profile",
-    config: { user_id: String(user.id), user_name: user.name, user_email: user.email },
+    config: {
+      user_id: String(user.id),
+      user_name: user.name,
+      user_email: user.email,
+      admin_copy: copy,
+    },
     translationKeys: [
       "users.twoFAEnabled",
       "users.passwordMismatch",
@@ -184,6 +204,23 @@ export const profileView: AdminView = ({ context, identity }) => {
                     </label>
                   </div>
                   <small data-hint="">{t.T("users.passwordSessions")}</small>
+                  {copy ? (
+                    <label data-field="">
+                      Current password
+                      <input
+                        type="password"
+                        name="current_password"
+                        maxlength="200"
+                        autocomplete="current-password"
+                        x-model="form.currentPassword"
+                        data-testid="profile-current-password"
+                      />
+                      <small data-hint="">
+                        Needed to change the password or email of the instance admin, which apply to
+                        every project.
+                      </small>
+                    </label>
+                  ) : null}
                 </>
               ) : null}
             </section>
@@ -201,7 +238,7 @@ export const profileView: AdminView = ({ context, identity }) => {
         </div>
         {passwordLogin && identity.transport === "session" ? (
           <section class="twofa-app-section mt-6">
-            {user.twofa_type === "totp" ? <Enabled t={t} /> : <Setup t={t} />}
+            {user.twofa_type === "totp" ? <Enabled t={t} /> : <Setup t={t} copy={copy} />}
           </section>
         ) : null}
       </section>

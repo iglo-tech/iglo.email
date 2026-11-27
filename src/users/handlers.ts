@@ -10,7 +10,7 @@ import type { Authentication } from "@/users/auth";
 import { readBody } from "@/users/input";
 import { validPassword } from "@/users/password";
 import { projectUser } from "@/users/models";
-import type { Identity } from "@/users/models";
+import type { Identity, UserRow } from "@/users/models";
 import { CopyProtectedError, UsernameReservedError } from "@/users/store";
 import type { UserFields, UserStore } from "@/users/store";
 
@@ -19,6 +19,8 @@ interface Input {
   name: string;
   email: string;
   password: string;
+  /** The caller's current password: what the admin's copy proves to change its credentials (D201). */
+  currentPassword: string;
   type: string;
   status: string;
   passwordLogin: boolean;
@@ -104,6 +106,7 @@ async function readJSON(request: Request): Promise<Input> {
     name: string("name").trim(),
     email: string("email").trim(),
     password: string("password"),
+    currentPassword: string("current_password"),
     type: string("type"),
     status: string("status"),
     passwordLogin: value.password_login === true,
@@ -215,6 +218,37 @@ function storageFailure(
 }
 
 export function createUserHandlers(store: UserStore, roles: Roles, auth: Authentication) {
+  /**
+   * D201: the instance admin's copy, changing its own password or email from a project session,
+   * proves its current password in `current_password`. Its password writes through to instance.db,
+   * and its email is where a reset (which writes through too) is sent, so a project session alone
+   * never reaches the instance account. Any other user's own profile is unchanged.
+   */
+  const copyProof = async (
+    context: RequestContext,
+    target: Pick<UserRow, "id" | "admin_copy" | "email" | "password">,
+    input: Input,
+  ): Promise<void> => {
+    if (target.admin_copy !== 1n || current(context).user.id !== target.id) {
+      return;
+    }
+    if (!input.password && input.email.toLowerCase() === target.email.toLowerCase()) {
+      return;
+    }
+    if (
+      !input.currentPassword ||
+      !target.password ||
+      !(await auth.verifyPassword(input.currentPassword, target.password))
+    ) {
+      throw new HttpError(
+        403,
+        "The instance admin's password and email change only with its current password " +
+          "(current_password), or on the instance host's Account page.",
+        {},
+        "invalid_credentials",
+      );
+    }
+  };
   const getUser: Handler = (context) => {
     const user = store.byId(BigInt(getID(context)));
     if (!user) {
@@ -320,6 +354,7 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     ) {
       throw new HttpError(400, "invalid role");
     }
+    await copyProof(context, previous, input);
     // Prepare possible human credentials without holding a transaction. The
     // target may change type/authority while this asynchronous work is running.
     const hash =
@@ -403,6 +438,7 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
       if (input.password && !validPassword(input.password)) {
         invalid(context, "password");
       }
+      await copyProof(context, previous, input);
     }
     const hash =
       previous.type === "user" && previous.password_login !== 0n && input.password

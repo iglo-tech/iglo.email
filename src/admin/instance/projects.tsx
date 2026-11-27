@@ -5,6 +5,7 @@ import type { ProjectActivity } from "@/analytics/activity";
 import type { LabelledLine } from "@/maintenance/log-buffer";
 import type { DeletedProject } from "@/projects/deleted";
 import type { NewProject, ProjectChange, ProjectRecord } from "@/projects/registry";
+import type { CustomCode, CustomCodeChange } from "@/settings/routes";
 
 export const PROJECTS_PATH = "/admin/instance/projects";
 export const LOGS_PATH = "/admin/instance/logs";
@@ -30,6 +31,10 @@ export interface InstanceProjects {
   remove(slug: string): Promise<DeletedProject | null>;
   /** The instance lines and every project's, labelled, newest last. */
   logs(): ReadonlyArray<LabelledLine>;
+  /** A project's public custom CSS and JS (D201); null for a slug no served project has. */
+  customCode(slug: string): CustomCode | null;
+  /** Writes a project's public custom CSS and JS (D201); a field left out keeps its value. */
+  setCustomCode(slug: string, change: CustomCodeChange): Promise<CustomCode>;
 }
 
 /** A project as the create and edit routes answer it. */
@@ -307,6 +312,34 @@ export function ProjectsBody(props: {
                 once it is removed.
               </p>
             </div>
+            {/* D201: only the instance admin writes a project's public custom CSS and JS. */}
+            <label data-field="">
+              Public custom CSS
+              <textarea
+                name="custom_css"
+                rows="4"
+                class="code"
+                spellcheck="false"
+                x-model="edit.customCss"
+                data-testid="project-custom-css"
+              />
+            </label>
+            <label data-field="">
+              Public custom JavaScript
+              <textarea
+                name="custom_js"
+                rows="4"
+                class="code"
+                spellcheck="false"
+                x-model="edit.customJs"
+                data-testid="project-custom-js"
+              />
+              <small data-hint="">
+                Runs as written on the public pages of the project, for every visitor. No sign-in,
+                two-factor or password reset page loads it, and the instance host serves that of the
+                primary project as an empty script.
+              </small>
+            </label>
           </section>
           <footer class="dialog-foot hstack justify-end gap-1">
             <button type="button" class="outline" x-on:click="closeDialogs">

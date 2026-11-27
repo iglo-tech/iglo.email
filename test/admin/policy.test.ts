@@ -81,8 +81,10 @@ let strict = "";
 beforeAll(async () => {
   f = await startUserFixture();
   cookie = (await login(f, admin.user, admin.password)).cookie;
-  strict = (await get(f, "/admin/login")).headers.get("content-security-policy") ?? "";
+  strict = (await get(f, "/admin/lists", cookie)).headers.get("content-security-policy") ?? "";
 });
+/** D201: an authentication page's policy is the same, except that no frame may hold it. */
+const signIn = () => strict.replace("frame-ancestors 'self'", "frame-ancestors 'none'");
 afterAll(() => f.close());
 
 test("the policy names only what the admin uses", () => {
@@ -124,17 +126,17 @@ test("every screen carries it, and loads no inline script", async () => {
 });
 
 test("pages outside the session check and error pages carry it", async () => {
-  for (const [path, status, session] of [
-    ["/admin/login", 200, ""],
-    ["/admin/forgot", 200, ""],
-    ["/admin/reset?token=missing", 400, ""],
-    ["/admin/no-such-page", 404, cookie],
-    ["/admin/lists/not-a-number", 400, cookie],
+  for (const [path, status, session, expected] of [
+    ["/admin/login", 200, "", signIn()],
+    ["/admin/forgot", 200, "", signIn()],
+    ["/admin/reset?token=missing", 400, "", signIn()],
+    ["/admin/no-such-page", 404, cookie, strict],
+    ["/admin/lists/not-a-number", 400, cookie, strict],
   ] as const) {
     const response = await get(f, path, session);
     expect([path, response.status]).toEqual([path, status]);
     expect(response.headers.get("content-type")).toStartWith("text/html");
-    expect(response.headers.get("content-security-policy")).toBe(strict);
+    expect(response.headers.get("content-security-policy")).toBe(expected);
   }
 });
 

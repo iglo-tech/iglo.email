@@ -359,7 +359,10 @@ test.describe("script that reached the page", () => {
 
   test("the admin cannot be framed by another origin", async ({ page }) => {
     await signIn(page);
-    const response = await page.goto("/admin/login");
+    const response = await page.goto("/admin/lists");
     expect(response.headers()["content-security-policy"]).toContain("frame-ancestors 'self'");
+    // D201: an authentication page cannot be framed at all, not even by the admin itself.
+    const login = await page.goto("/admin/login");
+    expect(login.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
   });
 });

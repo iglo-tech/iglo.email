@@ -687,6 +687,18 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
         { source: "instance", lines: instanceLogs.lines() },
         ...entries.map((entry) => ({ source: entry.record.slug, lines: entry.project.logs() })),
       ]),
+    customCode: (slug) =>
+      entries.find((entry) => entry.record.slug === slug)?.project.customCode() ?? null,
+    // Serialized with the lifecycle, so a project being deleted is never written to (D201).
+    setCustomCode: (slug, change) =>
+      serial(async () => {
+        const entry = entries.find((item) => item.record.slug === slug);
+        if (!entry) {
+          throw new RegistryError(404, `No project ${slug}`);
+        }
+        entry.project.setCustomCode(change);
+        return entry.project.customCode();
+      }),
   };
 
   const instanceSettings = must(settings, "instance settings");

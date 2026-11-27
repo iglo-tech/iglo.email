@@ -224,6 +224,8 @@ export async function publicFixture() {
         );
       }
     },
+    /** The opt-in loop's stop, the step a shutdown awaits before the stores close (D201). */
+    stopSignups: () => signups.stop(),
     async close() {
       await signups.stop();
       campaigns.close();

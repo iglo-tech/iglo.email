@@ -286,6 +286,21 @@ test("a double opt-in signup gets one mail, again after the throttle expires", a
   ]);
 });
 
+test("a signup still making its mail at shutdown is queued before the stop resolves (D201)", async () => {
+  const f = await open();
+  const list = await f.list("Double", "public", "double");
+  expect((await api(f, "late@example.test", list.uuid)).status).toBe(200);
+  // The loop has not run: the stop prepares the signup, whose text part is made asynchronously.
+  await f.stopSignups();
+  // The send is journaled before the stop resolved, so the stores can close after it: nothing is
+  // lost and nothing is written after close ("Unknown named query"). The fixture's outbox still
+  // runs, so it may already have picked the send up.
+  expect(f.db.query("SELECT to_email, kind FROM sends ORDER BY id").all()).toEqual([
+    { to_email: "late@example.test", kind: "transactional" },
+  ]);
+  expect(f.errors).toEqual([]);
+});
+
 test("one address gets one opt-in mail per window, however many lists it joins", async () => {
   const f = await open();
   const address = "flood@example.test";

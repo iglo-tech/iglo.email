@@ -29,6 +29,11 @@ export function adminPolicy(options: {
   origins: ReadonlyArray<string>;
   remoteImages?: boolean;
   googleFonts?: boolean;
+  /**
+   * An authentication page (D201): no frame may hold it (`frame-ancestors 'none'`), and the caller
+   * names no image origin a project setting chose.
+   */
+  signIn?: boolean;
 }): string {
   const named = options.origins.map(origin).filter((value) => value !== undefined);
   const images = options.remoteImages ? ["http:", "https:"] : [...new Set(named)];
@@ -48,7 +53,7 @@ export function adminPolicy(options: {
     "form-action 'self'",
     "base-uri 'none'",
     "object-src 'none'",
-    "frame-ancestors 'self'",
+    options.signIn ? "frame-ancestors 'none'" : "frame-ancestors 'self'",
   ].join("; ");
 }
 
@@ -74,11 +79,15 @@ export function adminPolicyHeader(site: () => PolicySite): Middleware {
       !response.headers.has("Content-Security-Policy")
     ) {
       const { rootUrl, faviconUrl, googleFonts } = site();
+      const signIn = signInPaths.has(pathname);
       response.headers.set(
         "Content-Security-Policy",
         adminPolicy({
-          origins: [rootUrl, faviconUrl],
-          googleFonts: googleFonts === true && signInPaths.has(pathname),
+          // D201: an authentication page uses the bundled favicon, so the project's favicon origin
+          // (a project setting) is no image source there: no request can carry what CSS sees.
+          origins: signIn ? [rootUrl] : [rootUrl, faviconUrl],
+          googleFonts: googleFonts === true && signIn,
+          signIn,
         }),
       );
     }

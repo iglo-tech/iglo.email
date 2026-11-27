@@ -64,6 +64,8 @@ export function createSubscriberMail(deps: {
   const exportThrottle = createThrottle(deps.clock, optinThrottleTTL, optinThrottleCap);
   const signups = new Set<bigint>();
   let overflowed = false;
+  /** Enqueues whose text part is still being made: a shutdown awaits them (`settled`). */
+  const pending = new Set<Promise<void>>();
   /** The sections `privacy.exportable` allows, for the emailed file and the admin download. */
   const exportSections = (sub: Subscriber) => {
     const allowed = new Set(deps.settings().exportable);
@@ -128,6 +130,22 @@ export function createSubscriberMail(deps: {
         contentType: string;
       }>;
     },
+  ): Promise<void> => {
+    // Tracked until it settles, so a shutdown waits for it before the stores close (D201): the
+    // mail is queued, never lost and never written after close.
+    const step = queue(sub, settings, subject, html, budget, extra).finally(() =>
+      pending.delete(step),
+    );
+    pending.add(step);
+    return step;
+  };
+  const queue = (
+    sub: Subscriber,
+    settings: PublicSettings,
+    subject: string,
+    html: string,
+    budget: MessageBudget,
+    extra: Parameters<typeof enqueue>[5],
   ): Promise<void> =>
     // The generated text part (B120, D118) is made first, so the enqueue is one step after it. A
     // failure is logged and nothing is queued, as a failed hook is everywhere else in this module.
@@ -207,6 +225,15 @@ export function createSubscriberMail(deps: {
   };
   return {
     optin,
+    /**
+     * Resolves once every enqueue started so far has queued its mail or logged its failure. The
+     * project's close awaits it before any store closes (D201).
+     */
+    async settled(): Promise<void> {
+      while (pending.size) {
+        await Promise.allSettled(pending);
+      }
+    },
     /** InsertSubscriber/UpdateSubscriberWithLists from the admin API. */
     afterAdminWrite(sub: Subscriber, listIds: Array<bigint>) {
       if (deps.settings().sendOptin) {
@@ -339,6 +366,8 @@ export function createSignupMail(deps: {
     async stop() {
       await loop.stop();
       prepare(deps.mail.takeSignups(signupBatch));
+      // D201: the mail just prepared is queued before the stop resolves and the stores close.
+      await deps.mail.settled();
     },
   };
 }

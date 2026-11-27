@@ -21,6 +21,7 @@ import { settingsPage } from "@/admin/views/settings";
 import type { SesRateLine } from "@/admin/views/settings";
 import type { Translation } from "@/i18n/i18n";
 import { settingsHandlers } from "@/settings/routes";
+import type { CustomCodeChange } from "@/settings/routes";
 import type { InstanceSettingsStore } from "@/settings/instance";
 import type { NavigationLink } from "@/admin/layout/shell";
 import {
@@ -248,13 +249,19 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
   };
 
   // Every HTML answer carries the admin pages' policy (D71).
-  const policy: Middleware = async (_context, next) => {
+  const policy: Middleware = async (context, next) => {
     const response = await next();
     if (
       response.headers.get("Content-Type")?.startsWith("text/html") &&
       !response.headers.has("Content-Security-Policy")
     ) {
-      response.headers.set("Content-Security-Policy", adminPolicy({ origins: [deps.rootUrl] }));
+      // The two login pages are authentication pages: no frame may hold them (D201).
+      const { pathname } = context.url;
+      const signIn = pathname === LOGIN_PATH || pathname === `${LOGIN_PATH}/twofa`;
+      response.headers.set(
+        "Content-Security-Policy",
+        adminPolicy({ origins: [deps.rootUrl], signIn }),
+      );
     }
     return response;
   };
@@ -888,6 +895,46 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
       };
       const record = await refused(() => deps.projects.update(context.params.slug ?? "", change));
       return ok(projectJson(record));
+    }),
+  );
+  // D201: a project's public custom CSS and JS are written only here, with the instance session.
+  router.route(
+    "GET",
+    "/api/instance/projects/:slug/appearance",
+    api((context) => {
+      const code = deps.projects.customCode(context.params.slug ?? "");
+      if (!code) {
+        throw new HttpError(404, `No project ${context.params.slug ?? ""}`);
+      }
+      return ok({ custom_css: code.css, custom_js: code.js });
+    }),
+  );
+  router.route(
+    "PUT",
+    "/api/instance/projects/:slug/appearance",
+    api(async (context) => {
+      const body = await jsonObject(context.request);
+      for (const key of body.keys()) {
+        if (key !== "custom_css" && key !== "custom_js") {
+          throw new HttpError(
+            400,
+            `${key} is not an appearance field: send custom_css or custom_js`,
+          );
+        }
+      }
+      // A field left out keeps its value (undefined).
+      const field = (key: string): string | undefined => {
+        const value = body.get(key);
+        if (value !== undefined && typeof value !== "string") {
+          throw new HttpError(400, `${key} must be a string`);
+        }
+        return value;
+      };
+      const change: CustomCodeChange = { css: field("custom_css"), js: field("custom_js") };
+      const code = await refused(() =>
+        deps.projects.setCustomCode(context.params.slug ?? "", change),
+      );
+      return ok({ custom_css: code.css, custom_js: code.js });
     }),
   );
   router.route(

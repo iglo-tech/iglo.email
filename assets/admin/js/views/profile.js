@@ -13,6 +13,7 @@ function profileView() {
       email: config.user_email || '',
       password: '',
       password2: '',
+      currentPassword: '',
     },
 
     // TOTP enable flow.
@@ -20,6 +21,8 @@ function profileView() {
     totpQR: null,
     totpSecret: null,
     totpCode: '',
+    // D201: the instance admin's copy proves its current password to enrol TOTP.
+    totpPassword: '',
 
     // TOTP disable flow.
     showDisableTotp: false,
@@ -36,10 +39,15 @@ function profileView() {
         payload.password = this.form.password;
         payload.password2 = this.form.password2;
       }
+      // D201: the instance admin's copy sends its current password with a credential change.
+      if (config.admin_copy && this.form.currentPassword) {
+        payload.current_password = this.form.currentPassword;
+      }
 
       const data = await api('profile.save', '/profile', 'PUT', payload);
       this.form.password = '';
       this.form.password2 = '';
+      this.form.currentPassword = '';
       u.toast(i18n.ts('globals.messages.updated', { name: data.username }));
     },
 
@@ -66,6 +74,7 @@ function profileView() {
       await api('profile.totp', `/users/${id}/twofa`, 'PUT', {
         secret: this.totpSecret,
         code: this.totpCode,
+        ...(config.admin_copy ? { password: this.totpPassword } : {}),
       });
       u.reload({ message: i18n.t('users.twoFAEnabled') });
     },
@@ -75,6 +84,7 @@ function profileView() {
       this.totpQR = null;
       this.totpSecret = null;
       this.totpCode = '';
+      this.totpPassword = '';
     },
 
     async confirmDisableTotp() {

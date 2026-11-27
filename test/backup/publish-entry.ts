@@ -96,6 +96,10 @@ const actions: Record<string, () => void> = {
     }
     rmSync(path!, { recursive: true, force: true });
   },
+  // D201: the project's directory, or only its database file, moved away while instance.db still
+  // lists it, and nothing put in its place.
+  moveaway: () => renameSync(path!, `${path!}.moved`),
+  movedb: () => renameSync(join(path!, "iglo-email.db"), join(path!, "moved.db")),
   claim: () => {
     rmSync(path!, { recursive: true, force: true });
     mkdirSync(path!);

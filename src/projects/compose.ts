@@ -43,6 +43,8 @@ import { createSettings } from "@/settings/store";
 import type { InstanceSettingsReader } from "@/settings/instance";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
+import type { CustomCode, CustomCodeChange } from "@/settings/routes";
+import { bindKey } from "@/settings/validate";
 import { registerSourceRoutes, sourceGuard, sourceListsCheck } from "@/sources/routes";
 import { createSourceProvider } from "@/sources/project";
 import { createSendTimeLookup } from "@/sources/send-time";
@@ -248,6 +250,10 @@ export interface Project {
   logs(): ReadonlyArray<string>;
   /** Counts only, for the instance Projects page (B143a): queued, running, sent since `since`. */
   activity(since: Date): ProjectActivity;
+  /** The public custom CSS and JS (D201), as the instance's appearance route reads them. */
+  customCode(): CustomCode;
+  /** The instance's write of them (D201): the only one, a project's settings API refuses it. */
+  setCustomCode(change: CustomCodeChange): void;
 }
 
 /**
@@ -348,6 +354,9 @@ export async function createProject(
     await stopped?.catch(() => {});
     await retaining?.catch(() => {});
     await signing?.catch(() => {});
+    // D201: an opt-in or data mail still making its text part (an admin write's, too) is queued
+    // before any store closes, so none is lost or written after close.
+    await mail?.settled();
     await delivering?.catch(() => {});
     await summarizing?.catch(() => {});
     summaries?.close();
@@ -1216,6 +1225,27 @@ export async function createProject(
       },
       logs: () => must(logs, "logs").lines(),
       activity: (since: Date) => must(activity, "activity").read(since),
+      /** The public custom CSS and JS (D201): stored here, written only through the instance. */
+      customCode: (): CustomCode => {
+        const current = must(settings, "settings").read();
+        return {
+          css: String(current["appearance.public.custom_css"]),
+          js: String(current["appearance.public.custom_js"]),
+        };
+      },
+      /** The instance's write of the public custom CSS and JS (D201); a field left out keeps its value. */
+      setCustomCode(change: CustomCodeChange): void {
+        must(settings, "settings").update((current) => {
+          let next = current;
+          if (change.css !== undefined) {
+            next = bindKey(next, "appearance.public.custom_css", change.css);
+          }
+          if (change.js !== undefined) {
+            next = bindKey(next, "appearance.public.custom_js", change.js);
+          }
+          return next;
+        });
+      },
     };
   } catch (error) {
     await closeAll();

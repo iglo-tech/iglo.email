@@ -408,6 +408,16 @@ hostnames and on every other project's host. The instance login and 2FA pages lo
 custom CSS. Uploaded files, archived campaigns and previews never run as scripts on any host
 ([Uploads](#uploads)).
 
+**Custom code and sign-in pages** ([D201](design/09-decisions.md#d201-custom-code-is-the-instance-admins-and-authentication-pages-load-none-b172-lead-2026-11-27)).
+The admin account signs in on every project's host, so each project's public custom CSS and
+JavaScript is set only by the instance admin: on Projects, open a project's **Edit** dialog and use
+**Public custom CSS** and **Public custom JavaScript** (or `PUT /api/instance/projects/<slug>/appearance`
+with the instance session). A project's Settings page shows no editor for them, and its settings
+API refuses a change to either. No sign-in, two-factor, forgot-password or reset page, on any host,
+loads custom CSS, custom JavaScript or the project's favicon, and none can be framed. Changing the
+admin's password or email, or turning on its two-factor authentication, from a project's Profile
+page asks for the current password; the instance Account page is unchanged.
+
 **Editing** renames a project and replaces its extra hostnames. Removing an extra hostname makes
 links in mail already sent from it stop working: the host then reaches the primary project, as any
 host no project claims. To move a project to a new domain, add the new name as an extra hostname
@@ -1517,6 +1527,18 @@ is. Its public URLs and every other page keep working; custom CSS is unchanged. 
 needs custom JavaScript on its public pages serves them from a non-primary project, or from an extra
 hostname of the primary project, where it runs as before. No instance cookie changes, so instance
 sessions survive the upgrade.
+
+From the same release (D201), only the instance admin writes a project's
+`appearance.public.custom_css` and `appearance.public.custom_js` (Projects, **Edit**). Stored values
+keep working as they are; a project user or API credential that wrote them through
+`PUT /api/settings` now gets `403` naming the key, while a full settings write that leaves them out
+or sends them unchanged still succeeds. Review each project's stored custom code after the upgrade:
+before it, any project user with `settings:manage` could write it. The sign-in, two-factor,
+forgot-password and reset pages no longer load custom CSS or JavaScript and show the bundled
+favicon, so a sign-in page restyled through custom CSS looks plain. A script that changes the admin
+account's password or email through a project's `PUT /api/profile` or `PUT /api/users/<id>` sends
+`current_password`, and one that enrols its TOTP through `PUT /api/users/<id>/twofa` sends
+`password`; other users' calls are unchanged.
 
 From the release that pairs privacy actions (D126), the preference links of mail sent before the
 upgrade change in three ways. A transactional mail sent before the upgrade has a manage link to a

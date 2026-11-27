@@ -780,46 +780,67 @@ test("a bounce appears on the bounces screen like any other", async ({ page }) =
   expect(await page.evaluate(() => window.pwned)).toBeUndefined();
 });
 
-test("saves independent admin and public appearance editors", async ({ page }) => {
-  // B139: the public editors are this project's; the admin editors are the instance's.
+test("saves the admin appearance on the instance and the public code on its Projects page", async ({
+  page,
+}) => {
+  // B139: the admin editors are the instance's. D201: the public custom CSS and JS are written
+  // only by the instance admin, on the instance Projects page; the project page says so.
   await tab(page, "Appearance").click();
-  // The warning names the admin pages, whose code is the instance's.
   await expect(page.getByTestId("appearance-warning")).toHaveCount(0);
+  await expect(page.getByTestId("public-custom-instance")).toBeVisible();
   const css = page.getByRole("group", { name: "Custom CSS", exact: true }).getByRole("textbox");
   const js = page
     .getByRole("group", { name: "Custom JavaScript", exact: true })
     .getByRole("textbox");
-  await css.fill("/* public settings test */");
-  await js.fill("window.publicCustom = 1;");
-  await save(page);
+  await expect(css).toHaveCount(0);
   await onInstance(page);
   await tab(page, "Appearance").click();
   await expect(page.getByTestId("appearance-warning")).toContainText("every signed-in admin page");
   await css.fill("/* admin settings test */");
   await js.fill("window.adminCustom = 1;");
   await save(page);
+  await page.goto("/admin/instance/projects");
+  await page.getByTestId("project-edit").first().click();
+  await page.getByTestId("project-custom-css").fill("/* public settings test */");
+  await page.getByTestId("project-custom-js").fill("window.publicCustom = 1;");
+  await page.getByTestId("project-save").click();
+  await expect
+    .poll(async () => (await settings(page))["appearance.public.custom_js"])
+    .toBe("window.publicCustom = 1;");
   expect(await settings(page)).toMatchObject({
     "appearance.admin.custom_css": "/* admin settings test */",
     "appearance.admin.custom_js": "window.adminCustom = 1;",
     "appearance.public.custom_css": "/* public settings test */",
     "appearance.public.custom_js": "window.publicCustom = 1;",
   });
-  await page.reload();
+  await page.goto("/admin/instance/projects");
+  await page.getByTestId("project-edit").first().click();
+  await expect(page.getByTestId("project-custom-js")).toHaveValue("window.publicCustom = 1;");
+  await page.goto(INSTANCE);
   await tab(page, "Appearance").click();
   await expect(css).toHaveText("/* admin settings test */");
   await expect(js).toHaveText("window.adminCustom = 1;");
-  await page.goto(SETTINGS);
-  await tab(page, "Appearance").click();
-  await expect(css).toHaveText("/* public settings test */");
-  await expect(js).toHaveText("window.publicCustom = 1;");
 
-  // Each runs where it is meant to, and nowhere else.
+  // Each runs where it is meant to, and nowhere else. This host is the instance's, so the primary
+  // project's public JS is an empty script here (D200); its CSS is served.
   await page.goto("/admin/lists");
   await expect.poll(() => page.evaluate(() => window.adminCustom)).toBe(1);
   expect(await page.evaluate(() => window.publicCustom)).toBeUndefined();
   await page.goto("/subscription/form");
-  await expect.poll(() => page.evaluate(() => window.publicCustom)).toBe(1);
+  expect(await (await page.request.get("/public/custom.css")).text()).toBe(
+    "/* public settings test */",
+  );
+  expect(await page.evaluate(() => window.publicCustom)).toBeUndefined();
   expect(await page.evaluate(() => window.adminCustom)).toBeUndefined();
+  // Put the public code back the one way there is, so afterEach finds it unchanged.
+  await page.goto("/admin/instance/projects");
+  await page.getByTestId("project-edit").first().click();
+  await page.getByTestId("project-custom-css").fill(before["appearance.public.custom_css"]);
+  await page.getByTestId("project-custom-js").fill(before["appearance.public.custom_js"]);
+  await page.getByTestId("project-save").click();
+  await expect
+    .poll(async () => (await settings(page))["appearance.public.custom_js"])
+    .toBe(before["appearance.public.custom_js"]);
   await page.goto("/admin/nothing-here");
   const signedOut = await page.context().browser().newContext();
   const stranger = await signedOut.newPage();

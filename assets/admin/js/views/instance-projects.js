@@ -46,7 +46,7 @@ function instanceProjects() {
   const projects = config.projects || [];
   return {
     form: blank(),
-    edit: { slug: '', name: '', extra: '', before: [] },
+    edit: { slug: '', name: '', extra: '', before: [], customCss: '', customJs: '', code: null },
     doomed: '',
     confirm: '',
 
@@ -70,17 +70,22 @@ function instanceProjects() {
       this.$refs.newDialog.showModal();
     },
 
-    openEdit(event) {
+    async openEdit(event) {
       const slug = event.currentTarget.dataset.slug;
       const project = projects.find((p) => p.slug === slug);
       if (!project) {
         return;
       }
+      // D201: the public custom CSS and JS are the instance's to write, read from the project.
+      const code = await call(`/projects/${encodeURIComponent(slug)}/appearance`, 'GET');
       this.edit = {
         slug,
         name: project.name,
         extra: project.extra.join('\n'),
         before: [...project.extra],
+        customCss: code.custom_css,
+        customJs: code.custom_js,
+        code,
       };
       this.$refs.editDialog.showModal();
     },
@@ -106,10 +111,18 @@ function instanceProjects() {
     },
 
     async save() {
-      await call(`/projects/${encodeURIComponent(this.edit.slug)}`, 'PUT', {
+      const path = `/projects/${encodeURIComponent(this.edit.slug)}`;
+      await call(path, 'PUT', {
         name: this.edit.name,
         extra: lines(this.edit.extra),
       });
+      const code = this.edit.code;
+      if (code && (code.custom_css !== this.edit.customCss || code.custom_js !== this.edit.customJs)) {
+        await call(`${path}/appearance`, 'PUT', {
+          custom_css: this.edit.customCss,
+          custom_js: this.edit.customJs,
+        });
+      }
       u.reload({ message: i18n.t('globals.messages.done') });
     },
 

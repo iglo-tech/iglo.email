@@ -597,31 +597,33 @@ function fileId(path: string): string | undefined {
   return stats ? `${stats.dev}:${stats.ino}` : undefined;
 }
 
-/** Whether the file now at `path` is another than `recorded`. Nothing there is left to other checks. */
-function replaced(path: string, recorded: string | undefined): boolean {
-  const now = fileId(path);
-  return now !== undefined && now !== recorded;
-}
-
 /**
  * Whether each project is still the one a backup set out to copy, by the registry `rows` (live, or
  * the instance.db snapshot's), and with `files` by its live directory and database file too: another
- * directory or database file at its path is a project created again. One moved away and not replaced
- * is not that, and is left to the checks that meet it (publication refuses the live directory).
+ * directory or database file at its path is a project created again, and nothing there (moved away
+ * or removed while instance.db still lists it) is a change as well (D201). The one exemption is a
+ * directory moved to the output path itself: publication meets it and refuses the live directory
+ * by name, which says more than a registry change would.
  */
 function sameProjects(
   identities: ReadonlyArray<ProjectIdentity>,
   rows: ReadonlyArray<{ slug: string; created_at: string }>,
-  files: boolean,
+  files: { output: string } | false,
 ): boolean {
   const created = new Map(rows.map((row) => [row.slug, row.created_at]));
-  return identities.every(
-    (project) =>
-      created.get(project.slug) === project.createdAt &&
-      (!files ||
-        (!replaced(project.directory, project.directoryId) &&
-          !replaced(project.database, project.databaseId))),
-  );
+  return identities.every((project) => {
+    if (created.get(project.slug) !== project.createdAt) {
+      return false;
+    }
+    if (!files) {
+      return true;
+    }
+    const directory = fileId(project.directory);
+    if (directory === undefined && fileId(files.output) === project.directoryId) {
+      return true;
+    }
+    return directory === project.directoryId && fileId(project.database) === project.databaseId;
+  });
 }
 
 /** A `--project` backup whose project was deleted, or deleted and created again, while it ran. */
@@ -1353,7 +1355,7 @@ export function createBackup(options: BackupOptions): BackupReport {
     // databases while the uploads were read from the new directories, so each project's creation
     // time, directory and database file must still be the ones recorded before the copy.
     const now = registeredProjects(instance);
-    const unchanged = sameProjects(identities, now, true);
+    const unchanged = sameProjects(identities, now, { output });
     if (whole && (now.map(({ slug }) => slug).join("\n") !== registered.join("\n") || !unchanged)) {
       throw new RegistryChangedError();
     }
