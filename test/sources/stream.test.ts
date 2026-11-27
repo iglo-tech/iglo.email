@@ -509,6 +509,57 @@ test("topics split past 2,500 characters; a name change re-subscribes", async ()
   expect(s.attempts.has(dropped.id)).toBe(false);
 });
 
+test("B168: 65 short names with distinct markers catch up in filters under PocketBase's limit, each record once", async () => {
+  // Short names: all 65 fit one topic, but one catch-up group per distinct marker would take a
+  // single filter far past 3,500 bytes.
+  const prefix = crypto.randomUUID().slice(0, 4);
+  const names = Array.from({ length: 65 }, (_, i) => `${prefix}_${i}`);
+  const first = stream({ config: eventsOnly(), names: () => names });
+  await first.live();
+  await first.stop();
+  cleanups.pop();
+  cleanups.push(() => rmSync(first.dir, { recursive: true, force: true }));
+  expect(
+    createPocketBaseSource({ config: eventsOnly(), clock: first.clock, guard: openGuard })
+      .stream.eventTopics(names)
+      .map((topic) => topic.names),
+  ).toEqual([names]);
+  // Each name's marker a millisecond apart (names subscribed at different times), all before the
+  // records below, written as the stream stores them.
+  const db = openDatabase(first.dir);
+  try {
+    const topics = db.query<{ topic: string }, []>("SELECT topic FROM source_stream_markers").all();
+    expect(topics).toHaveLength(65);
+    const base = Date.now() - 5000;
+    for (const [i, name] of names.entries()) {
+      const topic = must(
+        topics.find((row) => row.topic.endsWith(`:${name}`)),
+        "the name's marker",
+      ).topic;
+      const marker = new Date(base - i).toISOString().replace("T", " ");
+      db.query("UPDATE source_stream_markers SET marker = ? WHERE topic = ?").run(marker, topic);
+    }
+  } finally {
+    db.close();
+  }
+  const user = await pb.user();
+  const created: Array<string> = [];
+  for (const name of names) {
+    created.push((await pb.event(user.id, name)).id);
+  }
+  const second = stream({ config: eventsOnly(), names: () => names, dir: first.dir });
+  await second.live();
+  await second.until(() => second.eventIds().length === 65, "every name's record");
+  expect(sorted(second.eventIds())).toEqual(sorted(created));
+  expect(new Set(second.eventIds()).size).toBe(65);
+  const filters = second.requests
+    .filter((line) => line.startsWith("GET /api/collections/events/records?"))
+    .map((line) => new URL(line.slice(4), pb.url).searchParams.get("filter") ?? "");
+  expect(filters.length).toBeGreaterThan(1);
+  expect(Math.max(...filters.map((filter) => Buffer.byteLength(filter)))).toBeLessThan(3500);
+  expect(second.attention).toEqual([]);
+});
+
 test("B163: going idle drops the markers, so a name subscribed again does not replay the idle time", async () => {
   const name = unique("idle");
   let subscribed = [name];

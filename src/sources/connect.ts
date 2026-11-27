@@ -75,16 +75,24 @@ function unreachable(error: unknown): boolean {
 }
 
 /**
- * One request to `url` under the guard, or `{ refused }` naming the host the block refuses. With
- * the block on, the addresses are resolved and checked first, then tried in order: an address that
- * refuses the connection gives way to the next, all of them checked. Redirects are never followed.
+ * B168 (D196): the refusal text for a host that resolves to a zoned IPv6 address (`fe80::1%eth0`).
+ * A WHATWG URL cannot carry a zone, so the request could not be pinned to the checked address.
+ */
+const zonedMessage = (host: string) =>
+  `The source host ${host} resolves to an IPv6 address with a zone, which a source request cannot be pinned to; give it an address without a zone`;
+
+/**
+ * One request to `url` under the guard, or `{ refused, message }` naming the host the block
+ * refuses and why. With the block on, the addresses are resolved and checked first, then tried in
+ * order: an address that refuses the connection gives way to the next, all of them checked.
+ * Redirects are never followed.
  */
 export async function guardedFetch(
   url: URL,
   init: RequestInit,
   guard: Guard,
   transport: SourceTransport = {},
-): Promise<Response | { refused: string }> {
+): Promise<Response | { refused: string; message: string }> {
   const send = transport.fetch ?? fetch;
   const request: RequestInit = { ...init, redirect: "manual" };
   if (!guard.blockPrivate()) {
@@ -97,7 +105,12 @@ export async function guardedFetch(
   const allowed = (address: string) =>
     !blockedAddress(address) || (listed && privateAddress(address));
   if (!addresses.length || !addresses.every(allowed)) {
-    return { refused: url.hostname };
+    return { refused: url.hostname, message: refusedMessage(url.hostname) };
+  }
+  // B168 (D196): assigning a zoned literal to `URL.hostname` is silently ignored, which would send
+  // the request to the host name with a second, unchecked lookup: refused before anything is sent.
+  if (addresses.some((address) => address.includes("%"))) {
+    return { refused: url.hostname, message: zonedMessage(url.hostname) };
   }
   for (const [index, address] of addresses.entries()) {
     const target = new URL(url);
@@ -116,5 +129,5 @@ export async function guardedFetch(
       }
     }
   }
-  return { refused: url.hostname };
+  return { refused: url.hostname, message: refusedMessage(url.hostname) };
 }

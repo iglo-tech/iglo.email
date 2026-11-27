@@ -40,6 +40,7 @@ export interface RecipientSyncOptions {
     | "carryConsent"
     | "remove"
     | "addressSuppressed"
+    | "suppressed"
     | "unsubscribeAll"
   >;
   enrollments: Pick<Enrollments, "endSubscriber" | "unsubscribeEffects">;
@@ -310,8 +311,16 @@ export function applyRecipient(
     enrollments.endSubscriber(conflict.holder.id);
     if (!now) {
       // Re-point the holder to the incoming user: blocklist, unsubscribes and cap history stay.
-      // The holder row keeps its own address: it takes nothing new.
-      return subscribers.sourceWrite(conflict.holder.id, { externalId: userId, email, name });
+      // The holder row keeps its own address, but it takes a user ID: B168 (D196), a row now named
+      // by a suppression (the user withdrew and left, and is back under this address) takes the
+      // withdrawal as `took()` applies it. The row never belonged to that user, so no operator
+      // override (D99) of this row's own suppression is undone.
+      const row = subscribers.sourceWrite(conflict.holder.id, { externalId: userId, email, name });
+      if (subscribers.suppressed(row)) {
+        subscribers.unsubscribeAll(row.id);
+        enrollments.unsubscribeEffects.unsubscribedAll({ subscriberId: row.id });
+      }
+      return row;
     }
     // Carry the holder's consent onto the incoming row, delete the holder, take the address.
     subscribers.carryConsent(conflict.holder.id, now.id);

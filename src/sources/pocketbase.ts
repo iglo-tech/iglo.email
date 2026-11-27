@@ -5,7 +5,7 @@
 // (src/sources/connect.ts) and has its own time limit on the injected clock; a response body is
 // read up to a fixed size. B150b adds the realtime stream beside this file.
 import type { Clock } from "@/clock";
-import { guardedFetch, refusedMessage } from "@/sources/connect";
+import { guardedFetch } from "@/sources/connect";
 import type { Guard, SourceTransport } from "@/sources/connect";
 import {
   dateLiteral,
@@ -369,7 +369,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     let status: number;
     let date: string | null;
     try {
-      let outcome: Response | { refused: string };
+      let outcome: Response | { refused: string; message: string };
       try {
         outcome = await Promise.race([
           guardedFetch(new URL(path, base), init, guard, transport),
@@ -379,7 +379,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         throw lost(error);
       }
       if (!("status" in outcome)) {
-        throw new SourceError("permanent", refusedMessage(outcome.refused));
+        throw new SourceError("permanent", outcome.message);
       }
       status = outcome.status;
       date = outcome.headers.get("date");
@@ -809,6 +809,13 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       );
       if (answer.status !== 200 || answer.tooLarge) {
         throw failure(answer, what);
+      }
+      // B168 (D196): a `200` that is no PocketBase list (a proxy's `{}` or empty body) does not
+      // show the collection exists, so the `404` is not shown to be this record's: as `list()`
+      // and `eventsSchema()`, a permanent failure (the settings'), never an absent record.
+      const items = member(answer.body, "items");
+      if (!isSourceList(items) || !items.every(isSourceObject)) {
+        throw new SourceError("permanent", `The source's ${collection} list has no items`);
       }
     }
     return row;

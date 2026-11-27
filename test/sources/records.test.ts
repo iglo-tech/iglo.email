@@ -15,7 +15,8 @@
 // password rotation, a field rename) just before one events query is forwarded, `holdQuery` holds
 // one events query (the schema probe) until the test releases it, and `html` answers
 // every request with a 200 HTML page (a proxy put in front of the source); round 4's `emptyProbe`
-// answers the events schema probe with a 200 `{}` (a misconfigured proxy).
+// answers the events schema probe with a 200 `{}` (a misconfigured proxy). B168's `goneProxy`
+// answers every recipients read by ID with a 404 and the view's collection probe with a 200 `{}`.
 // Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -89,6 +90,11 @@ interface Harness {
   /** While on, the events schema probe is answered with a 200 `{}` (a misconfigured proxy). */
   emptyProbe: { on: boolean };
   /**
+   * While on, every recipients read by ID is answered with a 404 and the recipients collection
+   * probe with a 200 `{}` (a misconfigured proxy).
+   */
+  goneProxy: { on: boolean };
+  /**
    * This test's own record name for `name`. The tests share one PocketBase, and a new stream's first
    * catch-up starts at the source's `Date` (whole seconds), so a record another test made in the
    * same second may be read; a name of its own keeps each test to its own records.
@@ -134,6 +140,7 @@ async function start(
   const holdQuery: Harness["holdQuery"] = { current: null };
   const html = { on: false };
   const emptyProbe = { on: false };
+  const goneProxy = { on: false };
   const records = createSourceRecords({
     db: f.db,
     clock: f.clock,
@@ -186,6 +193,17 @@ async function start(
           holdQuery.current = null;
           heldQuery.reached();
           return heldQuery.released.then(() => fetch(input, init));
+        }
+        if (goneProxy.on && input.pathname.startsWith("/api/collections/recipients/records/")) {
+          return Promise.resolve(
+            Response.json(
+              { status: 404, message: "The requested resource wasn't found.", data: {} },
+              { status: 404 },
+            ),
+          );
+        }
+        if (goneProxy.on && input.pathname === "/api/collections/recipients/records") {
+          return Promise.resolve(Response.json({}));
         }
         if (
           emptyProbe.on &&
@@ -252,6 +270,7 @@ async function start(
     holdQuery,
     html,
     emptyProbe,
+    goneProxy,
     ev: (name) => `${name}_${tag}`,
   };
   open.push(h);
@@ -825,6 +844,51 @@ test("leaving with an address-only suppression also suppresses the user ID: a us
   expect(back?.email).toBe(fresh);
   expect(statusOn(back, news)).toBeNull();
 
+  await h.f.pass(0);
+  expect(await h.f.sendLog()).toEqual([]);
+});
+
+test("B168: a gone holder re-pointed to a user who withdrew and left takes the withdrawal: its marketing ends and nothing is sent", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  const template = await h.f.template();
+  await h.f.sequence({
+    source: "external",
+    list_id: news,
+    trigger: { event: h.ev("order_paid") },
+    steps: [{ wait: "PT0S", kind: "marketing", template_id: template }],
+  });
+  await resubscribed(h);
+  const user = await pb.user();
+  // The user's subscriber, withdrawn from all lists (a suppression of its address and user ID).
+  const own = await createSubscriber(h, {
+    email: emailOf(user),
+    external_id: user.id,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  writeTransaction(h.f.db, () => h.f.stores.subscribers.unsubscribeAll(BigInt(own)));
+  await pb.update("users", user.id, { deletedAt: new Date().toISOString() });
+  await until(
+    h,
+    () => h.outcomes.some((o) => o.record === user.id && o.kind === "left"),
+    "leaving",
+  );
+  // An unlinked holder (an import) of the address the user comes back under, confirmed on News.
+  const fresh = `back-${crypto.randomUUID().slice(0, 8)}@example.com`;
+  const holder = await createSubscriber(h, {
+    email: fresh,
+    lists: [news],
+    preconfirm_subscriptions: true,
+  });
+  await pb.update("users", user.id, { deletedAt: "", email: fresh });
+  const order = await record(h, user, "order_paid");
+  await handled(h, order);
+
+  const row = await byId(h, holder);
+  expect(row).toMatchObject({ email: fresh, external_id: user.id, status: "enabled" });
+  expect(statusOn(row, news)).toBe("unsubscribed");
+  expect(outcome(h, order).started).toBe(0);
   await h.f.pass(0);
   expect(await h.f.sendLog()).toEqual([]);
 });
@@ -1746,6 +1810,61 @@ test("B166: a recipients view answering 400 to a recipient condition refuses the
       h.refuseRecipients.on = false;
     },
   );
+});
+
+test("B168: a recipients read answered 404 whose collection probe gets a 200 that is no PocketBase list (a proxy's {}) refuses the stream: the live subscriber is kept; answered by the source, the record is handled once", async () => {
+  const h = await start();
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news] }];
+  await resubscribed(h);
+  const ana = await pb.user();
+  const signup = await record(h, ana, "signup");
+  await handled(h, signup);
+  const before = await linked(h, ana);
+  expect(statusOn(before, news)).toBe("confirmed");
+
+  h.goneProxy.on = true;
+  const again = await record(h, ana, "signup");
+  await until(
+    h,
+    () => h.attention.some((line) => line.includes("The recipients view refused a read")),
+    "the refusal",
+  );
+  expect(h.outcomes.some((o) => o.record === again.id)).toBe(false);
+  expect(h.records.stream()?.retries()).toEqual([]);
+  const kept = await linked(h, ana);
+  expect(kept?.id).toBe(before?.id ?? -1);
+  expect(statusOn(kept, news)).toBe("confirmed");
+
+  h.goneProxy.on = false;
+  await live(h);
+  await handled(h, again);
+  expect(h.outcomes.filter((o) => o.record === again.id)).toHaveLength(1);
+  expect((await linked(h, ana))?.id).toBe(before?.id ?? -1);
+});
+
+test("B168: many users failing for good for one cause (a blocklisted domain) write one attention line", async () => {
+  const domain = `blocked-${crypto.randomUUID().slice(0, 8)}.test`;
+  const h = await start({ emailAllowed: (email) => !email.endsWith(`@${domain}`) });
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news] }];
+  await resubscribed(h);
+  const ids: Array<string> = [];
+  for (let i = 0; i < 6; i++) {
+    const user = await pb.user({ email: `u${i}-${crypto.randomUUID().slice(0, 8)}@${domain}` });
+    ids.push((await record(h, user, "signup")).id);
+  }
+  await until(
+    h,
+    () =>
+      ids.every((id) =>
+        (h.records.stream()?.retries() ?? []).some((row) => row.record_id === id && row.terminal),
+      ),
+    "every record terminal",
+  );
+  const lines = h.attention.filter((line) => line.startsWith("Source record failed for good"));
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toContain("blocklisted domain");
 });
 
 const long = (c: string) => c.repeat(1000);

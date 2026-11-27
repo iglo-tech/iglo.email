@@ -15,6 +15,17 @@ import type { CatchUpQuery, StreamItem, StreamKind, StreamSource } from "@/sourc
 export const TOPIC_LIMIT = 2500;
 /** PocketBase refuses more subscriptions than this on one client (measured, 0.40.5). */
 export const TOPICS_PER_CLIENT = 1000;
+/** PocketBase refuses a filter longer than this many bytes (measured, 0.40.5: D194). */
+const FILTER_LIMIT = 3500;
+/**
+ * B168 (D196): the room a catch-up filter keeps for what is added to it after chunking: the keyset
+ * condition (two dates and an ID prefix of up to 255 UTF-16 units, at most 3 UTF-8 bytes each,
+ * escaped: about 850 bytes) and the confirming read's `id =` clause (an ID of up to 100 ASCII
+ * characters: about 120 bytes).
+ */
+const KEYSET_ROOM = 1000;
+/** The most bytes of a catch-up filter before the keyset and the confirming read's clause. */
+const CATCH_UP_LIMIT = FILTER_LIMIT - KEYSET_ROOM;
 const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
 
 /** What the adapter lends the stream's reads. */
@@ -129,6 +140,15 @@ export function streamReads(parts: StreamReadParts): StreamSource {
   const present = `${ev.occurredAt} != ''`;
   const build = (list: ReadonlyArray<string>) =>
     topic(ev.collection, `${present} && (${list.map(nameIs).join(" || ")})`);
+  /** A catch-up's filter before its keyset condition. */
+  const baseFilter = (kind: StreamKind, groups: CatchUpQuery["groups"]) => {
+    const bounds = groups.map(({ names, from }) =>
+      kind === "event"
+        ? `((${names.map(nameIs).join(" || ")}) && created >= ${dateLiteral(from)})`
+        : `updated >= ${dateLiteral(from)}`,
+    );
+    return `${kind === "event" ? present : `(${leaving})`} && (${bounds.join(" || ")})`;
+  };
 
   function eventItem(record: SourceObject): StreamItem {
     const id = idOf(record);
@@ -292,17 +312,37 @@ export function streamReads(parts: StreamReadParts): StreamSource {
       }
       await parts.realtime(JSON.stringify({ clientId, subscriptions }), call);
     },
+    catchUpChunks(groups) {
+      // Names are added one at a time to the chunk's last group while it has the same bound; a
+      // name that would take the filter past the limit starts the next chunk. A chunk always takes
+      // its first name (one name too long for any chunk is refused when it is subscribed).
+      const chunks: Array<Array<{ names: Array<string>; from: Date }>> = [];
+      let chunk: Array<{ names: Array<string>; from: Date }> = [];
+      for (const { names, from } of groups) {
+        let opened = false;
+        for (const name of names) {
+          const last = chunk.at(-1);
+          const candidate =
+            opened && last
+              ? [...chunk.slice(0, -1), { names: [...last.names, name], from }]
+              : [...chunk, { names: [name], from }];
+          if (chunk.length && Buffer.byteLength(baseFilter("event", candidate)) > CATCH_UP_LIMIT) {
+            chunks.push(chunk);
+            chunk = [{ names: [name], from }];
+          } else {
+            chunk = candidate;
+          }
+          opened = true;
+        }
+      }
+      if (chunk.length) {
+        chunks.push(chunk);
+      }
+      return chunks;
+    },
     catchUp(query: CatchUpQuery, call: CallOptions = {}) {
       const field = query.kind === "event" ? "created" : "updated";
-      const groups = query.groups.map(({ names, from }) =>
-        query.kind === "event"
-          ? `((${names.map(nameIs).join(" || ")}) && created >= ${dateLiteral(from)})`
-          : `updated >= ${dateLiteral(from)}`,
-      );
-      const clauses: Array<string> = [
-        query.kind === "event" ? present : `(${leaving})`,
-        `(${groups.join(" || ")})`,
-      ];
+      const clauses: Array<string> = [baseFilter(query.kind, query.groups)];
       if (query.after) {
         const at = dateLiteral(query.after.stamp);
         clauses.push(`(${field} > ${at} || (${field} = ${at} && ${pastId(query.after.id)}))`);
