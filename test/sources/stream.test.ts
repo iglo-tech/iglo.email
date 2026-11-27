@@ -509,6 +509,36 @@ test("topics split past 2,500 characters; a name change re-subscribes", async ()
   expect(s.attempts.has(dropped.id)).toBe(false);
 });
 
+test("B163: going idle drops the markers, so a name subscribed again does not replay the idle time", async () => {
+  const name = unique("idle");
+  let subscribed = [name];
+  const s = stream({ config: eventsOnly(), names: () => subscribed });
+  await s.live();
+  const user = await pb.user();
+  const before = await pb.event(user.id, name);
+  await s.until(() => s.eventIds().length === 1, "the live event");
+  // The only name unsubscribed and no users topic: the stream goes idle.
+  subscribed = [];
+  s.stream.refresh();
+  await s.until(() => s.stream.state().state === "idle", "the stream to go idle");
+  const meanwhile = [await pb.event(user.id, name), await pb.event(user.id, name)];
+  // The new subscription starts at the source's clock, whose Date header has whole seconds: the
+  // idle-time records must be a second older than the next connection.
+  await Bun.sleep(1100);
+  subscribed = [name];
+  const sessions = s.stream.state().sessions;
+  s.stream.refresh();
+  await s.until(() => s.stream.state().sessions > sessions, "the new subscription");
+  await s.live();
+  const after = await pb.event(user.id, name);
+  await s.until(() => s.eventIds().includes(after.id), "the event after subscribing again");
+  expect(s.eventIds()).toEqual([before.id, after.id]);
+  for (const record of meanwhile) {
+    expect(s.attempts.has(record.id)).toBe(false);
+  }
+  expect(s.attention).toEqual([]);
+});
+
 test("the retry queue: a transient failure retries later without holding the stream up", async () => {
   const name = unique("retry");
   const s = stream({ config: eventsOnly(), names: () => [name] });

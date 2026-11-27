@@ -549,6 +549,11 @@ export function createSourceStream(options: SourceStreamOptions) {
         if (!names.length && source.usersTopic() === null) {
           state = "idle";
           delay = 0;
+          // B163 (D171, D191): no topic is subscribed, so no marker is kept; a name subscribed
+          // again starts afresh instead of replaying what was created while it was not.
+          if (store.markers().size) {
+            writeTransaction(db, () => store.keepMarkers([], clock.now()));
+          }
           await pause(TOPIC_CHECK_MS);
           continue;
         }

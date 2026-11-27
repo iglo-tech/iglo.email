@@ -573,7 +573,7 @@ test("a campaign recipient the source has no valid address for is skipped subscr
   expect(messages(f, "has no valid address")).toBe(1);
 });
 
-for (const kind of ["own address", "moved holder's address"] as const) {
+for (const kind of ["own address", "moved holder's address", "gone holder's address"] as const) {
   test(`a domain blocklisted while a campaign batch is read refuses an address the reads allowed (${kind}): nothing is written or sent there`, async () => {
     await policyRace(kind);
   });
@@ -583,11 +583,15 @@ for (const kind of ["own address", "moved holder's address"] as const) {
  * B155d item 1 (D179): the batch reads every recipient before it writes any, so a policy change
  * between one recipient's read and the batch's writes must be seen by the write transaction. The
  * mover's new address is in the domain (`own address`), or the mover takes an allowed address
- * whose holder's user moved into the domain (`moved holder's address`). B159a (D182): the refused
+ * whose holder's user moved into the domain (`moved holder's address`), or the mover takes an
+ * address in the domain held by a subscriber whose user is gone (`gone holder's address`: not the
+ * re-point a gone holder's address may skip the policy for, B163 D191). B159a (D182): the refused
  * write skips that recipient only, as the read path does; the source is up, so there is no outage
  * line, no wait and no second read of the batch.
  */
-async function policyRace(kind: "own address" | "moved holder's address") {
+async function policyRace(
+  kind: "own address" | "moved holder's address" | "gone holder's address",
+) {
   const domain = `held-${crypto.randomUUID().slice(0, 8)}.example.com`;
   const blocked = new Set<string>();
   const checked = new Set<string>();
@@ -605,6 +609,15 @@ async function policyRace(kind: "own address" | "moved holder's address") {
   let holder: { id: number; email: string } | null = null;
   if (kind === "own address") {
     target = `mo@${domain}`;
+    await pb.update("users", mover.id, { email: target });
+  } else if (kind === "gone holder's address") {
+    const holderUser = await pb.user({ name: "Hol" });
+    target = `hol@${domain}`;
+    holder = {
+      id: (await f.member(target, [], "confirmed", { external_id: holderUser.id })).id,
+      email: target,
+    };
+    await pb.remove("users", holderUser.id);
     await pb.update("users", mover.id, { email: target });
   } else {
     const holderUser = await pb.user({ name: "Hol" });

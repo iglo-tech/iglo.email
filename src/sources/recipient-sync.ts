@@ -190,7 +190,10 @@ export async function planRecipient(
   const name = nameOf(recipient);
   const current = options.subscribers.external(userId);
   const conflict = await conflictOf(options, email, current, signal);
-  const newAddress = conflict.kind !== "gone" && current?.email !== email;
+  // B163 (D191): only the re-point (no subscriber yet, a gone holder already holding the address)
+  // brings no new address; a subscriber of the user moving onto a gone holder's address changes it.
+  const repoint = conflict.kind === "gone" && current === null;
+  const newAddress = !repoint && current?.email !== email;
   if (newAddress && !options.emailAllowed(email)) {
     throw new SourceError(
       "permanent",
@@ -227,7 +230,9 @@ export function applyRecipient(
   // B155d (D179): the privacy domain policy is checked again here, on the row as it is now and the
   // policy as it is now, so a domain blocklisted (or a stored address changed) after the reads
   // checked it does not let the source's address in. The reads' check stays as the early answer.
-  if (conflict.kind !== "gone" && now?.email !== email && !emailAllowed(email)) {
+  // B163 (D191): exempt only the re-point, where the holder row already holds the address.
+  const repoint = conflict.kind === "gone" && now === null;
+  if (!repoint && now?.email !== email && !emailAllowed(email)) {
     throw new SourceError(
       "permanent",
       `The source user ${userId}'s address is in a blocklisted domain`,

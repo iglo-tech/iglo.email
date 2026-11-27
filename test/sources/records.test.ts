@@ -87,7 +87,11 @@ afterEach(async () => {
 });
 
 async function start(
-  options: { config?: Partial<PocketBaseConfig>; rules?: Array<GrantRule> } = {},
+  options: {
+    config?: Partial<PocketBaseConfig>;
+    rules?: Array<GrantRule>;
+    emailAllowed?: (email: string) => boolean;
+  } = {},
 ): Promise<Harness> {
   const f = await schedulerFixture({ source: () => adapter(pb) });
   const outcomes: Array<RecordOutcome> = [];
@@ -156,7 +160,7 @@ async function start(
     },
     subscribers: f.stores.subscribers,
     enrollments: f.stores.enrollments,
-    emailAllowed: () => true,
+    emailAllowed: options.emailAllowed ?? (() => true),
     onOutcome: (outcome) => outcomes.push(outcome),
   });
   records.start();
@@ -543,6 +547,42 @@ test("address conflict: a gone holder's blocklist and unsubscribes are carried o
   expect(row).toMatchObject({ email: address, external_id: incoming.id, status: "blocklisted" });
   expect(statusOn(row, news)).toBe("unsubscribed");
   expect(outcome(h, signup).grants).toEqual([{ list_id: news, result: "blocklisted" }]);
+});
+
+test("B163: a changed address onto a gone holder's address in a blocklisted domain is refused with nothing written; the re-point still takes it", async () => {
+  const domain = `blocked-${crypto.randomUUID().slice(0, 8)}.example.com`;
+  const h = await start({ emailAllowed: (email) => !email.endsWith(`@${domain}`) });
+  const news = await h.f.list("News");
+  h.rules.current = [{ event: h.ev("signup"), where: {}, lists: [news] }];
+  await resubscribed(h);
+  // The user already has a subscriber: its address changes onto a gone holder's (a user the view
+  // never had), in the blocklisted domain. That is a new address: terminal, nothing written.
+  const address = `mover-${crypto.randomUUID().slice(0, 8)}@${domain}`;
+  const mover = await pb.user({ email: address });
+  const oldAddress = `old-${crypto.randomUUID().slice(0, 8)}@example.com`;
+  const own = await createSubscriber(h, { email: oldAddress, external_id: mover.id });
+  const holder = await createSubscriber(h, { email: address, external_id: "ghostuser000002" });
+  const signup = await record(h, mover, "signup");
+  const queued = () =>
+    (h.records.stream()?.retries() ?? []).find((entry) => entry.record_id === signup.id);
+  await until(
+    h,
+    () => queued() !== undefined || h.outcomes.some((o) => o.record === signup.id),
+    "the record handled or queued",
+  );
+  expect(h.outcomes.some((o) => o.record === signup.id)).toBe(false);
+  expect(Boolean(queued()?.terminal)).toBe(true);
+  expect(h.attention.join("\n")).toContain(`${mover.id}'s address is in a blocklisted domain`);
+  expect(await byId(h, own)).toMatchObject({ email: oldAddress, external_id: mover.id });
+  expect(await byId(h, holder)).toMatchObject({ email: address, external_id: "ghostuser000002" });
+
+  // A user with no subscriber yet: the gone holder already holds the address and is re-pointed.
+  const repointed = `repoint-${crypto.randomUUID().slice(0, 8)}@${domain}`;
+  const incoming = await pb.user({ email: repointed });
+  const imported = await createSubscriber(h, { email: repointed });
+  const second = await record(h, incoming, "signup");
+  await settled(h, second);
+  expect(await byId(h, imported)).toMatchObject({ email: repointed, external_id: incoming.id });
 });
 
 test("address conflict: two live users with one address are a terminal conflict in attention, with nothing written", async () => {
