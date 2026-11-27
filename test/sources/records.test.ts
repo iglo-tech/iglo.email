@@ -14,7 +14,8 @@
 // answers the recipients view with PocketBase's `400`, `beforeQuery` runs a change on the binary (a
 // password rotation, a field rename) just before one events query is forwarded, `holdQuery` holds
 // one events query (the schema probe) until the test releases it, and `html` answers
-// every request with a 200 HTML page (a proxy put in front of the source).
+// every request with a 200 HTML page (a proxy put in front of the source); round 4's `emptyProbe`
+// answers the events schema probe with a 200 `{}` (a misconfigured proxy).
 // Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
 import { afterAll, afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
@@ -85,6 +86,8 @@ interface Harness {
   };
   /** While on, every source request is answered with a 200 HTML page (a proxy's or SSO page). */
   html: { on: boolean };
+  /** While on, the events schema probe is answered with a 200 `{}` (a misconfigured proxy). */
+  emptyProbe: { on: boolean };
   /**
    * This test's own record name for `name`. The tests share one PocketBase, and a new stream's first
    * catch-up starts at the source's `Date` (whole seconds), so a record another test made in the
@@ -130,6 +133,7 @@ async function start(
   const beforeQuery: Harness["beforeQuery"] = { current: null };
   const holdQuery: Harness["holdQuery"] = { current: null };
   const html = { on: false };
+  const emptyProbe = { on: false };
   const records = createSourceRecords({
     db: f.db,
     clock: f.clock,
@@ -182,6 +186,13 @@ async function start(
           holdQuery.current = null;
           heldQuery.reached();
           return heldQuery.released.then(() => fetch(input, init));
+        }
+        if (
+          emptyProbe.on &&
+          input.pathname === "/api/collections/events/records" &&
+          (input.searchParams.get("filter") ?? "").includes(PROBE)
+        ) {
+          return Promise.resolve(Response.json({}));
         }
         const refused = refuseHistory.name;
         if (
@@ -240,6 +251,7 @@ async function start(
     beforeQuery,
     holdQuery,
     html,
+    emptyProbe,
     ev: (name) => `${name}_${tag}`,
   };
   open.push(h);
@@ -1692,6 +1704,30 @@ test("B166 round 3: the stream switching settings while the schema probe after a
       await pb.renameField("events", "eventName", "name");
     }
   }
+});
+
+test("B166 round 4: a condition's 400 whose schema probe gets a 200 that is no PocketBase list (a proxy's {}) refuses the stream: nothing committed and no condition failure; with the probe answered, the 400 is the condition's own", async () => {
+  const h = await start();
+  const seq = await conditioned(h, { event: h.ev("history"), count: { gte: 1 } });
+  const ana = await pb.user();
+  h.refuseHistory.name = h.ev("history");
+  h.emptyProbe.on = true;
+  const paid = await record(h, ana, "order_paid");
+  await until(h, () => h.attention.some((line) => line.includes(CONDITION_REFUSED)), "the refusal");
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(await linked(h, ana)).toBeNull();
+  // The probe answered by the source: the 400 is the condition's, and only its sequence is skipped.
+  h.emptyProbe.on = false;
+  await live(h);
+  await handled(h, paid);
+  expect(outcome(h, paid)).toMatchObject({ started: 0 });
+  const lines = h.attention.filter((line) => line.includes("Sequence trigger condition failed"));
+  expect(lines.length).toBe(1);
+  expect(lines[0]).toContain(`sequence ${seq.id}`);
 });
 
 test("B166: a recipients view answering 400 to a recipient condition refuses the stream: nothing committed and no condition failure; answering again, the sequence starts once", async () => {

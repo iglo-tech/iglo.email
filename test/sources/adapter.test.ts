@@ -799,3 +799,33 @@ test("B166: a large error page (a proxy's 502 or 403) on an events read is that 
     expect(reads.length).toBe(sent);
   }
 });
+
+test("B166 round 4: a large 502 page on a record or recipient by ID, or on the events schema probe, is a transient 502, not a page too large to read", async () => {
+  const user = await pb.user();
+  const event = await pb.event(user.id, "proxied_one");
+  const source = createPocketBaseSource({
+    config: sourceConfig(pb.url, pb.service),
+    clock: createRealClock(),
+    guard: open,
+    maxResponseBytes: 4000,
+    transport: {
+      fetch: async (input: URL, init: RequestInit) => {
+        if (!input.pathname.startsWith("/api/collections/") || input.pathname.includes("/auth-")) {
+          return fetch(input, init);
+        }
+        return new Response(`<!doctype html><title>Bad gateway</title>${" ".repeat(5000)}`, {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    },
+  });
+  for (const work of [source.record(event.id), source.recipient(user.id), source.eventsSchema()]) {
+    const refused = await failure(work);
+    expect({
+      kind: refused.kind,
+      status: refused.status,
+      tooLarge: refused.message.includes("larger than the response limit"),
+    }).toEqual({ kind: "transient", status: 502, tooLarge: false });
+  }
+});

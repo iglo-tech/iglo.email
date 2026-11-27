@@ -197,9 +197,13 @@ function reason(answer: Answer): string {
   return typeof message === "string" ? message.slice(0, 200) : "";
 }
 
-/** A non-2xx answer as an error: 429 and 5xx are transient, the rest permanent. */
+/**
+ * An answer that is not the one wanted as an error: a 2xx too large to read is permanent; else 429
+ * and 5xx are transient, the rest permanent. B166 (D194): only a 2xx can be too large to read, so a
+ * large error page (a proxy's 502, 429 or 403) is that status's failure.
+ */
 function failure(answer: Answer, what: string): SourceError {
-  if (answer.tooLarge) {
+  if (answer.tooLarge && answer.status >= 200 && answer.status < 300) {
     return new SourceError("permanent", `${TOO_LARGE} (${what})`);
   }
   const kind = answer.status === 429 || answer.status >= 500 ? "transient" : "permanent";
@@ -595,12 +599,12 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       call,
     );
     // B166 (D194): only a `200` page can be too large to read; a large error page (a proxy's 403,
-    // 404 or 502) is that status's failure.
-    if (answer.status === 200 && answer.tooLarge) {
-      return { value: { tooLarge: true }, used };
-    }
+    // 404 or 502) is that status's failure (`failure`).
     if (answer.status !== 200) {
-      throw failure({ ...answer, tooLarge: false }, `a read of ${collection}`);
+      throw failure(answer, `a read of ${collection}`);
+    }
+    if (answer.tooLarge) {
+      return { value: { tooLarge: true }, used };
     }
     const items = member(answer.body, "items");
     if (!isSourceList(items) || !items.every(isSourceObject)) {
@@ -884,6 +888,11 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       if (answer.status !== 200 || answer.tooLarge) {
         throw failure(answer, what);
       }
+      // B166 round 4 (D194): a `200` that is no PocketBase list (a proxy's `{}` or empty body) is
+      // not the source answering, so the condition's `400` is not shown to be its own.
+      if (!isSourceList(member(answer.body, "items"))) {
+        throw new SourceError("permanent", `The source's ${ev.collection} list has no items`);
+      }
     },
     /** Signs in now (the settings check). */
     async authenticate(call: CallOptions = {}): Promise<void> {
@@ -954,7 +963,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
             send("POST", "api/realtime", used, body, call),
             "the realtime subscription",
           );
-          if (answer.status === 204 || answer.status === 200) {
+          if ((answer.status === 204 || answer.status === 200) && !answer.tooLarge) {
             if (await confirm(used, call)) {
               return;
             }
