@@ -65,7 +65,7 @@ import {
   projectDirectory,
   usesOldLayout,
 } from "@/projects/layout";
-import { SLUG_PATTERN, createRegistry } from "@/projects/registry";
+import { SLUG_PATTERN, registeredSlugs } from "@/projects/registry";
 import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hold";
 import type { HoldRecord } from "@/settings/hold";
 import { storedUploadPath, writeUploadPath } from "@/settings/stored";
@@ -361,16 +361,6 @@ function isWholeBackup(path: string): boolean {
   );
 }
 
-/** The registered slugs of an instance database, in slug order. */
-function registeredSlugs(db: Database, clock: Clock): Array<string> {
-  const registry = createRegistry(db, clock);
-  try {
-    return registry.list().map((record) => record.slug);
-  } finally {
-    registry.close();
-  }
-}
-
 /** A whole backup: instance.db, then each project the manifest names, which its registry names too. */
 function inspectWhole(target: string, clock: Clock, supportedVersion: number): Array<Checked> {
   const instanceFile = join(target, INSTANCE_DATABASE);
@@ -387,10 +377,14 @@ function inspectWhole(target: string, clock: Clock, supportedVersion: number): A
       `${join(target, MANIFEST)} names ${JSON.stringify(invalid)}, which is not a project slug: not a backup`,
     );
   }
+  // An instance.db with no schema registers nothing to compare: it is no backup's (D192).
+  if (instance.schemaVersion === 0) {
+    throw new Error(`${instanceFile} has no schema: not a backup`);
+  }
   if (instance.schemaVersion <= instanceMigrations.length) {
     const db = openSnapshot(instanceFile);
     try {
-      const registered = registeredSlugs(db, clock);
+      const registered = registeredSlugs(db);
       if (registered.join("\n") !== projects.join("\n")) {
         throw new Error(
           `${target} is not one backup: its instance.db registers ${registered.join(", ") || "no project"} ` +
@@ -1056,7 +1050,7 @@ export function createBackup(options: BackupOptions): BackupReport {
       data: root,
       db: instance,
     });
-    const registered = registeredSlugs(instance, clock);
+    const registered = registeredSlugs(instance);
     unpublished = whole ? registered : undefined;
     if (options.project !== undefined && !registered.includes(options.project)) {
       throw new Error(`No project ${options.project} in ${dataDir}`);
@@ -1165,7 +1159,7 @@ export function createBackup(options: BackupOptions): BackupReport {
         const db = openSnapshot(join(made.path, INSTANCE_DATABASE));
         let copied: Array<string>;
         try {
-          copied = registeredSlugs(db, clock);
+          copied = registeredSlugs(db);
         } finally {
           db.close(true);
         }
@@ -1232,7 +1226,7 @@ export function createBackup(options: BackupOptions): BackupReport {
     if (unpublished !== undefined && instance !== undefined) {
       let now: Array<string> | undefined;
       try {
-        now = registeredSlugs(instance, clock);
+        now = registeredSlugs(instance);
       } catch {
         // The registry unread is no evidence of a change: the step's own error stands.
       }
@@ -1395,7 +1389,7 @@ export function releaseHold(options: ReleaseOptions): Release {
     const instance = openStopped(instancePath, instanceMigrations.length);
     let slugs: Array<string>;
     try {
-      slugs = registeredSlugs(instance, options.clock);
+      slugs = registeredSlugs(instance);
     } finally {
       instance.close(true);
     }

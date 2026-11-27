@@ -127,6 +127,21 @@ interface HostnameRow {
   kind: "main" | "extra";
 }
 
+/**
+ * The registered slugs, in slug order, from `projects` alone, which every instance database has
+ * from instance migration 1 on. The backup CLI reads them from a backup's or a stopped data
+ * directory's instance.db, which may predate later instance migrations; `createRegistry` prepares
+ * statements on those later tables, so it is for a migrated database only (D192).
+ */
+export function registeredSlugs(db: Database): Array<string> {
+  const statement = db.query<{ slug: string }, []>("SELECT slug FROM projects ORDER BY slug");
+  try {
+    return statement.all().map((row) => row.slug);
+  } finally {
+    statement.finalize();
+  }
+}
+
 export type Registry = ReturnType<typeof createRegistry>;
 
 /** The registry over an open, migrated instance database. */

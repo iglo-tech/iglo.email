@@ -400,7 +400,12 @@ export function createSesAccount(deps: {
       sleeping?.abort();
     }
     // The rate setting, or the keys, may move the effective rate and the hold line.
+    const before = lastRate;
     evaluate();
+    // A new rate may shorten the refresh (B164, D192): the loop wakes and works out its wait again.
+    if (lastRate !== before) {
+      sleeping?.abort();
+    }
   });
 
   async function loop(): Promise<void> {
@@ -416,19 +421,26 @@ export function createSesAccount(deps: {
       }
       // The refresh counts from when the last read began, not when it answered (B151, D175): a
       // slow answer (up to the 10 s timeout) never stretches the minute between two fast reads
-      // that the hold line's `rate × 60 s` term assumes.
-      const delay = refreshDelay(snapshot, rate());
-      const wait = lastAttempt === null ? delay : lastAttempt + delay - clock.now().getTime();
-      if (wait <= 0) {
-        continue;
+      // that the hold line's `rate × 60 s` term assumes. A wake for a new rate works the wait out
+      // again from that start and reads only once it is due (B164, D192).
+      for (;;) {
+        const delay = refreshDelay(snapshot, rate());
+        const wait = lastAttempt === null ? delay : lastAttempt + delay - clock.now().getTime();
+        if (wait <= 0) {
+          break;
+        }
+        sleeping = new AbortController();
+        try {
+          await clock.sleep(wait, sleeping.signal);
+        } catch {
+          // Woken early: the credentials or the effective rate changed, or the service stops.
+        }
+        sleeping = null;
+        // Stopped, or new keys: read them now.
+        if (stopped || keys !== generation) {
+          break;
+        }
       }
-      sleeping = new AbortController();
-      try {
-        await clock.sleep(wait, sleeping.signal);
-      } catch {
-        // Woken early: the credentials changed, or the service stops.
-      }
-      sleeping = null;
     }
   }
 

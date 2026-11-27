@@ -188,6 +188,62 @@ test("refresh: every 5 minutes, every minute once at most max(10%, rate × 300 s
   expect(calls).toHaveLength(4);
 });
 
+test("refresh: raising the rate mid-sleep brings the read forward to a minute after the last one (B164)", async () => {
+  // 3,500 left of 10,000. At rate 10 the line is max(1,000, 3,000) = 3,000: a 5-minute wait.
+  answer = quota(10_000, 6500, 20);
+  const { account, clock, settings, step } = setup({ rate: 10 });
+  account.start();
+  await clock.whenSleeping();
+  expect(calls).toHaveLength(1);
+  await step(30_000);
+  // At rate 14 the line is 4,200: 3,500 left needs a read every minute, counted from the last read.
+  settings.update((current) => ({ ...current, "messaging.max_send_rate": 14 }));
+  await clock.whenSleeping();
+  expect(calls).toHaveLength(1);
+  await step(29_999);
+  expect(calls).toHaveLength(1);
+  await step(1);
+  expect(calls).toHaveLength(2);
+  await step(60_000);
+  expect(calls).toHaveLength(3);
+});
+
+test("refresh: a rate of 0 lifts the cap to SES's rate, which brings the read forward too (B164)", async () => {
+  answer = quota(10_000, 6500, 14);
+  const { account, clock, settings, step } = setup({ rate: 10 });
+  account.start();
+  await clock.whenSleeping();
+  await step(90_000);
+  settings.update((current) => ({ ...current, "messaging.max_send_rate": 0 }));
+  expect(account.rate()).toBe(14);
+  // The minute since the last read is already over: the read is due now.
+  await clock.whenSleeping();
+  expect(calls).toHaveLength(2);
+  await step(59_999);
+  expect(calls).toHaveLength(2);
+  await step(1);
+  expect(calls).toHaveLength(3);
+});
+
+test("refresh: a rate change that does not shorten the wait reads nothing extra (B164)", async () => {
+  answer = quota(10_000, 6500, 20);
+  const { account, clock, settings, step } = setup({ rate: 10 });
+  account.start();
+  await clock.whenSleeping();
+  await step(60_000);
+  // Rate 11: line 3,300, still under the 3,500 left. Rate 5: line 1,000. Both keep 5 minutes.
+  settings.update((current) => ({ ...current, "messaging.max_send_rate": 11 }));
+  await clock.whenSleeping();
+  await step(60_000);
+  settings.update((current) => ({ ...current, "messaging.max_send_rate": 5 }));
+  await clock.whenSleeping();
+  expect(calls).toHaveLength(1);
+  await step(3 * 60_000 - 1);
+  expect(calls).toHaveLength(1);
+  await step(1);
+  expect(calls).toHaveLength(2);
+});
+
 const snapshot = (max: number, sent: number, maxSendRate = 14) => ({
   maxSendRate,
   max24HourSend: max,
