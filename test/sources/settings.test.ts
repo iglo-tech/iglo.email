@@ -425,6 +425,41 @@ test("B171 (D136 item 9): a too-long leaving filter stored before B171 blocks no
   }
 });
 
+test("B171 (D199): a changed users setting must fit the topic with no source URL too, and when one save clears the URL", async () => {
+  const url = `http://localhost:${pb.port}`;
+  const before = (await settings())["source.users"];
+  // Fits with `users` (2,497 characters), not with `users_archive`.
+  const fits = { collection: "users", leaving_filter: clauses(94) };
+  const tooLong = { collection: "users", leaving_filter: clauses(100) };
+  try {
+    expect((await save({ "source.url": "" })).status).toBe(200);
+    // No source URL: a new too-long filter is refused, naming the key; nothing is written.
+    const refused = await save({ "source.users": tooLong });
+    expect(refused.status).toBe(400);
+    expect(refused.body.message).toContain("source.users leaving_filter");
+    expect(refused.body.message).toContain("too long to subscribe to");
+    expect((await settings())["source.users"]).toEqual(before);
+    // A collection-only change that pushes the stored filter past the limit is refused.
+    expect((await save({ "source.users": fits })).status).toBe(200);
+    const moved = await save({ "source.users": { ...fits, collection: "users_archive" } });
+    expect(moved.status).toBe(400);
+    expect(moved.body.message).toContain("source.users leaving_filter");
+    expect((await settings())["source.users"]).toEqual(fits);
+    // One save that clears the URL while editing the filter to a too-long one is refused.
+    expect((await save({ ...sourceAt(url) })).status).toBe(200);
+    const cleared = await save({ "source.url": "", "source.users": tooLong });
+    expect(cleared.status).toBe(400);
+    expect(cleared.body.message).toContain("source.users leaving_filter");
+    const after = await settings();
+    expect(after["source.url"]).toBe(url);
+    expect(after["source.users"]).toEqual(fits);
+    // Clearing the URL with the stored filter unchanged still succeeds.
+    expect((await save({ "source.url": "" })).status).toBe(200);
+  } finally {
+    expect((await save({ ...sourceAt(url), "source.users": before })).status).toBe(200);
+  }
+});
+
 test("Test connection needs settings:manage and a source URL", async () => {
   const off = await call("POST", "/api/settings/source/test", { "source.url": "" });
   expect(off.status).toBe(400);
