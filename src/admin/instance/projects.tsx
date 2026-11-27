@@ -339,6 +339,15 @@ export function ProjectsBody(props: {
                 two-factor or password reset page loads it, and the instance host serves that of the
                 primary project as an empty script.
               </small>
+              <small
+                data-hint=""
+                data-testid="project-custom-js-held"
+                x-show="edit.code && edit.code.custom_js_held"
+                style="display: none"
+              >
+                Held back: this script was stored before only the instance admin could write it, so
+                it is served empty on every host until you review it and save.
+              </small>
             </label>
           </section>
           <footer class="dialog-foot hstack justify-end gap-1">

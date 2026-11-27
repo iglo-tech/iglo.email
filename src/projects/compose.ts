@@ -44,6 +44,7 @@ import type { InstanceSettingsReader } from "@/settings/instance";
 import { sessionDuration } from "@/settings/duration";
 import { registerSettingsRoutes } from "@/settings/routes";
 import type { CustomCode, CustomCodeChange } from "@/settings/routes";
+import { customJsHeld, releaseCustomJs } from "@/settings/custom-js";
 import { bindKey } from "@/settings/validate";
 import { registerSourceRoutes, sourceGuard, sourceListsCheck } from "@/sources/routes";
 import { createSourceProvider } from "@/sources/project";
@@ -1231,6 +1232,7 @@ export async function createProject(
         return {
           css: String(current["appearance.public.custom_css"]),
           js: String(current["appearance.public.custom_js"]),
+          jsHeld: customJsHeld(db),
         };
       },
       /** The instance's write of the public custom CSS and JS (D201); a field left out keeps its value. */
@@ -1242,6 +1244,8 @@ export async function createProject(
           }
           if (change.js !== undefined) {
             next = bindKey(next, "appearance.public.custom_js", change.js);
+            // The instance admin's save is the review: it commits with the value.
+            releaseCustomJs(db);
           }
           return next;
         });

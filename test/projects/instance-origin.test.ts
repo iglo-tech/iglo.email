@@ -4,6 +4,7 @@
 // The primary's public custom JS is set through its own API, as any primary-project user with
 // `settings:manage` could set it; it never reaches the instance login pages or the instance origin.
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { instanceCall, instanceLogin } from "@/test/projects/admin-fixture";
 import type { InstanceSession } from "@/test/projects/admin-fixture";
@@ -241,7 +242,9 @@ test("only the instance writes a project's public custom CSS and JS; a project w
     await putCustomCode(port, instance, "b", { custom_js: B_SCRIPT, custom_css: "p{}" });
     const appearance = "/api/instance/projects/b/appearance";
     const read = await instanceCall(port, PRIMARY, instance, "GET", appearance);
-    expect(await readJson(read)).toEqual({ data: { custom_css: "p{}", custom_js: B_SCRIPT } });
+    expect(await readJson(read)).toEqual({
+      data: { custom_css: "p{}", custom_js: B_SCRIPT, custom_js_held: false },
+    });
     expect(await (await request(port, B, "/public/custom.js")).text()).toBe(B_SCRIPT);
     // A listmonk-shaped full write repeating the stored values, or leaving them out, succeeds and
     // keeps them; so does a one-key write of the stored value.
@@ -280,6 +283,90 @@ test("only the instance writes a project's public custom CSS and JS; a project w
     await server.stop();
   }
   expect((await server.stop()).code).toBe(0);
+});
+
+test("public custom JS stored before the upgrade is empty on every host until the instance admin saves it (D201)", async () => {
+  const dataDir = join(prepared.directory, crypto.randomUUID());
+  registerProjects(dataDir, [
+    { slug: "main", name: "Main", hostname: PRIMARY, primary: true, extra: [EXTRA] },
+    { slug: "b", name: "B", hostname: B },
+  ]);
+  const first = await startInstance(prepared.executable, dataDir, admin);
+  try {
+    const instance = (await instanceLogin(first.port, PRIMARY, admin)).session!;
+    await putCustomCode(first.port, instance, "main", { custom_js: PRIMARY_SCRIPT });
+    await putCustomCode(first.port, instance, "b", { custom_js: B_SCRIPT, custom_css: "p{}" });
+  } finally {
+    await first.stop();
+  }
+  expect((await first.stop()).code).toBe(0);
+  // A database from before migration 39 holding those scripts, as a project user with
+  // `settings:manage` could have written them: 39 only adds the mark, so the schema is the same.
+  for (const slug of ["main", "b"]) {
+    const db = new Database(join(dataDir, "projects", slug, "iglo-email.db"), { strict: true });
+    try {
+      db.run("PRAGMA user_version = 38");
+    } finally {
+      db.close(true);
+    }
+  }
+
+  const server = await startInstance(prepared.executable, dataDir, admin);
+  const { port } = server;
+  const script = async (host: string) => {
+    const response = await request(port, host, "/public/custom.js");
+    expect(`${host} ${response.status}`).toBe(`${host} 200`);
+    return response.text();
+  };
+  try {
+    // Held back on the project's host and on the primary's extra hostname; the pages still render
+    // and the CSS is served as stored.
+    expect(await script(B)).toBe("");
+    expect(await script(EXTRA)).toBe("");
+    expect(await (await request(port, B, "/public/custom.css")).text()).toBe("p{}");
+    for (const host of [B, EXTRA]) {
+      const form = await request(port, host, "/subscription/form");
+      expect(`${host} ${form.status}`).toBe(`${host} 200`);
+    }
+    // The instance admin sees the stored value and that it is held back.
+    const instance = (await instanceLogin(port, PRIMARY, admin)).session!;
+    const appearance = (slug: string) =>
+      instanceCall(port, PRIMARY, instance, "GET", `/api/instance/projects/${slug}/appearance`);
+    expect(await readJson(await appearance("b"))).toEqual({
+      data: { custom_css: "p{}", custom_js: B_SCRIPT, custom_js_held: true },
+    });
+    const page = await instanceCall(port, PRIMARY, instance, "GET", "/admin/instance/projects");
+    expect(await page.text()).toContain('data-testid="project-custom-js-held"');
+
+    // Saving the same script releases it; saving only the CSS does not.
+    await putCustomCode(port, instance, "b", { custom_js: B_SCRIPT });
+    expect(await script(B)).toBe(B_SCRIPT);
+    await putCustomCode(port, instance, "main", { custom_css: "body{}" });
+    expect(await script(EXTRA)).toBe("");
+    const held = await readJson<{ data: { custom_js_held: boolean } }>(await appearance("main"));
+    expect(held.data.custom_js_held).toBe(true);
+    // A new script saved by the instance admin is served as written.
+    await putCustomCode(port, instance, "main", { custom_js: "globalThis.reviewed = 1;" });
+    expect(await script(EXTRA)).toBe("globalThis.reviewed = 1;");
+    expect(await readJson(await appearance("main"))).toEqual({
+      data: { custom_css: "body{}", custom_js: "globalThis.reviewed = 1;", custom_js_held: false },
+    });
+  } finally {
+    await server.stop();
+  }
+  expect((await server.stop()).code).toBe(0);
+
+  // The mark is placed once: a later start serves the reviewed scripts.
+  const later = await startInstance(prepared.executable, dataDir, admin);
+  try {
+    expect(await (await request(later.port, B, "/public/custom.js")).text()).toBe(B_SCRIPT);
+    expect(await (await request(later.port, EXTRA, "/public/custom.js")).text()).toBe(
+      "globalThis.reviewed = 1;",
+    );
+  } finally {
+    await later.stop();
+  }
+  expect((await later.stop()).code).toBe(0);
 });
 
 /** A project's sign-in as a browser posts it, with TOTP on: the 2FA page it redirects to. */
@@ -408,6 +495,30 @@ test("the admin's copy changes its password, email and TOTP from a project sessi
     for (const [index, response] of refused.entries()) {
       expect(`${index} ${response.status}`).toBe(`${index} 403`);
     }
+    // `PUT /api/users/:id` on itself: a name-only edit repeating its email (in any case) needs no
+    // proof; a different email still does. An email left out is invalid before the proof is asked.
+    const self = (body: Record<string, unknown>) =>
+      request(port, B, `/api/users/${me.id}`, {
+        method: "PUT",
+        headers: sessionHeaders(copy),
+        body: JSON.stringify({
+          username: admin.user,
+          type: "user",
+          status: "enabled",
+          password_login: true,
+          user_role_id: 1,
+          ...body,
+        }),
+      });
+    const omitted = await self({ name: "Renamed once" });
+    expect(`omitted ${omitted.status} ${await omitted.text()}`).toContain("omitted 400");
+    const repeated = await self({ name: "Renamed twice", email: me.email.toUpperCase() });
+    expect(`repeated ${repeated.status} ${await repeated.text()}`).toStartWith("repeated 200");
+    const moved = await self({ name: me.name, email: "attacker@example.test" });
+    expect(`moved ${moved.status}`).toBe("moved 403");
+    const named = await request(port, B, "/api/profile", { headers: sessionHeaders(copy) });
+    const after = (await readJson<{ data: { email: string; name: string } }>(named)).data;
+    expect(after).toMatchObject({ email: me.email, name: "Renamed twice" });
     // Nothing reached the instance: the old password still signs in there, with no TOTP.
     const still = await instanceLogin(port, PRIMARY, admin);
     expect(still.session).toBeDefined();

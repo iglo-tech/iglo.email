@@ -906,7 +906,7 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
       if (!code) {
         throw new HttpError(404, `No project ${context.params.slug ?? ""}`);
       }
-      return ok({ custom_css: code.css, custom_js: code.js });
+      return ok({ custom_css: code.css, custom_js: code.js, custom_js_held: code.jsHeld });
     }),
   );
   router.route(
@@ -934,7 +934,7 @@ export function createInstanceRouter(deps: InstanceRouteDeps): Router {
       const code = await refused(() =>
         deps.projects.setCustomCode(context.params.slug ?? "", change),
       );
-      return ok({ custom_css: code.css, custom_js: code.js });
+      return ok({ custom_css: code.css, custom_js: code.js, custom_js_held: code.jsHeld });
     }),
   );
   router.route(

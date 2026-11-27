@@ -847,7 +847,7 @@ export const differences: Array<Difference> = [
   {
     area: "Public custom code is the instance admin's (D201)",
     summary:
-      "`appearance.public.custom_css` and `appearance.public.custom_js` are written only by the instance admin (the instance's Projects page). A project write that changes either is 403 naming the key; one that leaves them out or repeats the stored value succeeds. No sign-in, 2FA, forgot or reset page loads custom assets or the project's favicon, and each sends `frame-ancestors 'none'`. Upstream lets any settings manager write them and loads them on its login pages.",
+      "`appearance.public.custom_css` and `appearance.public.custom_js` are written only by the instance admin (the instance's Projects page). A project write that changes either is 403 naming the key; one that leaves them out or repeats the stored value succeeds. A non-empty `custom_js` stored before this release is served as an empty `/public/custom.js` on every host until the instance admin saves it. No sign-in, 2FA, forgot or reset page loads custom assets or the project's favicon, and each sends `frame-ancestors 'none'`. Upstream lets any settings manager write them and loads them on its login pages.",
     applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
   },
   {

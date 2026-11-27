@@ -117,7 +117,11 @@ function instanceProjects() {
         extra: lines(this.edit.extra),
       });
       const code = this.edit.code;
-      if (code && (code.custom_css !== this.edit.customCss || code.custom_js !== this.edit.customJs)) {
+      // Saving a held-back script is the instance admin's review of it (D201): sent even unchanged.
+      if (
+        code &&
+        (code.custom_js_held || code.custom_css !== this.edit.customCss || code.custom_js !== this.edit.customJs)
+      ) {
         await call(`${path}/appearance`, 'PUT', {
           custom_css: this.edit.customCss,
           custom_js: this.edit.customJs,

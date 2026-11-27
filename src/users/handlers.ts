@@ -232,7 +232,10 @@ export function createUserHandlers(store: UserStore, roles: Roles, auth: Authent
     if (target.admin_copy !== 1n || current(context).user.id !== target.id) {
       return;
     }
-    if (!input.password && input.email.toLowerCase() === target.email.toLowerCase()) {
+    // An email left out keeps the stored one (updateUser), so only a different address needs it.
+    const emailChanges =
+      input.email !== "" && input.email.toLowerCase() !== target.email.toLowerCase();
+    if (!input.password && !emailChanges) {
       return;
     }
     if (

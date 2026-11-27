@@ -403,7 +403,7 @@ The admin's password, TOTP code and instance session are typed and sent on the i
 primary project's pages are served on the same host, so the primary project's
 `appearance.public.custom_js` does not run there: on the instance host and on any host no project
 claims, `/public/custom.js` answers an empty script. It still runs on the primary project's extra
-hostnames and on every other project's host. The instance login and 2FA pages load neither
+hostnames and on every other project's host, once the instance admin has saved it (D201). The instance login and 2FA pages load neither
 `/public/custom.css` nor `/public/custom.js`; the primary project's public pages still load its
 custom CSS. Uploaded files, archived campaigns and previews never run as scripts on any host
 ([Uploads](#uploads)).
@@ -414,7 +414,9 @@ JavaScript is set only by the instance admin: on Projects, open a project's **Ed
 **Public custom CSS** and **Public custom JavaScript** (or `PUT /api/instance/projects/<slug>/appearance`
 with the instance session). A project's Settings page shows no editor for them, and its settings
 API refuses a change to either. No sign-in, two-factor, forgot-password or reset page, on any host,
-loads custom CSS, custom JavaScript or the project's favicon, and none can be framed. Changing the
+loads custom CSS, custom JavaScript or the project's favicon, and none can be framed. Public
+custom JavaScript stored before this rule is served as an empty script on every host until you
+review and save it: the dialog says **Held back** while it is (see the upgrade note). Changing the
 admin's password or email, or turning on its two-factor authentication, from a project's Profile
 page asks for the current password; the instance Account page is unchanged.
 
@@ -1532,8 +1534,14 @@ From the same release (D201), only the instance admin writes a project's
 `appearance.public.custom_css` and `appearance.public.custom_js` (Projects, **Edit**). Stored values
 keep working as they are; a project user or API credential that wrote them through
 `PUT /api/settings` now gets `403` naming the key, while a full settings write that leaves them out
-or sends them unchanged still succeeds. Review each project's stored custom code after the upgrade:
-before it, any project user with `settings:manage` could write it. The sign-in, two-factor,
+or sends them unchanged still succeeds. Stored custom CSS keeps working. Stored public custom
+JavaScript does not run until you review it: before the upgrade any project user with
+`settings:manage` could write it, and a script on a project's public page can open that host's
+sign-in page in a window of the same origin and read the admin password typed there. So the upgrade
+marks every non-empty stored script as held back, and `/public/custom.js` answers an empty script on
+every host while it is. On Projects, open each project's **Edit** dialog: a held-back script shows
+a **Held back** line. Read the script, change or clear it if needed, and **Save**; the saved value is
+then served (`PUT /api/instance/projects/<slug>/appearance` with `custom_js` does the same). The sign-in, two-factor,
 forgot-password and reset pages no longer load custom CSS or JavaScript and show the bundled
 favicon, so a sign-in page restyled through custom CSS looks plain. A script that changes the admin
 account's password or email through a project's `PUT /api/profile` or `PUT /api/users/<id>` sends

@@ -64,6 +64,8 @@ const nativeKeys: Record<SettingsSide, ReadonlyArray<string>> = {
 export interface CustomCode {
   readonly css: string;
   readonly js: string;
+  /** The stored script is held back, served empty, until the instance admin saves it (D201). */
+  readonly jsHeld: boolean;
 }
 
 /** The instance's write of them: a field left undefined keeps its stored value. */

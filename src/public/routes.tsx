@@ -24,6 +24,7 @@ import { HttpError, ok } from "@/server/response";
 import type { Router } from "@/server/router";
 import { allowedDomain, sanitizeEmail } from "@/subscribers/email";
 import type { SubscriberStore } from "@/subscribers/store";
+import { customJsHeld } from "@/settings/custom-js";
 
 export const uuidPattern =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -451,6 +452,8 @@ export function registerPublicRoutes(
   router.route(
     "GET",
     "/public/custom.js",
-    appearance("application/javascript", (s) => s.customJs),
+    // D201: a script stored before the instance admin alone wrote it is empty on every host until
+    // the instance admin saves it (src/settings/custom-js.ts).
+    appearance("application/javascript", (s) => (customJsHeld(deps.db) ? "" : s.customJs)),
   );
 }
