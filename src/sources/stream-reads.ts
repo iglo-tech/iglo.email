@@ -56,6 +56,19 @@ export interface StreamReadParts {
 const topic = (collection: string, filter: string) =>
   `${collection}/*?options=${encodeURIComponent(JSON.stringify({ query: { filter } }))}`;
 
+/**
+ * The users topic for a collection and its leaving filter, or `null` when the encoded topic is
+ * longer than PocketBase takes. B171 (D199): the settings save and Test connection call this, so
+ * a filter they accept is one the stream can subscribe to.
+ */
+export function leavingTopic(collection: string, leavingFilter: string): string | null {
+  const subscription = topic(collection, `(${leavingFilter})`);
+  return subscription.length > TOPIC_LIMIT ? null : subscription;
+}
+
+/** What the settings save and Test connection say of a leaving filter `leavingTopic` refuses. */
+export const LEAVING_TOO_LONG = `the leaving filter is too long to subscribe to (its encoded realtime topic must fit ${TOPIC_LIMIT} characters; use fewer or shorter clauses)`;
+
 /** B155b (D177): why a record is terminal although the source answered. */
 const UNKEYED = "The source record's id is not 1 to 100 letters, digits, _ or -";
 const TOO_LARGE = "The source record is larger than the response limit";
@@ -297,8 +310,8 @@ export function streamReads(parts: StreamReadParts): StreamSource {
       if (!users) {
         return null;
       }
-      const subscription = topic(users, `(${leaving})`);
-      if (subscription.length > TOPIC_LIMIT) {
+      const subscription = leavingTopic(users, leaving);
+      if (subscription === null) {
         throw new SourceError("permanent", "The users leaving filter is too long to subscribe to");
       }
       return subscription;

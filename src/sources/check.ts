@@ -6,6 +6,7 @@ import type { Guard, SourceTransport } from "@/sources/connect";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig, PocketBaseSource } from "@/sources/pocketbase";
 import { isSourceError } from "@/sources/source";
+import { LEAVING_TOO_LONG, leavingTopic } from "@/sources/stream-reads";
 
 export interface CheckStep {
   /** `auth`, `recipients`, `events` or `users`. */
@@ -107,6 +108,19 @@ async function guestCheck(
       message: `Guests can read ${collection}: set its list and view rules so that only the service account can read it (for example @request.auth.collectionName = "${authCollection}").`,
     };
   }
+  // B171 (D199): only PocketBase's own refusals pass: an empty `200` (a rule that hides every
+  // row), a `403` (no rule) or a `404`. Any other answer (a proxy's 401, 3xx, 429 or 5xx, a
+  // broken rule's 400) shows nothing about the rule, so the step fails naming it. A `401` is not
+  // PocketBase's answer to a guest's list: something in front asks for credentials, which a
+  // revoked token carries past it.
+  if (guest.status !== 200 && guest.status !== 403 && guest.status !== 404) {
+    return {
+      ...result,
+      ok: false,
+      message:
+        `Could not check that guests cannot read ${collection}: a guest's read answered ${guest.status} ${guest.message}`.trim(),
+    };
+  }
   return result;
 }
 
@@ -174,6 +188,15 @@ export async function checkSource(
       const named = await fields(source, "users", users.collection, ["updated"]);
       if (!named.ok) {
         return named;
+      }
+      // B171 (D199): the stream subscribes to the filter, which must fit PocketBase's topic limit.
+      if (leavingTopic(users.collection, users.leavingFilter) === null) {
+        return {
+          step: "users",
+          ok: false,
+          message: `${users.collection}: ${LEAVING_TOO_LONG}.`,
+          missing: [],
+        };
       }
       const answer = await source.probe(users.collection, users.leavingFilter, {
         timeoutMs: TIMEOUT_MS,

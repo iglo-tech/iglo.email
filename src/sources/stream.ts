@@ -567,6 +567,11 @@ export function createSourceStream(options: SourceStreamOptions) {
         if (!names.length && source.usersTopic() === null) {
           state = "idle";
           delay = 0;
+          // B171 (D199): idle is not failing; a reactivated stream starts its failing clock and
+          // its refusal lines afresh.
+          failingSince = undefined;
+          warned = false;
+          refusals.clear();
           // B163 (D171, D191): no topic is subscribed, so no marker is kept; a name subscribed
           // again starts afresh instead of replaying what was created while it was not.
           if (store.markers().size) {

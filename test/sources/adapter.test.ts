@@ -934,3 +934,72 @@ test("B169: Test connection fails a users collection without `updated`, naming t
     missing: ["updated"],
   });
 });
+
+// B171 (D199): the guest check passes only on PocketBase's own refusals of a guest.
+test("B171: Test connection's guest check fails a proxy's 503, 429, 401 or 302 and a 400; passes a 403, a 404 and an empty 200", async () => {
+  const answers: Array<[number, () => Response, boolean]> = [
+    [503, () => new Response("Service unavailable", { status: 503 }), false],
+    [429, () => Response.json({ message: "Too many requests." }, { status: 429 }), false],
+    [400, () => Response.json({ message: "Invalid rule." }, { status: 400 }), false],
+    [401, () => new Response("Sign in", { status: 401 }), false],
+    [302, () => new Response(null, { status: 302, headers: { location: "/login" } }), false],
+    [403, () => Response.json({ message: "Only superusers." }, { status: 403 }), true],
+    [404, () => Response.json({ message: "Missing collection." }, { status: 404 }), true],
+    [
+      200,
+      () => Response.json({ page: 1, perPage: 1, totalItems: -1, totalPages: -1, items: [] }),
+      true,
+    ],
+  ];
+  for (const [status, answer, passes] of answers) {
+    const report = await checkSource(sourceConfig(pb.url, pb.service), createRealClock(), open, {
+      fetch: (input: URL, init: RequestInit) =>
+        /^\/api\/collections\/[^/]+\/records$/.test(input.pathname) &&
+        !new Headers(init.headers).get("authorization")
+          ? Promise.resolve(answer())
+          : fetch(input, init),
+    });
+    const steps = stepsOf(report);
+    expect({ status, auth: steps.auth?.ok, users: steps.users?.ok, ok: report.ok }).toEqual({
+      status,
+      auth: true,
+      users: true,
+      ok: passes,
+    });
+    for (const collection of ["recipients", "events"] as const) {
+      const step = steps[collection];
+      expect({ status, collection, ok: step?.ok }).toEqual({ status, collection, ok: passes });
+      if (!passes) {
+        expect(step?.message).toStartWith(
+          `Could not check that guests cannot read ${collection}: a guest's read answered ${status}`,
+        );
+      }
+    }
+  }
+});
+
+// B171 (D199): the leaving filter's encoded users topic must fit PocketBase's 2,500 characters.
+const clauses = (count: number) => Array.from({ length: count }, () => "id != ''").join(" || ");
+
+test("B171: Test connection fails a leaving filter whose users topic would be too long to subscribe to; one that fits reads", async () => {
+  const config = sourceConfig(pb.url, pb.service);
+  const long = clauses(100);
+  expect(long.length).toBeLessThan(1300);
+  const failed = await checkSource(
+    { ...config, users: { collection: "users", leavingFilter: long } },
+    createRealClock(),
+    open,
+  );
+  expect(failed.ok).toBe(false);
+  expect(stepsOf(failed).users).toMatchObject({
+    ok: false,
+    message: expect.stringContaining("the leaving filter is too long to subscribe to"),
+  });
+  const fits = await checkSource(
+    { ...config, users: { collection: "users", leavingFilter: clauses(80) } },
+    createRealClock(),
+    open,
+  );
+  expect(stepsOf(fits).users).toMatchObject({ ok: true });
+  expect(fits.ok).toBe(true);
+});
