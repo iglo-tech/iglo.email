@@ -102,6 +102,14 @@ export interface StreamSource {
     call?: CallOptions,
   ): Promise<void>;
   /**
+   * B168 (D196): one topic's event catch-up groups split into chunks, in order, so each chunk's
+   * catch-up filter (with its keyset condition and a confirming read's `id =` clause) stays under
+   * the source's filter limit. A group may be split by its names; each part keeps its bound.
+   */
+  catchUpChunks(
+    groups: ReadonlyArray<{ names: ReadonlyArray<string>; from: Date }>,
+  ): Array<Array<{ names: Array<string>; from: Date }>>;
+  /**
    * One catch-up page, oldest first by `(stamp, id)`; `more` when the page was full (a page too
    * large to read is read again in smaller pages, so it may hold fewer than `perPage`).
    */

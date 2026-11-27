@@ -92,6 +92,16 @@ const REFRESH = Symbol("refresh");
 
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+/** B168 (D196): the most record-level causes written per kind until a record is handled again. */
+const MAX_RECORD_CAUSES = 100;
+/**
+ * B168 (D196): a record failure's message without the IDs it interpolates: every word holding a
+ * digit (a subscriber ID, most source IDs) or 15 or more ID characters (a PocketBase ID) is one
+ * placeholder. Used only to tell causes apart; the line itself keeps the whole message.
+ */
+const causeOf = (message: string) =>
+  message.replaceAll(/[A-Za-z0-9_-]*\d[A-Za-z0-9_-]*|[A-Za-z0-9_-]{15,}/g, "#");
+
 const digest = (parts: ReadonlyArray<string>) =>
   createHash("sha256").update(parts.join("\0")).digest("hex").slice(0, 16);
 
@@ -219,8 +229,11 @@ export function createSourceStream(options: SourceStreamOptions) {
     item: { kind: StreamKind; id: string },
     error: unknown,
   ) => {
-    const cause = `${safe}\0${describe(error).replaceAll(item.id, "")}`;
-    if (!recordWarned[item.kind].has(cause)) {
+    // B168 (D196): the cause leaves out the IDs a message names (the record's, a user's, a
+    // subscriber's), so one cause failing for many users is one line, and the set is capped.
+    const cause = `${safe}\0${causeOf(describe(error).replaceAll(item.id, ""))}`;
+    const warned = recordWarned[item.kind];
+    if (!warned.has(cause) && warned.size < MAX_RECORD_CAUSES) {
       recordWarned[item.kind].add(cause);
       attention(safe, `${item.kind} ${item.id}: ${describe(error)}`);
     }
@@ -389,7 +402,12 @@ export function createSourceStream(options: SourceStreamOptions) {
         names: group,
         from: markerDate(marker),
       }));
-      await catchUpGroups("event", groups, names.map(eventKey), signal);
+      // B168 (D196): one filter per chunk, each under the source's limit; a chunk's pages move
+      // only its own names' markers, so no marker passes a group not yet caught up.
+      for (const chunk of source.catchUpChunks(groups)) {
+        const keys = chunk.flatMap((group) => group.names.map(eventKey));
+        await catchUpGroups("event", chunk, keys, signal);
+      }
     }
     if (users) {
       await catchUpGroups(
