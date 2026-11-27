@@ -1437,7 +1437,7 @@ export async function runOpenApiContract(target: {
       params: { id: self },
       auth: null,
       headers: cookies,
-      body: { secret: factor.secret, code: totp(factor.secret) },
+      body: { secret: factor.secret, code: totp(factor.secret), password: target.admin.password },
     });
     await op("DELETE /api/users/{id}/twofa", {
       params: { id: self },

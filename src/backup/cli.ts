@@ -159,7 +159,7 @@ function verdict(databases: Array<Checked>): void {
 export function runBackup(
   args: Array<string>,
   env: Environment,
-  hooks: Pick<BackupOptions, "beforePublish"> = {},
+  hooks: Pick<BackupOptions, "beforePublish" | "beforeSeal"> = {},
 ): number {
   const parsed = parseArguments(args);
   if (parsed.help) {

@@ -1386,20 +1386,11 @@ function Appearance({ t, side }: { t: Translation; side: SettingsSide }) {
         </>
       ) : (
         <>
-          <p class="text-light">{t.T("settings.appearance.publicHelp")}</p>
           <Brand t={t} />
-          {editor(
-            "public.custom_css",
-            "css",
-            css,
-            "appearance public custom css style theme subscription page",
-          )}
-          {editor(
-            "public.custom_js",
-            "javascript",
-            js,
-            "appearance public custom javascript js script subscription page",
-          )}
+          {/* D201: the public custom CSS and JS are written only through the instance. */}
+          <p class="text-light" data-testid="public-custom-instance">
+            {t.T("settings.appearance.publicInstance")}
+          </p>
         </>
       )}
     </div>

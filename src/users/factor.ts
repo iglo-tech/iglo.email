@@ -94,6 +94,23 @@ export function createFactorHandlers(store: UserStore, auth: Authentication) {
       if (!secret || !code) {
         throw invalid();
       }
+      // D201: the admin's copy enrols TOTP (which writes through to instance.db) only with its
+      // current password in `password`, as removing it always needed. Other users are unchanged.
+      if (identity.user.admin_copy === 1n) {
+        const password = typeof value.password === "string" ? value.password : "";
+        if (
+          !password ||
+          !identity.user.password ||
+          !(await auth.verifyPassword(password, identity.user.password))
+        ) {
+          throw new HttpError(
+            403,
+            context.app.i18n.T("globals.messages.invalidPassword"),
+            {},
+            "invalid_credentials",
+          );
+        }
+      }
       auth.revalidate(context);
       self(context);
       if (!currentProof()) {

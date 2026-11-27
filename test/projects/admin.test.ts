@@ -573,6 +573,8 @@ test("the admin's own PUT /api/users/<own id> changes its password everywhere (B
       password_login: true,
       password: next.password,
       user_role_id: 1,
+      // D201: the copy proves its current password to change its credentials.
+      current_password: admin.password,
     }),
   });
   expect(edited.status).toBe(200);
@@ -588,7 +590,11 @@ test("the admin's own PUT /api/users/<own id> changes its password everywhere (B
   const restored = await request(port, A, "/api/profile", {
     method: "PUT",
     headers: sessionHeaders(onANow),
-    body: JSON.stringify({ name: "The Admin", email: "initial-admin@localhost.invalid" }),
+    body: JSON.stringify({
+      name: "The Admin",
+      email: "initial-admin@localhost.invalid",
+      current_password: admin.password,
+    }),
   });
   expect(restored.status).toBe(200);
 });
@@ -694,6 +700,7 @@ test("a password change from a project's profile reaches the instance and the ot
       name: admin.user,
       email: "initial-admin@localhost.invalid",
       password: "profile-password-2",
+      current_password: admin.password,
     }),
   });
   expect(profile.status).toBe(200);
@@ -751,7 +758,12 @@ test("a password reset by email in one project reaches the instance and the othe
   const email = await request(port, A, "/api/profile", {
     method: "PUT",
     headers: sessionHeaders(fresh),
-    body: JSON.stringify({ name: admin.user, email: mailbox, password: "" }),
+    body: JSON.stringify({
+      name: admin.user,
+      email: mailbox,
+      password: "",
+      current_password: admin.password,
+    }),
   });
   expect(email.status).toBe(200);
   const forgot = await request(port, A, "/admin/forgot", {

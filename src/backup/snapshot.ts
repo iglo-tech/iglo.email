@@ -65,7 +65,7 @@ import {
   projectDirectory,
   usesOldLayout,
 } from "@/projects/layout";
-import { SLUG_PATTERN, registeredSlugs } from "@/projects/registry";
+import { SLUG_PATTERN, registeredProjects, registeredSlugs } from "@/projects/registry";
 import { holdRecord, placeRestoreHold, releaseRestoreHold } from "@/settings/hold";
 import type { HoldRecord } from "@/settings/hold";
 import { storedUploadPath, writeUploadPath } from "@/settings/stored";
@@ -569,7 +569,66 @@ export interface BackupOptions {
   available?: (path: string) => number;
   /** Runs at the moment of publication; a test's way to race it. The command line never sets it. */
   beforePublish?: () => void;
+  /**
+   * Runs after a project's database is copied, before its snapshot is sealed; a test's way to race
+   * that step (B172). The command line never sets it.
+   */
+  beforeSeal?: () => void;
   warn: (message: string) => void;
+}
+
+/**
+ * A project a backup set out to copy (B172, D200): its registry row's creation time, and the
+ * identity (device and inode) of its directory and database file before the database was opened. A
+ * slug deleted and created again has a new time and new files, so it is never taken for the same.
+ */
+interface ProjectIdentity {
+  slug: string;
+  createdAt: string;
+  directory: string;
+  directoryId: string | undefined;
+  database: string;
+  databaseId: string | undefined;
+}
+
+/** A path's device and inode, followed through links, or undefined when nothing is there. */
+function fileId(path: string): string | undefined {
+  const stats = statSync(path, { bigint: true, throwIfNoEntry: false });
+  return stats ? `${stats.dev}:${stats.ino}` : undefined;
+}
+
+/**
+ * Whether each project is still the one a backup set out to copy, by the registry `rows` (live, or
+ * the instance.db snapshot's), and with `files` by its live directory and database file too: another
+ * directory or database file at its path is a project created again, and nothing there (moved away
+ * or removed while instance.db still lists it) is a change as well (D201). The one exemption is a
+ * directory moved to the output path itself: publication meets it and refuses the live directory
+ * by name, which says more than a registry change would.
+ */
+function sameProjects(
+  identities: ReadonlyArray<ProjectIdentity>,
+  rows: ReadonlyArray<{ slug: string; created_at: string }>,
+  files: { output: string } | false,
+): boolean {
+  const created = new Map(rows.map((row) => [row.slug, row.created_at]));
+  return identities.every((project) => {
+    if (created.get(project.slug) !== project.createdAt) {
+      return false;
+    }
+    if (!files) {
+      return true;
+    }
+    const directory = fileId(project.directory);
+    if (directory === undefined && fileId(files.output) === project.directoryId) {
+      return true;
+    }
+    return directory === project.directoryId && fileId(project.database) === project.databaseId;
+  });
+}
+
+/** A `--project` backup whose project was deleted, or deleted and created again, while it ran. */
+function projectDeleted(slug: string, options?: ErrorOptions): Error {
+  return new Error(`Project ${slug} was deleted while the backup ran`, options);
 }
 
 function freeBytes(path: string): number {
@@ -1119,6 +1178,9 @@ export function createBackup(options: BackupOptions): BackupReport {
   let flusher: Bun.Subprocess | undefined;
   // The projects a whole backup set out to copy, until it is published: see the catch below.
   let unpublished: Array<string> | undefined;
+  // What each included project is (B172, D200): checked in the instance.db snapshot and live.
+  const identities: Array<ProjectIdentity> = [];
+  let published = false;
   try {
     // Every database is opened, and every check that can refuse is made, before any folder is.
     const instancePath = join(dataDir, INSTANCE_DATABASE);
@@ -1131,7 +1193,8 @@ export function createBackup(options: BackupOptions): BackupReport {
       data: root,
       db: instance,
     });
-    const registered = registeredSlugs(instance);
+    const rows = registeredProjects(instance);
+    const registered = rows.map(({ slug }) => slug);
     unpublished = whole ? registered : undefined;
     if (options.project !== undefined && !registered.includes(options.project)) {
       throw new Error(`No project ${options.project} in ${dataDir}`);
@@ -1139,6 +1202,18 @@ export function createBackup(options: BackupOptions): BackupReport {
     for (const slug of options.project === undefined ? registered : [options.project]) {
       const directory = projectDirectory(dataDir, slug);
       const path = join(directory, DATABASE);
+      // Taken before the open: files replaced in between fail the check later, never pass it.
+      identities.push({
+        slug,
+        createdAt: must(
+          rows.find((row) => row.slug === slug),
+          "registry row",
+        ).created_at,
+        directory,
+        directoryId: fileId(directory),
+        database: path,
+        databaseId: fileId(path),
+      });
       const db = openSource(path, options.supportedVersion);
       const data = realpathSync(directory);
       sources.push({
@@ -1225,6 +1300,7 @@ export function createBackup(options: BackupOptions): BackupReport {
           sync(snapshot);
           return undefined;
         }
+        options.beforeSeal?.();
         const sealed = sealSnapshot(snapshot, since, source.data);
         sync(snapshot);
         return sealed;
@@ -1237,14 +1313,18 @@ export function createBackup(options: BackupOptions): BackupReport {
       whileMade(made, () => {
         // The set is one backup only if the instance.db snapshot registers what was copied: a project
         // added or removed meanwhile fails the backup, which a rerun takes whole.
+        // A slug deleted and created again before that snapshot has a new creation time (B172).
         const db = openSnapshot(join(made.path, INSTANCE_DATABASE));
-        let copied: Array<string>;
+        let copied: Array<{ slug: string; created_at: string }>;
         try {
-          copied = registeredSlugs(db);
+          copied = registeredProjects(db);
         } finally {
           db.close(true);
         }
-        if (copied.join("\n") !== registered.join("\n")) {
+        if (
+          copied.map(({ slug }) => slug).join("\n") !== registered.join("\n") ||
+          !sameProjects(identities, copied, false)
+        ) {
           throw new RegistryChangedError();
         }
         const manifest = join(made.path, MANIFEST);
@@ -1270,16 +1350,21 @@ export function createBackup(options: BackupOptions): BackupReport {
     options.beforePublish?.();
     // B170 (D198): the live registry, read again just before the rename. The instance.db snapshot
     // was taken first, so a project deleted while its uploads were copied is still in it, and its
-    // missing files were skipped as deleted ones: only the live registry shows the change.
-    const now = registeredSlugs(instance);
-    if (whole && now.join("\n") !== registered.join("\n")) {
+    // missing files were skipped as deleted ones: only the live registry shows the change. B172
+    // (D200): a slug deleted and created again is a change too. The open handles kept the old
+    // databases while the uploads were read from the new directories, so each project's creation
+    // time, directory and database file must still be the ones recorded before the copy.
+    const now = registeredProjects(instance);
+    const unchanged = sameProjects(identities, now, { output });
+    if (whole && (now.map(({ slug }) => slug).join("\n") !== registered.join("\n") || !unchanged)) {
       throw new RegistryChangedError();
     }
-    if (options.project !== undefined && !now.includes(options.project)) {
-      throw new Error(`Project ${options.project} was deleted while the backup ran`);
+    if (options.project !== undefined && !unchanged) {
+      throw projectDeleted(options.project);
     }
     const aside = publish(made, output, options.force ?? false, live);
     unpublished = undefined;
+    published = true;
     // The rename is the publication. From here nothing is undone: the partial is no longer a partial,
     // and the folders are the backup's parents and stay. Cleanup must not run over the backup from
     // here. A failed sync of the folder is an error, since the backup may not be durable; a failure
@@ -1313,16 +1398,31 @@ export function createBackup(options: BackupOptions): BackupReport {
     // A project created or deleted meanwhile fails a whole backup at whichever step meets it first:
     // a deleted project's directory or upload path is gone. The cause to report is then the change
     // of the registry, which a rerun takes whole, not that step's message (D164, D178).
+    // B172 (D200): a slug deleted and created again is such a change, and so is a `--project`
+    // backup's project deleted before its snapshot was sealed (its upload path is then gone).
     const instance = sources[0]?.db;
-    if (unpublished !== undefined && instance !== undefined) {
-      let now: Array<string> | undefined;
+    if (instance !== undefined && !published) {
+      let now: Array<{ slug: string; created_at: string }> | undefined;
       try {
-        now = registeredSlugs(instance);
+        now = registeredProjects(instance);
       } catch {
         // The registry unread is no evidence of a change: the step's own error stands.
       }
-      if (now !== undefined && now.join("\n") !== unpublished.join("\n")) {
+      if (
+        now !== undefined &&
+        unpublished !== undefined &&
+        (now.map(({ slug }) => slug).join("\n") !== unpublished.join("\n") ||
+          !sameProjects(identities, now, false))
+      ) {
         throw new RegistryChangedError({ cause: error });
+      }
+      if (
+        now !== undefined &&
+        options.project !== undefined &&
+        identities.length > 0 &&
+        !sameProjects(identities, now, false)
+      ) {
+        throw projectDeleted(options.project, { cause: error });
       }
     }
     throw error;

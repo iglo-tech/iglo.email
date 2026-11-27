@@ -38,6 +38,14 @@ export interface PublicShellProps {
   readonly site: PageSite;
   readonly assetVersion: string;
   readonly archiveTitle?: string;
+  /**
+   * Loads the project's `/public/custom.css` and `/public/custom.js` and its `app.favicon_url`
+   * (the default). Every authentication page (sign-in, 2FA, forgot and reset, project and instance)
+   * passes false: no project-authored asset and no project-chosen image origin reaches a page where
+   * credentials, codes or reset tokens are typed or carried (B172, D200, D201). The bundled favicon
+   * stands in.
+   */
+  readonly customAssets?: boolean;
   readonly children?: Child;
 }
 
@@ -67,6 +75,7 @@ export function PublicShell({
   site,
   assetVersion,
   archiveTitle,
+  customAssets = true,
   children,
 }: PublicShellProps) {
   if (!/^[a-f0-9]{10}$/.test(assetVersion)) {
@@ -118,9 +127,13 @@ export function PublicShell({
           rel="stylesheet"
           type="text/css"
         />
-        <link href={`/public/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
-        <script src={`/public/custom.js?v=${assetVersion}`} async defer></script>
-        {site.faviconUrl ? (
+        {customAssets ? (
+          <>
+            <link href={`/public/custom.css?v=${assetVersion}`} rel="stylesheet" type="text/css" />
+            <script src={`/public/custom.js?v=${assetVersion}`} async defer></script>
+          </>
+        ) : null}
+        {customAssets && site.faviconUrl ? (
           <link rel="icon" href={site.faviconUrl} type="image/x-icon" />
         ) : (
           <link href={`/public/static/favicon.png?v=${assetVersion}`} rel="icon" type="image/png" />

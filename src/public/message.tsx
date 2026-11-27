@@ -53,7 +53,7 @@ export function publicNotFound(i18n: Translation, method: string, site: PageSite
  */
 export function publicMessage(
   i18n: Translation,
-  page: { status: number; title: string; message: string; site: PageSite },
+  page: { status: number; title: string; message: string; site: PageSite; customAssets?: boolean },
   headers: Record<string, string> = {},
 ): Response {
   const body = render(
@@ -62,6 +62,8 @@ export function publicMessage(
       site={page.site}
       assetVersion={assetVersion}
       archiveTitle={i18n.T("public.archiveTitle")}
+      // False on an authentication page's answers (D201): see `PublicShell`.
+      customAssets={page.customAssets ?? true}
     >
       <h2>{page.title}</h2>
       <div>{page.message}</div>

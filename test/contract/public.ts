@@ -1518,21 +1518,57 @@ export async function runPublicContract(target: {
     );
 
     // Custom appearance.
-    await withSetting("appearance.public.custom_css", `/* ${marker} */`, async () => {
+    if (reference) {
+      await withSetting("appearance.public.custom_css", `/* ${marker} */`, async () => {
+        const css = await visit("/public/custom.css");
+        check(
+          css.status === 200 &&
+            css.headers.get("content-type") === "text/css; charset=utf-8" &&
+            css.text === `/* ${marker} */`,
+          "custom-css",
+        );
+      });
+    } else {
+      // D201 (deliberate difference): the public custom CSS and JS are the instance admin's to
+      // write (`PUT /api/instance/projects/{slug}/appearance`); a project's settings API, with any
+      // credential, refuses a change by name with 403, and the stored value stays.
+      for (const key of ["appearance.public.custom_css", "appearance.public.custom_js"]) {
+        const refused = await call(`/api/settings/${key}`, "PUT", `/* ${marker} */`);
+        check(
+          refused.status === 403 && String(refused.body.message).includes(key),
+          `custom-refused-d201-${key.slice("appearance.public.".length)}`,
+        );
+      }
       const css = await visit("/public/custom.css");
       check(
         css.status === 200 &&
           css.headers.get("content-type") === "text/css; charset=utf-8" &&
-          css.text === `/* ${marker} */`,
-        "custom-css",
+          !css.text.includes(marker),
+        "custom-css-d201",
       );
-    });
-    const js = await visit("/public/custom.js");
-    check(
-      js.status === 200 &&
-        js.headers.get("content-type") === "application/javascript; charset=utf-8",
-      "custom-js",
-    );
+    }
+    // B172 (D200, deliberate difference): this host is the instance's, where the instance login's
+    // credentials are typed, so production answers the primary project's custom JS as an empty
+    // script; upstream serves the setting.
+    if (reference) {
+      await withSetting("appearance.public.custom_js", `/* ${marker} */`, async () => {
+        const js = await visit("/public/custom.js");
+        check(
+          js.status === 200 &&
+            js.headers.get("content-type") === "application/javascript; charset=utf-8" &&
+            js.text === `/* ${marker} */`,
+          "custom-js-d200",
+        );
+      });
+    } else {
+      const js = await visit("/public/custom.js");
+      check(
+        js.status === 200 &&
+          js.headers.get("content-type") === "application/javascript; charset=utf-8" &&
+          js.text === "",
+        "custom-js-d200",
+      );
+    }
     check((await visit("/subscription/form")).text.includes("/public/custom.css"), "custom-link");
 
     // Settings gates.

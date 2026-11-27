@@ -127,7 +127,8 @@ await withProduction(
         "x-csrf-token": csrf.slice(5),
         "content-type": "application/json",
       },
-      body: JSON.stringify({ secret, code: code() }),
+      // D201: the bootstrap admin is the instance admin's copy, which enrols with its password.
+      body: JSON.stringify({ secret, code: code(), password: admin.password }),
     });
     check(enabled.status === 200, "restart-factor-enabled");
     const completeLocation = (await passwordLogin()).headers.get("location") ?? "";

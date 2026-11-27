@@ -505,6 +505,127 @@ test("a project deleted while the backup runs fails it, whole or --project, and 
   expect(names(base)).toEqual(["data"]);
 });
 
+test("a project deleted and created again under its slug fails the backup, whole or --project, and nothing is published (B172)", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  registerProjects(dataDir, [
+    { slug: "main", name: "Main", hostname: "127.0.0.1", primary: true },
+    { slug: "b", name: "B", hostname: "b.example.test" },
+  ]);
+  server = await startServer(executable, dataDir);
+  await stopped();
+  const projectB = join(dataDir, "projects", "b");
+  const changed = "The registered projects changed while the backup ran; run it again";
+
+  // Before b's snapshot is sealed, so its uploads are read from the new directory, and at
+  // publication. The slug list is the same throughout. `replace` keeps the registry row and changes
+  // only the directory and database file, which their device and inode tell.
+  for (const action of ["seal:recreate", "recreate", "seal:replace"]) {
+    const whole = join(base, "whole");
+    const failed = await publishing(action, projectB, "--data-dir", dataDir, "--output", whole);
+    expect(`${action} ${failed.exitCode}`, failed.stdout).toBe(`${action} 1`);
+    expect(failed.stderr).toContain(changed);
+    expect(existsSync(whole)).toBe(false);
+    expect(names(base)).toEqual(["data"]);
+
+    const only = join(base, "only-b");
+    const gone = await publishing(
+      action,
+      projectB,
+      "--data-dir",
+      dataDir,
+      "--project",
+      "b",
+      "--output",
+      only,
+    );
+    expect(`${action} ${gone.exitCode}`, gone.stdout).toBe(`${action} 1`);
+    expect(gone.stderr).toContain("Project b was deleted while the backup ran");
+    expect(existsSync(only)).toBe(false);
+    expect(names(base)).toEqual(["data"]);
+  }
+  // Untouched, both succeed.
+  expect(
+    (await runBackup(executable, ["--data-dir", dataDir, "--output", join(base, "w")])).exitCode,
+  ).toBe(0);
+  const one = ["--data-dir", dataDir, "--project", "b", "--output", join(base, "o")];
+  expect((await runBackup(executable, one)).exitCode).toBe(0);
+});
+
+test("a project directory or database moved away while instance.db lists it fails the backup, whole or --project, and nothing is published (D201)", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  registerProjects(dataDir, [
+    { slug: "main", name: "Main", hostname: "127.0.0.1", primary: true },
+    { slug: "b", name: "B", hostname: "b.example.test" },
+  ]);
+  server = await startServer(executable, dataDir);
+  await stopped();
+  const projectB = join(dataDir, "projects", "b");
+  const changed = "The registered projects changed while the backup ran; run it again";
+  // Each action at publication, then put back for the next run.
+  const restore: Record<string, () => void> = {
+    moveaway: () => renameSync(`${projectB}.moved`, projectB),
+    movedb: () => renameSync(join(projectB, "moved.db"), join(projectB, "iglo-email.db")),
+  };
+  for (const action of ["moveaway", "movedb"]) {
+    const whole = join(base, "whole");
+    const failed = await publishing(action, projectB, "--data-dir", dataDir, "--output", whole);
+    expect(`${action} ${failed.exitCode}`, failed.stdout).toBe(`${action} 1`);
+    expect(failed.stderr).toContain(changed);
+    expect(existsSync(whole)).toBe(false);
+    expect(names(base)).toEqual(["data"]);
+    restore[action]!();
+
+    const only = join(base, "only-b");
+    const gone = await publishing(
+      action,
+      projectB,
+      "--data-dir",
+      dataDir,
+      "--project",
+      "b",
+      "--output",
+      only,
+    );
+    expect(`${action} ${gone.exitCode}`, gone.stdout).toBe(`${action} 1`);
+    expect(gone.stderr).toContain("Project b was deleted while the backup ran");
+    expect(existsSync(only)).toBe(false);
+    expect(names(base)).toEqual(["data"]);
+    restore[action]!();
+  }
+  // Put back, it succeeds.
+  expect(
+    (await runBackup(executable, ["--data-dir", dataDir, "--output", join(base, "w")])).exitCode,
+  ).toBe(0);
+});
+
+test("a --project backup whose project is deleted before its snapshot is sealed says so (B172)", async () => {
+  base = temporaryDirectory();
+  dataDir = join(base, "data");
+  registerProjects(dataDir, [
+    { slug: "main", name: "Main", hostname: "127.0.0.1", primary: true },
+    { slug: "b", name: "B", hostname: "b.example.test" },
+  ]);
+  server = await startServer(executable, dataDir);
+  await stopped();
+  const only = join(base, "only-b");
+  const gone = await publishing(
+    "seal:delete",
+    join(dataDir, "projects", "b"),
+    "--data-dir",
+    dataDir,
+    "--project",
+    "b",
+    "--output",
+    only,
+  );
+  expect(gone.exitCode, gone.stdout).toBe(1);
+  expect(gone.stderr).toBe("Project b was deleted while the backup ran\n");
+  expect(existsSync(only)).toBe(false);
+  expect(names(base)).toEqual(["data"]);
+});
+
 test("a pre-migration snapshot is held, and the install it came from is not", async () => {
   base = temporaryDirectory();
   dataDir = join(base, "data");

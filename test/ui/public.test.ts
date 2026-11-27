@@ -266,7 +266,8 @@ test("the sign-in, forgot-password and reset pages show the site's logo", async 
       for (const path of ["/admin/login", "/admin/forgot", "/admin/reset"]) {
         const html = await (await fetch(`${origin}${path}`)).text();
         expect(html).toContain(`src="${logo}"`);
-        expect(html).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
+        // D201: an authentication page loads no custom asset.
+        expect(html).not.toContain("/public/custom.");
         expect(html).not.toContain("/public/static/logo.svg");
       }
     },
@@ -301,7 +302,8 @@ test("the two-factor and archive-preview error pages show the site's logo, not t
       const enable = await fetch(`${origin}/api/users/${profile.data.id}/twofa`, {
         method: "PUT",
         headers: signed,
-        body: JSON.stringify({ secret, code: totp(secret) }),
+        // D201: the admin's copy enrols with its current password.
+        body: JSON.stringify({ secret, code: totp(secret), password: admin.password }),
       });
       expect(enable.status).toBe(200);
 
@@ -332,7 +334,8 @@ test("the two-factor and archive-preview error pages show the site's logo, not t
       const twofaHtml = await twofa.text();
       expect(twofa.status).toBe(200);
       expect(twofaHtml).toContain(`src="${logo}"`);
-      expect(twofaHtml).toMatch(/href="\/public\/custom\.css\?v=[a-f0-9]{10}"/);
+      // D201: an authentication page loads no custom asset.
+      expect(twofaHtml).not.toContain("/public/custom.");
       expect(twofaHtml).not.toContain("/admin/static/oat.min.css");
 
       // A code outside the window the server accepts, so the answer is the error page.

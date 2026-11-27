@@ -839,6 +839,24 @@ export const differences: Array<Difference> = [
     applies: [],
   },
   {
+    area: "Public custom JS on the instance host (B172, D200)",
+    summary:
+      "On the instance host and hosts no project claims, `/public/custom.js` is an empty script: the primary project's `appearance.public.custom_js` does not run where the instance credentials are typed. The instance login pages load no custom asset. Upstream serves the setting.",
+    applies: [],
+  },
+  {
+    area: "Public custom code is the instance admin's (D201)",
+    summary:
+      "`appearance.public.custom_css` and `appearance.public.custom_js` are written only by the instance admin (the instance's Projects page). A project write that changes either is 403 naming the key; one that leaves them out or repeats the stored value succeeds. A non-empty `custom_js` stored before this release is served as an empty `/public/custom.js` on every host until the instance admin saves it. No sign-in, 2FA, forgot or reset page loads custom assets or the project's favicon, and each sends `frame-ancestors 'none'`. Upstream lets any settings manager write them and loads them on its login pages.",
+    applies: ["PUT /api/settings", "PUT /api/settings/{key}"],
+  },
+  {
+    area: "Instance admin's copy proves its password (D201)",
+    summary:
+      "The admin's copy changes its own password or email (PUT /api/profile, PUT /api/users/{id}) only with `current_password`, and enrols TOTP only with `password`; both write through to the instance account. Other users are unchanged. Upstream has no instance account.",
+    applies: ["PUT /api/profile", "PUT /api/users/{id}", "/api/users/{id}/twofa"],
+  },
+  {
     area: "Sort direction (`order`)",
     summary:
       "`order` takes `asc`, `ASC` or `Asc` (any case) on every endpoint that documents it. Upstream's documented `ASC` sorts descending, so a client that reads the enum gets the wrong order there.",
