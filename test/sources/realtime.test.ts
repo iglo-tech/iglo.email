@@ -99,7 +99,9 @@ const blocking: Guard = { blockPrivate: () => true, privateHosts: () => [] };
 
 /** How `work` settled within `ms` of real time: its rejection's message, or "pending". */
 async function settledWithin(work: Promise<unknown>, ms: number): Promise<string> {
-  const timeout = new Promise<string>((resolve) => setTimeout(() => resolve("pending"), ms));
+  const timeout = new Promise<string>((resolve) => {
+    setTimeout(() => resolve("pending"), ms);
+  });
   return Promise.race([
     work.then(
       () => "resolved",

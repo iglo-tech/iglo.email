@@ -12,7 +12,6 @@
 // Nothing here sends.
 import type { Database } from "bun:sqlite";
 import { writeTransaction } from "@/db/transaction";
-import type { Enrollments } from "@/sequences/enrollments";
 import type { SourceProvider } from "@/sources/project";
 import {
   applyRecipient,
