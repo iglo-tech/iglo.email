@@ -3,6 +3,7 @@ import { createConnection } from "node:net";
 import type { Credentials } from "@/test/contract/types";
 import { readJson } from "@/test/read-body";
 import { settingsRouter } from "@/test/contract/settings-split";
+import { listmonkSettingKeys } from "@/test/settings/upstream-keys";
 
 function check(value: unknown, label: string): asserts value {
   if (!value) {
@@ -92,6 +93,46 @@ export async function runSettingsLive(target: {
     concurrent["app.site_name"] === "Concurrent A" && concurrent["app.logo_url"] === "Concurrent B",
     "concurrent-values",
   );
+  // B165 (D193): a listmonk client's full write sends only upstream's keys; the native project keys
+  // it leaves out keep their values (test/settings/native-keys.test.ts walks every native key).
+  const natives: Record<string, unknown> = {
+    "app.site_url": "https://site.example.test",
+    "privacy.preference_fields": [
+      {
+        key: "plan",
+        label: "Plan",
+        type: "text",
+        editable: true,
+        required: false,
+        min: null,
+        max: null,
+        options: [],
+      },
+    ],
+    "appearance.brand.accent": "#aa3300",
+    "appearance.brand.font": "system-serif",
+    "appearance.brand.header": "name",
+  };
+  const nativeBefore = await get();
+  for (const [name, value] of Object.entries(natives)) {
+    check((await key(name, value)).status === 200, `native-set-${name}`);
+  }
+  const withNatives = await get();
+  const listmonkWrite = Object.fromEntries(
+    Object.entries(withNatives).filter(([name]) => listmonkSettingKeys.includes(name)),
+  );
+  check((await request("/api/settings", "PUT", listmonkWrite)).status === 200, "native-full-put");
+  const nativeKept = await get();
+  for (const name of Object.keys(natives)) {
+    check(
+      JSON.stringify(nativeKept[name]) === JSON.stringify(withNatives[name]) &&
+        JSON.stringify(nativeKept[name]) !== JSON.stringify(nativeBefore[name]),
+      `native-kept-${name}`,
+    );
+  }
+  for (const name of Object.keys(natives)) {
+    check((await key(name, nativeBefore[name])).status === 200, `native-restore-${name}`);
+  }
   const secret = "synthetic-ƒ-password";
   check((await key("bounce.sendgrid_key", secret)).status === 200, "secret-write");
   let view = await get();
