@@ -1156,8 +1156,11 @@ file, rather than wait on it. The path you give it may itself be a symlink to a 
 that names nothing on disk, such as `/dev/stdin` on a pipe, is "No backup at …". These checks
 come before SQLite opens the files, which it opens by name. A database with no schema (an empty
 file, given bare, as a project's backup or inside a whole backup), one that lacks the settings
-table its schema version has, and a whole backup whose `projects/<slug>` is a file rather than a
-directory are each refused by name as not a backup. `--verify` is for a backup that nothing
+table its schema version has, a whole backup whose `projects/<slug>` is a file rather than a
+directory, and a whole backup whose `instance.db` has no `projects` table are each refused by
+name as not a backup. A bare `.db` file is read as `instance.db` when its schema is one (it has
+the `projects` table and no `subscribers` table): it is checked against the instance schema
+version, and printed with the instance hold and no `Uploads:` line. `--verify` is for a backup that nothing
 changes while it runs (a backup `backup` published, or one copied or unpacked beforehand), not for
 files another process could swap meanwhile. The output may not be
 `<data-dir>/projects/` or inside it, where the projects are read from, or at
@@ -1533,7 +1536,8 @@ Migrations run at startup and are forward-only, for `instance.db` (its own manif
 project's database. With migrations pending, startup first writes a verified snapshot of that
 database to `backups/pre-migration/` (`instance-…` or `<slug>-…`) and refuses to migrate if it
 cannot. Those snapshots are plain
-`.db` files that are never removed automatically; `--verify` reads them too. To go back: stop,
+`.db` files that are never removed automatically; `--verify` reads them too, an `instance-…`
+snapshot as `instance.db` and a `<slug>-…` one as a project's database. To go back: stop,
 restore the backup from step 1, and put back the old executable.
 
 A version with `-` in it, such as `0.1.0-rc.1`, is marked as a prerelease. Do not run one in

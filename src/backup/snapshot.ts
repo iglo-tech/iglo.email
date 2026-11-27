@@ -95,7 +95,11 @@ export class RegistryChangedError extends Error {
   }
 }
 
+/** What a database is: instance.db, or a project's database. */
+export type DatabaseKind = "instance" | "project";
+
 export interface Inspection {
+  kind: DatabaseKind;
   schemaVersion: number;
   /** Schema version of this executable. */
   supportedVersion: number;
@@ -271,11 +275,24 @@ function storedNames(db: Database, clock: Clock): Array<string> {
 const PROJECT_SETTINGS_FROM = 1;
 const INSTANCE_SETTINGS_FROM = 3;
 
+/**
+ * Whether a database is instance.db by its schema (D195): instance.db has `projects` from its
+ * migration 1 and never `subscribers`; a project database has `subscribers` from its migration 1
+ * and never `projects`. One with neither, such as an empty file, is read as a project's.
+ */
+function isInstanceSchema(db: Database): boolean {
+  return hasTable(db, "projects") && !hasTable(db, "subscribers");
+}
+
+/**
+ * Reads one database. `projectVersion` is this executable's project schema version; `kind` says
+ * what the database is, and a bare file, which is either, leaves it out to be told by its schema.
+ */
 function inspect(
   target: string,
   clock: Clock,
-  supportedVersion: number,
-  settingsFrom = PROJECT_SETTINGS_FROM,
+  projectVersion: number,
+  given?: DatabaseKind,
 ): Inspection {
   const stats = statSync(target, { throwIfNoEntry: false });
   if (!stats) {
@@ -325,6 +342,10 @@ function inspect(
     if (schemaVersion < 0) {
       throw new Error(`${file} has invalid schema version ${schemaVersion}: not a backup`);
     }
+    // A directory holds a project's database; a bare file is either kind, told by its schema.
+    const kind = given ?? (!stats.isDirectory() && isInstanceSchema(db) ? "instance" : "project");
+    const supportedVersion = kind === "instance" ? instanceMigrations.length : projectVersion;
+    const settingsFrom = kind === "instance" ? INSTANCE_SETTINGS_FROM : PROJECT_SETTINGS_FROM;
     // The hold is in the settings table, which every schema of this executable from `settingsFrom`
     // on has. One without it at such a version was not written by `backup` (D193).
     const settings = hasSettings(db);
@@ -333,7 +354,15 @@ function inspect(
         `${file} has no settings table at schema version ${schemaVersion}: not a backup`,
       );
     }
+    // instance.db has its registry from migration 1 on; a whole backup compares it with the
+    // manifest, which one without it cannot have been written with (D195).
+    if (kind === "instance" && schemaVersion <= supportedVersion && !hasTable(db, "projects")) {
+      throw new Error(
+        `${file} has no projects table at schema version ${schemaVersion}: not a backup`,
+      );
+    }
     const report = {
+      kind,
       schemaVersion,
       supportedVersion,
       databaseBytes,
@@ -390,7 +419,7 @@ function isWholeBackup(path: string): boolean {
 /** A whole backup: instance.db, then each project the manifest names, which its registry names too. */
 function inspectWhole(target: string, clock: Clock, supportedVersion: number): Array<Checked> {
   const instanceFile = join(target, INSTANCE_DATABASE);
-  const instance = inspect(instanceFile, clock, instanceMigrations.length, INSTANCE_SETTINGS_FROM);
+  const instance = inspect(instanceFile, clock, supportedVersion, "instance");
   const { projects } = readManifest(target);
   if (!Array.isArray(projects) || !projects.every((slug) => typeof slug === "string")) {
     throw new Error(`${join(target, MANIFEST)} names no projects: not a backup`);
@@ -403,8 +432,8 @@ function inspectWhole(target: string, clock: Clock, supportedVersion: number): A
       `${join(target, MANIFEST)} names ${JSON.stringify(invalid)}, which is not a project slug: not a backup`,
     );
   }
-  // An instance.db with no schema, which registers nothing to compare, is refused by `inspect`
-  // (D192, D193).
+  // An instance.db with no schema or no projects table, which registers nothing to compare, is
+  // refused by `inspect` (D192, D193, D195).
   if (instance.schemaVersion <= instanceMigrations.length) {
     const db = openSnapshot(instanceFile);
     try {
@@ -432,7 +461,7 @@ function inspectWhole(target: string, clock: Clock, supportedVersion: number): A
       }
       return {
         place,
-        inspection: inspect(directory, clock, supportedVersion),
+        inspection: inspect(directory, clock, supportedVersion, "project"),
       };
     }),
   ];
@@ -1358,9 +1387,13 @@ function openStopped(path: string, supportedVersion: number): Database {
   }
 }
 
+function hasTable(db: Database, name: string): boolean {
+  return !!db.query("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(name);
+}
+
 /** instance.db has its settings table, where a hold is, from its migration 3 on. */
 function hasSettings(db: Database): boolean {
-  return !!db.query("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'settings'").get();
+  return hasTable(db, "settings");
 }
 
 /** A database's own hold, read-only; a database with no settings table has none. */
