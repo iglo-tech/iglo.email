@@ -82,6 +82,11 @@ export interface StreamFixtureOptions {
    * the stream's reads, the race no schedule of the binary produces when asked.
    */
   beforeRequest?: (url: URL) => Promise<void> | void;
+  /**
+   * B171: a proxy's answer in place of the binary's for a request it returns one for (a status
+   * the binary does not give on demand, such as a second `401` on the subscription).
+   */
+  answer?: (url: URL, init: RequestInit) => Response | undefined;
 }
 
 /** A stream on its own database; `close` stops it and removes the directory it made. */
@@ -102,7 +107,7 @@ export function startStream(options: StreamFixtureOptions) {
       fetch: async (input: URL, init: RequestInit) => {
         requests.push(`${init.method ?? "GET"} ${input.pathname}${input.search}`);
         await options.beforeRequest?.(input);
-        return fetch(input, init);
+        return options.answer?.(input, init) ?? fetch(input, init);
       },
     },
   });

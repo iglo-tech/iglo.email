@@ -345,6 +345,35 @@ test("the private-address block: an unlisted host is refused, and a webhook to t
   }
 });
 
+/** B171: a leaving filter of `count` short clauses. */
+const clauses = (count: number) => Array.from({ length: count }, () => "id != ''").join(" || ");
+
+test("B171: a leaving filter whose users topic is too long to subscribe to is refused on save and by Test connection; one that fits saves", async () => {
+  const long = clauses(100);
+  expect(long.length).toBeLessThan(1300);
+  const url = `http://localhost:${pb.port}`;
+  const before = (await settings())["source.users"];
+  const refused = await save({
+    ...sourceAt(url),
+    "source.users": { collection: "users", leaving_filter: long },
+  });
+  expect(refused.status).toBe(400);
+  expect(refused.body.message).toContain("source.users leaving_filter");
+  expect(refused.body.message).toContain("too long to subscribe to");
+  expect((await settings())["source.users"]).toEqual(before);
+  const tested = await call("POST", "/api/settings/source/test", {
+    "source.users": { collection: "users", leaving_filter: long },
+  });
+  expect(tested.status).toBe(400);
+  expect(tested.body.message).toContain("too long to subscribe to");
+  const fits = { collection: "users", leaving_filter: clauses(80) };
+  expect((await save({ ...sourceAt(url), "source.users": fits })).status).toBe(200);
+  expect((await settings())["source.users"]).toEqual(fits);
+  const passes = await call("POST", "/api/settings/source/test", {});
+  expect(stepsOf(passes).steps.find((step) => step.step === "users")?.ok).toBe(true);
+  expect((await save({ ...sourceAt(url), "source.users": before })).status).toBe(200);
+});
+
 test("Test connection needs settings:manage and a source URL", async () => {
   const off = await call("POST", "/api/settings/source/test", { "source.url": "" });
   expect(off.status).toBe(400);

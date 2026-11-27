@@ -917,7 +917,9 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
       }
       // B166 round 4 (D194): a `200` that is no PocketBase list (a proxy's `{}` or empty body) is
       // not the source answering, so the condition's `400` is not shown to be its own.
-      if (!isSourceList(member(answer.body, "items"))) {
+      // B171 (D199): and items that are not records, as every other list check.
+      const items = member(answer.body, "items");
+      if (!isSourceList(items) || !items.every(isSourceObject)) {
         throw new SourceError("permanent", `The source's ${ev.collection} list has no items`);
       }
     },
@@ -963,7 +965,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     async guestProbe(
       collection: string,
       call: CallOptions = {},
-    ): Promise<{ status: number; rows: number }> {
+    ): Promise<{ status: number; rows: number; message: string }> {
       const search = new URLSearchParams({ page: "1", perPage: "1", skipTotal: "1", fields: "id" });
       const what = `a guest's read of ${collection}`;
       const answer = await notRecord(
@@ -976,7 +978,11 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         ),
         what,
       );
-      return { status: answer.status, rows: probeRows(answer, collection, what) };
+      return {
+        status: answer.status,
+        rows: probeRows(answer, collection, what),
+        message: reason(answer),
+      };
     },
     /** The realtime stream's reads and subscription (src/sources/stream-reads.ts, B150b). */
     stream: streamReads({
@@ -1006,7 +1012,9 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
             }
           } else if (answer.status === 404) {
             throw new SourceError("transient", "The realtime connection is gone", 404);
-          } else if (answer.status === 401 || (answer.status === 403 && attempt === 0)) {
+          } else if ((answer.status === 401 || answer.status === 403) && attempt === 0) {
+            // B171 (D199): retried once with a fresh sign-in; a second 401 or 403 is that
+            // status's permanent refusal, not a token the source did not confirm.
             drop(used);
           } else {
             throw failure(answer, "the realtime subscription");

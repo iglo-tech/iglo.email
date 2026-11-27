@@ -15,7 +15,8 @@
 // password rotation, a field rename) just before one events query is forwarded, `holdQuery` holds
 // one events query (the schema probe) until the test releases it, and `html` answers
 // every request with a 200 HTML page (a proxy put in front of the source); round 4's `emptyProbe`
-// answers the events schema probe with a 200 `{}` (a misconfigured proxy). B168's `goneProxy`
+// answers the events schema probe with a 200 `{}` (a misconfigured proxy; B171: or a list of
+// items that are not records). B168's `goneProxy`
 // answers every recipients read by ID with a 404 and the view's collection probe with a 200 `{}`.
 // Every source request also records whether a SQLite
 // transaction was open when it was sent: none may be (no network call inside a transaction).
@@ -87,8 +88,11 @@ interface Harness {
   };
   /** While on, every source request is answered with a 200 HTML page (a proxy's or SSO page). */
   html: { on: boolean };
-  /** While on, the events schema probe is answered with a 200 `{}` (a misconfigured proxy). */
-  emptyProbe: { on: boolean };
+  /**
+   * While on, the events schema probe is answered with a 200 `{}` (a misconfigured proxy), or with
+   * `body` when set (B171: a list whose items are not records).
+   */
+  emptyProbe: { on: boolean; body?: unknown };
   /**
    * While on, every recipients read by ID is answered with a 404 and the recipients collection
    * probe with a 200 `{}` (a misconfigured proxy).
@@ -139,7 +143,7 @@ async function start(
   const beforeQuery: Harness["beforeQuery"] = { current: null };
   const holdQuery: Harness["holdQuery"] = { current: null };
   const html = { on: false };
-  const emptyProbe = { on: false };
+  const emptyProbe: Harness["emptyProbe"] = { on: false };
   const goneProxy = { on: false };
   const records = createSourceRecords({
     db: f.db,
@@ -210,7 +214,7 @@ async function start(
           input.pathname === "/api/collections/events/records" &&
           (input.searchParams.get("filter") ?? "").includes(PROBE)
         ) {
-          return Promise.resolve(Response.json({}));
+          return Promise.resolve(Response.json(emptyProbe.body ?? {}));
         }
         const refused = refuseHistory.name;
         if (
@@ -1889,6 +1893,23 @@ test("B166 round 4: a condition's 400 whose schema probe gets a 200 that is no P
   const lines = h.attention.filter((line) => line.includes("Sequence trigger condition failed"));
   expect(lines.length).toBe(1);
   expect(lines[0]).toContain(`sequence ${seq.id}`);
+});
+
+test('B171: a condition\'s 400 whose schema probe gets a 200 list of items that are not records ({"items": ["x"]}) refuses the stream: nothing committed and no condition failure', async () => {
+  const h = await start();
+  await conditioned(h, { event: h.ev("history"), count: { gte: 1 } });
+  const ana = await pb.user();
+  h.refuseHistory.name = h.ev("history");
+  h.emptyProbe.body = { items: ["x"] };
+  h.emptyProbe.on = true;
+  const paid = await record(h, ana, "order_paid");
+  await until(h, () => h.attention.some((line) => line.includes(CONDITION_REFUSED)), "the refusal");
+  expect(h.records.stream()?.retries()).toEqual([]);
+  expect(h.outcomes.some((o) => o.record === paid.id)).toBe(false);
+  expect(h.attention.some((line) => line.includes("Sequence trigger condition failed"))).toBe(
+    false,
+  );
+  expect(await linked(h, ana)).toBeNull();
 });
 
 test("B166: a recipients view answering 400 to a recipient condition refuses the stream: nothing committed and no condition failure; answering again, the sequence starts once", async () => {

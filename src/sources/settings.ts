@@ -7,6 +7,7 @@ import { identifierPattern } from "@/sources/filter";
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceJson } from "@/sources/json";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
+import { LEAVING_TOO_LONG, leavingTopic } from "@/sources/stream-reads";
 import type { SourceScalar } from "@/sources/source";
 
 /** The `source.*` keys and their defaults: no source (an empty URL). */
@@ -231,6 +232,9 @@ export function normalizeSource(next: Settings, current: Settings): void {
   }
   if (collection && !filter) {
     fail("source.users needs a leaving_filter with its collection, such as deletedAt != ''.");
+  }
+  if (collection && leavingTopic(collection, filter) === null) {
+    fail(`Invalid source.users leaving_filter: ${LEAVING_TOO_LONG}.`);
   }
   next["source.users"] = { collection, leaving_filter: collection ? filter : "" };
   const stored = read(next, "source.grant_lists");
