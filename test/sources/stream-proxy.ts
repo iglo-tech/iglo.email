@@ -10,6 +10,8 @@ interface Pair {
   upstream?: Socket<Side> | undefined;
   /** Bytes from the client while the upstream connection opens. */
   early: Array<Uint8Array>;
+  /** The proxy's local port of the upstream connection, once open. */
+  upstreamPort?: number;
   closed: boolean;
 }
 interface Side {
@@ -55,7 +57,14 @@ export interface CutProxy {
   stop(): void;
 }
 
-export function startCutProxy(targetPort: number): CutProxy {
+/**
+ * `onUpstreamClose` is told the proxy's local port of a connection the target closed (not one the
+ * proxy cut or the client closed), after the bytes the target sent before its close were received.
+ */
+export function startCutProxy(
+  targetPort: number,
+  onUpstreamClose?: (port: number) => void,
+): CutProxy {
   const pairs = new Set<Pair>();
   let cuts = 0;
   let matcher: ((line: string) => boolean) | undefined;
@@ -88,6 +97,7 @@ export function startCutProxy(targetPort: number): CutProxy {
                 return;
               }
               pair.upstream = upstream;
+              pair.upstreamPort = upstream.localPort;
               for (const chunk of pair.early.splice(0)) {
                 write(upstream, chunk);
               }
@@ -103,6 +113,9 @@ export function startCutProxy(targetPort: number): CutProxy {
                 pair.closed = true;
                 pairs.delete(pair);
                 client.end();
+                if (pair.upstreamPort !== undefined) {
+                  onUpstreamClose?.(pair.upstreamPort);
+                }
               }
             },
             error() {

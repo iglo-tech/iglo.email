@@ -5,10 +5,10 @@
 import { HttpError } from "@/server/response";
 import type { Settings } from "@/settings/validate";
 import { connectors, isConnectorName } from "@/sources/connectors";
-import type { Connector, ConnectorName } from "@/sources/connectors";
+import type { ConnectorName } from "@/sources/connectors";
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceJson } from "@/sources/json";
-import type { SourceConfig, SourceScalar } from "@/sources/source";
+import type { Connector, SourceConfig, SourceScalar } from "@/sources/source";
 
 /** The `source.*` keys and their defaults: no source (no connector, an empty URL). */
 export const sourceDefaults = {
@@ -85,6 +85,11 @@ function connectorOf(value: SourceJson | undefined): ConnectorName | null {
 
 /** The connector's name in a message: its display name, or a neutral word without one. */
 const nameOf = (connector: Connector | null) => connector?.displayName ?? "source";
+/** `nameOf` with its article: "a PocketBase", "an iglo.base" (B162c). */
+const aNameOf = (connector: Connector | null) => {
+  const name = nameOf(connector);
+  return `${/^[aeiou]/i.test(name) ? "an" : "a"} ${name}`;
+};
 
 /** A collection or field name, or "" where `optional`; a required empty one takes its default. */
 function nameField(
@@ -96,7 +101,7 @@ function nameField(
 ): string {
   const name = text(value) || (optional ? "" : fallback);
   if (name && !identifierPattern.test(name)) {
-    fail(`Invalid ${label}: use a ${nameOf(connector)} name (letters, digits and _).`);
+    fail(`Invalid ${label}: use ${aNameOf(connector)} name (letters, digits and _).`);
   }
   return name;
 }

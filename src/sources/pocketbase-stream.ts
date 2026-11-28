@@ -35,6 +35,8 @@ const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
 export interface StreamReadParts {
   /** The source's base URL, for the realtime connection. */
   url: string;
+  /** The connector's display name, for messages (D190: PocketBase or iglo.base). */
+  displayName: string;
   events: {
     collection: string;
     user: string;
@@ -344,7 +346,7 @@ export function streamReads(parts: StreamReadParts): StreamSource {
       if (subscriptions.length > TOPICS_PER_CLIENT) {
         throw new SourceError(
           "permanent",
-          `The stream needs ${subscriptions.length} subscriptions; PocketBase takes ${TOPICS_PER_CLIENT}`,
+          `The stream needs ${subscriptions.length} subscriptions; ${parts.displayName} takes ${TOPICS_PER_CLIENT}`,
         );
       }
       await parts.realtime(JSON.stringify({ clientId, subscriptions }), call);

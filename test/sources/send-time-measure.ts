@@ -5,9 +5,10 @@
 // accepts each push at once, so the time is the runner's own: claims, source reads, renders,
 // eligibility and progress writes. 1 % of the users are renamed in the source first, so those
 // batches also write. Run:
-// `bun test/sources/send-time-measure.ts <data-dir> [count] [source|none]`, with the iglo.email
-// database directory on the filesystem to measure (PocketBase stays in the system temporary
-// directory). Setup rows are inserted with SQL for speed; the measured part goes through the API
+// `bun test/sources/send-time-measure.ts <data-dir> [count] [source|none] [connector]`, with the
+// iglo.email database directory on the filesystem to measure (the binary stays in the system
+// temporary directory). B162c (docs/perf/B162c-connectors.md): `connector` is `pocketbase` (the
+// default) or `iglo.base`, read through that connector from its own binary. Setup rows are inserted with SQL for speed; the measured part goes through the API
 // and the runner only.
 import { mkdirSync } from "node:fs";
 import { enableBatch } from "@/test/conditions/source-fixture";
@@ -15,18 +16,30 @@ import type { CampaignsFixture } from "@/test/campaigns/fixture";
 import { runnerFixture } from "@/test/campaigns/runner/fixture";
 import { createEnrollments } from "@/sequences/enrollments";
 import { createRealClock } from "@/clock";
-import { createPocketBaseSource } from "@/sources/pocketbase";
+import { connectors, isConnectorName } from "@/sources/connectors";
+import type { ConnectorName } from "@/sources/connectors";
 import { createSendTimeLookup } from "@/sources/send-time";
 import type { SendTimeLookup } from "@/sources/send-time";
+import { startIgloBase } from "@/test/sources/iglo-base";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
 import { openGuard } from "@/test/sources/stream-fixture";
 
 const parent = process.argv[2];
 const count = Number(process.argv[3] ?? 10_000);
 const mode = process.argv[4] ?? "source";
-if (!parent || !Number.isSafeInteger(count) || count < 1 || !["source", "none"].includes(mode)) {
-  throw new Error("usage: bun test/sources/send-time-measure.ts <data-dir> [count] [source|none]");
+const named = process.argv[5] ?? "pocketbase";
+if (
+  !parent ||
+  !Number.isSafeInteger(count) ||
+  count < 1 ||
+  !["source", "none"].includes(mode) ||
+  !isConnectorName(named)
+) {
+  throw new Error(
+    "usage: bun test/sources/send-time-measure.ts <data-dir> [count] [source|none] [connector]",
+  );
 }
+const connector: ConnectorName = named;
 mkdirSync(parent, { recursive: true });
 const round = (n: number) => Math.round(n * 10) / 10;
 const quantiles = (values: Array<number>) => {
@@ -36,7 +49,10 @@ const quantiles = (values: Array<number>) => {
   return { n: values.length, p50: at(0.5), p95: at(0.95), max: at(1) };
 };
 
-const pb = mode === "source" ? await startPocketBase() : null;
+const pb =
+  mode === "source"
+    ? await (connector === "iglo.base" ? startIgloBase() : startPocketBase())
+    : null;
 const ids: Array<string> = [];
 if (pb) {
   await enableBatch(pb);
@@ -82,7 +98,7 @@ const f = await runnerFixture(
   pb
     ? {
         sendTime: (fixture: CampaignsFixture) => {
-          const source = createPocketBaseSource({
+          const source = connectors[connector].create({
             config: {
               ...sourceConfig(pb.url, pb.service),
               recipients: { collection: "people", email: "email", name: "name", optOut: "" },
@@ -180,6 +196,7 @@ try {
     JSON.stringify(
       {
         mode,
+        connector: mode === "source" ? connector : null,
         count,
         sent,
         pushes: f.pushes.length,

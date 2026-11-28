@@ -15,6 +15,8 @@ import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { writeTransaction } from "@/db/transaction";
 import type { Guard } from "@/sources/connect";
+import { connectors } from "@/sources/connectors";
+import type { ConnectorName } from "@/sources/connectors";
 import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { PocketBaseConfig } from "@/sources/pocketbase";
 import { SourceError } from "@/sources/source";
@@ -70,6 +72,11 @@ export function recordingHandler(db: Database) {
 
 export interface StreamFixtureOptions {
   config: PocketBaseConfig;
+  /**
+   * B162c (D190): the stream reads through this connector's `create`, as production does; without
+   * it, through the PocketBase adapter directly (which takes `maxResponseBytes`).
+   */
+  connector?: ConnectorName;
   names: () => ReadonlyArray<string>;
   tuning?: SourceStreamOptions["tuning"];
   /** An existing data directory (a restart); a new one otherwise. */
@@ -98,19 +105,33 @@ export function startStream(options: StreamFixtureOptions) {
   const attention: Array<string> = [];
   const errors: Array<unknown> = [];
   const requests: Array<string> = [];
-  const adapter = createPocketBaseSource({
-    config: options.config,
-    clock,
-    guard: openGuard,
-    ...(options.maxResponseBytes ? { maxResponseBytes: options.maxResponseBytes } : {}),
-    transport: {
-      fetch: async (input: URL, init: RequestInit) => {
-        requests.push(`${init.method ?? "GET"} ${input.pathname}${input.search}`);
-        await options.beforeRequest?.(input);
-        return options.answer?.(input, init) ?? fetch(input, init);
-      },
+  // B162c: each answer's status after its request line, so a test can tell which binary refused a
+  // revoked token (D189) without counting requests.
+  const answers: Array<string> = [];
+  const transport = {
+    fetch: async (input: URL, init: RequestInit) => {
+      const line = `${init.method ?? "GET"} ${input.pathname}${input.search}`;
+      requests.push(line);
+      await options.beforeRequest?.(input);
+      const answer = await (options.answer?.(input, init) ?? fetch(input, init));
+      answers.push(`${line} ${answer.status}`);
+      return answer;
     },
-  });
+  };
+  const adapter = options.connector
+    ? connectors[options.connector].create({
+        config: options.config,
+        clock,
+        guard: openGuard,
+        transport,
+      })
+    : createPocketBaseSource({
+        config: options.config,
+        clock,
+        guard: openGuard,
+        ...(options.maxResponseBytes ? { maxResponseBytes: options.maxResponseBytes } : {}),
+        transport,
+      });
   const recorder = recordingHandler(db);
   // B153: the retry queue's re-reads that have answered (or failed). An attempt does nothing after
   // its re-read that waits on I/O (the recording handler does none), so once this count rises the
@@ -239,6 +260,7 @@ export function startStream(options: StreamFixtureOptions) {
     attention,
     errors,
     requests,
+    answers,
     ...recorder,
     eventIds,
     until,

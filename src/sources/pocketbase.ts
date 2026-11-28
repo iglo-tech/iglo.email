@@ -52,6 +52,11 @@ export interface PocketBaseOptions {
   transport?: SourceTransport;
   /** The largest response body read, in bytes (default 32 MiB). */
   maxResponseBytes?: number;
+  /**
+   * The connector's display name in messages (default "PocketBase"; D190: the iglo.base connector
+   * runs this code with "iglo.base").
+   */
+  displayName?: string;
 }
 
 /** A record ID or user ID the adapter puts into a path or a filter. */
@@ -942,6 +947,7 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
     /** The realtime stream's reads and subscription (src/sources/pocketbase-stream.ts, B150b). */
     stream: streamReads({
       url: config.url,
+      displayName: options.displayName ?? "PocketBase",
       events: ev,
       users: config.users,
       eventOf,
