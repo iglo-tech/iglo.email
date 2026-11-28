@@ -103,6 +103,14 @@ test("the editor chooses the activity source and offers a history condition for 
   expect(html).toContain('data-testid="sequence-source"');
   expect(html).toContain("Pushed events (/api/events)");
   expect(html).toContain("The project&#39;s source");
+  // D188: with the instance's sources off (this fixture's default) the option is hidden and
+  // disabled, and shows only on a sequence that already reads the source.
+  const external = html.match(/<option[^>]*data-testid="sequence-source-external"[^>]*>/)?.[0];
+  expect(external).toBeDefined();
+  expect(external).toMatch(/ hidden[ >]/);
+  expect(external).toMatch(/ disabled[ >]/);
+  expect(external).toContain(`x-bind:hidden="form.source !== &#39;external&#39;"`);
+  expect(external).toContain(`x-bind:disabled="form.source !== &#39;external&#39;"`);
   expect(html).toContain('data-testid="trigger-condition"');
   expect(html).toContain("counts include the trigger");
   // The enrollment filter offers an external sequence's endings.

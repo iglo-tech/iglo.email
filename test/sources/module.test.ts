@@ -202,6 +202,13 @@ describe("the compiled executable", () => {
       headers: { cookie: session.cookie },
     });
     expect(retries.status).toBe(404);
+    // The sequence editor hides the source choice unless the sequence already reads it.
+    const editor = await (
+      await request(port, HOST, "/admin/sequences/new", { headers: { cookie: session.cookie } })
+    ).text();
+    const option = editor.match(/<option[^>]*data-testid="sequence-source-external"[^>]*>/)?.[0];
+    expect(option).toMatch(/ hidden[ >]/);
+    expect(option).toContain(`x-bind:hidden="form.source !== &#39;external&#39;"`);
     // An external sequence cannot be created; one on pushed events can.
     const template = await call("POST", "/api/templates", {
       name: "Module tx",
@@ -286,6 +293,12 @@ describe("the compiled executable", () => {
     expect(html).toContain('data-testid="source-settings"');
     expect(html).toContain('data-testid="source-connector"');
     expect(html).toContain("/admin/settings/source-retries");
+    // The sequence editor offers the source as an ordinary choice.
+    const editor = await (
+      await request(port, HOST, "/admin/sequences/new", { headers: { cookie: session.cookie } })
+    ).text();
+    const option = editor.match(/<option[^>]*data-testid="sequence-source-external"[^>]*>/)?.[0];
+    expect(option).toBe('<option value="external" data-testid="sequence-source-external">');
     // Off again: the stored settings are kept and come back unchanged.
     await setInstance(instance, { "sources.enabled": false });
     expect(Object.keys((await call("GET", "/api/settings")).body.data)).not.toContain("source.url");

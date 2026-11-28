@@ -679,6 +679,17 @@ export const differences: Array<Difference> = [
     ],
   },
   {
+    area: "Sources module and connectors (B162a)",
+    summary:
+      "Native, changed for D188: the instance key `sources.enabled` (instance host only) turns external sources on or off; it is off on a new instance and turned on by the upgrade when a project already names a source URL. While it is off a project's `GET /api/settings` leaves every `source.*` key out and a write naming one is a 400 that says sources are off (a full write that omits them keeps them); `POST /api/settings/source/test` and `GET /api/settings/source/retries` answer `404 unknown endpoint` before authentication, and their MCP tools are neither listed nor callable; creating or saving an external sequence is a 400 naming `sources.enabled`, and the sequence routes that read a source answer 409. The project key `source.connector` (empty or `pocketbase`) names the connector: a source URL needs one, and Test connection is a 400 without a connector or a URL. Stored settings, stream state and external enrollments are kept and held while off.",
+    applies: [
+      "/api/settings",
+      "POST /api/settings/source/test",
+      "GET /api/settings/source/retries",
+      "/api/sequences",
+    ],
+  },
+  {
     area: "`marketing.min_interval` setting",
     summary:
       "Native key in GET/PUT `/api/settings` and `PUT /api/settings/marketing.min_interval`: an ISO 8601 duration (default `P7D`, empty disables), invalid values 400 with no write.",

@@ -426,7 +426,24 @@ function sequenceView(isNew: boolean): AdminView {
                       {t.T("sequences.source")}
                       <select name="source" x-model="form.source" data-testid="sequence-source">
                         <option value="events">{t.T("sequences.source.events")}</option>
-                        <option value="external">{t.T("sequences.source.external")}</option>
+                        {sourcesOff ? (
+                          // D188: while the module is off an external sequence cannot be saved, so
+                          // the option shows only on a sequence that already reads the source.
+                          <option
+                            value="external"
+                            hidden
+                            disabled
+                            data-testid="sequence-source-external"
+                            x-bind:hidden="form.source !== 'external'"
+                            x-bind:disabled="form.source !== 'external'"
+                          >
+                            {t.T("sequences.source.external")}
+                          </option>
+                        ) : (
+                          <option value="external" data-testid="sequence-source-external">
+                            {t.T("sequences.source.external")}
+                          </option>
+                        )}
                       </select>
                       <small data-hint="">{t.T("sequences.sourceHelp")}</small>
                     </label>
