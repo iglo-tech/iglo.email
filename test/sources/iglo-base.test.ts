@@ -9,12 +9,8 @@ import { asBody, readJson } from "@/test/read-body";
 import { IGLO_BASE_VERSION, igloBaseBinary } from "@/test/sources/iglo-base-binary";
 import { igloBaseCommand, startIgloBase } from "@/test/sources/iglo-base";
 import { pocketBaseBinary } from "@/test/sources/pocketbase-binary";
-import {
-  SERVICE_IDENTITY,
-  SERVICE_PASSWORD,
-  sourceConfig,
-  startPocketBase,
-} from "@/test/sources/pocketbase";
+import { SERVICE_IDENTITY, SERVICE_PASSWORD } from "@/test/sources/harness";
+import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
 import type { PocketBase } from "@/test/sources/pocketbase";
 
 setDefaultTimeout(60_000);

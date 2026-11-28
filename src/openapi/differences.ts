@@ -653,7 +653,7 @@ export const differences: Array<Difference> = [
   {
     area: "`source.*` settings (B150a)",
     summary:
-      "Native project keys in GET/PUT `/api/settings` for the external source (15-external-sources section 2, D170, D188): `source.connector` (`pocketbase`, or empty for none), `source.url` (no connector or an empty URL is no source), `source.auth_collection`, `source.identity`, `source.password` (masked; a blank or masked value keeps the stored one only for the same URL and identity), the `source.events`, `source.recipients` and `source.users` mappings and `source.grant_lists` rules on this project's lists. A full PUT that omits them keeps them. While the instance's `sources.enabled` is off (the default on a new instance, D188) the GET leaves every `source.*` key out and a PUT naming one is a 400; nothing stored is lost. The instance key `sources.private_hosts` lists host names a source URL may resolve privately under `webhooks.block_private_addresses`.",
+      "Native project keys in GET/PUT `/api/settings` for the external source (15-external-sources section 2, D170, D188): `source.connector` (`pocketbase` or `iglo.base`, or empty for none), `source.url` (no connector or an empty URL is no source), `source.auth_collection`, `source.identity`, `source.password` (masked; a blank or masked value keeps the stored one only for the same URL and identity), the `source.events`, `source.recipients` and `source.users` mappings and `source.grant_lists` rules on this project's lists. A full PUT that omits them keeps them. While the instance's `sources.enabled` is off (the default on a new instance, D188) the GET leaves every `source.*` key out and a PUT naming one is a 400; nothing stored is lost. The instance key `sources.private_hosts` lists host names a source URL may resolve privately under `webhooks.block_private_addresses`.",
     applies: ["/api/settings"],
   },
   {
@@ -681,12 +681,13 @@ export const differences: Array<Difference> = [
   {
     area: "Sources module and connectors (B162a)",
     summary:
-      "Native, changed for D188: the instance key `sources.enabled` (instance host only) turns external sources on or off; it is off on a new instance and turned on by the upgrade when a project already names a source URL. While it is off a project's `GET /api/settings` leaves every `source.*` key out and a write naming one is a 400 that says sources are off (a full write that omits them keeps them); `POST /api/settings/source/test` and `GET /api/settings/source/retries` answer `404 unknown endpoint` before authentication, and their MCP tools are neither listed nor callable; creating or saving an external sequence is a 400 naming `sources.enabled`, and the sequence routes that read a source answer 409. The project key `source.connector` (empty or `pocketbase`) names the connector: a source URL needs one, and Test connection is a 400 without a connector or a URL. Stored settings, stream state and external enrollments are kept and held while off.",
+      "Native, changed for D188: the instance key `sources.enabled` (instance host only; a project write naming it is a 400) turns external sources on or off; it is off on a new instance and turned on by the upgrade when a project already names a source URL. While it is off a project's `GET /api/settings` leaves every `source.*` key out and a write naming one (full or one-key) is a 400 that says sources are off (a full write that omits them keeps them); `POST /api/settings/source/test` and `GET /api/settings/source/retries` answer `404 unknown endpoint` before authentication, and their MCP tools are neither listed nor callable; creating or saving an external sequence is a 400 naming `sources.enabled`, and the sequence and enrollment routes that read a source answer 409. The project key `source.connector` (empty, `pocketbase` or `iglo.base`, D190) names the connector: a source URL needs one, and validation messages name its display name. Test connection is a 400 without a connector or a URL. Stored settings, stream state and external enrollments are kept and held while off.",
     applies: [
       "/api/settings",
       "POST /api/settings/source/test",
       "GET /api/settings/source/retries",
       "/api/sequences",
+      "POST /api/enrollments",
     ],
   },
   {

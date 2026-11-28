@@ -250,6 +250,28 @@ export interface ConnectorSource extends ExternalSource {
   eventsSchema(call?: CallOptions): Promise<void>;
 }
 
+/** What a connector's settings validator is told of a save. */
+export interface ConnectorSave {
+  /** The normalized settings. */
+  config: SourceConfig;
+  /** The save changes `source.users`, or turns the source on (B171, D199: check the topic then). */
+  usersChanged: boolean;
+}
+
+/** One entry of the connector list (src/sources/connectors.ts, D188). */
+export interface Connector {
+  /** The name the settings page and the validation messages show. */
+  readonly displayName: string;
+  /** An example of the source URL, for the URL's validation message. */
+  readonly exampleUrl: string;
+  /** The connector's reader, stream part and schema probe on these settings. */
+  create(options: ConnectorOptions): ConnectorSource;
+  /** Test connection (section 2): signs in and checks each collection, reporting each step. */
+  check(options: ConnectorOptions): Promise<CheckReport>;
+  /** The connector's own rules on a save, after the shared ones; throws a 400 to refuse it. */
+  validate(save: ConnectorSave, fail: (message: string) => never): void;
+}
+
 /** PocketBase caps `perPage` at 1000 (spec section 9). */
 export const PAGE_LIMIT = 1000;
 /** The default time limit of one request. */

@@ -587,12 +587,27 @@ above has the same settings for nginx.
 
 ## External sources
 
-An application whose users and their activity live in PocketBase can let a project read them there
-instead of posting events to `/api/events`
-([15-external-sources](design/15-external-sources.md), D169 to D174). iglo.email subscribes to new
-events records, reads users' addresses and names from a recipients view, and reads history for
-sequence conditions. It copies no events. One source per project; PocketBase 0.40.5 is the version
-it is tested against. A sequence uses pushed events or the source, never both.
+An application whose users and their activity live in PocketBase or iglo.base can let a project
+read them there instead of posting events to `/api/events`
+([15-external-sources](design/15-external-sources.md), D169 to D174, D187 to D190). iglo.email
+subscribes to new events records, reads users' addresses and names from a recipients view, and
+reads history for sequence conditions. It copies no events. One source per project; a sequence uses
+pushed events or the source, never both.
+
+**Connectors.** A project names the backend it reads through its connector (`source.connector`):
+
+| Connector | Backend | Tested against |
+|---|---|---|
+| `pocketbase` (PocketBase) | PocketBase | 0.40.5 |
+| `iglo.base` (iglo.base) | iglo.base, an API-compatible Bun port of PocketBase 0.42.3 | 1.3.0 |
+
+Choose the one your application runs: both read the same collections, views, rules and fields, so
+the steps below apply to either, and the settings and "Test connection" are the same. They differ
+only in what the backend does, which iglo.email handles on its own (D189, D190): iglo.base refuses
+a revoked token (`401`) where PocketBase reads it as a guest, and iglo.base closes a realtime
+connection that falls 8 MiB behind, which iglo.email treats as a routine reconnect and catches up.
+A source moved from PocketBase to iglo.base (or back) with the same data only needs its connector
+changed. Where the steps below say PocketBase, read your backend.
 
 **0. Turn the module on.** External sources are a module the instance turns on or off
 (`sources.enabled`, D188): on the instance Settings page under Security, "External sources", or the
@@ -680,7 +695,7 @@ for a user who came back under a new address, send the address they had when the
 one removes nothing (`{"removed": 0}`).
 
 **6. Settings.** On the project's Settings page, "Source" tab (or the `source.*` keys of
-`PUT /api/settings`): the connector (`source.connector`: `pocketbase`; none means no source), the URL (a direct internal URL is best, because a proxy that cuts quiet
+`PUT /api/settings`): the connector (`source.connector`: `pocketbase` or `iglo.base`; none means no source), the URL (a direct internal URL is best, because a proxy that cuts quiet
 streams makes the stream reconnect more often; it must use a host name, not an IP address, because
 `sources.private_hosts` takes only host names: use `http://localhost:8090`, not
 `http://127.0.0.1:8090`), the auth collection, identity and password, the

@@ -4,28 +4,34 @@
 // the same database catches them all up; each record is one handler write transaction with its
 // dedupe entry, as B150d's will be. B155b: then 2,000 more records (at most `count`) are created
 // while that stream is live, for the live path's rate. Run:
-// `bun test/sources/stream-measure.ts <data-dir> [count]` with the iglo.email database directory
-// on the filesystem to measure (PocketBase stays in the harness's temporary directory).
+// `bun test/sources/stream-measure.ts <data-dir> [count] [connector]` with the iglo.email database
+// directory on the filesystem to measure (the binary stays in the harness's temporary directory).
+// B162c (docs/perf/B162c-connectors.md): `connector` is `pocketbase` (the default) or `iglo.base`,
+// which runs the same measurement through that connector against its own binary.
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createRealClock } from "@/clock";
 import { openDatabase } from "@/db/connection";
 import { productionMigrations, runMigrations } from "@/db/migrations";
 import { writeTransaction } from "@/db/transaction";
-import { createPocketBaseSource } from "@/sources/pocketbase";
+import { connectors, isConnectorName } from "@/sources/connectors";
+import type { ConnectorName } from "@/sources/connectors";
 import { createSourceStream } from "@/sources/stream";
 import type { RecordHandler } from "@/sources/stream-record";
+import { startIgloBase } from "@/test/sources/iglo-base";
 import { sourceConfig, startPocketBase } from "@/test/sources/pocketbase";
 import { openGuard } from "@/test/sources/stream-fixture";
 
 const parent = process.argv[2];
 const count = Number(process.argv[3] ?? 100_000);
-if (!parent || !Number.isSafeInteger(count) || count < 1) {
-  throw new Error("usage: bun test/sources/stream-measure.ts <data-dir> [count]");
+const named = process.argv[4] ?? "pocketbase";
+if (!parent || !Number.isSafeInteger(count) || count < 1 || !isConnectorName(named)) {
+  throw new Error("usage: bun test/sources/stream-measure.ts <data-dir> [count] [connector]");
 }
+const connector: ConnectorName = named;
 mkdirSync(parent, { recursive: true });
 const dir = mkdtempSync(join(parent, "iglo-stream-measure-"));
-const pb = await startPocketBase();
+const pb = await (connector === "iglo.base" ? startIgloBase() : startPocketBase());
 const clock = createRealClock();
 const config = {
   ...sourceConfig(pb.url, pb.service),
@@ -50,7 +56,7 @@ function run(db: ReturnType<typeof openDatabase>, onRecord: () => void) {
     logger: { attention: (message) => console.error(message), error: (e) => console.error(e) },
     config,
     guard: openGuard,
-    source: createPocketBaseSource({ config, clock, guard: openGuard }).stream,
+    source: connectors[connector].create({ config, clock, guard: openGuard }).stream,
     handler,
     names: () => [name],
   });
@@ -119,6 +125,7 @@ try {
   console.log(
     JSON.stringify({
       dir: parent,
+      connector,
       records: count,
       createSeconds: Math.round(createMs / 100) / 10,
       catchUpSeconds: Math.round(ms / 100) / 10,
