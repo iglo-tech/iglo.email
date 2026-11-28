@@ -207,6 +207,42 @@ export async function stopped(label: string, pid: number): Promise<void> {
   }
 }
 
+/** How long a stopped server may take to exit after SIGTERM before it is killed. */
+export const STOP_DEADLINE_MS = 10_000;
+
+/**
+ * Stops a server: SIGCONT (it may be paused) and SIGTERM, then waits for the exit. A server still
+ * running `deadlineMs` later is killed with SIGKILL and reaped, and the stop throws, so a binary
+ * that hangs on shutdown fails the test at once instead of holding `afterAll` until its timeout.
+ */
+export async function stopProcess(
+  label: string,
+  child: ChildProcess,
+  deadlineMs = STOP_DEADLINE_MS,
+): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  const exited = new Promise<void>((resolve) => {
+    child.once("exit", () => resolve());
+  });
+  child.kill("SIGCONT");
+  child.kill("SIGTERM");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<"late">((resolve) => {
+    timer = setTimeout(() => resolve("late"), deadlineMs);
+  });
+  const outcome = await Promise.race([exited, late]);
+  clearTimeout(timer);
+  if (outcome === "late") {
+    child.kill("SIGKILL");
+    await exited;
+    throw new Error(
+      `${label} (pid ${child.pid}) did not exit within ${deadlineMs} ms of SIGTERM; killed with SIGKILL`,
+    );
+  }
+}
+
 /**
  * Starts the binary on `port`; resolves once it answers /api/health and this very process listens
  * on the port (B162b r1). Under parallel test workers another test's server can take a freed port
@@ -305,21 +341,19 @@ export async function startHarness(spec: ServerSpec): Promise<PocketBase> {
   async function stop() {
     const running = process;
     process = undefined;
-    if (running && running.exitCode === null) {
-      const exited = new Promise((resolve) => {
-        running.once("exit", resolve);
-      });
-      running.kill("SIGCONT");
-      running.kill("SIGTERM");
-      await exited;
+    if (running) {
+      await stopProcess(spec.label, running);
     }
   }
   try {
     await signIn();
     await fixtureSchema(api);
   } catch (error) {
-    await stop();
-    rmSync(root, { recursive: true, force: true });
+    try {
+      await stop();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
     throw error;
   }
   let counter = 0;
@@ -383,8 +417,11 @@ export async function startHarness(spec: ServerSpec): Promise<PocketBase> {
       process?.kill("SIGCONT");
     },
     async close() {
-      await harness.stop();
-      rmSync(root, { recursive: true, force: true });
+      try {
+        await harness.stop();
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
     },
   };
   return harness;

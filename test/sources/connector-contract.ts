@@ -47,6 +47,7 @@ import { day, schedulerFixture } from "@/test/scheduler/fixture";
 import type { SchedulerFixture } from "@/test/scheduler/fixture";
 import { TestClock } from "@/test/server/fixture";
 import { startStallProxy } from "@/test/sources/connector-contract-proxy";
+import type { StallProxy } from "@/test/sources/connector-contract-proxy";
 import { sourceConfig } from "@/test/sources/pocketbase";
 import type { PocketBase, PocketBaseRecord } from "@/test/sources/pocketbase";
 import { openGuard, startStream } from "@/test/sources/stream-fixture";
@@ -93,6 +94,39 @@ async function revokeTokens(base: PocketBase) {
   const [account] = (await base.api("GET", "/api/collections/services/records")).items;
   for (const password of ["temporary-password-9", base.service.password]) {
     await base.update("services", account.id, { password, passwordConfirm: password });
+  }
+}
+
+/**
+ * The proxy port of a connection behind the stopped proxy that is full, as the kernel shows it: the
+ * binary's end holds bytes it wrote that the proxy's end took and has not read, so the binary's
+ * further messages pile up in the binary. Throws, with what the kernel showed, after 30 s.
+ */
+async function filled(proxy: StallProxy): Promise<number> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const upstreams = proxy.upstreams();
+    const full = upstreams.find((up) => up.unread > 0 && (up.binary?.unsent ?? 0) > 0);
+    if (full) {
+      return full.port;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for a full connection: ${JSON.stringify(upstreams)}`);
+    }
+    await Bun.sleep(20);
+  }
+}
+
+/** Settles once the proxy saw the binary close the connection on `port`; throws after 30 s. */
+async function closedByBinary(proxy: StallProxy, port: number): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (!proxy.closedByBinary(port)) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `timed out waiting for the binary to close the full connection (proxy port ${port}): ${JSON.stringify(proxy.upstreams())}`,
+      );
+    }
+    await Bun.sleep(20);
   }
 }
 
@@ -625,9 +659,15 @@ export function connectorContract(target: ContractTarget) {
       for (let i = 0; i < 150; i++) {
         made.push((await base.event(user.id, name, { i, blob })).id);
       }
-      // Real time for the binary to write what the sockets take and give up on the rest.
-      await Bun.sleep(2000);
+      // No fixed wait: the stalled connection is full (the kernel shows it) after every record was
+      // made, so the binary holds the rest. iglo.base keeps the socket open while it is full and
+      // queues its close behind what it already wrote, so the close shows once the proxy runs:
+      // the proxy reports the binary closing that very connection.
+      const full = await filled(proxy);
       proxy.release();
+      if (target.closesWhenBehind) {
+        await closedByBinary(proxy, full);
+      }
       await s.until(() => new Set(s.eventIds()).size === 150, "every record", 60_000);
       await s.live();
       expect(sorted(s.eventIds())).toEqual(sorted(made));

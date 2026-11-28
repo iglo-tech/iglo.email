@@ -98,7 +98,29 @@ checks it was met. `connector-contract-pocketbase.test.ts` and `connector-contra
 run it against PocketBase 0.40.5 and iglo.base 1.3.0. `connector-contract-proxy.ts` runs
 `stream-proxy.ts`'s byte-forwarding proxy as a child process and stops it (SIGSTOP), so the
 binary's unsent realtime messages pile up as behind a reader that has fallen behind (Bun's
-`node:net` `pause()` does not stop reads, so an in-process proxy cannot do this).
+`node:net` `pause()` does not stop reads, so an in-process proxy cannot do this). The "fallen
+behind" test uses no fixed wait: it releases the proxy once `/proc/net/tcp` shows the stalled
+connection full (the binary's end holds unsent bytes, the proxy's end unread ones), and on a binary
+that closes it then waits until the proxy reports the binary closing that connection (a `closed
+<port>` line on the proxy's stdout). iglo.base keeps the socket open while it is full and queues
+its close behind what it wrote, so the close is only visible once the proxy reads again. Each wait
+fails with what it saw after 30 s.
+
+**A scoped exception to testing through public boundaries (AGENTS.md "Tests").** The suite's
+connector-level cases call the connector interface in-process (`connectors[name].create`,
+`.check`) against the real binary, as the rest of `test/sources` does, because the HTTP API cannot
+drive each adapter operation (a single `count`, a paged `scan`, a revoked token on one read, the
+realtime stream's reset). Only settings validation and Test connection go through the compiled
+executable's HTTP API. The end-to-end paths stay covered through public boundaries: settings, Test
+connection and the stream's retry queue through the compiled executable (`settings.test.ts`,
+`test/admin/source-retries.test.ts`), and source-linked sequences and campaigns through an
+instance's HTTP API and the SMTP sink (`test/sequences/external.test.ts`, `module-held.test.ts`).
+No Playwright e2e spec reaches a source. This exception covers the connector contract suite and the
+source adapter tests only, not new tests elsewhere.
+
+`harness.ts`'s `stop()` (both binaries) sends SIGTERM and waits at most 10 s
+(`STOP_DEADLINE_MS`); a server still running then is killed with SIGKILL and the stop throws, so a
+binary hanging on shutdown fails the test instead of holding `afterAll` until its timeout.
 
 ## Files
 
