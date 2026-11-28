@@ -51,8 +51,12 @@ export const defaults = {
   // Native (B150a, D169 amended, D170): host names whose source URL may resolve to a private,
   // loopback, link-local or unique-local address while the block above is on. Webhooks never use it.
   "sources.private_hosts": [] as Array<string>,
-  // Native (B150a, D170): the project's external source (15-external-sources section 2). An empty URL
-  // is no source; the password is masked as the SES secret is.
+  // Native (B162a, D188): the external sources module. Off on a new instance; the upgrade turns it on
+  // when a project already names a source URL. While off no source loop runs and the source keys,
+  // routes and MCP tools are absent; nothing stored is lost.
+  "sources.enabled": false,
+  // Native (B150a, D170, D188): the project's external source (15-external-sources section 2). No
+  // connector or an empty URL is no source; the password is masked as the SES secret is.
   ...sourceDefaults,
   "security.captcha": {
     altcha: {

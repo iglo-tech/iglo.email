@@ -27,6 +27,11 @@ export interface SendTimeOptions {
   db: Database;
   /** The project's source; null without one (then nothing is looked up). */
   source: SourceProvider;
+  /**
+   * D188 (r1): the instance's sources module is off while the project stores a source. Its
+   * source-linked subscribers are then unreadable: the callers send them nothing. Omitted: never.
+   */
+  held?: () => boolean;
   subscribers: RecipientSyncOptions["subscribers"] & Pick<SubscriberStore, "removeLeaving" | "get">;
   enrollments: RecipientSyncOptions["enrollments"];
   /** The privacy domain policy for a new or changed address. */
@@ -47,6 +52,21 @@ export interface SendTimePlan {
  */
 export type SendTimeResult = { kind: "left" } | { kind: "current"; row: SubscriberRow };
 
+/**
+ * D188 (r2): a send-time read found no source because the instance's sources module is off while
+ * the project still stores one. Distinct from "no source" (`read` returning null, the subscriber
+ * treated as unlinked): the subscriber is source-linked but unreadable, so the caller sends it
+ * nothing. Not a `SourceError`: it is neither an outage to wait out nor a refused view.
+ */
+export class SourceHeld extends Error {
+  readonly sourceHeld = true;
+  constructor() {
+    super("External sources are off on this instance");
+  }
+}
+export const isSourceHeld = (error: unknown): error is SourceHeld =>
+  error instanceof Error && "sourceHeld" in error && error.sourceHeld === true;
+
 export function createSendTimeLookup(options: SendTimeOptions) {
   const { db, subscribers, enrollments } = options;
   /**
@@ -65,10 +85,18 @@ export function createSendTimeLookup(options: SendTimeOptions) {
     /** Whether the project has a source: without one, no subscriber is source-linked. */
     configured: () => options.source() !== null,
     /**
+     * D188 (r1): the module is off but the project stores a source. A subscriber with an
+     * `external_id` is then source-linked yet cannot be read: never sent to, never treated as
+     * unlinked.
+     */
+    held: () => options.held?.() ?? false,
+    /**
      * The source reads for subscriber `subscriberId` linked to user `externalId`, or null without a
-     * source. Never inside a transaction. Throws a `SourceError` (a `SettingsMismatch` for a refused
-     * view, transient for an outage, permanent for an address the source cannot give), or the
-     * signal's reason.
+     * source. Never inside a transaction. Throws `SourceHeld` when the source is missing only
+     * because the module is off (`held`), checked on every call so a toggle during a batch's reads
+     * never turns a linked subscriber into an unlinked one (D188 r2). Otherwise throws a
+     * `SourceError` (a `SettingsMismatch` for a refused view, transient for an outage, permanent
+     * for an address the source cannot give), or the signal's reason.
      */
     async read(
       subscriberId: bigint,
@@ -77,6 +105,9 @@ export function createSendTimeLookup(options: SendTimeOptions) {
     ): Promise<SendTimePlan | null> {
       const source = options.source();
       if (!source) {
+        if (options.held?.()) {
+          throw new SourceHeld();
+        }
         return null;
       }
       const plan = await planRecipient(

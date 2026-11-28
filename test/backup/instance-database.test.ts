@@ -99,15 +99,15 @@ function replaceDatabase(path: string, version: number): void {
   }
 }
 
-test("this executable's instance schema is version 4, which the cases below are written for", () => {
-  expect(instanceMigrations.length).toBe(4);
+test("this executable's instance schema is version 5, which the cases below are written for", () => {
+  expect(instanceMigrations.length).toBe(5);
 });
 
 test("a pre-migration instance snapshot verifies as instance.db and migrates to the instance version", async () => {
   base = temporaryDirectory();
   const data = join(base, "data");
   instanceAt(data, 3);
-  // A start of this executable migrates it from 3 to 4 and leaves the snapshot of version 3.
+  // A start of this executable migrates it from 3 to 5 and leaves the snapshot of version 3.
   openInstanceDatabase(data, createRealClock()).close();
   const folder = join(data, "backups", "pre-migration");
   const snapshots = readdirSync(folder).filter((name) => name.startsWith("instance-"));
@@ -121,7 +121,7 @@ test("a pre-migration instance snapshot verifies as instance.db and migrates to 
   expect(verified.stdout).toContain(INSTANCE_HOLD);
   expect(verified.stdout).not.toContain(PROJECT_HOLD);
   expect(verified.stdout).toContain(
-    "Integrity: ok; the server migrates this backup to version 4\n",
+    "Integrity: ok; the server migrates this backup to version 5\n",
   );
 });
 
@@ -133,7 +133,7 @@ test("a current bare instance.db verifies with the instance wording and no uploa
 
   const verified = await runBackup(executable, ["--verify", bare]);
   expect(verified.exitCode, verified.stderr).toBe(0);
-  expect(verified.stdout).toContain("Schema version: 4\n");
+  expect(verified.stdout).toContain("Schema version: 5\n");
   expect(verified.stdout).not.toContain("Uploads:");
   expect(verified.stdout).toContain(INSTANCE_HOLD);
   expect(verified.stdout).not.toContain(PROJECT_HOLD);
@@ -142,13 +142,13 @@ test("a current bare instance.db verifies with the instance wording and no uploa
 
 test("a bare instance.db ahead of this executable is refused as ahead", async () => {
   base = temporaryDirectory();
-  const bare = instanceAt(join(base, "data"), 4);
-  setVersion(bare, 5);
+  const bare = instanceAt(join(base, "data"), 5);
+  setVersion(bare, 6);
 
   const verified = await runBackup(executable, ["--verify", bare]);
   expect(verified.exitCode, verified.stdout).toBe(1);
   expect(verified.stderr).toContain(
-    "Database version 5 is ahead of this executable, which supports 4: restore it with a newer one",
+    "Database version 6 is ahead of this executable, which supports 5: restore it with a newer one",
   );
   expect(verified.stdout).not.toContain("Integrity: ok");
 });
@@ -162,7 +162,7 @@ test("a bare instance.db at version 1, before its settings table, verifies", asy
   expect(verified.stdout).toContain("Schema version: 1\n");
   expect(verified.stdout).not.toContain("Uploads:");
   expect(verified.stdout).toContain(
-    "Integrity: ok; the server migrates this backup to version 4\n",
+    "Integrity: ok; the server migrates this backup to version 5\n",
   );
 });
 

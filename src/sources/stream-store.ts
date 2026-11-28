@@ -1,12 +1,20 @@
 // Native (15-external-sources sections 3 and 4, D171): the realtime stream's tables: one resume
 // marker per subscribed topic, the dedupe entries `(kind, record_id, stamp)` and the per-record
-// retry queue. Stamps are PocketBase's date text (`YYYY-MM-DD HH:mm:ss.sssZ`), which orders as
-// text; queue times are the injected clock's ISO text.
+// retry queue. Stamps are stored as `YYYY-MM-DD HH:mm:ss.sssZ` UTC text (`stampText`, the form
+// PocketBase writes dates in), which orders as text; queue times are the injected clock's ISO text.
 import type { Database } from "bun:sqlite";
 import { prepareNamedQueries } from "@/db/queries";
-import { sourceDate } from "@/sources/filter";
+import { SourceError } from "@/sources/source";
 import type { StreamKind } from "@/sources/stream-record";
 import sql from "@/sources/stream.sql" with { type: "text" };
+
+/** A record stamp as the stream's tables store it: `YYYY-MM-DD HH:mm:ss.sssZ`, UTC. */
+export function stampText(date: Date): string {
+  if (!Number.isFinite(date.getTime())) {
+    throw new SourceError("permanent", "A source date is invalid");
+  }
+  return date.toISOString().replace("T", " ");
+}
 
 /** A claimed retry row. */
 export interface RetryClaim {
@@ -47,25 +55,25 @@ export function createStreamStore(db: Database) {
     /** Keeps exactly `topics`: drops the others, and starts a missing one at `start` (in a transaction). */
     keepMarkers(topics: ReadonlyArray<string>, start: Date) {
       q.get("markers-keep").run(JSON.stringify(topics));
-      const at = sourceDate(start);
+      const at = stampText(start);
       for (const topic of topics) {
         q.get("marker-insert").run(topic, at);
       }
     },
     /** Moves the markers of `topics` forward to `stamp` (in a transaction). */
     advance(topics: ReadonlyArray<string>, stamp: Date) {
-      q.get("markers-advance").run(JSON.stringify(topics), sourceDate(stamp));
+      q.get("markers-advance").run(JSON.stringify(topics), stampText(stamp));
     },
     seen(kind: StreamKind, id: string, stamp: Date): boolean {
-      return q.get("seen").get(kind, key(id), sourceDate(stamp)) !== null;
+      return q.get("seen").get(kind, key(id), stampText(stamp)) !== null;
     },
     /** Records a record as handled; throws when it was already (in a transaction). */
     markSeen(kind: StreamKind, id: string, stamp: Date) {
-      q.get("seen-insert").run(kind, key(id), sourceDate(stamp));
+      q.get("seen-insert").run(kind, key(id), stampText(stamp));
     },
     /** Drops the dedupe entries of `kind` stamped before `before` (in a transaction). */
     prune(kind: StreamKind, before: Date) {
-      q.get("seen-prune").run(kind, sourceDate(before));
+      q.get("seen-prune").run(kind, stampText(before));
     },
     seenCount(): number {
       return Number((q.get("seen-count").get() as { n: bigint }).n);
@@ -87,7 +95,7 @@ export function createStreamStore(db: Database) {
       q.get("retry-insert").run(
         kind,
         key(id),
-        sourceDate(stamp),
+        stampText(stamp),
         now.toISOString(),
         next.toISOString(),
         error.slice(0, MAX_ERROR),

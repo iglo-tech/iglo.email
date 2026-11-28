@@ -67,6 +67,12 @@ export class DefinitionError extends Error {
   }
 }
 
+/** Why an external sequence cannot be saved or activated now (D172, D188). */
+export const externalRefusal = (sourcesEnabled: boolean) =>
+  sourcesEnabled
+    ? "the project has no source configured (source.connector and source.url)"
+    : "external sources are off on this instance (sources.enabled)";
+
 export interface DefinitionContext {
   /** The caller holds `subscribers:sql_query`. */
   canUseSql: boolean;
@@ -76,6 +82,8 @@ export interface DefinitionContext {
   listUsable(id: bigint): boolean;
   /** The project has a source configured (`source.url`), which an external sequence needs. */
   sourceConfigured(): boolean;
+  /** D188: the instance's sources module is on; omitted, it is. Off, the refusal says so. */
+  sourcesEnabled?: () => boolean;
   /** The stored sequence's source on an update: an absent `source` keeps it. */
   storedSource?: SequenceSource;
 }
@@ -404,7 +412,7 @@ export function definitionInput(value: unknown, context: DefinitionContext): Def
 
   const source = choice(value.source, sequenceSources, "source", context.storedSource ?? "events");
   if (source === "external" && !context.sourceConfigured()) {
-    fail("source", "the project has no source configured (source.url)");
+    fail("source", externalRefusal(context.sourcesEnabled?.() ?? true));
   }
 
   const trigger = value.trigger;

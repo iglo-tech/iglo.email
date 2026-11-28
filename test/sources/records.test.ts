@@ -152,7 +152,7 @@ async function start(
       attention: (message) => attention.push(message),
       error: (error) => attention.push(`error: ${String(error)}`),
     },
-    config: () => config.current,
+    setup: () => ({ connector: "pocketbase", config: config.current }),
     grantRules: () => rules.current,
     guard: options.guard ?? openGuard,
     transport: {
@@ -1228,7 +1228,7 @@ test("address conflict: a holder whose external_id the source cannot have (set b
 });
 
 test("address conflict: a holder whose read fails permanently for another reason (a malformed address field) is a terminal conflict: the holder is neither re-pointed nor deleted", async () => {
-  // B159a (D182): only an ID the source cannot have (`NotSourceId`) makes a holder gone; any other
+  // B159a (D182): only an ID the source cannot have (a `notFound` failure, D188) makes a holder gone; any other
   // permanent failure of its read leaves the holder as it is.
   const h = await start();
   const news = await h.f.list("News");

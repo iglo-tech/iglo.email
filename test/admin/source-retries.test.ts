@@ -130,6 +130,7 @@ async function rowFor(
 /** The source settings of a project on `source` (the fixture schema), granting `list` on signup. */
 const sourceSettings = (url: string, source: PocketBase, list: number, blocked: string) => ({
   "privacy.domain_blocklist": [blocked],
+  "source.connector": "pocketbase",
   "source.url": url,
   "source.identity": source.service.identity,
   "source.password": source.service.password,
@@ -158,6 +159,7 @@ beforeAll(async () => {
   const allowed = await instanceCall(port, HOST, operator, "PUT", "/api/instance/settings", {
     ...shared.data,
     "sources.private_hosts": ["localhost"],
+    "sources.enabled": true,
   });
   expect(allowed.status).toBe(200);
 });
@@ -181,6 +183,7 @@ test("a terminal row and a queued row, each with its status and times; another p
   const saved = await call("PUT", "/api/settings", {
     ...current.body.data,
     "privacy.domain_blocklist": ["blocked.example.test"],
+    "source.connector": "pocketbase",
     "source.url": `http://localhost:${new URL(proxy.url).port}`,
     "source.identity": pb.service.identity,
     "source.password": pb.service.password,
@@ -367,6 +370,7 @@ test("a queued row whose retry meets a settings mismatch is waiting, its window 
     const allowed = await f.call("PUT", "/api/instance/settings", {
       ...shared.data,
       "sources.private_hosts": ["localhost"],
+      "sources.enabled": true,
     });
     expect(allowed.status).toBe(200);
     const auth = await createApiUser(

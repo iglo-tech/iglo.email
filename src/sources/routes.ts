@@ -1,10 +1,12 @@
-// Native (15-external-sources section 2, D170): the source settings' own routes and rules.
+// Native (15-external-sources section 2, D170, D188): the source settings' own routes and rules.
 // `POST /api/settings/source/test` checks a source (the saved one, or the form's unsaved `source.*`
-// keys over it) and reports each step; `GET /api/settings/source/retries` lists the stream's retry
-// queue (B155f, D181); `sourceListsCheck` refuses a save whose `grant_lists` name a list this
-// project does not have.
+// keys over it) through its connector and reports each step; `GET /api/settings/source/retries`
+// lists the stream's retry queue (B155f, D181); `sourceListsCheck` refuses a save whose
+// `grant_lists` name a list this project does not have. While the instance's sources module is off
+// both routes answer as an unknown route does, before authentication (D188).
 import type { Clock } from "@/clock";
 import type { ListReferences } from "@/lists/references";
+import type { Middleware } from "@/server/context";
 import type { Router } from "@/server/router";
 import { HttpError, ok } from "@/server/response";
 import { decodeJsonBytes } from "@/settings/json";
@@ -12,7 +14,7 @@ import type { SettingsStore } from "@/settings/store";
 import { bindKey } from "@/settings/validate";
 import type { Settings } from "@/settings/validate";
 import { cloneJson } from "@/settings/json";
-import { checkSource } from "@/sources/check";
+import { connectors } from "@/sources/connectors";
 import { isSourceObject, sourceJson } from "@/sources/json";
 import type { SourceJson, SourceObject } from "@/sources/json";
 import type { Guard, SourceTransport } from "@/sources/connect";
@@ -20,8 +22,9 @@ import {
   grantedListIds,
   normalizeSource,
   privateHosts,
-  sourceConfig,
   sourceDefaults,
+  sourceSetup,
+  sourcesEnabled,
 } from "@/sources/settings";
 import type { SourceStream } from "@/sources/stream";
 import type { RetryRow } from "@/sources/stream-store";
@@ -53,6 +56,19 @@ export function sourceListsCheck(lists: Pick<ListReferences, "name">) {
         `Invalid source.grant_lists: no list with ID ${missing.join(", ")} in this project.`,
       );
     }
+  };
+}
+
+/**
+ * D188: a route that exists only while the instance's sources module is on. Off, it answers as an
+ * unknown API route does (`404 unknown endpoint`), before authentication, so nothing tells it apart.
+ */
+export function whileSourcesOn(settings: () => Settings): Middleware {
+  return (_context, next) => {
+    if (!sourcesEnabled(settings())) {
+      throw new HttpError(404, "404 unknown endpoint");
+    }
+    return next();
   };
 }
 
@@ -113,6 +129,7 @@ export function registerSourceRoutes(
   },
 ): void {
   const { settings, auth, clock } = deps;
+  const present = whileSourcesOn(() => settings.read());
   // B155f (D181): the stream's retry queue, read-only. Its error text is the source's or the
   // handler's own (unlike the logs view's safe lines), so it needs what Test connection needs.
   router.route(
@@ -127,6 +144,7 @@ export function registerSourceRoutes(
         results: rows.slice(0, RETRIES_LIMIT).map(retryOut),
       });
     },
+    present,
     auth.middleware("settings:manage"),
   );
   router.route(
@@ -146,12 +164,20 @@ export function registerSourceRoutes(
         }
       }
       normalizeSource(candidate, current);
-      const config = sourceConfig(candidate);
-      if (!config) {
-        throw new HttpError(400, "Set source.url to test a source.");
+      const setup = sourceSetup(candidate);
+      if (!setup) {
+        throw new HttpError(400, "Set source.connector and source.url to test a source.");
       }
-      return ok(await checkSource(config, clock, sourceGuard(settings.read), deps.transport));
+      return ok(
+        await connectors[setup.connector].check({
+          config: setup.config,
+          clock,
+          guard: sourceGuard(settings.read),
+          transport: deps.transport,
+        }),
+      );
     },
+    present,
     auth.middleware("settings:manage"),
   );
 }

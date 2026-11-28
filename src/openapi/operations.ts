@@ -1572,11 +1572,12 @@ const settings: Array<Operation> = [
     tag: "Settings",
     summary: "Test the external source: sign in and read one page of each collection.",
     description:
-      "Signs in with the service account, reads one page of the recipients view and of the events collection (and the users collection with the leaving filter, when set), and reports each step and the mapped fields a collection lacks (15-external-sources section 2, D170). The source URL is checked by `webhooks.block_private_addresses` and the instance's `sources.private_hosts`. A 400 without a source URL.",
+      "Through the project's connector (`source.connector`, D188), signs in with the service account, reads one page of the recipients view and of the events collection (and the users collection with the leaving filter, when set), and reports each step and the mapped fields a collection lacks (15-external-sources section 2, D170). The source URL is checked by `webhooks.block_private_addresses` and the instance's `sources.private_hosts`. A 400 without a connector or a source URL. While the instance's `sources.enabled` is off the route is absent: a 404 as for an unknown endpoint, and no MCP tool.",
     native: true,
     permissions: ["settings:manage"],
     body: ref("SourceTestInput"),
     data: ref("SourceTestReport"),
+    errors: [404],
   },
   {
     route: "GET /api/settings/source/retries",
@@ -1584,10 +1585,11 @@ const settings: Array<Operation> = [
     tag: "Settings",
     summary: "The source stream's retry queue, oldest first, read-only.",
     description:
-      "Lists the records the source stream could not handle yet (15-external-sources section 4, D181), at most 1000, oldest first; `more` says older rows were left out. `queued` rows are read again with a doubling wait (1 minute to 1 hour) and become `terminal` after 72 hours; `waiting` rows failed on a settings mismatch, never become terminal and are handled once the settings are fixed; `terminal` rows are kept for 30 days, with a null `next_attempt_at`. `last_error` is the source's or the handler's own text, so the queue needs `settings:manage`, as Test connection does. `stream` is the running stream's state, null without a source (then no rows are listed).",
+      "Lists the records the source stream could not handle yet (15-external-sources section 4, D181), at most 1000, oldest first; `more` says older rows were left out. `queued` rows are read again with a doubling wait (1 minute to 1 hour) and become `terminal` after 72 hours; `waiting` rows failed on a settings mismatch, never become terminal and are handled once the settings are fixed; `terminal` rows are kept for 30 days, with a null `next_attempt_at`. `last_error` is the source's or the handler's own text, so the queue needs `settings:manage`, as Test connection does. `stream` is the running stream's state, null without a source (then no rows are listed). While the instance's `sources.enabled` is off the route is absent: a 404 as for an unknown endpoint, and no MCP tool (D188).",
     native: true,
     permissions: ["settings:manage"],
     data: ref("SourceRetryQueue"),
+    errors: [404],
   },
   {
     route: "GET /api/logs",

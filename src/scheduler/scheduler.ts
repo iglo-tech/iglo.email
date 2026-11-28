@@ -31,6 +31,7 @@ import type { MarketingSettings } from "@/unsubscribe/policy";
 import type { Tracking } from "@/unsubscribe/tracking";
 import type { SourceProvider } from "@/sources/project";
 import { isSubscriberChanged } from "@/sources/recipient-sync";
+import { isSourceHeld } from "@/sources/send-time";
 import type { SendTimeLookup } from "@/sources/send-time";
 import { isSourceError } from "@/sources/source";
 import type { ExternalSource, SourceEvent } from "@/sources/source";
@@ -156,6 +157,11 @@ export interface SchedulerOptions {
   /** The project's source, which external sequences read (D172); none without it. */
   source?: SourceProvider;
   /**
+   * D188: the instance's sources module. While it is off, external sequences' enrollments are not
+   * claimed: held, neither advanced nor ended. Omitted, the module is on.
+   */
+  sourcesEnabled?: () => boolean;
+  /**
    * D174: a source-linked subscriber's fresh address and name before each step renders, and its
    * leaving when the source no longer has it. None in fixtures without a source.
    */
@@ -249,6 +255,8 @@ export function createScheduler(options: SchedulerOptions) {
     reason: string,
     condition: string | null = null,
   ) => commit(claim, () => enrollments.endClaimed(claim, status, reason, clock.now(), condition));
+  /** D188: the instance's sources module is on (omitted: on). */
+  const sourcesOn = () => options.sourcesEnabled?.() ?? true;
   const retry = (claim: Decision, ms: number) =>
     commit(claim, () => enrollments.release(claim, new Date(clock.now().getTime() + ms)));
   const capped = (claim: Decision, email: string, keepErrorSince: boolean) =>
@@ -356,6 +364,12 @@ export function createScheduler(options: SchedulerOptions) {
       }
       optedOut = planned?.plan.kind === "present" && planned.plan.recipient.optOut;
     } catch (error) {
+      if (isSourceHeld(error)) {
+        // D188 (r2): the module was turned off between the decide-time check and this read. The
+        // step waits as `decide`'s own held check makes it wait: nothing sent, ended or windowed.
+        retry(claim, lateBackoff(row));
+        return null;
+      }
       if (isSubscriberChanged(error)) {
         // Another write moved the user or the address meanwhile: decide again with fresh reads.
         commit(claim, () => enrollments.release(claim, null));
@@ -436,6 +450,10 @@ export function createScheduler(options: SchedulerOptions) {
       let read = false;
       const since = row.source === "external" ? openWindow(row, now.getTime()) : null;
       if (since !== null && now.getTime() - since >= SOURCE_RETRY_MS) {
+        if (!sourcesOn()) {
+          // D188: held while the module is off (turned off after the claim): nothing written.
+          return commit(claim, () => enrollments.release(claim, null));
+        }
         const probe = await probeSource(row);
         if ("error" in probe) {
           return sourceFailed(claim, row, probe.error);
@@ -467,6 +485,10 @@ export function createScheduler(options: SchedulerOptions) {
     let reads: SourceReads | undefined;
     if (external) {
       const source = options.source?.();
+      if (!source && !sourcesOn()) {
+        // D188: the module was turned off after the claim: held, released with nothing written.
+        return commit(claim, () => enrollments.release(claim, null));
+      }
       if (!source) {
         return sourceFailed(claim, row, {
           kind: "source_permanent",
@@ -518,6 +540,13 @@ export function createScheduler(options: SchedulerOptions) {
         );
       }
       return;
+    }
+    // D188 (r1): the sources module is off while the project stores a source: a source-linked
+    // subscriber cannot be read, so its opt-out and its leaving cannot be checked. The step waits
+    // as for an unreadable source, with nothing sent or ended and no outage window written, and
+    // runs (with its send-time read) once the module is on again.
+    if (subscriber.external_id !== null && options.sendTime?.held()) {
+      return retry(claim, lateBackoff(row));
     }
     // D174: a source-linked subscriber's address and name are read fresh before the consent
     // recheck and the render, so both see what the source has now.
@@ -744,7 +773,9 @@ export function createScheduler(options: SchedulerOptions) {
     claim: (now, lease, batch) =>
       sendingHeld(db)
         ? []
-        : enrollments.claimDue(now, lease, batch).map((id) => ({ id, lease: lease.toISOString() })),
+        : enrollments
+            .claimDue(now, lease, batch, !sourcesOn())
+            .map((id) => ({ id, lease: lease.toISOString() })),
     async process(item) {
       try {
         await decide(item);

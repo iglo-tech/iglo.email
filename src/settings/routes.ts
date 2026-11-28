@@ -37,6 +37,7 @@ const nativeKeys: Record<SettingsSide, ReadonlyArray<string>> = {
     "privacy.preference_fields",
     "marketing.min_interval",
     "security.public_rate_limit",
+    "source.connector",
     "source.url",
     "source.auth_collection",
     "source.identity",
@@ -53,6 +54,7 @@ const nativeKeys: Record<SettingsSide, ReadonlyArray<string>> = {
     "bounce.ses_topic_arns",
     "webhooks.block_private_addresses",
     "sources.private_hosts",
+    "sources.enabled",
     "security.trusted_proxies",
     "ses.api_region",
     "ses.api_access_key_id",
@@ -179,12 +181,41 @@ export interface SettingsApi {
   rootUrl(): string;
   /** Another owner's rule on a change; throws inside the settings transaction to refuse it. */
   check?: (next: Settings, current: Settings) => void;
+  /**
+   * Keys another owner withholds right now (D188: the `source.*` keys while the instance's sources
+   * module is off): the GET leaves them out, and a write naming one is a 400 with `message`.
+   */
+  withheld?: () => Withheld | null;
+}
+
+/** Keys withheld from a side's settings API, and why. */
+export interface Withheld {
+  has(key: string): boolean;
+  message: string;
 }
 
 export function settingsHandlers(api: SettingsApi) {
   const { side } = api;
+  /** A 400 for a key the API withholds now. */
+  const refuseWithheld = (key: string) => {
+    const withheld = api.withheld?.();
+    if (withheld?.has(key)) {
+      throw new HttpError(400, `${withheld.message} (${key}).`);
+    }
+  };
   return {
-    get: () => ok(masked(api.read())),
+    get: () => {
+      const value = masked(api.read());
+      const withheld = api.withheld?.();
+      if (withheld) {
+        for (const key of Object.keys(value)) {
+          if (withheld.has(key)) {
+            delete value[key];
+          }
+        }
+      }
+      return ok(value);
+    },
     /** `PUT …/settings`: the whole side replaced, as listmonk replaces the whole object. */
     async putAll(request: Request, revalidate: () => void): Promise<Response> {
       const { value: body } = await decodeFull(request, await readBodyBytes(request));
@@ -195,6 +226,9 @@ export function settingsHandlers(api: SettingsApi) {
         const ignored = side === "project" && name.toLowerCase() === "app.root_url";
         if (!ignored && !(key && onSide(key, side))) {
           throw refusal(side, name);
+        }
+        if (key) {
+          refuseWithheld(key);
         }
       }
       api.update((current) => {
@@ -228,6 +262,7 @@ export function settingsHandlers(api: SettingsApi) {
       if (!onSide(key, side) && !(side === "project" && key === "app.root_url")) {
         throw refusal(side, key);
       }
+      refuseWithheld(key);
       api.update((current) => {
         const next = bindKey(current, key, body);
         // B150a (D170): a one-key write of another source key carries no password, so a stored one
@@ -253,14 +288,20 @@ export function registerSettingsRoutes(
   smtpTest?: (body: unknown, revalidate: () => void) => Promise<void>,
   /** Another owner's rule on a change; throws inside the settings transaction to refuse it. */
   check: (next: Settings, current: Settings) => void = () => {},
+  /** Keys withheld right now (D188); see `SettingsApi.withheld`. */
+  withheld?: () => Withheld | null,
 ): void {
-  const handlers = settingsHandlers({
+  const api: SettingsApi = {
     side: "project",
     read: () => settings.readProject(),
     update: (build) => settings.update(build),
     rootUrl: () => String(settings.read()["app.root_url"]),
     check,
-  });
+  };
+  if (withheld) {
+    api.withheld = withheld;
+  }
+  const handlers = settingsHandlers(api);
   router.route("GET", "/api/settings", handlers.get, auth.middleware("settings:get"));
   router.route(
     "PUT",

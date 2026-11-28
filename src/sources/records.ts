@@ -31,11 +31,9 @@ import {
   SubscriberChanged,
 } from "@/sources/recipient-sync";
 import type { SubscriberRow } from "@/sources/recipient-sync";
-import { isAuthRefused } from "@/sources/pocketbase";
-import type { PocketBaseSource } from "@/sources/pocketbase";
 import type { GrantRule } from "@/sources/settings";
-import { isSourceError, SourceError } from "@/sources/source";
-import type { CallOptions, ExternalSource, SourceEvent } from "@/sources/source";
+import { isAuthRefused, isPermanent, isSourceError, SourceError } from "@/sources/source";
+import type { CallOptions, ConnectorSource, ExternalSource, SourceEvent } from "@/sources/source";
 import { isSettingsMismatch } from "@/sources/stream-record";
 import type { RecordCommit, RecordHandler, SourceUser } from "@/sources/stream-record";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -65,8 +63,8 @@ export interface RecordHandlerOptions {
   db: Database;
   clock: Clock;
   logger: Pick<ErrorLogger, "attention">;
-  /** The project's source (the stream's own adapter) and its events schema probe. */
-  source: ExternalSource & Pick<PocketBaseSource, "eventsSchema">;
+  /** The project's source (the stream's own connector source) and its events schema probe. */
+  source: ExternalSource & Pick<ConnectorSource, "eventsSchema">;
   /** The project's `source.grant_lists` rules, read for each record. */
   grantRules: () => ReadonlyArray<GrantRule>;
   subscribers: Pick<
@@ -188,7 +186,7 @@ function conditionSource(source: RecordHandlerOptions["source"]): ExternalSource
       // The probe's failure. An abort (the stream stopping or switching settings), a transient
       // failure, a settings mismatch already or anything unexpected: as it is, so nothing is
       // committed.
-      if (!isSourceError(error_) || error_.kind !== "permanent" || isSettingsMismatch(error_)) {
+      if (!isSourceError(error_) || !isPermanent(error_) || isSettingsMismatch(error_)) {
         throw error_;
       }
       throw settingsRefusal(error_, CONDITION_READ) ?? error;

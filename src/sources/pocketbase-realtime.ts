@@ -10,6 +10,7 @@ import { guardedFetch } from "@/sources/connect";
 import type { Guard, SourceTransport } from "@/sources/connect";
 import { isSourceObject, member, sourceJson } from "@/sources/json";
 import { SourceError } from "@/sources/source";
+import type { RealtimeConnection, StreamMessage } from "@/sources/stream-record";
 
 /** PocketBase closes a connection after 5 idle minutes; a little longer means it is gone. */
 export const IDLE_MS = 5 * 60_000 + 30_000;
@@ -21,11 +22,7 @@ export const CONNECT_TIMEOUT_MS = 15_000;
 export const MAX_LINE = 1024 * 1024;
 
 /** One server-sent event. `oversized` when a line was over the limit and its data was dropped. */
-export interface SseMessage {
-  event: string;
-  data: string;
-  oversized: boolean;
-}
+export type SseMessage = StreamMessage;
 
 export interface RealtimeOptions {
   /** The source's base URL, without a trailing slash. */
@@ -38,18 +35,6 @@ export interface RealtimeOptions {
   maxAgeMs?: number;
   connectTimeoutMs?: number;
   maxLine?: number;
-}
-
-export interface RealtimeConnection {
-  readonly clientId: string;
-  /** The source's `Date` at connection: its clock, to start a new topic's marker at. */
-  readonly sourceNow: Date | null;
-  /**
-   * The messages after `PB_CONNECT`. It ends when the source closes the stream, and throws a
-   * transient `SourceError` when the client closed it (idle, age, a reset).
-   */
-  readonly messages: AsyncGenerator<SseMessage, void, void>;
-  close(): void;
 }
 
 /**

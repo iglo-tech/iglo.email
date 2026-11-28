@@ -1,24 +1,25 @@
-// Native (15-external-sources section 4, D171, D173): a project's source stream with the record
-// handler, as the server runs it. While the project has a configured source, one stream (with its
-// own adapter, so one service-account token) subscribes to the names of active external sequences'
+// Native (15-external-sources section 4, D171, D173, D188): a project's source stream with the
+// record handler, as the server runs it. While the project has a configured source, one stream (with
+// its own connector source, so one service-account token) subscribes to the names of active external sequences'
 // triggers, active or paused external sequences' `exit_on` and the grant rules' events, plus the
 // users topic. A change of the `source.*` settings stops the stream and starts one on the new
 // settings (markers whose source, collection or filter changed are dropped by the stream itself);
 // a change of the names resubscribes (the stream compares them every 15 s on the injected clock,
-// and `refresh()` compares at once). The stream's test-only `tuning` is never passed here.
+// and `refresh()` compares at once). While the instance's sources module is off (D188) no stream runs
+// and the watch sets no timer: it waits for `refresh()`. The stream's test-only `tuning` is never
+// passed here.
 import type { Database } from "bun:sqlite";
 import type { ErrorLogger } from "@/app";
 import type { Clock } from "@/clock";
 import type { Enrollments } from "@/sequences/enrollments";
 import type { Settings } from "@/settings/validate";
 import type { Guard, SourceTransport } from "@/sources/connect";
+import { connectors } from "@/sources/connectors";
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
-import { createPocketBaseSource } from "@/sources/pocketbase";
 import type { SourceScalar } from "@/sources/source";
-import type { PocketBaseConfig } from "@/sources/pocketbase";
 import { createRecordHandler } from "@/sources/records";
 import type { RecordHandlerOptions } from "@/sources/records";
-import type { GrantRule } from "@/sources/settings";
+import type { GrantRule, SourceSetup } from "@/sources/settings";
 import { createSourceStream, TOPIC_CHECK_MS } from "@/sources/stream";
 import type { SourceStream } from "@/sources/stream";
 
@@ -62,8 +63,13 @@ export interface SourceRecordsOptions {
   db: Database;
   clock: Clock;
   logger: Pick<ErrorLogger, "attention" | "error">;
-  /** The project's source settings, or null without a source; read at each check. */
-  config: () => PocketBaseConfig | null;
+  /** The project's connector and source settings, or null without a source; read at each check. */
+  setup: () => SourceSetup | null;
+  /**
+   * D188: the instance's sources module (`sources.enabled`), read at each check; while it is off
+   * the watch sets no timer. Omitted (a fixture with no instance), the module is on.
+   */
+  enabled?: () => boolean;
   grantRules: () => ReadonlyArray<GrantRule>;
   guard: Guard;
   /** A test's observed transport; production uses `fetch`. */
@@ -90,16 +96,17 @@ export function createSourceRecords(options: SourceRecordsOptions) {
     return [...all].filter(Boolean).sort();
   };
 
-  function open(config: PocketBaseConfig): SourceStream {
-    const adapterOptions: Parameters<typeof createPocketBaseSource>[0] = {
+  const enabled = () => options.enabled?.() ?? true;
+  /** Resolves the module-off wait of the watch (a settings change). */
+  let wake: (() => void) | undefined;
+
+  function open({ connector, config }: SourceSetup): SourceStream {
+    const adapter = connectors[connector].create({
       config,
       clock,
       guard: options.guard,
-    };
-    if (options.transport) {
-      adapterOptions.transport = options.transport;
-    }
-    const adapter = createPocketBaseSource(adapterOptions);
+      transport: options.transport,
+    });
     const handler: RecordHandlerOptions = {
       db: options.db,
       clock,
@@ -136,8 +143,8 @@ export function createSourceRecords(options: SourceRecordsOptions) {
       if (stopping.signal.aborted) {
         return;
       }
-      const config = options.config();
-      const key = config ? JSON.stringify(config) : "";
+      const setup = enabled() ? options.setup() : null;
+      const key = setup ? JSON.stringify(setup) : "";
       if (current && current.key === key) {
         current.stream.refresh();
         return;
@@ -145,8 +152,8 @@ export function createSourceRecords(options: SourceRecordsOptions) {
       const previous = current;
       current = null;
       await previous?.stream.stop();
-      if (config && !stopping.signal.aborted) {
-        const stream = open(config);
+      if (setup && !stopping.signal.aborted) {
+        const stream = open(setup);
         current = { key, stream };
         stream.start();
       }
@@ -164,6 +171,22 @@ export function createSourceRecords(options: SourceRecordsOptions) {
       } catch (error) {
         options.logger.error(error);
       }
+      if (!enabled()) {
+        // D188: the module is off: no timer until a settings change (or the stop) wakes the watch.
+        await new Promise<void>((resolve) => {
+          const done = () => {
+            stopping.signal.removeEventListener("abort", done);
+            wake = undefined;
+            resolve();
+          };
+          wake = done;
+          stopping.signal.addEventListener("abort", done, { once: true });
+          if (enabled() || stopping.signal.aborted) {
+            done();
+          }
+        });
+        continue;
+      }
       try {
         await clock.sleep(TOPIC_CHECK_MS, stopping.signal);
       } catch {
@@ -178,7 +201,11 @@ export function createSourceRecords(options: SourceRecordsOptions) {
       running ??= watch();
     },
     /** The settings, a sequence or a grant rule changed: compare now. */
-    refresh: () => sync(),
+    refresh: () => {
+      const result = sync();
+      wake?.();
+      return result;
+    },
     /** Stops the stream and the watch; a record being handled finishes or is read again later. */
     async stop() {
       stopping.abort();

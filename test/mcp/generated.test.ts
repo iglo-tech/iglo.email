@@ -72,9 +72,10 @@ describe("B78 MCP covers every operation (D98)", () => {
 
     // Mail goes to the loopback sink only (AGENTS.md: tests never use a real SMTP server).
     // B139: SMTP is an instance key, changed with the instance session.
-    await (
-      await instanceClient(production.origin, admin)
-    ).useSink(mailbox.port, { username: "", password: "", email_headers: [] });
+    const instance = await instanceClient(production.origin, admin);
+    await instance.useSink(mailbox.port, { username: "", password: "", email_headers: [] });
+    // B162a (D188): the source routes' tools exist only while the sources module is on.
+    await instance.put("sources.enabled", true);
   }, 60_000);
 
   afterAll(async () => {

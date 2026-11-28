@@ -17,22 +17,20 @@ import { writeTransaction } from "@/db/transaction";
 import { createLoop } from "@/loops/loop";
 import type { SafeMessage } from "@/maintenance/log-buffer";
 import type { Guard, SourceTransport } from "@/sources/connect";
-import { sourceDate } from "@/sources/filter";
-import { member } from "@/sources/json";
-import type { PocketBaseConfig } from "@/sources/pocketbase";
-import { openRealtime, safeJson } from "@/sources/realtime";
-import type { RealtimeOptions, SseMessage } from "@/sources/realtime";
 import { must } from "@/invariant";
-import { isSourceError, PAGE_LIMIT, SourceError } from "@/sources/source";
+import { isPermanent, isSourceError, PAGE_LIMIT, SourceError } from "@/sources/source";
+import type { SourceConfig } from "@/sources/source";
 import { isSettingsMismatch } from "@/sources/stream-record";
 import type {
+  RealtimeRequest,
   RecordCommit,
   RecordHandler,
   StreamItem,
   StreamKind,
+  StreamMessage,
   StreamSource,
 } from "@/sources/stream-record";
-import { createStreamStore } from "@/sources/stream-store";
+import { createStreamStore, stampText } from "@/sources/stream-store";
 import type { RetryClaim } from "@/sources/stream-store";
 
 /** A catch-up reads from each marker minus this, for commits that land out of order. */
@@ -68,10 +66,11 @@ export interface SourceStreamOptions {
   clock: Clock;
   logger: Pick<ErrorLogger, "attention" | "error">;
   /** The source's settings (a changed source is a new stream). */
-  config: PocketBaseConfig;
+  config: SourceConfig;
+  /** The network policy the realtime connection is opened with. */
   guard: Guard;
   transport?: SourceTransport | undefined;
-  /** The adapter's stream part (`createPocketBaseSource(...).stream`). */
+  /** The connector's stream part (`ConnectorSource.stream`, D188). */
   source: StreamSource;
   handler: RecordHandler;
   /** The event names to subscribe to, read at each connection and each check (src/sources/stream-names.ts). */
@@ -107,7 +106,7 @@ const digest = (parts: ReadonlyArray<string>) =>
 
 /** Messages received while the stream catches up or handles a record, bounded by their text. */
 function createBuffer(limit: number) {
-  let queue: Array<SseMessage> = [];
+  let queue: Array<StreamMessage> = [];
   let head = 0;
   let size = 0;
   let overflowed = false;
@@ -120,7 +119,7 @@ function createBuffer(limit: number) {
     resume?.();
   };
   return {
-    push(message: SseMessage) {
+    push(message: StreamMessage) {
       const cost = message.data.length + message.event.length;
       if (message.oversized || size + cost > limit) {
         // Past the limit: drop what is held and catch up again; the source still has every record.
@@ -142,7 +141,7 @@ function createBuffer(limit: number) {
       notify();
     },
     /** The next message, "overflow" when some were dropped, "end" when the connection ended. */
-    async next(signal: AbortSignal): Promise<SseMessage | "overflow" | "end"> {
+    async next(signal: AbortSignal): Promise<StreamMessage | "overflow" | "end"> {
       for (;;) {
         signal.throwIfAborted();
         if (overflowed) {
@@ -271,7 +270,7 @@ export function createSourceStream(options: SourceStreamOptions) {
 
   /** Queues a record the handler failed on, unless the handler committed it after all. */
   function queue(item: StreamItem, error: unknown, after: () => void) {
-    const permanent = isSourceError(error) && error.kind === "permanent";
+    const permanent = isPermanent(error);
     const now = clock.now();
     const queued = writeTransaction(db, () => {
       after();
@@ -428,8 +427,7 @@ export function createSourceStream(options: SourceStreamOptions) {
     state = "connecting";
     const topics = names.length ? source.eventTopics(names) : [];
     const usersTopic = source.usersTopic();
-    const realtime: RealtimeOptions = {
-      url: config.url,
+    const realtime: RealtimeRequest = {
       guard: options.guard,
       transport: options.transport,
       clock,
@@ -444,7 +442,7 @@ export function createSourceStream(options: SourceStreamOptions) {
     if (tuning.maxLine) {
       realtime.maxLine = tuning.maxLine;
     }
-    const connection = await openRealtime(realtime);
+    const connection = await source.connect(realtime);
     sessions++;
     const buffer = createBuffer(bufferLimit);
     try {
@@ -509,20 +507,14 @@ export function createSourceStream(options: SourceStreamOptions) {
           if (!kind) {
             continue;
           }
-          const payload = safeJson(next.data);
-          if (payload === undefined) {
+          const item = source.item(kind, next.data);
+          if (item === "unreadable") {
             // B155b (D177): a message of a subscribed topic the stream cannot read (its record
             // nests past the JSON limit). Caught up instead, so the catch-up's reads make it a
             // terminal record keyed by its ID, never a record lost without a line.
             overflow = true;
             break;
           }
-          const action = member(payload, "action");
-          const item = source.item(
-            kind,
-            typeof action === "string" ? action : "",
-            member(payload, "record"),
-          );
           if (!item) {
             continue;
           }
@@ -597,7 +589,7 @@ export function createSourceStream(options: SourceStreamOptions) {
         if (stopping.signal.aborted) {
           break;
         }
-        const permanent = isSourceError(error) && error.kind === "permanent";
+        const permanent = isPermanent(error);
         if (session_.signal.aborted && session_.signal.reason === REFRESH) {
           delay = 0;
         } else if (connected && !permanent) {
@@ -656,7 +648,7 @@ export function createSourceStream(options: SourceStreamOptions) {
     let error: unknown;
     try {
       const item = await source.reread(kind, claim.record_id, { signal: stopping.signal });
-      if (!item || sourceDate(item.stamp) !== claim.stamp) {
+      if (!item || stampText(item.stamp) !== claim.stamp) {
         // Gone, no longer leaving, or a newer update that the stream handles itself.
         finish();
         return;
@@ -684,7 +676,7 @@ export function createSourceStream(options: SourceStreamOptions) {
     // `SettingsMismatch`), waits for the settings to be fixed, like the stream: never terminal, and
     // its 72-hour window starts again, so the wait does not use it up.
     const mismatch = isSettingsMismatch(error);
-    const permanent = isSourceError(error) && error.kind === "permanent";
+    const permanent = isPermanent(error);
     const terminal =
       !mismatch &&
       (permanent || now.getTime() - Date.parse(claim.first_failed_at) >= RETRY_WINDOW_MS);

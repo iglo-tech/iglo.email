@@ -57,9 +57,12 @@ try {
       db: f.db,
       clock: f.clock,
       logger: { attention: (message) => console.error(message), error: (e) => console.error(e) },
-      config: () => ({
-        ...sourceConfig(pb.url, pb.service),
-        users: { collection: "", leavingFilter: "" },
+      setup: () => ({
+        connector: "pocketbase",
+        config: {
+          ...sourceConfig(pb.url, pb.service),
+          users: { collection: "", leavingFilter: "" },
+        },
       }),
       grantRules: () => rules,
       guard: openGuard,

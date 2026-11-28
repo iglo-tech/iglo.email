@@ -112,7 +112,10 @@ test("every default key is one side's, and the two APIs serve the two sides", as
   for (const host of [PRIMARY, A, B]) {
     const own = Object.keys(await projectSettings(host));
     expect(own.filter((name) => instanceKeys.has(name))).toEqual([]);
-    expect(own.toSorted()).toEqual([...projectKeys, "app.root_url"].toSorted());
+    // B162a (D188): the source keys are left out while the instance's sources module is off.
+    expect(own.toSorted()).toEqual(
+      [...projectKeys, "app.root_url"].filter((name) => !name.startsWith("source.")).toSorted(),
+    );
   }
   // The S3 secret is left out while it is empty, as the one settings API left it out (upstream).
   expect(shared.toSorted()).toEqual(

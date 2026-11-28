@@ -68,6 +68,7 @@ function changed(list: number): Record<string, Record<string, unknown>> {
       ],
       "marketing.min_interval": "P3D",
       "security.public_rate_limit": { subscribe: 5, optin: 6, unsubscribe: 7, privacy: 8 },
+      "source.connector": "pocketbase",
       "source.url": "https://pocketbase.example.test",
       "source.auth_collection": "svc",
       "source.identity": "svc@example.test",
@@ -94,6 +95,8 @@ function changed(list: number): Record<string, Record<string, unknown>> {
       // The default, but not what an omitted boolean binds to.
       "webhooks.block_private_addresses": true,
       "sources.private_hosts": ["pocketbase"],
+      // B162a (D188): the sources module, off by default; on, the project side serves `source.*`.
+      "sources.enabled": true,
       "security.trusted_proxies": ["127.0.0.1"],
       "bounce.ses_topic_arns": ["arn:aws:sns:eu-west-1:123456789012:bounces"],
     },
@@ -102,11 +105,12 @@ function changed(list: number): Record<string, Record<string, unknown>> {
 
 test("a full PUT without the native keys, as a listmonk client sends it, keeps every native key", async () => {
   // This fixture serves no lists and checks no rule's lists (the production server does, which
-  // test/sources covers), so any list id stands.
+  // test/sources covers), so any list id stands. The instance goes first: it turns the sources
+  // module on, without which the project side serves no `source.*` key (D188).
   const values = changed(1);
   for (const [side, path] of [
-    ["project", "/api/settings"],
     ["instance", "/api/instance/settings"],
+    ["project", "/api/settings"],
   ] as const) {
     const served = await read(path);
     const native = Object.keys(served).filter((key) => !listmonk.has(key) && key !== BLANKED);

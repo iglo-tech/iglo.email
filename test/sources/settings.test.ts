@@ -65,6 +65,7 @@ const instance = async (method: string, path: string, body?: unknown) => {
 const save = async (changes: Record<string, unknown>) =>
   call("PUT", "/api/settings", { ...(await settings()), ...changes });
 const sourceAt = (url: string) => ({
+  "source.connector": "pocketbase",
   "source.url": url,
   "source.identity": pb.service.identity,
   "source.password": pb.service.password,
@@ -80,6 +81,12 @@ beforeAll(async () => {
   port = server.port;
   key = await createApiUser(port, HOST, await logIn(port, HOST, admin), "api-sources");
   operator = (await instanceLogin(port, HOST, admin)).session!;
+  // B162a (D188): a new instance starts with the sources module off.
+  const shared = (await instance("GET", "/api/instance/settings")).body.data;
+  expect(
+    (await instance("PUT", "/api/instance/settings", { ...shared, "sources.enabled": true }))
+      .status,
+  ).toBe(200);
 });
 
 afterAll(async () => {

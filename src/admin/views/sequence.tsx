@@ -284,9 +284,11 @@ const status = (handler: string, test: string, label: string, when: string) => (
   </template>
 );
 function sequenceView(isNew: boolean): AdminView {
-  return ({ context, can }) => {
+  return ({ context, can, site }) => {
     const t = context.app.i18n;
     const canManage = can("sequences:manage");
+    // D188: an external sequence's enrollments are held while the instance's sources module is off.
+    const sourcesOff = site.sourcesEnabled !== true;
     const canSql = can("subscribers:sql_query");
     const heading = t.T("sequences.newSequence");
     return {
@@ -424,10 +426,40 @@ function sequenceView(isNew: boolean): AdminView {
                       {t.T("sequences.source")}
                       <select name="source" x-model="form.source" data-testid="sequence-source">
                         <option value="events">{t.T("sequences.source.events")}</option>
-                        <option value="external">{t.T("sequences.source.external")}</option>
+                        {sourcesOff ? (
+                          // D188: while the module is off an external sequence cannot be saved, so
+                          // the option shows only on a sequence that already reads the source.
+                          <option
+                            value="external"
+                            hidden
+                            disabled
+                            data-testid="sequence-source-external"
+                            x-bind:hidden="form.source !== 'external'"
+                            x-bind:disabled="form.source !== 'external'"
+                          >
+                            {t.T("sequences.source.external")}
+                          </option>
+                        ) : (
+                          <option value="external" data-testid="sequence-source-external">
+                            {t.T("sequences.source.external")}
+                          </option>
+                        )}
                       </select>
                       <small data-hint="">{t.T("sequences.sourceHelp")}</small>
                     </label>
+                    {sourcesOff ? (
+                      <p
+                        role="status"
+                        class="text-light"
+                        data-testid="sources-off"
+                        x-show="form.source === 'external'"
+                        style="display: none"
+                      >
+                        External sources are off on this instance: the enrollments of this sequence
+                        wait, neither advanced nor ended, until an instance admin turns them on
+                        again.
+                      </p>
+                    ) : null}
                     <div data-field="">
                       <label>{t.T("sequences.triggerWhere")}</label>
                       <template x-if="ready">

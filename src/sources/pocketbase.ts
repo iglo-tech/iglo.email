@@ -1,9 +1,10 @@
-// Native (15-external-sources sections 1 and 9, D169, D170): the PocketBase adapter of
-// `ExternalSource`. It signs in to the configured auth collection with the service account, reads
+// Native (15-external-sources sections 1 and 9, D169, D170, D188): the PocketBase connector's
+// `ConnectorSource`. It signs in to the configured auth collection with the service account, reads
 // the events collection and the recipients view over PocketBase's REST API, and classifies every
 // failure as transient or permanent. Each request goes through the private-address guard
 // (src/sources/connect.ts) and has its own time limit on the injected clock; a response body is
-// read up to a fixed size. B150b adds the realtime stream beside this file.
+// read up to a fixed size. Its realtime stream is src/sources/pocketbase-stream.ts, its filters
+// src/sources/pocketbase-filter.ts and its Test connection src/sources/pocketbase-check.ts.
 import type { Clock } from "@/clock";
 import { guardedFetch } from "@/sources/connect";
 import type { Guard, SourceTransport } from "@/sources/connect";
@@ -14,60 +15,35 @@ import {
   parseSourceDate,
   scalarLiteral,
   textLiteral,
-  UnfitQuery,
-} from "@/sources/filter";
+} from "@/sources/pocketbase-filter";
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceJson, SourceObject } from "@/sources/json";
 import {
+  AuthRefused,
   DEFAULT_TIMEOUT_MS,
+  isAuthRefused,
   isRecordUnreadable,
   isSourceError,
   PAGE_LIMIT,
   RecordUnreadable,
   SCAN_LIMIT,
   SourceError,
+  UnfitQuery,
 } from "@/sources/source";
-import { streamReads } from "@/sources/stream-reads";
+import { streamReads } from "@/sources/pocketbase-stream";
 import type {
   CallOptions,
+  ConnectorSource,
   EventQuery,
-  ExternalSource,
+  SourceConfig,
   ScanField,
   ScannedEvent,
   SourceEvent,
   SourceRecipient,
 } from "@/sources/source";
 
-/** The source settings the adapter reads (src/sources/settings.ts builds it from `source.*`). */
-export interface PocketBaseConfig {
-  /** The base URL, without a trailing slash. */
-  url: string;
-  authCollection: string;
-  identity: string;
-  password: string;
-  events: {
-    collection: string;
-    user: string;
-    name: string;
-    data: string;
-    occurredAt: string;
-    /** "" when the collection has no idempotency key field. */
-    key: string;
-  };
-  recipients: {
-    collection: string;
-    email: string;
-    /** "" when the view has no name field. */
-    name: string;
-    /** "" when the view has no opt-out field. */
-    optOut: string;
-  };
-  users: {
-    /** "" when no users collection is watched for leaving. */
-    collection: string;
-    leavingFilter: string;
-  };
-}
+/** The settings the adapter reads: the connector-neutral `SourceConfig` (D188). */
+export type PocketBaseConfig = SourceConfig;
 
 export interface PocketBaseOptions {
   config: PocketBaseConfig;
@@ -126,18 +102,6 @@ async function notRecord<T>(request: Promise<T>, what: string): Promise<T> {
   }
 }
 
-/**
- * B166 (D194): the service account's sign-in or token check refused for good (a wrong or rotated
- * password, a removed account or auth collection, a page that is not JSON). PocketBase 0.40.5
- * answers a refused sign-in with a `400` ("Failed to authenticate."), the status a refused filter
- * also has, so the mark, not the status, tells a caller the settings are at fault.
- */
-export class AuthRefused extends SourceError {
-  readonly authRefused = true;
-}
-export const isAuthRefused = (error: unknown): error is AuthRefused =>
-  isSourceError(error) && "authRefused" in error && error.authRefused === true;
-
 /** Throws a permanent failure of the sign-in or token check as `AuthRefused`, anything else as is. */
 function refuseAuth(error: unknown): never {
   if (isSourceError(error) && error.kind === "permanent" && !isAuthRefused(error)) {
@@ -171,22 +135,13 @@ function tokenExpiry(token: string): number | undefined {
 }
 
 /**
- * B155d (D179): an ID PocketBase cannot have, refused before any request. It is permanent like any
- * malformed read, and marked so a caller can tell "no such user can exist in the source" (an
- * `external_id` set by pushed events before the project moved to a source) from a failed read.
+ * B155d (D179): an ID PocketBase cannot have is refused before any request as `notFound` (D188), so
+ * a caller can tell "no such user can exist in the source" (an `external_id` set by pushed events
+ * before the project moved to a source) from a failed read.
  */
-export class NotSourceId extends SourceError {
-  readonly notSourceId = true;
-  constructor(id: string, what: string) {
-    super("permanent", `Not a source ${what} ID: ${JSON.stringify(id)}`);
-  }
-}
-export const isNotSourceId = (error: unknown): error is NotSourceId =>
-  isSourceError(error) && "notSourceId" in error && error.notSourceId === true;
-
 function checkedId(id: string, what: string): string {
   if (!idPattern.test(id)) {
-    throw new NotSourceId(id, what);
+    throw new SourceError("notFound", `Not a source ${what} ID: ${JSON.stringify(id)}`);
   }
   return id;
 }
@@ -984,8 +939,9 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         message: reason(answer),
       };
     },
-    /** The realtime stream's reads and subscription (src/sources/stream-reads.ts, B150b). */
+    /** The realtime stream's reads and subscription (src/sources/pocketbase-stream.ts, B150b). */
     stream: streamReads({
+      url: config.url,
       events: ev,
       users: config.users,
       eventOf,
@@ -1026,12 +982,10 @@ export function createPocketBaseSource(options: PocketBaseOptions) {
         );
       },
     }),
-  } satisfies ExternalSource & {
+  } satisfies ConnectorSource & {
     authenticate: unknown;
-    eventsSchema: unknown;
     probe: unknown;
     guestProbe: unknown;
-    stream: unknown;
   };
   return source;
 }

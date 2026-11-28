@@ -10,6 +10,8 @@ export function sidebar(
   t: Translation,
   can: Can,
   now: Date,
+  /** D188: whether the instance's sources module is on (the source retry queue's link). */
+  options: { sources: boolean } = { sources: false },
 ): Array<NavigationLink | NavigationGroup> {
   const link = (id: string, label: string, href: string): NavigationLink =>
     pageId === id ? { label, href, current: true } : { label, href };
@@ -114,7 +116,8 @@ export function sidebar(
           link("settings.all", t.T("globals.terms.settings"), "/admin/settings"),
         can("settings:get") &&
           link("settings.logs", t.T("globals.terms.logs"), "/admin/settings/logs"),
-        can("settings:manage") &&
+        options.sources &&
+          can("settings:manage") &&
           link(
             "settings.source-retries",
             t.T("sources.retries.title"),

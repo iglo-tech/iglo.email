@@ -15,6 +15,9 @@ import { HttpError } from "@/server/response";
 import { instanceAttention } from "@/projects/logger";
 import sql from "@/settings/queries.sql" with { type: "text" };
 
+/** Instance migration 5's mark of an upgrade the sources switch is not settled for (D188). */
+const SOURCES_UPGRADE = "sources.enabled_upgrade";
+
 /** What a project sees of the instance settings: the current instance keys and their changes. */
 export interface InstanceSettingsReader {
   /** The instance keys, frozen and shared. */
@@ -116,6 +119,25 @@ export function createInstanceSettings(db: Database, clock: Clock) {
           }
         }
       }
+    },
+    /**
+     * B162a (D188): an upgrade from a build without the sources module. Instance migration 5 marks
+     * an instance that already served projects; once every project is open and migrated, the switch
+     * is turned on when `anySource()` (a project names a source URL), so a running source keeps
+     * working, and the mark goes. Written directly with no change notification: the projects have
+     * not started, and each reads the instance keys afresh.
+     */
+    settleSourcesUpgrade(anySource: () => boolean): void {
+      if (!queries.get("get").get(SOURCES_UPGRADE)) {
+        return;
+      }
+      const on = anySource();
+      writeTransaction(db, () => {
+        if (on) {
+          queries.get("update").run("true", clock.now().toISOString(), "sources.enabled");
+        }
+        queries.get("delete").run(SOURCES_UPGRADE);
+      });
     },
     close: () => queries.close(),
   };

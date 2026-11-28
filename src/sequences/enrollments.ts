@@ -11,6 +11,7 @@ import { compareSQL } from "@/conditions/json";
 import type { Param } from "@/conditions/json";
 import type { Condition, Scalar } from "@/conditions/types";
 import { prepareNamedQueries } from "@/db/queries";
+import { writeTransaction } from "@/db/transaction";
 import { must } from "@/invariant";
 import type { ExitThenTrigger, ExitToShow, RecordedEvent } from "@/events/store";
 import { createExitShown } from "@/events/store";
@@ -843,12 +844,15 @@ export function createEnrollments(db: Database, clock: Clock) {
     },
     /**
      * Scheduler claim (05-sequences.md#scheduler): lease up to `limit` due enrollments of
-     * active or archived sequences. The loop helper holds the write transaction.
+     * active or archived sequences. The loop helper holds the write transaction. D188: with
+     * `holdExternal` (the instance's sources module off) external sequences' enrollments wait.
      */
-    claimDue(now: Date, lease: Date, limit: number): Array<bigint> {
+    claimDue(now: Date, lease: Date, limit: number, holdExternal = false): Array<bigint> {
       // In claim order (RETURNING has none), so a retry claimed with due work runs after it.
       return (
-        q.get("claim-due").all(lease.toISOString(), now.toISOString(), limit) as Array<{
+        q
+          .get("claim-due")
+          .all(lease.toISOString(), now.toISOString(), limit, holdExternal ? 1 : 0) as Array<{
           id: bigint;
           run_at: string;
         }>
@@ -857,6 +861,16 @@ export function createEnrollments(db: Database, clock: Clock) {
           a.run_at !== b.run_at ? (a.run_at < b.run_at ? -1 : 1) : a.id < b.id ? -1 : 1,
         )
         .map((row) => row.id);
+    },
+    /**
+     * D188: the sources module turned on again. Every active enrollment's source outage window
+     * (D172) starts anew, so the time it was held never counts toward the 72-hour limit (external
+     * sequences' enrollments and, r1, pushed sequences' source-linked ones are held while off).
+     */
+    restartSourceWindows(): void {
+      writeTransaction(db, () => {
+        q.get("restart-source-windows").run();
+      });
     },
     /** A claimed enrollment with its current sequence and step definition. */
     schedulerContext(id: bigint): SchedulerContext | null {

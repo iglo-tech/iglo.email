@@ -1,17 +1,18 @@
-// Native (15-external-sources section 2, D170): the project's source settings (`source.*`) and the
-// instance's `sources.private_hosts`. src/settings/validate.ts binds them with the shapes below and
-// calls the normalizers here on each save; the adapter reads them through `sourceConfig`.
+// Native (15-external-sources section 2, D170, D188): the project's source settings (`source.*`),
+// the instance's `sources.enabled` switch and `sources.private_hosts`. src/settings/validate.ts
+// binds them with the shapes below and calls the normalizers here on each save; the connectors
+// read them through `sourceSetup`.
 import { HttpError } from "@/server/response";
 import type { Settings } from "@/settings/validate";
-import { identifierPattern } from "@/sources/filter";
+import { connectors, isConnectorName } from "@/sources/connectors";
+import type { Connector, ConnectorName } from "@/sources/connectors";
 import { isSourceList, isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceJson } from "@/sources/json";
-import type { PocketBaseConfig } from "@/sources/pocketbase";
-import { LEAVING_TOO_LONG, leavingTopic } from "@/sources/stream-reads";
-import type { SourceScalar } from "@/sources/source";
+import type { SourceConfig, SourceScalar } from "@/sources/source";
 
-/** The `source.*` keys and their defaults: no source (an empty URL). */
+/** The `source.*` keys and their defaults: no source (no connector, an empty URL). */
 export const sourceDefaults = {
+  "source.connector": "",
   "source.url": "",
   "source.auth_collection": "services",
   "source.identity": "",
@@ -49,6 +50,8 @@ const MAX_EVENT_BYTES = 200;
 const MAX_VALUE_BYTES = 1000;
 const MAX_PRIVATE_HOSTS = 20;
 const MAX_FILTER = 2000;
+/** A collection or field name: an identifier, as every connector's API names them. */
+const identifierPattern = /^[A-Za-z_][A-Za-z0-9_]{0,99}$/;
 const hostLabel = /^(?!-)[a-z0-9_-]{1,63}(?<!-)$/;
 const ipLiteral = /^[\d.]+$|:/;
 
@@ -66,31 +69,56 @@ const textAt = (settings: Settings, key: string) => {
   return typeof value === "string" ? value : "";
 };
 
+/** The connector a save names, or `null` for none; another value is a 400. */
+function connectorOf(value: SourceJson | undefined): ConnectorName | null {
+  const name = text(value);
+  if (!name) {
+    return null;
+  }
+  if (!isConnectorName(name)) {
+    return fail(
+      `Invalid source.connector: use one of ${Object.keys(connectors).join(", ")}, or empty for no source.`,
+    );
+  }
+  return name;
+}
+
+/** The connector's name in a message: its display name, or a neutral word without one. */
+const nameOf = (connector: Connector | null) => connector?.displayName ?? "source";
+
 /** A collection or field name, or "" where `optional`; a required empty one takes its default. */
 function nameField(
   value: SourceJson | undefined,
   fallback: string,
   label: string,
+  connector: Connector | null,
   optional = false,
 ): string {
   const name = text(value) || (optional ? "" : fallback);
   if (name && !identifierPattern.test(name)) {
-    fail(`Invalid ${label}: use a PocketBase name (letters, digits and _).`);
+    fail(`Invalid ${label}: use a ${nameOf(connector)} name (letters, digits and _).`);
   }
   return name;
 }
 
 /** The URL's origin and path as stored: http(s), no credentials, query or fragment. */
-function sourceUrl(value: SourceJson | undefined): string {
+function sourceUrl(value: SourceJson | undefined, connector: Connector | null): string {
   const raw = text(value);
   if (!raw) {
     return "";
+  }
+  if (!connector) {
+    return fail(
+      `source.url needs source.connector: choose one of ${Object.keys(connectors).join(", ")}.`,
+    );
   }
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    return fail("Invalid source.url: use the PocketBase address, such as http://pocketbase:8090.");
+    return fail(
+      `Invalid source.url: use the ${connector.displayName} address, such as ${connector.exampleUrl}.`,
+    );
   }
   if (
     (url.protocol !== "http:" && url.protocol !== "https:") ||
@@ -100,7 +128,9 @@ function sourceUrl(value: SourceJson | undefined): string {
     url.hash ||
     raw.length > 2000
   ) {
-    fail("Invalid source.url: use an http or https address without credentials or a query.");
+    fail(
+      `Invalid source.url: use an http or https ${connector.displayName} address without credentials or a query.`,
+    );
   }
   return url.href.replace(/\/+$/, "");
 }
@@ -163,9 +193,19 @@ function grantRule(rule: SourceJson, index: number): GrantRule {
  * clears the password.
  */
 export function normalizeSource(next: Settings, current: Settings): void {
-  const url = sourceUrl(read(next, "source.url"));
+  const connectorName = connectorOf(read(next, "source.connector"));
+  const connector = connectorName === null ? null : connectors[connectorName];
+  next["source.connector"] = connectorName ?? "";
+  const url = sourceUrl(read(next, "source.url"), connector);
   next["source.url"] = url;
-  next["source.auth_collection"] = nameField(
+  /** A name field of this save, its messages naming the connector. */
+  const named = (
+    value: SourceJson | undefined,
+    fallback: string,
+    label: string,
+    optional = false,
+  ) => nameField(value, fallback, label, connector, optional);
+  next["source.auth_collection"] = named(
     read(next, "source.auth_collection"),
     sourceDefaults["source.auth_collection"],
     "source.auth_collection",
@@ -197,35 +237,35 @@ export function normalizeSource(next: Settings, current: Settings): void {
   const events = read(next, "source.events");
   const defaults = sourceDefaults["source.events"];
   next["source.events"] = {
-    collection: nameField(
+    collection: named(
       member(events, "collection"),
       defaults.collection,
       "source.events collection",
     ),
-    user: nameField(member(events, "user"), defaults.user, "source.events user field"),
-    name: nameField(member(events, "name"), defaults.name, "source.events name field"),
-    data: nameField(member(events, "data"), defaults.data, "source.events data field"),
-    occurred_at: nameField(
+    user: named(member(events, "user"), defaults.user, "source.events user field"),
+    name: named(member(events, "name"), defaults.name, "source.events name field"),
+    data: named(member(events, "data"), defaults.data, "source.events data field"),
+    occurred_at: named(
       member(events, "occurred_at"),
       defaults.occurred_at,
       "source.events occurred_at field",
     ),
-    key: nameField(member(events, "key"), "", "source.events key field", true),
+    key: named(member(events, "key"), "", "source.events key field", true),
   };
   const recipients = read(next, "source.recipients");
   const view = sourceDefaults["source.recipients"];
   next["source.recipients"] = {
-    collection: nameField(
+    collection: named(
       member(recipients, "collection"),
       view.collection,
       "source.recipients collection",
     ),
-    email: nameField(member(recipients, "email"), view.email, "source.recipients email field"),
-    name: nameField(member(recipients, "name"), "", "source.recipients name field", true),
-    opt_out: nameField(member(recipients, "opt_out"), "", "source.recipients opt_out field", true),
+    email: named(member(recipients, "email"), view.email, "source.recipients email field"),
+    name: named(member(recipients, "name"), "", "source.recipients name field", true),
+    opt_out: named(member(recipients, "opt_out"), "", "source.recipients opt_out field", true),
   };
   const users = read(next, "source.users");
-  const collection = nameField(member(users, "collection"), "", "source.users collection", true);
+  const collection = named(member(users, "collection"), "", "source.users collection", true);
   const filter = text(member(users, "leaving_filter"));
   if (filter.length > MAX_FILTER || filter.includes("\0")) {
     fail(`Invalid source.users leaving_filter: at most ${MAX_FILTER} characters.`);
@@ -238,13 +278,11 @@ export function normalizeSource(next: Settings, current: Settings): void {
   // clearing the source; Test connection's users step still names it. A changed users setting is
   // checked whether or not a source URL is set, so a filter saved ahead of the URL fits too.
   const storedUsers = read(current, "source.users");
-  const checkTopic =
+  const usersChanged =
     (!!url && !textAt(current, "source.url")) ||
+    connectorName !== (text(read(current, "source.connector")) || null) ||
     collection !== text(member(storedUsers, "collection")) ||
     filter !== text(member(storedUsers, "leaving_filter"));
-  if (collection && checkTopic && leavingTopic(collection, filter) === null) {
-    fail(`Invalid source.users leaving_filter: ${LEAVING_TOO_LONG}.`);
-  }
   next["source.users"] = { collection, leaving_filter: collection ? filter : "" };
   const stored = read(next, "source.grant_lists");
   const rules = isSourceList(stored) ? stored : [];
@@ -252,6 +290,11 @@ export function normalizeSource(next: Settings, current: Settings): void {
     fail(`Invalid source.grant_lists: at most ${MAX_GRANT_RULES} rules.`);
   }
   next["source.grant_lists"] = rules.map(grantRule);
+  // D188: the chosen connector's own rules (PocketBase: the leaving filter's topic length).
+  // Checked with an empty URL too (B171 r2), so a filter saved ahead of the URL fits.
+  if (connector) {
+    connector.validate({ config: configOf(next), usersChanged }, fail);
+  }
 }
 
 /** The list IDs the grant rules name, for the check that they are this project's lists. */
@@ -305,12 +348,47 @@ export function privateHosts(settings: Settings): Array<string> {
 
 const at = (value: SourceJson | undefined, name: string) => text(member(value, name));
 
-/** The adapter's settings, or `null` while the project has no source (an empty URL). */
-export function sourceConfig(settings: Settings): PocketBaseConfig | null {
-  const url = textAt(settings, "source.url");
-  if (!url) {
+/** D188: whether the instance's external sources module is on (`sources.enabled`). */
+export const sourcesEnabled = (settings: Settings): boolean => settings["sources.enabled"] === true;
+
+/** A project's configured source: its connector and the settings the connector reads. */
+export interface SourceSetup {
+  connector: ConnectorName;
+  config: SourceConfig;
+}
+
+/**
+ * The project's source, or `null` while it has none: the module off (`sources.enabled`), no
+ * connector or an empty URL (D188). Every reader of a project's source goes through this.
+ */
+export function sourceSetup(settings: Settings): SourceSetup | null {
+  const connector = text(read(settings, "source.connector"));
+  if (!sourcesEnabled(settings) || !isConnectorName(connector)) {
     return null;
   }
+  const config = configOf(settings);
+  return config.url ? { connector, config } : null;
+}
+
+/**
+ * D188 (r1): the module is off but the project stores a source (a connector and a URL). Its
+ * source-linked subscribers are then unreadable, not unlinked: the source may have opted them out
+ * of marketing or deleted them, and only a read can tell, so nothing is sent to them.
+ */
+export function sourceHeld(settings: Settings): boolean {
+  return (
+    !sourcesEnabled(settings) &&
+    isConnectorName(text(read(settings, "source.connector"))) &&
+    textAt(settings, "source.url") !== ""
+  );
+}
+
+/** Whether the project names a source URL, whatever the module and connector (the upgrade's check). */
+export const hasSourceUrl = (settings: Settings): boolean => textAt(settings, "source.url") !== "";
+
+/** The settings a connector reads (an empty `url` while the project names none). */
+function configOf(settings: Settings): SourceConfig {
+  const url = textAt(settings, "source.url");
   const events = read(settings, "source.events");
   const recipients = read(settings, "source.recipients");
   const users = read(settings, "source.users");

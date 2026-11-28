@@ -51,7 +51,7 @@ import { createSourceProvider } from "@/sources/project";
 import { createSendTimeLookup } from "@/sources/send-time";
 import { createSourceRecords, storedGrantRules } from "@/sources/records-stream";
 import type { SourceRecords } from "@/sources/records-stream";
-import { sourceConfig } from "@/sources/settings";
+import { hasSourceUrl, sourceHeld, sourceSetup, sourcesEnabled } from "@/sources/settings";
 import { refuseWhileHeld, restoreHold } from "@/settings/hold";
 import type { Dispatcher, Sender } from "@/messaging/dispatcher";
 import { createSMTPTest } from "@/messaging/test";
@@ -217,6 +217,8 @@ export interface Project {
   readonly router: Router;
   /** This project's counts for the instance's capacity forecast (B145a). */
   readonly capacity: CapacitySource;
+  /** Whether the project names a source URL, whatever the module (the D188 upgrade's check). */
+  hasSourceUrl(): boolean;
   /** The bound server, read by the maintenance routes' keep-open and stopped by main(). */
   attach(server: ProjectServer): void;
   /**
@@ -615,10 +617,25 @@ export async function createProject(
     const smtpTest = createSMTPTest(settings, emailer, app.i18n, renderer);
     const uploadCheck = uploadPathCheck(directory, media);
     const grantCheck = sourceListsCheck({ name: (id) => must(lists, "lists").name(id) });
-    registerSettingsRoutes(router, settings, auth, smtpTest, (next, current) => {
-      uploadCheck(next, current);
-      grantCheck(next, current);
-    });
+    const settingsNow = must(settings, "settings");
+    registerSettingsRoutes(
+      router,
+      settings,
+      auth,
+      smtpTest,
+      (next, current) => {
+        uploadCheck(next, current);
+        grantCheck(next, current);
+      },
+      // D188: while the instance's sources module is off the source keys are absent.
+      () =>
+        sourcesEnabled(settingsNow.read())
+          ? null
+          : {
+              has: (key) => key.startsWith("source."),
+              message: "External sources are off on this instance: an instance admin turns them on",
+            },
+    );
     registerSourceRoutes(router, {
       settings,
       auth,
@@ -870,6 +887,7 @@ export async function createProject(
     const sendTime = createSendTimeLookup({
       db,
       source: externalSource,
+      held: () => sourceHeld(projectSettings.read()),
       subscribers: subscriberStore,
       enrollments,
       emailAllowed: (email) => {
@@ -968,6 +986,7 @@ export async function createProject(
       lists,
       enrollments,
       sourceConfigured: () => externalSource() !== null,
+      sourcesEnabled: () => sourcesEnabled(projectSettings.read()),
     });
     registerSequenceRoutes(router, {
       testSends,
@@ -992,6 +1011,7 @@ export async function createProject(
       roles,
       auth,
       source: externalSource,
+      sourcesEnabled: () => sourcesEnabled(projectSettings.read()),
     });
     purge = createPurge({
       db,
@@ -1020,6 +1040,7 @@ export async function createProject(
       tracking,
       conditions,
       source: externalSource,
+      sourcesEnabled: () => sourcesEnabled(projectSettings.read()),
       sendTime,
       settings: () => {
         const current = must(settings, "settings").read();
@@ -1036,7 +1057,8 @@ export async function createProject(
       db,
       clock,
       logger: app.logger,
-      config: () => sourceConfig(recordSettings.read()),
+      setup: () => sourceSetup(recordSettings.read()),
+      enabled: () => sourcesEnabled(recordSettings.read()),
       grantRules: () => storedGrantRules(recordSettings.read()),
       guard: sourceGuard(() => recordSettings.read()),
       subscribers: subscriberStore,
@@ -1052,9 +1074,18 @@ export async function createProject(
     });
     const records = sourceRecords;
     // A saved setting (a source, a grant rule, the private hosts) is compared at once.
-    recordSettings.onUpdate(
-      () => void records.refresh().catch((error: unknown) => app.logger.error(error)),
-    );
+    recordSettings.onUpdate((next, current) => {
+      // D188: the sources module turned on again: held external enrollments' outage windows start
+      // anew, so the time they were held never counts toward the 72-hour limit.
+      if (sourcesEnabled(next) && !sourcesEnabled(current)) {
+        try {
+          must(enrollments, "enrollments").restartSourceWindows();
+        } catch (error) {
+          app.logger.error(error);
+        }
+      }
+      void records.refresh().catch((error: unknown) => app.logger.error(error));
+    });
     deliveries = createWebhookDelivery({
       db,
       clock,
@@ -1109,6 +1140,7 @@ export async function createProject(
           captcha: current.captcha,
           customCss: must(settings, "settings").read()["appearance.admin.custom_css"],
           customJs: must(settings, "settings").read()["appearance.admin.custom_js"],
+          sourcesEnabled: sourcesEnabled(must(settings, "settings").read()),
           instanceUrl: services.instanceRootUrl,
           switcher: services.projects && {
             current: options.slug,
@@ -1127,6 +1159,7 @@ export async function createProject(
         services.projects?.().find((entry) => entry.slug === options.slug)?.name ??
         options.name ??
         options.slug,
+      sourcesEnabled: () => sourcesEnabled(must(settings, "settings").read()),
     });
     summaryRefresh = createSummaryRefresh({
       clock,
@@ -1146,6 +1179,7 @@ export async function createProject(
       router,
       capacity: source,
       ses: must(ses, "ses"),
+      hasSourceUrl: () => hasSourceUrl(must(settings, "settings").read()),
       attach(server: ProjectServer) {
         serverRef.server = server;
       },
@@ -1180,6 +1214,17 @@ export async function createProject(
           must(sourceRecords, "sourceRecords").start();
         } catch (error) {
           fail(error);
+        }
+        // D188 (r1): a project that stores a source opened while the module is off (a restore of
+        // a backup with a source, an upgrade whose switch was turned off): said once per start, as
+        // nothing reads the source and its source-linked recipients get nothing until it is on.
+        if (sourceHeld(must(settings, "settings").read())) {
+          app.logger.attention(
+            "This project stores an external source, but the instance's sources module is off: " +
+              "the source is held (no stream, no external sequence step, nothing sent to " +
+              "source-linked subscribers) until an instance admin turns sources.enabled on.",
+            "Source held: external sources are off on this instance",
+          );
         }
       },
       stop() {

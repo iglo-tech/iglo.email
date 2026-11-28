@@ -63,6 +63,7 @@ beforeAll(async () => {
   const allowed = await instanceCall(port, HOST, operator, "PUT", "/api/instance/settings", {
     ...shared.data,
     "sources.private_hosts": ["localhost"],
+    "sources.enabled": true,
   });
   expect(allowed.status).toBe(200);
 });
@@ -80,6 +81,7 @@ test("a saved source starts the stream: a record grants and creates the subscrib
   const current = await call("GET", "/api/settings");
   const saved = await call("PUT", "/api/settings", {
     ...current.body.data,
+    "source.connector": "pocketbase",
     "source.url": `http://localhost:${pb.port}`,
     "source.identity": pb.service.identity,
     "source.password": pb.service.password,

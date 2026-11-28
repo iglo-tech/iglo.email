@@ -1,9 +1,44 @@
 // Native (15-external-sources section 4, D169, D171): what the realtime stream hands on and what
 // it needs of the source. The stream (src/sources/stream.ts) receives records, skips the ones it
 // has handled, and gives each one to a `RecordHandler`; B150d implements the handler.
+import type { Clock } from "@/clock";
+import type { Guard, SourceTransport } from "@/sources/connect";
 import type { SourceObject } from "@/sources/json";
 import { isSourceError, SourceError } from "@/sources/source";
 import type { CallOptions, SourceEvent } from "@/sources/source";
+
+/** One message of a realtime connection. `oversized` when it was over the limit and its data dropped. */
+export interface StreamMessage {
+  /** The topic it was sent for. */
+  event: string;
+  data: string;
+  oversized: boolean;
+}
+
+/** What the stream gives a connector's realtime connection: its network policy, clock and limits. */
+export interface RealtimeRequest {
+  guard: Guard;
+  transport?: SourceTransport | undefined;
+  clock: Clock;
+  signal: AbortSignal;
+  /** Limits a test may lower; the connector's defaults otherwise. */
+  idleMs?: number;
+  maxAgeMs?: number;
+  maxLine?: number;
+}
+
+/** An open realtime connection (D188: the connector's, so the stream holds no protocol). */
+export interface RealtimeConnection {
+  readonly clientId: string;
+  /** The source's `Date` at connection: its clock, to start a new topic's marker at. */
+  readonly sourceNow: Date | null;
+  /**
+   * The messages after the connection was named. It ends when the source closes the stream, and
+   * throws a transient `SourceError` when the client closed it (idle, age, a reset).
+   */
+  readonly messages: AsyncGenerator<StreamMessage, void, void>;
+  close(): void;
+}
 
 /**
  * A record that lacks a field the source settings name (a misnamed or removed field): the
@@ -86,8 +121,10 @@ export interface CatchUpQuery {
   perPage: number;
 }
 
-/** What the stream needs of the adapter (the PocketBase adapter's `stream`). */
+/** What the stream needs of a connector (`ConnectorSource.stream`, D188). */
 export interface StreamSource {
+  /** Opens a realtime connection to the source. */
+  connect(request: RealtimeRequest): Promise<RealtimeConnection>;
   /**
    * The realtime topics for these event names: several past PocketBase's length limit, each with
    * the names it holds (a catch-up reads the same groups).
@@ -117,8 +154,11 @@ export interface StreamSource {
     query: CatchUpQuery,
     call?: CallOptions,
   ): Promise<{ items: Array<StreamItem>; more: boolean }>;
-  /** A realtime message's record as an item, or `null` for a record the stream does not act on. */
-  item(kind: StreamKind, action: string, record: unknown): StreamItem | null;
+  /**
+   * A realtime message's data as an item, `null` for a record the stream does not act on, or
+   * `"unreadable"` when the data cannot be read (B155b, D177: the stream catches up instead).
+   */
+  item(kind: StreamKind, data: string): StreamItem | null | "unreadable";
   /**
    * One record again, for the retry queue: `null` when it is gone (or no longer leaving). A
    * permanent error of the read itself is a `SettingsMismatch`; a record over the response limit

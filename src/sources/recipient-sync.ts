@@ -10,10 +10,14 @@
 // - `leaveUser` removes a leaving user's subscriber inside the caller's write transaction.
 import type { Enrollments } from "@/sequences/enrollments";
 import { trimSpace } from "@/lists/store";
-import { isUnfitQuery } from "@/sources/filter";
-import { isRecordUnreadable, isSourceError, SourceError } from "@/sources/source";
+import {
+  isNotFound,
+  isRecordUnreadable,
+  isSourceError,
+  isUnfitQuery,
+  SourceError,
+} from "@/sources/source";
 import type { ExternalSource, SourceRecipient } from "@/sources/source";
-import { isNotSourceId } from "@/sources/pocketbase";
 import { isSettingsMismatch, SettingsMismatch } from "@/sources/stream-record";
 import { sanitizeEmail } from "@/subscribers/email";
 import type { SubscriberStore } from "@/subscribers/store";
@@ -72,7 +76,8 @@ export async function readRecipient(
 
 /**
  * B166 (D194): a source read's failure as `readRecipient` classifies it: a permanent failure that
- * is not the read's own record's (an ID the source cannot have, `RecordUnreadable`) nor the query's
+ * is not the read's own record's (an ID the source cannot have is `notFound`, not permanent;
+ * `RecordUnreadable`) nor the query's
  * own (`UnfitQuery`: a filter value the adapter cannot write) nor a `SettingsMismatch` already is
  * the settings', returned as a `SettingsMismatch` led by `what`. Anything else returns `null`.
  */
@@ -81,7 +86,6 @@ export function settingsRefusal(error: unknown, what: string): SettingsMismatch 
     isSourceError(error) &&
     error.kind === "permanent" &&
     !isSettingsMismatch(error) &&
-    !isNotSourceId(error) &&
     !isRecordUnreadable(error) &&
     !isUnfitQuery(error)
   ) {
@@ -161,7 +165,7 @@ async function conflictOf(
   } catch (error) {
     // B155d (D179): an `external_id` the source cannot have (set by pushed events before the
     // project moved to a source) names no source user: the holder is gone, as one with none.
-    if (isNotSourceId(error)) {
+    if (isNotFound(error)) {
       return { kind: "gone", holder, left: false };
     }
     throw error;

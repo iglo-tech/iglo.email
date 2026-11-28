@@ -460,6 +460,8 @@ export async function openInstance(config: InstanceConfig, clock: Clock) {
       checkInstanceHost(record);
       entries.push(newEntry(record, await wire(record)));
     }
+    // B162a (D188): an upgraded instance whose projects already read a source keeps them reading.
+    settings.settleSourcesUpgrade(() => entries.some((entry) => entry.project.hasSourceUrl()));
     rebuild();
   } catch (error) {
     await closeAll();

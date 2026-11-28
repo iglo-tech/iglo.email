@@ -1,9 +1,12 @@
-// Native (15-external-sources sections 4 and 9, D171): the PocketBase adapter's part of the
-// realtime stream: the topic strings, the realtime subscription, catch-up pages on `created` (events)
-// or `updated` (users) in `(stamp, id)` keyset order, and the mapping of a realtime message's record.
+// Native (15-external-sources sections 4 and 9, D171, D188): the PocketBase connector's part of the
+// realtime stream: the realtime connection, the topic strings, the realtime subscription, catch-up
+// pages on `created` (events) or `updated` (users) in `(stamp, id)` keyset order, and the mapping of
+// a realtime message's record.
 // src/sources/pocketbase.ts builds it with its own reads, so a stream read signs in, confirms an
 // empty answer and bounds a body as every adapter read does.
-import { dateLiteral, fieldName, parseSourceDate, textLiteral } from "@/sources/filter";
+import { dateLiteral, fieldName, parseSourceDate, textLiteral } from "@/sources/pocketbase-filter";
+import { openRealtime, safeJson } from "@/sources/pocketbase-realtime";
+import type { RealtimeOptions } from "@/sources/pocketbase-realtime";
 import { isSourceObject, member, sourceJson } from "@/sources/json";
 import type { SourceObject } from "@/sources/json";
 import { isRecordUnreadable, isSourceError, SourceError } from "@/sources/source";
@@ -30,6 +33,8 @@ const idPattern = /^[A-Za-z0-9_-]{1,100}$/;
 
 /** What the adapter lends the stream's reads. */
 export interface StreamReadParts {
+  /** The source's base URL, for the realtime connection. */
+  url: string;
   events: {
     collection: string;
     user: string;
@@ -280,6 +285,25 @@ export function streamReads(parts: StreamReadParts): StreamSource {
   }
 
   return {
+    connect(request) {
+      const options: RealtimeOptions = {
+        url: parts.url,
+        guard: request.guard,
+        transport: request.transport,
+        clock: request.clock,
+        signal: request.signal,
+      };
+      if (request.idleMs) {
+        options.idleMs = request.idleMs;
+      }
+      if (request.maxAgeMs) {
+        options.maxAgeMs = request.maxAgeMs;
+      }
+      if (request.maxLine) {
+        options.maxLine = request.maxLine;
+      }
+      return openRealtime(options);
+    },
     eventTopics(names) {
       const topics: Array<{ topic: string; names: Array<string> }> = [];
       let chunk: Array<string> = [];
@@ -362,8 +386,14 @@ export function streamReads(parts: StreamReadParts): StreamSource {
       }
       return read(query.kind, clauses.join(" && "), query.perPage, call);
     },
-    item(kind, action, record) {
-      const value = sourceJson(record);
+    item(kind, data) {
+      const payload = safeJson(data);
+      if (payload === undefined) {
+        return "unreadable";
+      }
+      const message = member(payload, "action");
+      const action = typeof message === "string" ? message : "";
+      const value = sourceJson(member(payload, "record"));
       if (!isSourceObject(value)) {
         return null;
       }

@@ -1,9 +1,9 @@
-// Native (15-external-sources section 6, D170): PocketBase filter literals and dates. A filter
-// travels as text over HTTP with no bound parameters, so every value is written as a literal here
-// and nowhere else. Measured against the 0.40.5 binary (test/sources/filter.test.ts): a single-quoted
+// Native (15-external-sources section 6, D170, D188): the PocketBase connector's filter literals and
+// dates. A filter travels as text over HTTP with no bound parameters, so every value is written as a
+// literal here and nowhere else. Measured against the 0.40.5 binary (test/sources/filter.test.ts): a single-quoted
 // literal with each backslash and each single quote escaped by a backslash reads back exactly,
 // whatever the text holds (quotes, backslashes, `&&`, `||`, unicode).
-import { isSourceError, SourceError } from "@/sources/source";
+import { SourceError, UnfitQuery } from "@/sources/source";
 import type { SourceScalar } from "@/sources/source";
 
 /** A field, collection or JSON path segment name the adapter writes into a filter or a path. */
@@ -13,20 +13,6 @@ const segmentPattern = /^[A-Za-z0-9_]{1,64}$/;
 const MAX_SEGMENTS = 8;
 /** The longest text literal, in UTF-8 bytes. */
 const MAX_TEXT_BYTES = 4096;
-
-/**
- * B166 (D194): a query the adapter cannot write as a filter (a value too long, a number out of
- * range, a data path PocketBase cannot name, too many names). It is the query's own fault, a
- * condition's, not the source settings': a caller never waits for the settings to fix it.
- */
-export class UnfitQuery extends SourceError {
-  readonly unfitQuery = true;
-  constructor(message: string) {
-    super("permanent", message);
-  }
-}
-export const isUnfitQuery = (error: unknown): error is UnfitQuery =>
-  isSourceError(error) && "unfitQuery" in error && error.unfitQuery === true;
 
 /** A text literal. */
 export function textLiteral(value: string): string {

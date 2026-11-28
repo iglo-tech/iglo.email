@@ -23,8 +23,9 @@ import { plainText } from "@/messaging/plain";
 import type { AdminNotifier } from "@/messaging/notify";
 import type { BrandSite } from "@/public/brand";
 import type { SubscriberRow } from "@/sources/recipient-sync";
+import { isSourceHeld } from "@/sources/send-time";
 import type { SendTimeLookup, SendTimePlan } from "@/sources/send-time";
-import { isSourceError } from "@/sources/source";
+import { isPermanent, isSourceError } from "@/sources/source";
 import { isSettingsMismatch } from "@/sources/stream-record";
 import type { CampaignRecipient, CampaignRecipients } from "@/subscribers/campaign-recipients";
 import { createMessageBudget, RenderCapacityError } from "@/templates/renderer";
@@ -94,6 +95,8 @@ interface Pipe {
   /** Tracked links seen in the current batch; campaign_links is the lasting record. */
   links: Map<string, string | null>;
   errors: number;
+  /** D188 (r1): the "sources off" line was written for this run of the campaign. */
+  sourcesOffLogged?: boolean;
 }
 type Attachments = NonNullable<Message["attachments"]>;
 interface Batch {
@@ -678,7 +681,31 @@ export function createCampaignRunner(deps: RunnerDeps) {
     const { pipe, recipients } = batch;
     const c = pipe.campaign;
     const linked = recipients.flatMap((sub, i) => (sub.external_id === null ? [] : [i]));
-    if (!lookup || !linked.length || !lookup.configured()) {
+    if (!lookup || !linked.length) {
+      return skip;
+    }
+    /**
+     * D188 (r1, r2): the sources module is off while the project stores a source. Linked recipient
+     * `i` cannot be read, so its opt-out and its leaving cannot be checked: it is skipped, never
+     * sent and never retried (marketing at-most-once). One line per campaign run.
+     */
+    const held = (i: number) => {
+      skip.set(i, { reason: SKIP_REASON.unavailable, message: "" });
+      if (!pipe.sourcesOffLogged) {
+        pipe.sourcesOffLogged = true;
+        log(
+          "campaign recipients skipped: external sources are off",
+          `${label(c)}: source-linked recipients are skipped (subscriber_unavailable): the ` +
+            "project stores an external source but the instance's sources module is off " +
+            "(sources.enabled), so their opt-out and leaving cannot be checked.",
+        );
+      }
+    };
+    if (lookup.held()) {
+      linked.forEach(held);
+      return skip;
+    }
+    if (!lookup.configured()) {
       return skip;
     }
     const plans: Array<[number, SendTimePlan]> = [];
@@ -712,7 +739,11 @@ export function createCampaignRunner(deps: RunnerDeps) {
             plans.push([i, planned]);
           }
         } catch (error) {
-          if (isSourceError(error) && error.kind === "permanent" && !isSettingsMismatch(error)) {
+          if (isSourceHeld(error)) {
+            // The module was turned off during this batch's reads (D188 r2): this read found no
+            // source, which here means held, never unlinked.
+            held(i);
+          } else if (isPermanent(error) && !isSettingsMismatch(error)) {
             skip.set(i, { reason: SKIP_REASON.unavailable, message: error.message });
           } else {
             failure ??= { error };
@@ -738,11 +769,7 @@ export function createCampaignRunner(deps: RunnerDeps) {
               // B159a (D182): the write's own re-check refused this recipient (a domain
               // blocklisted since the reads, D179). Its transaction rolled back; the source is up,
               // so this recipient is skipped as the read path skips it, and the batch goes on.
-              if (
-                isSourceError(error) &&
-                error.kind === "permanent" &&
-                !isSettingsMismatch(error)
-              ) {
+              if (isPermanent(error) && !isSettingsMismatch(error)) {
                 skip.set(i, { reason: SKIP_REASON.unavailable, message: error.message });
                 continue;
               }

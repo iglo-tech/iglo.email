@@ -79,6 +79,8 @@ export async function schedulerFixture(
      * src/projects/compose.ts wires it. Off by default, so other tests' made-up external IDs stay.
      */
     sendTime?: boolean;
+    /** D188: the instance's sources module, as src/projects/compose.ts wires it; omitted, on. */
+    sourcesEnabled?: () => boolean;
   } = {},
 ) {
   const source: SourceProvider = options.source ?? (() => null);
@@ -260,6 +262,7 @@ export async function schedulerFixture(
     tracking,
     conditions: observed,
     source,
+    ...(options.sourcesEnabled ? { sourcesEnabled: options.sourcesEnabled } : {}),
     ...(options.sendTime
       ? {
           sendTime: createSendTimeLookup({

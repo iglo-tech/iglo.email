@@ -9,6 +9,7 @@ import type { ListReferences } from "@/lists/references";
 import type { StepLabel } from "@/messaging/sends";
 import { numberID } from "@/sequences/enrollments";
 import type { Enrollments } from "@/sequences/enrollments";
+import { externalRefusal } from "@/sequences/input";
 import type { DefinitionInput, SequenceSource, SequenceStatus } from "@/sequences/input";
 import type { TemplateStore } from "@/templates/store";
 import sql from "@/sequences/store.sql" with { type: "text" };
@@ -98,6 +99,8 @@ export function createSequenceStore(
     enrollments: Pick<Enrollments, "archive">;
     /** The project has a source configured, which activating an external sequence needs (D172). */
     sourceConfigured?: () => boolean;
+    /** D188: the instance's sources module is on; omitted, it is. */
+    sourcesEnabled?: () => boolean;
   },
 ) {
   const q = prepareNamedQueries(db, [{ name: "sequences/store", sql }]);
@@ -117,7 +120,7 @@ export function createSequenceStore(
     }
     const sequence = must(row(id), "sequence");
     if (sequence.source === "external" && !(deps.sourceConfigured?.() ?? false)) {
-      throw new SequenceConflict("source", "the project has no source configured (source.url)");
+      throw new SequenceConflict("source", externalRefusal(deps.sourcesEnabled?.() ?? true));
     }
     const listId = sequence.list_id;
     for (const [i, s] of current.entries()) {
